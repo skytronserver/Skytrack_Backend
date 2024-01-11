@@ -1,7 +1,10 @@
 from django.urls import path
-from .views import create_user, update_user, password_reset, send_email_otp, send_sms_otp, user_login, user_logout, user_get_parent, get_list, get_details  # Import other views as needed
+from .views import create_user, update_user, password_reset, send_email_otp, send_sms_otp, user_login, user_logout, user_get_parent, get_list, get_details, validate_otp
 
-urlpatterns = [ 
+urlpatterns = [
+    # ... other URL patterns ...
+    path('validate_otp/', validate_otp, name='validate_otp'),
+    path('user_login/', user_login, name='user_login'),
 
     path('create_user/', create_user, name='create_user'),
     path('update_user/<int:user_id>/', update_user, name='update_user'),

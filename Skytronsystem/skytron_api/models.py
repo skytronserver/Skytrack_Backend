@@ -1,6 +1,6 @@
 # skytronapp/models.py
 from django.db import models
-
+import hashlib
 from django.utils import timezone  # Add this line
 class User(models.Model):
     name = models.CharField(max_length=255, verbose_name="Name")
@@ -26,6 +26,14 @@ class User(models.Model):
     createdby = models.CharField(max_length=255, verbose_name="Created By")
     created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
     Access = models.JSONField(default=list, verbose_name="Access")
+    password = models.CharField(max_length=100)  # Assuming 32 characters for MD5 hash
+
+
+    def save(self, *args, **kwargs):
+        # Hash the password using MD5 before saving
+        if self.password:
+            self.password = hashlib.md5(self.password.encode()).hexdigest()
+        super(User, self).save(*args, **kwargs)
 
     def __str__(self):
         return self.name

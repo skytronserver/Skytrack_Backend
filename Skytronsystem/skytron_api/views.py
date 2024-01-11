@@ -20,6 +20,20 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import User as UserModel
 from .serializers import UserSerializer
+import random
+from django.contrib.auth.hashers import check_password, make_password
+from django.core.mail import send_mail
+from django.utils.crypto import get_random_string
+from django.utils import timezone
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework import status
+from .models import User as UserModel, Session
+from .serializers import UserSerializer, SessionSerializer
+from django.contrib.auth.hashers import make_password, check_password
+
+
 
 @csrf_exempt
 @api_view(['POST'])
@@ -123,12 +137,10 @@ def send_sms_otp(request):
 
         return Response({'message': 'SMS OTP sent successfully'})
 
-@csrf_exempt
+
 @api_view(['POST'])
+@permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
 def user_login(request):
-    """
-    User login.
-    """
     if request.method == 'POST':
         username = request.data.get('username', None)
         password = request.data.get('password', None)
@@ -137,14 +149,77 @@ def user_login(request):
             return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = UserModel.objects.filter(email=username).first() or UserModel.objects.filter(mobile=username).first()
-
-        if not user or not user.check_password(password):
+ 
+        if not user or not check_password(password, user.password):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Create and save a session for the user (Implementation depends on your session management)
+        # Check for an existing active session
+        existing_session = Session.objects.filter(user=user, status='login').first()
 
-        return Response({'message': 'Login successful'})
+        if existing_session:
+            return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
 
+        # Generate an OTP and a unique token
+        otp = str(random.randint(100000, 999999))
+        token = get_random_string(length=32)
+
+        # Create a new session entry
+        session_data = {
+            'user': user,
+            'token': token,
+            'otp': otp,
+            'status': 'otpsent',
+            'login_time': timezone.now(),
+        }
+
+        session_serializer = SessionSerializer(data=session_data)  # Replace with your actual SessionSerializer
+        if session_serializer.is_valid():
+            session_serializer.save()
+
+            # Send OTP to the user's email
+            send_mail(
+                'Login OTP',
+                f'Your login OTP is: {otp}',
+                'from@example.com',
+                [user.email],
+                fail_silently=False,
+            )
+
+            return Response({'token': token}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Allow any user, as this is the OTP validation endpoint
+def validate_otp(request):
+    if request.method == 'POST':
+        otp = request.data.get('otp', None)
+        token = request.data.get('token', None)
+
+        if not otp or not token:
+            return Response({'error': 'OTP or session token not provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Find the session based on the provided token
+        session = Session.objects.filter(token=token).first()
+
+        if not session:
+            return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
+
+        if session.status == 'login':
+            return Response({'token': session.token}, status=status.HTTP_200_OK)
+
+        # Validate the OTP
+        if otp == session.otp:
+            # OTP is valid, change session status to 'login'
+            session.status = 'login'
+            session.save()
+
+            return Response({'token': session.token}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)
+            
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
