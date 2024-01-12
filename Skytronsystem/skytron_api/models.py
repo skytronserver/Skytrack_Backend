@@ -2,8 +2,30 @@
 from django.db import models
 import hashlib
 from django.utils import timezone  # Add this line
-class User(models.Model):
-    name = models.CharField(max_length=255, verbose_name="Name")
+
+from django.contrib.auth.hashers import make_password
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+
+class CustomUserManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError('The Email field must be set')
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        return self.create_user(email, password, **extra_fields)
+
+
+
+class User(AbstractBaseUser, PermissionsMixin):
+    name = models.CharField(max_length=255, verbose_name="Name")    
+    #username = models.EmailField(unique=True, verbose_name="Username")
     email = models.EmailField(unique=True, verbose_name="Email")
     address = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address")
     address_pin = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address Pin")
@@ -27,16 +49,42 @@ class User(models.Model):
     created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
     Access = models.JSONField(default=list, verbose_name="Access")
     password = models.CharField(max_length=100)  # Assuming 32 characters for MD5 hash
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
+    date_joined = models.DateTimeField(default=timezone.now)
 
+    objects = CustomUserManager()
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['name' ]
+
+    def __str__(self):
+        return self.email
 
     def save(self, *args, **kwargs):
         # Hash the password using MD5 before saving
-        if self.password:
-            self.password = hashlib.md5(self.password.encode()).hexdigest()
+        #if self.password:
+        #    self.password = make_password( self.password )
         super(User, self).save(*args, **kwargs)
-
-    def __str__(self):
-        return self.name
+    '''
+    groups = models.ManyToManyField(
+        "auth.Group",
+        verbose_name="Groups",
+        blank=True,
+        related_name="custom_user_set",
+        related_query_name="custom_user",
+    )
+    user_permissions = models.ManyToManyField(
+        "auth.Permission",
+        verbose_name="User Permissions",
+        blank=True,
+        help_text="Specific permissions for this user.",
+        related_name="custom_user_set",
+        related_query_name="custom_user",
+    )
+   
+    '''
+    
 
 class Manufacturer(models.Model):
     name = models.CharField(max_length=255, verbose_name="Name")

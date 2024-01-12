@@ -1,16 +1,16 @@
 # skytron_api/views.py
-from django.contrib.auth.models import User
+from rest_framework.authtoken.models import Token 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
+from django.contrib.auth import authenticate, login
 from rest_framework.response import Response
 from rest_framework import status
 from .models import User as UserModel
 from .serializers import UserSerializer
 import random
-from django.contrib.auth.hashers import make_password
-from django.contrib.auth.models import User
+from django.contrib.auth.hashers import make_password 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
@@ -35,12 +35,30 @@ from django.contrib.auth.hashers import make_password, check_password
 
 
 
+from django.contrib.auth import get_user_model
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+class DeleteAllUsersView(APIView):
+    def delete(self, request, *args, **kwargs):
+        try:
+            # Get the custom user model
+            User = get_user_model()
+
+            # Delete all users
+            User.objects.all().delete()
+
+            return Response({'message': 'All users deleted successfully.'}, status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 @csrf_exempt
 @api_view(['POST'])
 def create_user(request):
     """
     Create a new user.
     """
+    serializer_class = UserSerializer
     if request.method == 'POST':
         serializer = UserSerializer(data=request.data)
         if serializer.is_valid():
@@ -149,43 +167,48 @@ def user_login(request):
             return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = UserModel.objects.filter(email=username).first() or UserModel.objects.filter(mobile=username).first()
+        #print(user,password, user.password)
+        #print(check_password(password, user.password), )
  
-        if not user or not check_password(password, user.password):
+        if not user or not  check_password(password, user.password):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
         # Check for an existing active session
-        existing_session = Session.objects.filter(user=user, status='login').first()
+        existing_session = Session.objects.filter(user=user.id, status='login').first()
 
-        if existing_session:
-            return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
+        #if existing_session:
+        #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
 
         # Generate an OTP and a unique token
         otp = str(random.randint(100000, 999999))
-        token = get_random_string(length=32)
+        #token = get_random_string(length=32)
+        token, created = Token.objects.get_or_create(user=user)
 
         # Create a new session entry
         session_data = {
-            'user': user,
-            'token': token,
+            'user': user.id,
+            'token': str(token.key),
             'otp': otp,
             'status': 'otpsent',
             'login_time': timezone.now(),
         }
+        print(session_data)
 
         session_serializer = SessionSerializer(data=session_data)  # Replace with your actual SessionSerializer
         if session_serializer.is_valid():
             session_serializer.save()
 
             # Send OTP to the user's email
+             
             send_mail(
                 'Login OTP',
                 f'Your login OTP is: {otp}',
-                'from@example.com',
+                'test@skytrack.tech',
                 [user.email],
                 fail_silently=False,
-            )
-
-            return Response({'token': token}, status=status.HTTP_200_OK)
+            ) 
+            
+            return Response({'status':'Email OTP Sent to '+str(user.email),'token': token.key}, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -208,15 +231,16 @@ def validate_otp(request):
             return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
 
         if session.status == 'login':
-            return Response({'token': session.token}, status=status.HTTP_200_OK)
+            return Response({'status':'Login Successful','token': session.token}, status=status.HTTP_200_OK)
 
         # Validate the OTP
-        if otp == session.otp:
+        print(otp,session.otp)
+        if str(otp) == str(session.otp):
             # OTP is valid, change session status to 'login'
             session.status = 'login'
             session.save()
 
-            return Response({'token': session.token}, status=status.HTTP_200_OK)
+            return Response({'status':'Login Successful','token': session.token}, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)
             
@@ -228,9 +252,22 @@ def user_logout(request):
     User logout.
     """
     if request.method == 'POST':
-        # Implement logout logic based on your session management
+        token = request.data.get('token', None)
 
-        return Response({'message': 'Logout successful'})
+        if  not token:
+            return Response({'error': 'Session token not provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Find the session based on the provided token
+        session = Session.objects.filter(token=token).first()
+
+        if not session:
+            return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
+
+        session.status = 'logout'
+        session.save()
+
+
+        return Response({'status': 'Logout successful'})
 
 @csrf_exempt
 @api_view(['GET'])
@@ -265,7 +302,7 @@ def get_list(request):
     """
     users = UserModel.objects.all()
     serializer = UserSerializer(users, many=True)
-    return Response(serializer.data)
+    return Response(serializer.data ,status=status.HTTP_200_OK)
 
 @csrf_exempt
 @api_view(['GET'])
