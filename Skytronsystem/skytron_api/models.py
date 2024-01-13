@@ -23,6 +23,7 @@ class CustomUserManager(BaseUserManager):
 
 
 
+
 class User(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(max_length=255, verbose_name="Name")    
     #username = models.EmailField(unique=True, verbose_name="Username")
@@ -84,7 +85,18 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
    
     '''
-    
+class Confirmation(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    token = models.CharField(max_length=32, unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    type=    models.CharField(max_length=20, choices=[("email", "Email"), ("sms", "SMS"), ("pw_rst", "Password Resset")], verbose_name="Type")
+   
+    is_valid = models.BooleanField(default=True)
+    def is_valid(self):
+        # Define your logic to check if the confirmation link is still valid (e.g., within a certain time limit)
+        # You might want to add an expiry time field to the model for this purpose
+        return self.is_valid
+        
 
 class Manufacturer(models.Model):
     name = models.CharField(max_length=255, verbose_name="Name")

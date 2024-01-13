@@ -29,7 +29,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from .models import User as UserModel, Session
+from .models import User as UserModel, Session,Confirmation
 from .serializers import UserSerializer, SessionSerializer
 from django.contrib.auth.hashers import make_password, check_password
 
@@ -39,6 +39,180 @@ from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+
+from django.shortcuts import get_object_or_404
+
+
+from .serializers import ConfirmationSerializer
+
+@api_view(['POST'])
+def validate_email_confirmation(request):
+    user = request.data.get('user', None)
+    confirmation_token = request.data.get('confirmation_token', None)
+
+    if not confirmation_token:
+        return Response({'error': 'Confirmation token not provided'}, status=400)
+    if not user:
+        return Response({'error': 'User not provided'}, status=400)
+
+    # Validate the email confirmation link
+    email_confirmation = get_object_or_404(Confirmation, user=user, token=confirmation_token)
+    if email_confirmation.is_valid():
+        # Perform actions when the email is confirmed (e.g., update user model)
+        user.email_confirmed = True
+        user.save()
+
+        # Delete the email confirmation entry
+        email_confirmation.delete()
+
+        return Response({'status': 'Email confirmed successfully'}, status=200)
+    else:
+        return Response({'error': 'Invalid email confirmation link'}, status=400)
+
+
+
+@api_view(['POST']) 
+def send_email_confirmation(request):
+    
+    user = request.data.get('user', None) 
+    if not user:
+        return Response({'error': 'User not provided'}, status=400)
+    # Generate a unique token for email confirmation
+    confirmation_token = get_random_string(length=32)
+
+    # Save the email confirmation data to the model
+    email_confirmation_data = {'user': user.id, 'token': confirmation_token}
+    email_confirmation_serializer = ConfirmationSerializer(data=email_confirmation_data)
+    if email_confirmation_serializer.is_valid():
+        email_confirmation_serializer.save()
+
+        # Send confirmation email
+        send_mail(
+            'Email Confirmation',
+            f'Click the link to confirm your email: http://yourdomain.com/confirm-email/{confirmation_token}',
+            'from@example.com',
+            [user.email],
+            fail_silently=False,
+        )
+
+        return Response({'status': 'Email confirmation link sent successfully'}, status=200)
+    else:
+        return Response({'error': 'Failed to send email confirmation link'}, status=500)
+
+
+@api_view(['POST'])
+def validate_pwrst_confirmation(request):
+    user = request.data.get('user', None)
+    confirmation_token = request.data.get('confirmation_token', None)
+
+    if not confirmation_token:
+        return Response({'error': 'Confirmation token not provided'}, status=400)
+    if not user:
+        return Response({'error': 'User not provided'}, status=400)
+
+    # Validate the email confirmation link
+    email_confirmation = get_object_or_404(Confirmation, user=user, token=confirmation_token)
+    if email_confirmation.is_valid():
+        # Perform actions when the email is confirmed (e.g., update user model)
+        user.email_confirmed = True
+        user.save()
+
+        # Delete the email confirmation entry
+        email_confirmation.delete()
+
+        return Response({'status': 'Email confirmed successfully'}, status=200)
+    else:
+        return Response({'error': 'Invalid email confirmation link'}, status=400)
+
+
+@api_view(['POST']) 
+def send_pwrst_confirmation(request):
+    
+    user = request.data.get('user', None) 
+    if not user:
+        return Response({'error': 'User not provided'}, status=400)
+
+    # Generate a unique token for email confirmation
+    confirmation_token = get_random_string(length=32)
+
+    # Save the email confirmation data to the model
+    email_confirmation_data = {'user': user.id, 'token': confirmation_token}
+    email_confirmation_serializer = ConfirmationSerializer(data=email_confirmation_data)
+    if email_confirmation_serializer.is_valid():
+        email_confirmation_serializer.save()
+
+        # Send confirmation email
+        send_mail(
+            'Email Confirmation',
+            f'Click the link to confirm your email: http://yourdomain.com/confirm-email/{confirmation_token}',
+            'from@example.com',
+            [user.email],
+            fail_silently=False,
+        )
+
+        return Response({'status': 'Email confirmation link sent successfully'}, status=200)
+    else:
+        return Response({'error': 'Failed to send email confirmation link'}, status=500)
+
+
+
+@api_view(['POST'])
+def validate_sms_confirmation(request):
+    user = request.data.get('user', None)
+    confirmation_token = request.data.get('confirmation_token', None)
+
+    if not confirmation_token:
+        return Response({'error': 'Confirmation token not provided'}, status=400)
+    if not user:
+        return Response({'error': 'User not provided'}, status=400)
+
+    # Validate the email confirmation link
+    email_confirmation = get_object_or_404(Confirmation, user=user, token=confirmation_token)
+    if email_confirmation.is_valid():
+        # Perform actions when the email is confirmed (e.g., update user model)
+        user.email_confirmed = True
+        user.save()
+
+        # Delete the email confirmation entry
+        email_confirmation.delete()
+
+        return Response({'status': 'Email confirmed successfully'}, status=200)
+    else:
+        return Response({'error': 'Invalid email confirmation link'}, status=400)
+
+
+@api_view(['POST']) 
+def send_sms_confirmation(request):
+    user = request.data.get('user', None) 
+    if not user:
+        return Response({'error': 'User not provided'}, status=400)
+
+    # Generate a unique token for email confirmation
+    confirmation_token = get_random_string(length=32)
+
+    # Save the email confirmation data to the model
+    email_confirmation_data = {'user': user.id, 'token': confirmation_token}
+    email_confirmation_serializer = ConfirmationSerializer(data=email_confirmation_data)
+    if email_confirmation_serializer.is_valid():
+        email_confirmation_serializer.save()
+
+        # Send confirmation email
+        send_mail(
+            'Email Confirmation',
+            f'Click the link to confirm your email: http://yourdomain.com/confirm-email/{confirmation_token}',
+            'from@example.com',
+            [user.email],
+            fail_silently=False,
+        )
+
+        return Response({'status': 'Email confirmation link sent successfully'}, status=200)
+    else:
+        return Response({'error': 'Failed to send email confirmation link'}, status=500)
+
+
+
+
+
 class DeleteAllUsersView(APIView):
     def delete(self, request, *args, **kwargs):
         try:
@@ -46,7 +220,7 @@ class DeleteAllUsersView(APIView):
             User = get_user_model()
 
             # Delete all users
-            User.objects.all().delete()
+            #User.objects.all().delete()
 
             return Response({'message': 'All users deleted successfully.'}, status=status.HTTP_204_NO_CONTENT)
         except Exception as e:

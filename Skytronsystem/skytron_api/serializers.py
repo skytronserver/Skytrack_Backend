@@ -2,6 +2,8 @@
 from rest_framework import serializers
 from .models import User, Manufacturer, Retailer, Device, DeviceModel, FOTA, Vehicle, Tracking, TrackingLog, Session, OTPRequest, EditRequest, Settings
 
+from .models import Confirmation
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -65,4 +67,8 @@ class EditRequestSerializer(serializers.ModelSerializer):
 class SettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = Settings
+        fields = '__all__'
+class ConfirmationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Confirmation
         fields = '__all__'
