@@ -44,6 +44,45 @@ from django.shortcuts import get_object_or_404
 
 
 from .serializers import ConfirmationSerializer
+from rest_framework.parsers import MultiPartParser
+
+
+
+
+class FileUploadView(APIView):
+    parser_classes = (MultiPartParser,)
+    def post(self, request, *args, **kwargs): 
+        email = request.data.get('email', None)
+        if not email:
+            return Response({'error': 'email not provided'}, status=400)
+            
+        try:
+            user = UserModel.objects.get(email=email)
+        
+        except UserModel.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        #user = get_object_or_404(UserModel, email=email)
+        if user:
+            print(email)
+            if 'file' not in request.data:
+                return Response({'error': 'No file part'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            print(email)
+            file = request.data['file']
+            user.kycfile.save(file.name, file)
+            user.save()
+            #serializer = UserSerializer(user) 
+             
+    
+            return Response({'status': 'KYC Uploaded successfully'}, status=status.HTTP_201_CREATED)
+        else:
+            return Response({'error': 'Invalid email'}, status=400)
+
+
+
+
+        
+
 
 @api_view(['POST'])
 def validate_email_confirmation(request):
@@ -220,7 +259,7 @@ class DeleteAllUsersView(APIView):
             User = get_user_model()
 
             # Delete all users
-            #User.objects.all().delete()
+            User.objects.all().delete()
 
             return Response({'message': 'All users deleted successfully.'}, status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
@@ -234,10 +273,30 @@ def create_user(request):
     """
     serializer_class = UserSerializer
     if request.method == 'POST':
-        serializer = UserSerializer(data=request.data)
+        data = request.data.copy() 
+        data['createdby'] = 'admin'
+        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        hashed_password = make_password(new_password)
+        data['password']  = hashed_password
+
+        serializer = UserSerializer(data=data)
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            send_mail(
+                'Account Created',
+                f'Temporery password is : {new_password}',
+                'test@skytrack.tech',
+                [data['email']],
+                fail_silently=False,
+            ) 
+            custom_data = {
+            'id': serializer.data['id'],
+            'name': serializer.data['name'],
+            #'companyName': serializer.data.companyName,
+            'email': serializer.data['email'],
+            }
+
+            return Response(custom_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @csrf_exempt
@@ -268,9 +327,12 @@ def password_reset(request):
     """
     if request.method == 'POST':
         email = request.data.get('email', None)
+        new_password = request.data.get('new_password', None)
 
         if not email:
             return Response({'error': 'Email not provided'}, status=status.HTTP_400_BAD_REQUEST)
+        if not new_password:
+            return Response({'error': 'Password not provided'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user = UserModel.objects.get(email=email)
@@ -278,12 +340,12 @@ def password_reset(request):
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
         # Generate a random password, set and hash it
-        new_password = ''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=12))
+         
         hashed_password = make_password(new_password)
         user.password = hashed_password
         user.save()
 
-        return Response({'message': 'Password reset successfully', 'new_password': new_password})
+        return Response({'message': 'Password reset successfully'})
 
 
 
@@ -343,6 +405,8 @@ def user_login(request):
         user = UserModel.objects.filter(email=username).first() or UserModel.objects.filter(mobile=username).first()
         #print(user,password, user.password)
         #print(check_password(password, user.password), )
+        user.is_active=True
+        user.save()
  
         if not user or not  check_password(password, user.password):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)

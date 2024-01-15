@@ -43,10 +43,12 @@ INSTALLED_APPS = [
     'rest_framework', 
     'rest_framework.authtoken',
     'drf_spectacular', 
+    'corsheaders',
     'skytron_api',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -120,8 +122,12 @@ USE_I18N = True
 
 USE_TZ = True
 
-
-
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # Add your frontend domain(s) here
+    #"https://yourfrontenddomain.com",
+    # "*" to allow all origins
+]
+CORS_ALLOW_ALL_ORIGINS = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 

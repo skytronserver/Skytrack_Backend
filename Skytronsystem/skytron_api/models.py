@@ -25,7 +25,8 @@ class CustomUserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    name = models.CharField(max_length=255, verbose_name="Name")    
+    name = models.CharField(max_length=255, verbose_name="Name") 
+    companyName=models.CharField(max_length=255, default='',verbose_name="companyName") 
     #username = models.EmailField(unique=True, verbose_name="Username")
     email = models.EmailField(unique=True, verbose_name="Email")
     address = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address")
@@ -41,7 +42,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     panfile = models.CharField(max_length=255, blank=True, null=True, verbose_name="PAN File")
     kyctype = models.CharField(max_length=255, blank=True, null=True, verbose_name="KYC Type")
     kycdocnumber = models.CharField(max_length=255, blank=True, null=True, verbose_name="KYC Doc Number")
-    kycfile = models.CharField(max_length=255, blank=True, null=True, verbose_name="KYC File")
+    #kycfile = models.CharField(max_length=255, blank=True, null=True, verbose_name="KYC File")
+    kycfile = models.FileField(upload_to='kyc_files/', null=True, blank=True, verbose_name="KYC File")
     mobileotp = models.CharField(max_length=255, blank=True, null=True, verbose_name="Mobile OTP")
     mobileotpsend = models.CharField(max_length=255, blank=True, null=True, verbose_name="Mobile OTP Send")
     token = models.CharField(max_length=255, blank=True, null=True, verbose_name="Token")
@@ -49,7 +51,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     createdby = models.CharField(max_length=255, verbose_name="Created By")
     created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
     Access = models.JSONField(default=list, verbose_name="Access")
-    password = models.CharField(max_length=100)  # Assuming 32 characters for MD5 hash
+    password = models.CharField(max_length=100,default='12345678')  # Assuming 32 characters for MD5 hash
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)
