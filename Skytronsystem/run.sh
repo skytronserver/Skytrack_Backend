@@ -1,4 +1,4 @@
-python3 manage.py runserver 0.0.0.0:2000 >log.log &
+python3 manage.py runserver 0.0.0.0:2000 >log.log 2>&1 &
 
 #lsof -i :2000
 

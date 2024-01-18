@@ -9,6 +9,7 @@ from .views import manufacturer_details, retailer_details, device_details, devic
 from .views import create_vehicle, update_vehicle, delete_vehicle, list_vehicles, vehicle_details
 
 urlpatterns = [
+    
     path('vehicles/', list_vehicles, name='list_vehicles'),
     path('vehicles/create/', create_vehicle, name='create_vehicle'),
     path('vehicles/<int:vehicle_id>/', vehicle_details, name='vehicle_details'),
