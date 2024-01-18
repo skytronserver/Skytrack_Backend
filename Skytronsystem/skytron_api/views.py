@@ -591,6 +591,7 @@ def update_vehicle(request, vehicle_id):
         return Response(serializer.data, status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_vehicle(request, vehicle_id):
