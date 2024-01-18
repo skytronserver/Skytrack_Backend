@@ -215,6 +215,7 @@ const deviceModelSchema = new mongoose.Schema({
     default: Date.now
   },
 });
+
 const fotaSchema = new mongoose.Schema({
   deviceMode: {
     type: int,

@@ -6,8 +6,15 @@ from .views import update_manufacturer, update_retailer, update_device, update_d
 from .views import delete_manufacturer, delete_retailer, delete_device, delete_device_model
 from .views import list_manufacturers, list_retailers, list_devices, list_device_models
 from .views import manufacturer_details, retailer_details, device_details, device_model_details
+from .views import create_vehicle, update_vehicle, delete_vehicle, list_vehicles, vehicle_details
 
 urlpatterns = [
+    path('vehicles/', list_vehicles, name='list_vehicles'),
+    path('vehicles/create/', create_vehicle, name='create_vehicle'),
+    path('vehicles/<int:vehicle_id>/', vehicle_details, name='vehicle_details'),
+    path('vehicles/<int:vehicle_id>/update/', update_vehicle, name='update_vehicle'),
+    path('vehicles/<int:vehicle_id>/delete/', delete_vehicle, name='delete_vehicle'),
+
     path('manufacturer_details/<int:manufacturer_id>/', manufacturer_details, name='manufacturer_details'),
     path('retailer_details/<int:retailer_id>/', retailer_details, name='retailer_details'),
     path('device_details/<int:device_id>/', device_details, name='device_details'),

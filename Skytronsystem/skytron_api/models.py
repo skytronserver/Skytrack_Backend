@@ -6,6 +6,7 @@ from django.utils import timezone  # Add this line
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 
+ 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:
@@ -166,22 +167,28 @@ class FOTA(models.Model):
     def __str__(self):
         return f"FOTA {self.id}"
 
+
 class Vehicle(models.Model):
-    status = models.CharField(max_length=10, choices=[("active", "Active"), ("deactive", "Deactive")], verbose_name="Status")
-    access = models.JSONField(default=list, verbose_name="Access")
-    vregno = models.CharField(max_length=255, blank=True, null=True, verbose_name="Vehicle Registration Number")
-    engineno = models.CharField(max_length=255, blank=True, null=True, verbose_name="Engine Number")
-    chessisno = models.CharField(max_length=255, blank=True, null=True, verbose_name="Chassis Number")
-    vehiclemake = models.CharField(max_length=255, blank=True, null=True, verbose_name="Vehicle Make")
-    vehiclemodel = models.CharField(max_length=255, blank=True, null=True, verbose_name="Vehicle Model")
-    vehiclecategory = models.CharField(max_length=255, blank=True, null=True, verbose_name="Vehicle Category")
-    rcfilepath = models.CharField(max_length=255, blank=True, null=True, verbose_name="RC File Path")
-    owner = models.IntegerField(verbose_name="Owner")
-    createdby = models.CharField(max_length=255, verbose_name="Created By")
-    created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('deactive', 'Deactive'),
+    ]
+
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)
+    access = models.ManyToManyField(User, related_name='accessible_vehicles', blank=True)
+    vregno = models.CharField(max_length=255)
+    engineno = models.CharField(max_length=255)
+    chessisno = models.CharField(max_length=255)
+    vehiclemake = models.CharField(max_length=255)
+    vehiclemodel = models.CharField(max_length=255)
+    vehiclecategory = models.CharField(max_length=255)
+    rcfilepath = models.CharField(max_length=255)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    createdby = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_vehicles')
+    created = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Vehicle {self.id}"
+        return self.vregno
 
 class Tracking(models.Model):
     created = models.DateTimeField(auto_now_add=True, verbose_name="Created")

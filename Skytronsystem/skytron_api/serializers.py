@@ -4,7 +4,12 @@ from .models import User, Manufacturer, Retailer, Device, DeviceModel, FOTA, Veh
 
 from .models import Manufacturer, Retailer, Device, DeviceModel
 from .models import Confirmation
+from .models import Vehicle
 
+class VehicleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Vehicle
+        fields = '__all__'
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User

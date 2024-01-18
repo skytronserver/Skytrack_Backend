@@ -564,9 +564,61 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import Manufacturer, Retailer, Device, DeviceModel
-from .serializers import ManufacturerSerializer, RetailerSerializer, DeviceSerializer, DeviceModelSerializer
+from .models import Manufacturer, Retailer, Device, DeviceModel,Vehicle
+from .serializers import ManufacturerSerializer, RetailerSerializer, DeviceSerializer, DeviceModelSerializer,VehicleSerializer
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_vehicle(request):
+    serializer = VehicleSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(createdby=request.user, owner=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_vehicle(request, vehicle_id):
+    try:
+        vehicle = Vehicle.objects.get(pk=vehicle_id)
+    except Vehicle.DoesNotExist:
+        return Response({'error': 'Vehicle not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = VehicleSerializer(vehicle, data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_vehicle(request, vehicle_id):
+    try:
+        vehicle = Vehicle.objects.get(pk=vehicle_id)
+    except Vehicle.DoesNotExist:
+        return Response({'error': 'Vehicle not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    vehicle.delete()
+    return Response({'message': 'Vehicle deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_vehicles(request):
+    vehicles = Vehicle.objects.all()
+    serializer = VehicleSerializer(vehicles, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def vehicle_details(request, vehicle_id):
+    try:
+        vehicle = Vehicle.objects.get(pk=vehicle_id)
+    except Vehicle.DoesNotExist:
+        return Response({'error': 'Vehicle not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = VehicleSerializer(vehicle)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
