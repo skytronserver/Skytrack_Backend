@@ -84,7 +84,7 @@ const userSchema = new mongoose.Schema({
 });
 const manufacturerSchema = new mongoose.Schema({
 
-  name: {
+  company_name: {
     type: String,
     required: [true, "Name not provided "],
   },
@@ -108,6 +108,10 @@ const manufacturerSchema = new mongoose.Schema({
   },
   retailer: {
     type: Array,
+  },
+
+  document_path: {
+    type: String,
   },
   createdby: {
     type: String,
@@ -137,6 +141,9 @@ const retailerSchema = new mongoose.Schema({
   gstnnumber: {
     type: String,
   },
+  document_path: {
+    type: String,
+  },
 
   users: {
     type: Array,
@@ -162,7 +169,7 @@ const deviceSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    required: [true, "status not provided "],  // [Created,FactoryTestOK,ShipedtoRetailer,Sold,Installed,Active,Device error,Discontinued ]
+    enum: [Created, FactoryTestOK, ShipedtoRetailer, Sold, Installed, Active, Device error, Discontinued]
   },
   softwareLatestVersion: {
     type: String,

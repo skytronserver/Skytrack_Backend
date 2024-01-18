@@ -556,3 +556,199 @@ def get_details(request, user_id):
 
     serializer = UserSerializer(user)
     return Response(serializer.data)
+
+
+
+
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from .models import Manufacturer, Retailer, Device, DeviceModel
+from .serializers import ManufacturerSerializer, RetailerSerializer, DeviceSerializer, DeviceModelSerializer
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def manufacturer_details(request, manufacturer_id):
+    try:
+        manufacturer = Manufacturer.objects.get(pk=manufacturer_id)
+    except Manufacturer.DoesNotExist:
+        return Response({'error': 'Manufacturer not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = ManufacturerSerializer(manufacturer)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def retailer_details(request, retailer_id):
+    try:
+        retailer = Retailer.objects.get(pk=retailer_id)
+    except Retailer.DoesNotExist:
+        return Response({'error': 'Retailer not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = RetailerSerializer(retailer)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def device_details(request, device_id):
+    try:
+        device = Device.objects.get(pk=device_id)
+    except Device.DoesNotExist:
+        return Response({'error': 'Device not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = DeviceSerializer(device)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def device_model_details(request, device_model_id):
+    try:
+        device_model = DeviceModel.objects.get(pk=device_model_id)
+    except DeviceModel.DoesNotExist:
+        return Response({'error': 'Device Model not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = DeviceModelSerializer(device_model)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_manufacturers(request):
+    company_name = request.query_params.get('company_name', '')
+    manufacturers = Manufacturer.objects.filter(company_name__icontains=company_name)
+    serializer = ManufacturerSerializer(manufacturers, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_retailers(request):
+    name = request.query_params.get('name', '')
+    retailers = Retailer.objects.filter(name__icontains=name)
+    serializer = RetailerSerializer(retailers, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_devices(request):
+    # Add filters based on your requirements
+    devices = Device.objects.all()
+    serializer = DeviceSerializer(devices, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_device_models(request):
+    device_model = request.query_params.get('device_model', '')
+    device_models = DeviceModel.objects.filter(device_model__icontains=device_model)
+    serializer = DeviceModelSerializer(device_models, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_manufacturer(request, pk):
+    manufacturer = Manufacturer.objects.get(pk=pk)
+    manufacturer.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_retailer(request, pk):
+    retailer = Retailer.objects.get(pk=pk)
+    retailer.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_device(request, pk):
+    device = Device.objects.get(pk=pk)
+    device.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_device_model(request, pk):
+    device_model = DeviceModel.objects.get(pk=pk)
+    device_model.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_manufacturer(request, pk):
+    manufacturer = Manufacturer.objects.get(pk=pk)
+    serializer = ManufacturerSerializer(manufacturer, data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_retailer(request, pk):
+    retailer = Retailer.objects.get(pk=pk)
+    serializer = RetailerSerializer(retailer, data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_device(request, pk):
+    device = Device.objects.get(pk=pk)
+    serializer = DeviceSerializer(device, data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_device_model(request, pk):
+    device_model = DeviceModel.objects.get(pk=pk)
+    serializer = DeviceModelSerializer(device_model, data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_manufacturer(request):
+    serializer = ManufacturerSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(createdby=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_retailer(request):
+    serializer = RetailerSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(createdby=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_device(request):
+    serializer = DeviceSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(createdby=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_device_model(request):
+    serializer = DeviceModelSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(createdby=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+ 

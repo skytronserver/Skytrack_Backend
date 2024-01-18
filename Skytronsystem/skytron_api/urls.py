@@ -1,8 +1,38 @@
 from django.urls import path
 from .views import create_user, update_user, password_reset, send_email_otp, send_sms_otp, user_login, user_logout, user_get_parent, get_list, get_details, validate_otp
 from .views import  FileUploadView,DeleteAllUsersView ,validate_email_confirmation,send_email_confirmation,validate_sms_confirmation,  send_sms_confirmation, validate_pwrst_confirmation,send_pwrst_confirmation 
+from .views import create_manufacturer, create_retailer, create_device, create_device_model
+from .views import update_manufacturer, update_retailer, update_device, update_device_model
+from .views import delete_manufacturer, delete_retailer, delete_device, delete_device_model
+from .views import list_manufacturers, list_retailers, list_devices, list_device_models
+from .views import manufacturer_details, retailer_details, device_details, device_model_details
+
 urlpatterns = [
-    # ... other URL patterns ...
+    path('manufacturer_details/<int:manufacturer_id>/', manufacturer_details, name='manufacturer_details'),
+    path('retailer_details/<int:retailer_id>/', retailer_details, name='retailer_details'),
+    path('device_details/<int:device_id>/', device_details, name='device_details'),
+    path('device_model_details/<int:device_model_id>/', device_model_details, name='device_model_details'),
+    
+    path('list_manufacturers/', list_manufacturers, name='list_manufacturers'),
+    path('list_retailers/', list_retailers, name='list_retailers'),
+    path('list_devices/', list_devices, name='list_devices'),
+    path('list_device_models/', list_device_models, name='list_device_models'),
+   
+    path('delete_manufacturer/<int:pk>/', delete_manufacturer, name='delete_manufacturer'),
+    path('delete_retailer/<int:pk>/', delete_retailer, name='delete_retailer'),
+    path('delete_device/<int:pk>/', delete_device, name='delete_device'),
+    path('delete_device_model/<int:pk>/', delete_device_model, name='delete_device_model'),
+   
+    path('update_manufacturer/<int:pk>/', update_manufacturer, name='update_manufacturer'),
+    path('update_retailer/<int:pk>/', update_retailer, name='update_retailer'),
+    path('update_device/<int:pk>/', update_device, name='update_device'),
+    path('update_device_model/<int:pk>/', update_device_model, name='update_device_model'),
+  
+    path('create_manufacturer/', create_manufacturer, name='create_manufacturer'),
+    path('create_retailer/', create_retailer, name='create_retailer'),
+    path('create_device/', create_device, name='create_device'),
+    path('create_device_model/', create_device_model, name='create_device_model'),
+    
     path('validate_otp/', validate_otp, name='validate_otp'),
     path('user_login/', user_login, name='user_login'),
 

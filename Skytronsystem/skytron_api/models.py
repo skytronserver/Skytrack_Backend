@@ -101,55 +101,59 @@ class Confirmation(models.Model):
         
 
 class Manufacturer(models.Model):
-    name = models.CharField(max_length=255, verbose_name="Name")
-    address = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address")
-    address_pin = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address Pin")
-    gstnnumber = models.CharField(max_length=255, blank=True, null=True, verbose_name="GSTN Number")
-    users = models.JSONField(default=list, verbose_name="Users")
-    deviceModel = models.JSONField(default=list, verbose_name="Device Model")
-    retailer = models.JSONField(default=list, verbose_name="Retailer")
-    createdby = models.CharField(max_length=255, verbose_name="Created By")
-    created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
-    Access = models.JSONField(default=list, verbose_name="Access")
-
-    def __str__(self):
-        return self.name
+    company_name = models.CharField(max_length=255, verbose_name="Company Name")
+    address = models.CharField(max_length=255, blank=True, null=True)
+    address_pin = models.CharField(max_length=10, blank=True, null=True)
+    gstnnumber = models.CharField(max_length=20, blank=True, null=True)
+    users = models.ManyToManyField('User', related_name='manufacturers')
+    deviceModel = models.ManyToManyField('DeviceModel', related_name='manufacturers', blank=True)
+    retailer = models.ManyToManyField('Retailer', related_name='manufacturers', blank=True)
+    document_path = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    created = models.DateField(auto_now_add=True)
+    Access = models.ManyToManyField('User', related_name='manufacturer_access', blank=True)
 
 class Retailer(models.Model):
     name = models.CharField(max_length=255, verbose_name="Name")
-    address = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address")
-    address_pin = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address Pin")
-    gstnnumber = models.CharField(max_length=255, blank=True, null=True, verbose_name="GSTN Number")
-    users = models.JSONField(default=list, verbose_name="Users")
-    createdby = models.CharField(max_length=255, verbose_name="Created By")
-    created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
-    Access = models.JSONField(default=list, verbose_name="Access")
-
-    def __str__(self):
-        return self.name
+    address = models.CharField(max_length=255, blank=True, null=True)
+    address_pin = models.CharField(max_length=10, blank=True, null=True)
+    gstnnumber = models.CharField(max_length=20, blank=True, null=True)
+    document_path = models.CharField(max_length=255, blank=True, null=True)
+    users = models.ManyToManyField('User', related_name='retailers')
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    created = models.DateField(auto_now_add=True)
+    Access = models.ManyToManyField('User', related_name='retailer_access', blank=True)
 
 class Device(models.Model):
-    deviceModel = models.IntegerField(verbose_name="Device Model")
-    status = models.CharField(max_length=255, verbose_name="Status")
-    softwareLatestVersion = models.CharField(max_length=255, blank=True, null=True, verbose_name="Software Latest Version")
-    vehicle = models.IntegerField(verbose_name="Vehicle")
-    createdby = models.CharField(max_length=255, verbose_name="Created By")
-    created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
-
-    def __str__(self):
-        return f"Device {self.id}"
+    deviceModel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE)
+    status_choices = [
+        ('Created', 'Created'),
+        ('FactoryTestOK', 'FactoryTestOK'),
+        ('ShipedtoRetailer', 'ShipedtoRetailer'),
+        ('Sold', 'Sold'),
+        ('Installed', 'Installed'),
+        ('Active', 'Active'),
+        ('DeviceError', 'Device Error'),
+        ('Discontinued', 'Discontinued'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices)
+    softwareLatestVersion = models.CharField(max_length=20, blank=True, null=True)
+    vehicle = models.IntegerField()
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    created = models.DateField(auto_now_add=True)
 
 class DeviceModel(models.Model):
     deviceModel = models.CharField(max_length=255, verbose_name="Device Model")
-    status = models.CharField(max_length=20, choices=[("active", "Active"), ("discontinued", "Discontinued")], verbose_name="Status")
+    status_choices = [
+        ('active', 'Active'),
+        ('discontinued', 'Discontinued'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices)
     hardwareVersion = models.CharField(max_length=255, verbose_name="Hardware Version")
-    softwareLatestVersion = models.CharField(max_length=255, verbose_name="Software Latest Version")
-    createdby = models.CharField(max_length=255, verbose_name="Created By")
-    created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
-
-    def __str__(self):
-        return self.deviceModel
-
+    softwareLatestVersion = models.CharField(max_length=20)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    created = models.DateField(auto_now_add=True)
+    
 class FOTA(models.Model):
     deviceMode = models.IntegerField(verbose_name="Device Mode")
     status = models.CharField(max_length=10, choices=[("active", "Active"), ("notactive", "Not Active")], verbose_name="Status")
