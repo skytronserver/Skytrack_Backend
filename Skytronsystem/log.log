@@ -1725,3 +1725,110 @@ Traceback (most recent call last):
 AttributeError: 'NoneType' object has no attribute 'status'
 [07/Feb/2024 08:30:44] "POST /api/tag/TagVerifyOwnerOtp/ HTTP/1.1" 500 93386
 [07/Feb/2024 08:31:23] "GET /api/tag/TagAwaitingOwnerApproval/ HTTP/1.1" 200 334
+[07/Feb/2024 13:04:03] code 400, message Bad request syntax ('\x00')
+[07/Feb/2024 13:04:03] " " 400 -
+/var/www/html/skytron_backend/Skytronsystem/skytron_api/urls.py changed, reloading.
+Watching for file changes with StatReloader
+Performing system checks...
+
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/usr/local/lib/python3.8/dist-packages/django/utils/autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+  File "/usr/local/lib/python3.8/dist-packages/django/core/management/commands/runserver.py", line 133, in inner_run
+    self.check(display_num_errors=True)
+  File "/usr/local/lib/python3.8/dist-packages/django/core/management/base.py", line 485, in check
+    all_issues = checks.run_checks(
+  File "/usr/local/lib/python3.8/dist-packages/django/core/checks/registry.py", line 88, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "/usr/local/lib/python3.8/dist-packages/django/core/checks/urls.py", line 14, in check_url_config
+    return check_resolver(resolver)
+  File "/usr/local/lib/python3.8/dist-packages/django/core/checks/urls.py", line 24, in check_resolver
+    return check_method()
+  File "/usr/local/lib/python3.8/dist-packages/django/urls/resolvers.py", line 494, in check
+    for pattern in self.url_patterns:
+  File "/usr/local/lib/python3.8/dist-packages/django/utils/functional.py", line 57, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+  File "/usr/local/lib/python3.8/dist-packages/django/urls/resolvers.py", line 715, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+  File "/usr/local/lib/python3.8/dist-packages/django/utils/functional.py", line 57, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+  File "/usr/local/lib/python3.8/dist-packages/django/urls/resolvers.py", line 708, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "/usr/lib/python3.8/importlib/__init__.py", line 127, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1014, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 991, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 975, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 671, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 848, in exec_module
+  File "<frozen importlib._bootstrap>", line 219, in _call_with_frames_removed
+  File "/var/www/html/skytron_backend/Skytronsystem/Skytronsystem/urls.py", line 24, in <module>
+    path('api/', include('skytron_api.urls')),  # Include the skytron_api URLs
+  File "/usr/local/lib/python3.8/dist-packages/django/urls/conf.py", line 38, in include
+    urlconf_module = import_module(urlconf_module)
+  File "/usr/lib/python3.8/importlib/__init__.py", line 127, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1014, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 991, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 975, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 671, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 848, in exec_module
+  File "<frozen importlib._bootstrap>", line 219, in _call_with_frames_removed
+  File "/var/www/html/skytron_backend/Skytronsystem/skytron_api/urls.py", line 11, in <module>
+    from .views import (
+ImportError: cannot import name 'download_static_file' from 'skytron_api.views' (/var/www/html/skytron_backend/Skytronsystem/skytron_api/views.py)
+/var/www/html/skytron_backend/Skytronsystem/skytron_api/views.py changed, reloading.
+Watching for file changes with StatReloader
+Performing system checks...
+
+System check identified no issues (0 silenced).
+February 07, 2024 - 13:12:04
+Django version 4.2.9, using settings 'Skytronsystem.settings'
+Starting development server at http://0.0.0.0:2000/
+Quit the server with CONTROL-C.
+
+Not Found: /api/devicestock/deviceStockBulkSample//
+[07/Feb/2024 13:13:16] "GET /api/devicestock/deviceStockBulkSample// HTTP/1.1" 404 18360
+Not Found: /api/devicestock/deviceStockBulkSample/
+[07/Feb/2024 13:14:54] "GET /api/devicestock/deviceStockBulkSample/ HTTP/1.1" 404 15
+Not Found: /api/devicestock/deviceStockBulkSample/
+[07/Feb/2024 13:15:37] "GET /api/devicestock/deviceStockBulkSample/ HTTP/1.1" 404 15
+/var/www/html/skytron_backend/Skytronsystem/skytron_api/views.py changed, reloading.
+Watching for file changes with StatReloader
+Performing system checks...
+
+System check identified no issues (0 silenced).
+February 07, 2024 - 13:20:38
+Django version 4.2.9, using settings 'Skytronsystem.settings'
+Starting development server at http://0.0.0.0:2000/
+Quit the server with CONTROL-C.
+
+/var/www/html/skytron_backend/Skytronsystem/skytron_api/views.py changed, reloading.
+Watching for file changes with StatReloader
+Performing system checks...
+
+System check identified no issues (0 silenced).
+February 07, 2024 - 13:21:12
+Django version 4.2.9, using settings 'Skytronsystem.settings'
+Starting development server at http://0.0.0.0:2000/
+Quit the server with CONTROL-C.
+
+Not Found: /api/devicestock/deviceStockBulkSample/
+[07/Feb/2024 13:21:19] "GET /api/devicestock/deviceStockBulkSample/ HTTP/1.1" 404 15
+/var/www/html/skytron_backend/Skytronsystem/skytron_api/views.py changed, reloading.
+Watching for file changes with StatReloader
+Performing system checks...
+
+System check identified no issues (0 silenced).
+February 07, 2024 - 13:22:02
+Django version 4.2.9, using settings 'Skytronsystem.settings'
+Starting development server at http://0.0.0.0:2000/
+Quit the server with CONTROL-C.
+
+[07/Feb/2024 13:22:09] "GET /api/devicestock/deviceStockBulkSample/ HTTP/1.1" 200 9312
+[07/Feb/2024 13:22:24] "GET /api/devicestock/deviceStockBulkSample/ HTTP/1.1" 200 9312

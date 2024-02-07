@@ -86,6 +86,18 @@ from .serializers import StockAssignmentSerializer, DeviceTagSerializer
 from django.utils import timezone
 import ast
  
+from django.views.static import serve
+from django.conf import settings
+from django.http import HttpResponse
+def download_static_file(request):
+    file_path = f"skytron_api/static/StockUpload.xlsx"
+    try:
+        with open(file_path,'rb') as file:
+            response = HttpResponse(file.read(), content_type='application/octet-stream')
+            response['Content-Disposition'] = f'attachment; filename="StockUpload.xlsx"'
+            return response
+    except FileNotFoundError:
+        return HttpResponse("File not found.", status=404)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

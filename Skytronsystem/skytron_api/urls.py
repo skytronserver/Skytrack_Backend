@@ -21,7 +21,7 @@ from .views import (
     SellFitDevice,
     SellListAvailableDeviceStock,
     TagDevice2Vehicle,TagAwaitingOwnerApproval ,  TagSendOwnerOtp ,  
-    TagVerifyOwnerOtp ,TagVerifyDealerOtp,
+    TagVerifyOwnerOtp ,TagVerifyDealerOtp, download_static_file
  
 )
 from .views import SellFitDevice, ActivateESIMRequest, ConfirmESIMActivation, ConfigureIPPort, ConfigureSOSGateway, ConfigureSMSGateway, MarkDeviceDefective, ReturnToDeviceManufacturer
@@ -98,10 +98,11 @@ urlpatterns = [
     path('devicemodel/devicemodelDetails/', details_devicemodel, name='devicemodel-detail'),
     
     path('devicestock/deviceStockCreate/', deviceStockCreate, name='deviceStockCreate'),
+    path('devicestock/deviceStockBulkSample/', download_static_file, name='download_static_file'),
     path('devicestock/deviceStockCreateBulk/', deviceStockCreateBulk, name='deviceStockCreateBulk'),
     path('devicestock/deviceStockFilter/', deviceStockFilter, name='deviceStockFilter'),
     path('devicestock/StockAssignToRetailer/', StockAssignToRetailer, name='StockAssignToRetailer'),
- 
+  
     path('sell/SellFitDevice/', SellFitDevice, name='SellFitDevice'),
     path('sell/SellListAvailableDeviceStock/', SellListAvailableDeviceStock, name='SellListAvailableDeviceStock'),
     path('sell/activate_esim_request/', ActivateESIMRequest, name='activate_esim_request'),
