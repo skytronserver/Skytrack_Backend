@@ -1,11 +1,59 @@
 # skytron_api/serializers.py
 from rest_framework import serializers
-from .models import User, Manufacturer, Retailer, Device, DeviceModel, FOTA, Vehicle, Tracking, TrackingLog, Session, OTPRequest, EditRequest, Settings
+from .models import User, Manufacturer, Retailer, Device, DeviceModel, FOTA, Vehicle, Session, OTPRequest, EditRequest, Settings
 
 from .models import Manufacturer, Retailer, Device, DeviceModel
 from .models import Confirmation
 from .models import Vehicle
+from .models import DeviceStock,DeviceTag
+from .models import DeviceCOP
 
+from .models import StockAssignment
+
+class DeviceTagSerializer(serializers.ModelSerializer):
+    class Meta:
+        model =DeviceTag
+        fields = '__all__'
+class StockAssignmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StockAssignment
+        fields = ['device', 'dealer', 'assigned_by', 'assigned', 'shipping_remark', 'stock_status']
+
+class DeviceStockFilterSerializer(serializers.Serializer):
+    model_id = serializers.IntegerField(required=False)
+    device_esn = serializers.CharField(required=False)
+    iccid = serializers.CharField(required=False)
+    imei = serializers.CharField(required=False)
+    telecom_provider1 = serializers.CharField(required=False)
+    telecom_provider2 = serializers.CharField(required=False)
+    msisdn1 = serializers.CharField(required=False)
+    msisdn2 = serializers.CharField(required=False)
+    imsi1 = serializers.CharField(required=False)
+    imsi2 = serializers.CharField(required=False)
+    esim_validity = serializers.DateField(required=False)
+    esim_provider = serializers.CharField(required=False)
+    remarks = serializers.CharField(required=False)
+    created_by = serializers.IntegerField(required=False)
+class DeviceModelFilterSerializer(serializers.Serializer):
+    model_name = serializers.CharField(required=False)
+    test_agency = serializers.CharField(required=False)
+    vendor_id = serializers.CharField(required=False)
+    tac_no = serializers.CharField(required=False)
+    tac_validity = serializers.DateField(required=False)
+    hardware_version = serializers.CharField(required=False)
+    created_by = serializers.IntegerField(required=False)
+    created = serializers.DateField(required=False)
+    status = serializers.CharField(required=False)
+class DeviceCOPSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeviceCOP
+        fields = '__all__'
+class DeviceStockSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeviceStock
+        fields = '__all__'
+
+        
 class VehicleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vehicle
@@ -30,6 +78,7 @@ class DeviceSerializer(serializers.ModelSerializer):
         model = Device
         fields = '__all__'
 
+
 class DeviceModelSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeviceModel
@@ -44,16 +93,8 @@ class VehicleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vehicle
         fields = '__all__'
-
-class TrackingSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Tracking
-        fields = '__all__'
-
-class TrackingLogSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TrackingLog
-        fields = '__all__'
+ 
+ 
 
 class SessionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -96,7 +137,15 @@ class DeviceSerializer(serializers.ModelSerializer):
         model = Device
         fields = '__all__'
 
+
 class DeviceModelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeviceModel
+        fields = '__all__'
+
+class DeviceModelFileUploadSerializer(serializers.ModelSerializer):
+    tac_doc_path = serializers.FileField(write_only=True)
+
     class Meta:
         model = DeviceModel
         fields = '__all__'

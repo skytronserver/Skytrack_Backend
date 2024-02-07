@@ -3,3 +3,6 @@ log.log
 Skytronsystem/log.log
 Skytronsystem/log.log
 Skytronsystem/skytron_api/__pycache__/views.cpython-38.pyc
+Skytronsystem/tac_docs/*.pdf
+Skytronsystem/skytron_api/migrations/__pycache__/*.pyc
+Skytronsystem/skytron_api/migrations/0011_alter_devicecop_created.py

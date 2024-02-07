@@ -1,6 +1,6 @@
 # skytron_api/views.py
 from rest_framework.authtoken.models import Token 
-from django.http import JsonResponse
+from django.http import HttpResponseBadRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -45,6 +45,673 @@ from django.shortcuts import get_object_or_404
 
 from .serializers import ConfirmationSerializer
 from rest_framework.parsers import MultiPartParser
+
+
+from .models import DeviceStock
+from .serializers import DeviceStockSerializer
+
+
+import pandas as pd
+from rest_framework.parsers import FileUploadParser
+from rest_framework.response import Response
+from rest_framework.views import APIView 
+
+from rest_framework import generics
+from rest_framework import filters
+from .models import DeviceModel
+from .serializers import DeviceModelSerializer
+
+from django.core.files.storage import FileSystemStorage
+from rest_framework import generics, status
+from rest_framework.response import Response
+from .models import DeviceModel
+from .serializers import DeviceModelSerializer, DeviceModelFileUploadSerializer
+from django.conf import settings
+
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from .models import DeviceModel,DeviceTag
+from .serializers import DeviceModelSerializer
+
+
+from io import BytesIO
+
+from .models import DeviceCOP,StockAssignment
+from .serializers import DeviceCOPSerializer,DeviceModelFilterSerializer
+
+from .serializers import DeviceStockSerializer,DeviceStockFilterSerializer
+from .serializers import StockAssignmentSerializer, DeviceTagSerializer
+from django.utils import timezone
+import ast
+ 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def TagDevice2Vehicle(request):
+    # Extract data from the request or adjust as needed
+    device_id = int(request.data['device'])
+    user_id = request.user.id  # Assuming the user is authenticated
+    current_datetime = timezone.now()
+    uploaded_file = request.FILES.get('rcFile')
+    if uploaded_file:
+        file_path = 'cop_files/' + str(device_id) + '_' + uploaded_file.name
+        with open(file_path, 'wb') as file:
+            for chunk in uploaded_file.chunks():
+                file.write(chunk)
+             
+        device_tag = DeviceTag.objects.create(
+        device_id=device_id,
+        vehicle_owner_id=request.data['vehicle_owner'],
+        vehicle_reg_no=request.data['vehicle_reg_no'],
+        engine_no=request.data['engine_no'],
+        chassis_no=request.data['chassis_no'],
+        vehicle_make=request.data['vehicle_make'],
+        vehicle_model=request.data['vehicle_model'],
+        category=request.data['category'],
+        rc_file=file_path,
+        status='Dealer_OTP_Sent',
+        tagged_by=user_id,
+        tagged=current_datetime,
+    )
+
+    # Serialize the created data
+    serializer = DeviceTagSerializer(device_tag)
+
+    return JsonResponse({'data': serializer.data, 'message': 'Device taging successful.'}, status=201)
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def TagAwaitingOwnerApproval(request):
+    # Assuming you have user authentication in place
+    #user_id = request.user.id
+    # Retrieve device models with status "Manufacturer_OTP_Verified"
+    device_models = DeviceTag.objects.filter(status='Dealer_OTP_Verified')#created_by=user_id, 
+    # Serialize the data
+    serializer = DeviceTagSerializer(device_models, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def TagSendOwnerOtp(request ): 
+    device_model_id = request.data.get('device_id')
+    # Validate current status and update the status
+    device_model = get_object_or_404(DeviceTag, id=device_model_id,  status='Dealer_OTP_Verified')
+
+    device_model.status = 'Owner_OTP_Sent'
+    device_model.save()
+
+    return Response({"message": "Owner OTP sent successfully."}, status=200)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def TagVerifyOwnerOtp(request):
+    # Assuming you have user authentication in place
+    user_id = request.user.id
+    otp = request.data.get('otp')
+    device_tag_id = request.data.get('device_id')
+    if not otp or not otp.isdigit() or len(otp) != 6:
+        return HttpResponseBadRequest("Invalid OTP format")
+    device_tag = DeviceTag.objects.filter(device=device_tag_id, status='Owner_OTP_Sent') 
+
+    #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
+    device_tag = device_tag.first()
+    if otp == '123456':  # Replace with your actual OTP verification logic
+        device_tag.status = 'Owner_OTP_Verified'
+        device_tag.save()
+        return Response({"message": "Owner OTP verified successfully."}, status=200)
+    else:
+        return HttpResponseBadRequest("Invalid OTP")
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def TagVerifyDealerOtp(request  ):
+    # Assuming you have user authentication in place
+    user_id = request.user.id
+    otp = request.data.get('otp')
+    device_tag_id = request.data.get('device_id')
+    if not otp or not otp.isdigit() or len(otp) != 6:
+        return HttpResponseBadRequest("Invalid OTP format")
+    device_tag = DeviceTag.objects.filter(device=device_tag_id, status='Dealer_OTP_Sent') 
+
+    #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
+    device_tag = device_tag.first()
+    if otp == '123456':  # Replace with your actual OTP verification logic
+        device_tag.status = 'Dealer_OTP_Verified'
+        device_tag.save()
+        return Response({"message": "Dealer OTP verified successfully."}, status=200)
+    else:
+        return HttpResponseBadRequest("Invalid OTP")
+
+
+
+
+
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def ActivateESIMRequest(request):
+    device_id = int(request.data['device_id'])
+    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='Fitted')
+    stock_assignment.stock_status = 'ESIM_Active_Req_Sent'
+    stock_assignment.save()
+
+    # Serialize the updated data
+    serializer = StockAssignmentSerializer(stock_assignment)
+
+    return JsonResponse({'data': serializer.data, 'message': 'ESIM Active Request Sent successfully.'}, status=200)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def ConfirmESIMActivation(request):
+    device_id = int(request.data['device_id'])
+    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='ESIM_Active_Req_Sent')
+    stock_assignment.stock_status = 'ESIM_Active_Confirmed'
+    stock_assignment.save()
+    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='ESIM_Active_Confirmed')
+    
+    # Serialize the updated data
+    serializer = StockAssignmentSerializer(stock_assignment)
+
+    return JsonResponse({'data': serializer.data, 'message': 'ESIM Active Confirmed successfully.'}, status=200)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def ConfigureIPPort(request):
+    device_id = int(request.data['device_id'])
+    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='ESIM_Active_Confirmed')
+    stock_assignment.stock_status = 'IP_PORT_Configured'
+    stock_assignment.save()
+
+    # Serialize the updated data
+    serializer = StockAssignmentSerializer(stock_assignment)
+
+    return JsonResponse({'data': serializer.data, 'message': 'IP Port Configured successfully.'}, status=200)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def ConfigureSOSGateway(request):
+    device_id = int(request.data['device_id'])
+    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='IP_PORT_Configured')
+    stock_assignment.stock_status = 'SOS_GATEWAY_NO_Configured'
+    stock_assignment.save()
+
+    # Serialize the updated data
+    serializer = StockAssignmentSerializer(stock_assignment)
+
+    return JsonResponse({'data': serializer.data, 'message': 'SOS Gateway Configured successfully.'}, status=200)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def ConfigureSMSGateway(request):
+    device_id = int(request.data['device_id'])
+    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='SOS_GATEWAY_NO_Configured')
+    stock_assignment.stock_status = 'SMS_GATEWAY_NO_Configured'
+    stock_assignment.save()
+
+    # Serialize the updated data
+    serializer = StockAssignmentSerializer(stock_assignment)
+
+    return JsonResponse({'data': serializer.data, 'message': 'SMS Gateway Configured successfully.'}, status=200)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def MarkDeviceDefective(request):
+    device_id = int(request.data['device_id'])
+    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='SMS_GATEWAY_NO_Configured')
+    stock_assignment.stock_status = 'Device_Defective'
+    stock_assignment.save()
+
+    # Serialize the updated data
+    serializer = StockAssignmentSerializer(stock_assignment)
+
+    return JsonResponse({'data': serializer.data, 'message': 'Device Marked as Defective successfully.'}, status=200)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def ReturnToDeviceManufacturer(request):
+    device_id = int(request.data['device_id'])
+    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='Device_Defective')
+    stock_assignment.stock_status = 'Returned_to_manufacturer'
+    stock_assignment.save()
+
+    # Serialize the updated data
+    serializer = StockAssignmentSerializer(stock_assignment)
+
+    return JsonResponse({'data': serializer.data, 'message': 'Device Returned to Manufacturer successfully.'}, status=200)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def SellListAvailableDeviceStock(request):
+    # Get DeviceStock instances with StockAssignment having stock_status "Available_for_fitting"
+    device_stock = StockAssignment.objects.filter(stock_status='Available_for_fitting')
+    # Serialize the data
+    serializer =StockAssignmentSerializer(device_stock, many=True)
+    return JsonResponse({'data': serializer.data}, status=200)
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def SellFitDevice(request):
+    device_id=int(request.data['device_id'])
+    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='Available_for_fitting')
+    stock_assignment.stock_status = 'Fitted'
+    stock_assignment.save()
+    # Serialize the updated data
+    serializer = StockAssignmentSerializer(stock_assignment)
+    return JsonResponse({'data': serializer.data, 'message': 'Device Fitted  successfully.'}, status=200)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def StockAssignToRetailer(request):
+    # Deserialize the input data
+    data = request.data.copy()
+    data['assigned_by'] = request.user.id
+    data['assigned'] = timezone.now()
+    data['stock_status']= "Available_for_fitting"
+    data['dealer']=int(data['dealer'])
+    device_ids = ast.literal_eval(str(data['device']))
+     
+
+    # Create individual StockAssignment entries for each device
+    stock_assignments = []
+    for device_id in device_ids:
+        data['device'] = int(device_id)
+        serializer = StockAssignmentSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            stock_assignments.append(serializer.data)
+        else:
+            return JsonResponse({'error': serializer.errors}, status=400)
+
+    return JsonResponse({'data': stock_assignments, 'message': 'Stock assigned successfully.'}, status=201)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def deviceStockFilter(request):
+    # Deserialize the input data
+    serializer = DeviceStockFilterSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    # Filter DeviceStock instances based on parameters
+    device_stock = DeviceStock.objects.filter(**serializer.validated_data)
+
+    # Serialize the data
+    serializer = DeviceStockSerializer(device_stock, many=True)
+
+    return JsonResponse({'data': serializer.data}, status=200)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def deviceStockCreateBulk(request):
+    if 'excel_file' not in request.FILES or 'model_id' not in request.data:
+        return JsonResponse({'error': 'Please provide an Excel file and model_id.'}, status=400)
+
+    model_id = request.data['model_id']
+
+    try:
+        excel_data = pd.read_excel(request.FILES['excel_file'], engine='openpyxl')
+    except Exception as e:
+        return JsonResponse({'error': 'Error reading Excel file.', 'details': str(e)}, status=400)
+
+    headers = list(excel_data.columns)
+    success_count = 0
+    success_rows = []
+    error_rows = []
+
+    for index, row in excel_data.iterrows():
+        # Skip the header and example rows
+        if index == 0 or 'example' in str(row[0]).lower():
+            continue
+
+        # Extract data from the row
+        data = {
+            'model': model_id,
+            'device_esn': row.get('device_esn', ''),
+            'iccid': row.get('iccid', ''),
+            'imei': row.get('imei', ''),
+            'telecom_provider1': row.get('telecom_provider1', ''),
+            'telecom_provider2': row.get('telecom_provider2', ''),
+            'msisdn1': row.get('msisdn1', ''),
+            'msisdn2': row.get('msisdn2', ''),
+            'imsi1': row.get('imsi1', ''),
+            'imsi2': row.get('imsi2', ''),
+            'esim_validity': row.get('esim_validity', ''),
+            'esim_provider': row.get('esim_provider', ''),
+            'remarks': row.get('remarks', ''),
+            'created_by': request.user.id,
+            'created':timezone.now(),
+        }
+
+        # Validate and create DeviceStock instance
+        serializer = DeviceStockSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            success_count += 1
+            success_rows.append(index + 1)
+        else:
+            error_rows.append({'row': index + 1, 'errors': serializer.errors})
+
+    message = f'{success_count} out of {len(excel_data) - 1} provided stocks are successfully uploaded.'
+
+    response_data = {
+        'message': message,
+        'success_rows': success_rows,
+        'error_rows': error_rows,
+    }
+
+    return JsonResponse(response_data, status=200)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def deviceStockCreate(request):
+    # Deserialize the input data
+    data = request.data.copy()
+    data['created'] = timezone.now()  # Ensure you import timezone from django.utils
+    data['created_by'] = request.user.id
+
+    serializer = DeviceStockSerializer(data=data)
+    serializer.is_valid(raise_exception=True)
+
+    # Save the DeviceStock instance
+    serializer.save()
+
+    return Response(serializer.data, status=201)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def COPCreate(request):
+    # Assuming you have user authentication in place
+    manufacturer_id = request.user.id
+
+    # Create data for the new DeviceCOP entry
+    data = {
+        'created_by': manufacturer_id,
+        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        'status': 'Manufacturer_OTP_Sent',
+        'valid':True,
+        'latest':True,
+    }
+
+    # Attach the file to the request data
+    request_data = request.data.copy()
+    request_data.update(data)
+
+    # Create a serializer instance
+    serializer = DeviceCOPSerializer(data=request_data)
+
+    # Validate and save the data along with the file
+    if serializer.is_valid():
+        # Save the DeviceCOP instance
+        device_cop_instance = serializer.save()
+
+        # Handle the uploaded file
+        uploaded_file = request.FILES.get('cop_file')
+        if uploaded_file:
+            # Save the file to a specific location
+            file_path = 'cop_files/' + str(device_cop_instance.id) + '_' + uploaded_file.name
+            with open(file_path, 'wb') as file:
+                for chunk in uploaded_file.chunks():
+                    file.write(chunk)
+            
+            # Update the cop_file field in the DeviceCOP instance
+            device_cop_instance.cop_file = file_path
+            device_cop_instance.save()
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def COPAwaitingStateApproval(request):
+    # Assuming you have user authentication in place
+    #user_id = request.user.id
+
+    # Retrieve device models with status "Manufacturer_OTP_Verified"
+    device_models = DeviceCOP.objects.filter(status='Manufacturer_OTP_Verified')#created_by=user_id, 
+    
+    # Serialize the data
+    serializer = DeviceCOPSerializer(device_models, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def COPSendStateAdminOtp(request ): 
+    device_model_id = request.data.get('device_model_id')
+    # Validate current status and update the status
+    device_model = get_object_or_404(DeviceCOP, id=device_model_id,  status='Manufacturer_OTP_Verified')
+
+    device_model.status = 'StateAdminOTPSend'
+    device_model.save()
+
+    return Response({"message": "State Admin OTP sent successfully."}, status=200)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def COPVerifyStateAdminOtp(request):
+    device_model_id = request.data.get('device_model_id')
+    # Assuming you have user authentication in place
+    user_id = request.user.id
+    # Validate current status and update the status
+    device_model = get_object_or_404(DeviceCOP, id=device_model_id, created_by=user_id, status='StateAdminOTPSend')
+
+    # Additional logic for OTP verification can be added here if needed
+
+    device_model.status = 'StateAdminApproved'
+    device_model.save()
+
+    return Response({"message": "State Admin OTP verified and approval granted successfully."}, status=200)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def COPManufacturerOtpVerify(request  ):
+    # Assuming you have user authentication in place
+    user_id = request.user.id
+
+    # Validate OTP and update the status
+    otp = request.data.get('otp')
+    device_model_id = request.data.get('device_model_id')
+    if not otp or not otp.isdigit() or len(otp) != 6:
+        return HttpResponseBadRequest("Invalid OTP format")
+
+    device_model = get_object_or_404(DeviceCOP, id=device_model_id, created_by=user_id, status='Manufacturer_OTP_Sent')
+
+    # Verify OTP and update status
+    if otp == '123456':  # Replace with your actual OTP verification logic
+        device_model.status = 'Manufacturer_OTP_Verified'
+        device_model.save()
+        return Response({"message": "Manufacturer OTP verified successfully."}, status=200)
+    else:
+        return HttpResponseBadRequest("Invalid OTP")
+
+
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_devicemodel(request): 
+    device_models = DeviceModel.objects.all() 
+    serializer = DeviceModelSerializer(device_models, many=True) 
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_devicemodel(request):
+    # Deserialize the input parameters
+    serializer = DeviceModelFilterSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    # Filter DeviceModel instances based on parameters
+    device_models = DeviceModel.objects.filter(**serializer.validated_data)
+
+    # Serialize the data
+    serializer = DeviceModelSerializer(device_models, many=True)
+
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def details_devicemodel(request ): 
+    
+    device_model_id = request.data.get('device_model_id')
+    device_model = get_object_or_404(DeviceModel, id=device_model_id)
+ 
+    serializer = DeviceModelSerializer(device_model)
+
+    return Response(serializer.data)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def DeviceModelAwaitingStateApproval(request):
+    # Assuming you have user authentication in place
+    #user_id = request.user.id
+
+    # Retrieve device models with status "Manufacturer_OTP_Verified"
+    device_models = DeviceModel.objects.filter(status='Manufacturer_OTP_Verified')#created_by=user_id, 
+    
+    # Serialize the data
+    serializer = DeviceModelSerializer(device_models, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def DeviceSendStateAdminOtp(request ): 
+    device_model_id = request.data.get('device_model_id')
+    # Validate current status and update the status
+    device_model = get_object_or_404(DeviceModel, id=device_model_id,  status='Manufacturer_OTP_Verified')
+
+    device_model.status = 'StateAdminOTPSend'
+    device_model.save()
+
+    return Response({"message": "State Admin OTP sent successfully."}, status=200)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def DeviceVerifyStateAdminOtp(request):
+    
+    device_model_id = request.data.get('device_model_id')
+    # Assuming you have user authentication in place
+    user_id = request.user.id
+
+    # Validate current status and update the status
+    device_model = get_object_or_404(DeviceModel, id=device_model_id, created_by=user_id, status='StateAdminOTPSend')
+
+    # Additional logic for OTP verification can be added here if needed
+
+    device_model.status = 'StateAdminApproved'
+    device_model.save()
+
+    return Response({"message": "State Admin OTP verified and approval granted successfully."}, status=200)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def DeviceCreateManufacturerOtpVerify(request  ):
+    # Assuming you have user authentication in place
+    user_id = request.user.id
+
+    # Validate OTP and update the status
+    otp = request.data.get('otp')
+    device_model_id = request.data.get('device_model_id')
+    if not otp or not otp.isdigit() or len(otp) != 6:
+        return HttpResponseBadRequest("Invalid OTP format")
+
+    device_model = get_object_or_404(DeviceModel, id=device_model_id, created_by=user_id, status='Manufacturer_OTP_Sent')
+
+    # Verify OTP and update status
+    if otp == '123456':  # Replace with your actual OTP verification logic
+        device_model.status = 'Manufacturer_OTP_Verified'
+        device_model.save()
+        return Response({"message": "Manufacturer OTP verified successfully."}, status=200)
+    else:
+        return HttpResponseBadRequest("Invalid OTP")
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_device_model(request):
+    # Assuming you have user authentication in place
+    user_id = request.user.id
+
+    # Create data for the new DeviceModel entry
+    data = {
+        'created_by': user_id,
+        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        'status': 'Manufacturer_OTP_Sent',
+    }
+
+    # Attach the file to the request data
+    request_data = request.data.copy()
+    request_data.update(data)
+    print("requestdata",request_data) 
+    serializer = DeviceModelSerializer(data=request_data)
+
+    # Validate and save the data along with the file
+    if serializer.is_valid():
+        # Save the DeviceModel instance
+        device_model_instance = serializer.save()
+        # Handle the uploaded file
+        uploaded_file = request.FILES.get('tac_doc_path')
+        if uploaded_file:
+            # Save the file to a specific location
+            file_path = '' + str(device_model_instance.id) + '_' + uploaded_file.name
+            with open(file_path, 'wb') as file:
+                for chunk in uploaded_file.chunks():
+                    file.write(chunk)
+            
+            # Update the tac_doc_path field in the DeviceModel instance
+            device_model_instance.tac_doc_path = file_path
+            device_model_instance.save()
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class DeviceModelUpdateView(generics.UpdateAPIView):
+    queryset = DeviceModel.objects.all()
+    serializer_class = DeviceModelFileUploadSerializer
+
+    def perform_update(self, serializer):
+        file = self.request.FILES.get('tac_doc_path', None)
+        if file:
+            fs = FileSystemStorage(location=settings.MEDIA_ROOT + '/tac_docs/')
+            filename = fs.save(file.name, file)
+            tac_doc_path = 'tac_docs/' + filename
+            serializer.validated_data['tac_doc_path'] = tac_doc_path
+        serializer.save()
+
+class DeviceModelFilterView(generics.ListAPIView):
+    queryset = DeviceModel.objects.all()
+    serializer_class = DeviceModelSerializer
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['model_name', 'test_agency', 'vendor_id', 'status']
+
+class DeviceModelDetailView(generics.RetrieveAPIView):
+    queryset = DeviceModel.objects.all()
+    serializer_class = DeviceModelSerializer
+
+class DeviceModelDeleteView(generics.DestroyAPIView):
+    queryset = DeviceModel.objects.all()
+    serializer_class = DeviceModelSerializer
+
 
 
 
@@ -259,7 +926,8 @@ class DeleteAllUsersView(APIView):
             User = get_user_model()
 
             # Delete all users
-            User.objects.all().delete()
+            User.objects.get(id=31 ).delete()
+            #User.objects.all().delete()
 
             return Response({'message': 'All users deleted successfully.'}, status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
@@ -592,6 +1260,8 @@ def update_vehicle(request, vehicle_id):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+
+
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_vehicle(request, vehicle_id):
@@ -795,13 +1465,6 @@ def create_device(request):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def create_device_model(request):
-    serializer = DeviceModelSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save(createdby=request.user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ 
 
  

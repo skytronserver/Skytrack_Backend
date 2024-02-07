@@ -143,18 +143,141 @@ class Device(models.Model):
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
     created = models.DateField(auto_now_add=True)
 
+
+
+
+
 class DeviceModel(models.Model):
-    deviceModel = models.CharField(max_length=255, verbose_name="Device Model")
-    status_choices = [
-        ('active', 'Active'),
-        ('discontinued', 'Discontinued'),
+    STATUS_CHOICES = [
+        ('Manufacturer_OTP_Sent', 'Manufacturer OTP Sent'),
+        ('Manufacturer_OTP_Verified', 'Manufacturer OTP Verified'),
+        ('StateAdminOTPSend', 'State Admin OTP Sent'),
+        ('StateAdminApproved', 'State Admin Approved'),
     ]
-    status = models.CharField(max_length=20, choices=status_choices)
-    hardwareVersion = models.CharField(max_length=255, verbose_name="Hardware Version")
-    softwareLatestVersion = models.CharField(max_length=20)
-    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
-    created = models.DateField(auto_now_add=True)
+
+    model_name = models.CharField(max_length=255)
+    test_agency = models.CharField(max_length=255)
+    vendor_id = models.CharField(max_length=255)
+    tac_no = models.CharField(max_length=255)
+    tac_validity = models.DateField()
+    hardware_version = models.CharField(max_length=255)
+    created_by = models.IntegerField()
+    created = models.DateTimeField()
+    status = models.CharField(max_length=255, choices=STATUS_CHOICES)
+    tac_doc_path = models.FileField(upload_to='tac_docs/', null=True, blank=True)
+
+
+class DeviceStock(models.Model):
+    model = models.ForeignKey(DeviceModel, on_delete=models.CASCADE)
+    device_esn = models.CharField(max_length=255)
+    iccid = models.CharField(max_length=255)
+    imei = models.CharField(max_length=255)
+    telecom_provider1 = models.CharField(max_length=255)
+    telecom_provider2 = models.CharField(max_length=255, blank=True, null=True)
+    msisdn1 = models.CharField(max_length=255)
+    msisdn2 = models.CharField(max_length=255, blank=True, null=True)
+    imsi1 = models.CharField(max_length=255)
+    imsi2 = models.CharField(max_length=255, blank=True, null=True)
+    esim_validity = models.DateTimeField()
+    esim_provider = models.CharField(max_length=255)
+    remarks = models.TextField(blank=True, null=True)
+    created = models.DateTimeField()
+    created_by = models.IntegerField()
+
+    def __str__(self):
+        return f"{self.model} - ESN: {self.device_esn}"
     
+class DeviceCOP(models.Model):
+    STATUS_CHOICES = [
+        ('Manufacturer_OTP_Sent', 'Manufacturer OTP Sent'),
+        ('Manufacturer_OTP_Verified', 'Manufacturer OTP Verified'),
+        ('StateAdminOTPSend', 'State Admin OTP Sent'),
+        ('StateAdminApproved', 'State Admin Approved'),
+    ]
+
+    device_model = models.ForeignKey(DeviceModel, on_delete=models.CASCADE)
+    cop_no = models.CharField(max_length=255)
+    cop_validity = models.DateField()
+    cop_file = models.FileField(upload_to='cop_files/', null=True, blank=True)
+    created_by = models.IntegerField()  # Assuming this is the Manufacturer ID
+    created = models.DateTimeField()
+    valid = models.BooleanField(default=True)
+    latest = models.BooleanField(default=True)
+    status = models.CharField(max_length=255, choices=STATUS_CHOICES)
+
+    def __str__(self):
+        return f"{self.device_model} - COP: {self.cop_no}"
+ 
+class StockAssignment(models.Model):
+    STATUS_CHOICES = [
+        ('In_transit_to_dealer', 'In Transit to Dealer'),
+        ('Available_for_fitting', 'Available for Fitting'),
+        ('Fitted', 'Fitted'),
+        ('ESIM_Active_Req_Sent', 'ESIM Active Request Sent'),
+        ('ESIM_Active_Confirmed', 'ESIM Active Confirmed'),
+        ('IP_PORT_Configured', 'IP Port Configured'),
+        ('SOS_GATEWAY_NO_Configured', 'SOS Gateway No Configured'),
+        ('SMS_GATEWAY_NO_Configured', 'SMS Gateway No Configured'),
+        ('Device_Defective', 'Device Defective'),
+        ('Returned_to_manufacturer', 'Returned to Manufacturer'),
+    ]
+
+    device = models.ForeignKey(DeviceStock, on_delete=models.CASCADE)
+    dealer =  models.ForeignKey(Retailer, on_delete=models.CASCADE)
+    assigned_by = models.ForeignKey(User, on_delete=models.CASCADE)   
+    assigned = models.DateTimeField()
+    shipping_remark = models.TextField()
+    stock_status = models.CharField(max_length=255, choices=STATUS_CHOICES)
+
+class DeviceTag(models.Model):
+    STATUS_CHOICES = [
+        ('Dealer_OTP_Sent', 'Dealer OTP Sent'),
+        ('Dealer_OTP_Verified', 'Dealer OTP Verified'),
+        ('Owner_OTP_Sent', 'Owner OTP Sent'),
+        ('Owner_OTP_Verified', 'Owner OTP Verified'),
+        ('RegNo_Configuration_SentToDevice', 'Reg No Configuration Sent to Device'),
+        ('RegNo_Configuration_Confirmed', 'Reg No Configuration Confirmed'),
+        ('Live_Location_Confirmed', 'Live Location Confirmed'),
+        ('SOS_Confirmed', 'SOS Confirmed'),
+        ('Device_Active', 'Device Active'),
+        ('Device_Not_Active', 'Device Not Active'),
+        ('Device_Untagged', 'Device Untagged'),
+    ]
+
+    device = models.ForeignKey(DeviceStock, on_delete=models.CASCADE)
+    vehicle_owner = models.ForeignKey(User, on_delete=models.CASCADE)
+   
+    vehicle_reg_no = models.CharField(max_length=255)
+    engine_no = models.CharField(max_length=255)
+    chassis_no = models.CharField(max_length=255)
+    vehicle_make = models.CharField(max_length=255)
+    vehicle_model = models.CharField(max_length=255)
+    category = models.CharField(max_length=255)
+    rc_file = models.CharField(max_length=255)
+    status = models.CharField(max_length=255, choices=STATUS_CHOICES)
+    tagged_by = models.IntegerField()
+    tagged = models.DateTimeField()
+    def __str__(self):
+        return self.vehicle_reg_no
+
+class IPList(models.Model):
+    STATUS_CHOICES = [
+        ('Valid', 'Valid'),
+        # Add other status options
+    ]
+
+    ip1 = models.GenericIPAddressField()
+    port1 = models.CharField(max_length=4)
+    ip2 = models.GenericIPAddressField()
+    port2 = models.CharField(max_length=4)
+    ip_im = models.GenericIPAddressField()
+    port_im = models.CharField(max_length=4)
+    rule = models.TextField()
+    status = models.CharField(max_length=255, choices=STATUS_CHOICES)
+
+
+    
+
 class FOTA(models.Model):
     deviceMode = models.IntegerField(verbose_name="Device Mode")
     status = models.CharField(max_length=10, choices=[("active", "Active"), ("notactive", "Not Active")], verbose_name="Status")
@@ -190,18 +313,7 @@ class Vehicle(models.Model):
     def __str__(self):
         return self.vregno
 
-class Tracking(models.Model):
-    created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
-
-    def __str__(self):
-        return f"Tracking {self.id}"
-
-class TrackingLog(models.Model):
-    created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
-
-    def __str__(self):
-        return f"TrackingLog {self.id}"
-
+ 
 class Session(models.Model):
     loginTime = models.DateTimeField(default=timezone.now, verbose_name="Login Time")
     user = models.IntegerField(verbose_name="User")
@@ -234,6 +346,7 @@ class EditRequest(models.Model):
 
     def __str__(self):
         return f"EditRequest {self.id}"
+ 
 
 class Settings(models.Model):
     velid_time = models.DateTimeField(auto_now_add=True, verbose_name="Valid Time")
@@ -245,3 +358,4 @@ class Settings(models.Model):
 
     def __str__(self):
         return f"Settings {self.id}"
+  
