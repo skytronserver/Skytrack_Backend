@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['216.10.244.243']
+ALLOWED_HOSTS = ['216.10.244.243','skytrack.tech']
 
 DATA_UPLOAD_MAX_NUMBER_FIELD = 71193766
 # Application definition
@@ -44,7 +44,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'drf_spectacular', 
     'corsheaders',
-    'skytron_api',
+    'skytron_api',"django_extensions",
 ]
 
 MIDDLEWARE = [

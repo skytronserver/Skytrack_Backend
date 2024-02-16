@@ -34,6 +34,7 @@ from .serializers import UserSerializer, SessionSerializer
 from django.contrib.auth.hashers import make_password, check_password
 
 
+from django.db import transaction
 
 from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
@@ -58,7 +59,7 @@ from rest_framework.views import APIView
 
 from rest_framework import generics
 from rest_framework import filters
-from .models import DeviceModel
+from .models import DeviceModel,User
 from .serializers import DeviceModelSerializer
 
 from django.core.files.storage import FileSystemStorage
@@ -78,10 +79,10 @@ from .serializers import DeviceModelSerializer
 
 from io import BytesIO
 
-from .models import DeviceCOP,StockAssignment
+from .models import VehicleOwner,DeviceCOP,StockAssignment,eSimProvider
 from .serializers import DeviceCOPSerializer,DeviceModelFilterSerializer
 
-from .serializers import DeviceStockSerializer,DeviceStockFilterSerializer
+from .serializers import VehicleOwnerSerializer,eSimProviderSerializer, DeviceStockSerializer,DeviceStockFilterSerializer
 from .serializers import StockAssignmentSerializer, DeviceTagSerializer
 from django.utils import timezone
 import ast
@@ -89,6 +90,509 @@ import ast
 from django.views.static import serve
 from django.conf import settings
 from django.http import HttpResponse
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def create_VehicleOwner(request):
+    try:
+        # Extract necessary parameters from the request data
+        company_name = request.data.get('company_name')
+
+        email = request.data.get('email', '')
+        mobile = request.data.get('mobile', '')
+        name = request.data.get('name', '')
+        createdby = request.user 
+        date_joined = timezone.now()
+        created = timezone.now() 
+        is_active = True
+        is_staff = False
+        status = 'active'
+        # Additional parameters
+        idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+
+        # File uploads
+        file_idProof = request.data.get('file_idProof')
+        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        hashed_password = make_password(new_password)
+        
+        # Create User instance
+        user = User.objects.create(
+            name=name,
+            email=email,
+            mobile=mobile,
+            role='owner',
+            createdby=createdby.id,
+            date_joined=date_joined,
+            created=created, 
+            is_active=is_active,
+            is_staff=is_staff,
+            status=status,
+            password  = hashed_password
+        )
+        # Save the User instance
+        try:
+            
+            send_mail(
+                    'Vehicle Owner Account Created',
+                    f'Temporery password is : {new_password}',
+                    'test@skytrack.tech',
+                    [email],
+                    fail_silently=False,
+            ) 
+        except:
+            pass
+            #return Response({'error': "Error in sendig email"}, status=500)
+
+
+        user.save()
+
+        # Create Manufacturer instance
+        retailer = VehicleOwner.objects.create(
+            company_name=company_name, 
+            created=created,
+            expirydate=expirydate, 
+            idProofno=idProofno, 
+            file_idProof=file_idProof,
+            createdby=createdby,
+            status="Created",
+        ) 
+        retailer.users.add(user) 
+        return Response(VehicleOwnerSerializer(retailer).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_VehicleOwner(request):
+    try:
+        # Get filter parameters from the request
+        dealer_id = request.data.get('eSimProvider_id', None)
+        email = request.data.get('email', '')
+        company_name = request.data.get('company_name', '')
+        name = request.data.get('name', '')
+        phone_no = request.data.get('phone_no', '')
+        address = request.data.get('address', '')
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+
+        # Add ID filter if provided
+        if dealer_id :
+            manufacturers = VehicleOwner.objects.filter(
+                id=dealer_id ,
+                users__email__icontains=email,
+                company_name__icontains=company_name,
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+        else:
+            manufacturers = VehicleOwner.objects.filter(
+                #id=manufacturer_id,
+                users__email__icontains=email,
+                company_name__icontains=company_name,
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+
+        # Serialize the queryset
+        retailer_serializer = VehicleOwnerSerializer(manufacturers, many=True)
+
+        # Return the serialized data as JSON response
+        return Response(retailer_serializer.data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def create_eSimProvider(request):
+    try:
+        # Extract necessary parameters from the request data
+        company_name = request.data.get('company_name')
+        gstnnumber = request.data.get('gstnnumber')
+        email = request.data.get('email', '')
+        mobile = request.data.get('mobile', '')
+        name = request.data.get('name', '')
+        createdby = request.user 
+        date_joined = timezone.now()
+        created = timezone.now() 
+        is_active = True
+        is_staff = False
+        status = 'active'
+        # Additional parameters
+        gstno = request.data.get('gstno', '')  # Placeholder for gstno
+        idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+
+        # File uploads
+        file_authLetter = request.data.get('file_authLetter')
+        file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_GSTCertificate = request.data.get('file_GSTCertificate')
+        file_idProof = request.data.get('file_idProof')
+        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        hashed_password = make_password(new_password)
+        
+        # Create User instance
+        user = User.objects.create(
+            name=name,
+            email=email,
+            mobile=mobile,
+            role='esimprovider',
+            createdby=createdby.id,
+            date_joined=date_joined,
+            created=created, 
+            is_active=is_active,
+            is_staff=is_staff,
+            status=status,
+            password  = hashed_password
+        )
+        # Save the User instance
+        try:
+            
+            send_mail(
+                    'E Sim Provider Account Created',
+                    f'Temporery password is : {new_password}',
+                    'test@skytrack.tech',
+                    [email],
+                    fail_silently=False,
+            ) 
+        except:
+            pass
+            #return Response({'error': "Error in sendig email"}, status=500)
+
+
+        user.save()
+
+        # Create Manufacturer instance
+        retailer = eSimProvider.objects.create(
+            company_name=company_name,
+            gstnnumber=gstnnumber,
+            created=created,
+            expirydate=expirydate,
+            gstno=gstno,
+            idProofno=idProofno,
+            file_authLetter=file_authLetter,
+            file_companRegCertificate=file_companRegCertificate,
+            file_GSTCertificate=file_GSTCertificate,
+            file_idProof=file_idProof,
+            createdby=createdby,
+            status="Created",
+        )
+
+        # Add the user to the manufacturer's users
+        retailer.users.add(user)
+ 
+        return Response(eSimProviderSerializer(retailer).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_eSimProvider(request):
+    try:
+        # Get filter parameters from the request
+        dealer_id = request.data.get('eSimProvider_id', None)
+        email = request.data.get('email', '')
+        company_name = request.data.get('company_name', '')
+        name = request.data.get('name', '')
+        phone_no = request.data.get('phone_no', '')
+        address = request.data.get('address', '')
+
+     
+        if dealer_id :
+            manufacturers = eSimProvider.objects.filter(
+                id=dealer_id ,
+                users__email__icontains=email,
+                company_name__icontains=company_name,
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+        else:
+            manufacturers = eSimProvider.objects.filter(
+                #id=manufacturer_id,
+                users__email__icontains=email,
+                company_name__icontains=company_name,
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+
+        # Serialize the queryset
+        retailer_serializer = eSimProviderSerializer(manufacturers, many=True)
+
+        # Return the serialized data as JSON response
+        return Response(retailer_serializer.data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def create_dealer(request):
+    try:
+        # Extract necessary parameters from the request data
+        company_name = request.data.get('company_name')
+        gstnnumber = request.data.get('gstnnumber')
+        email = request.data.get('email', '')
+        mobile = request.data.get('mobile', '')
+        name = request.data.get('name', '')
+        createdby = request.user 
+        date_joined = timezone.now()
+        created = timezone.now() 
+        is_active = True
+        is_staff = False
+        status = 'active'
+        # Additional parameters
+        gstno = request.data.get('gstno', '')  # Placeholder for gstno
+        idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+
+        # File uploads
+        file_authLetter = request.data.get('file_authLetter')
+        file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_GSTCertificate = request.data.get('file_GSTCertificate')
+        file_idProof = request.data.get('file_idProof')
+        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        hashed_password = make_password(new_password)
+        
+        # Create User instance
+        user = User.objects.create(
+            name=name,
+            email=email,
+            mobile=mobile,
+            role='dealer',
+            createdby=createdby.id,
+            date_joined=date_joined,
+            created=created, 
+            is_active=is_active,
+            is_staff=is_staff,
+            status=status,
+            password  = hashed_password
+        )
+        # Save the User instance
+        try:
+            
+            send_mail(
+                    'Dealer Account Created',
+                    f'Temporery password is : {new_password}',
+                    'test@skytrack.tech',
+                    [email],
+                    fail_silently=False,
+            ) 
+        except:
+            pass
+            #return Response({'error': "Error in sendig email"}, status=500)
+
+
+        user.save()
+
+        # Create Manufacturer instance
+        retailer = Retailer.objects.create(
+            company_name=company_name,
+            gstnnumber=gstnnumber,
+            created=created,
+            expirydate=expirydate,
+            gstno=gstno,
+            idProofno=idProofno,
+            file_authLetter=file_authLetter,
+            file_companRegCertificate=file_companRegCertificate,
+            file_GSTCertificate=file_GSTCertificate,
+            file_idProof=file_idProof,
+            createdby=createdby,
+            status="Created",
+        )
+
+        # Add the user to the manufacturer's users
+        retailer.users.add(user)
+ 
+        return Response(RetailerSerializer(retailer).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_dealer(request):
+    try:
+        # Get filter parameters from the request
+        dealer_id = request.data.get('dealer_id', None)
+        email = request.data.get('email', '')
+        company_name = request.data.get('company_name', '')
+        name = request.data.get('name', '')
+        phone_no = request.data.get('phone_no', '')
+        address = request.data.get('address', '')
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+
+        # Add ID filter if provided
+        if dealer_id :
+            manufacturers = Retailer.objects.filter(
+                id=dealer_id ,
+                users__email__icontains=email,
+                company_name__icontains=company_name,
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+        else:
+            manufacturers = Retailer.objects.filter(
+                #id=manufacturer_id,
+                users__email__icontains=email,
+                company_name__icontains=company_name,
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+
+        # Serialize the queryset
+        retailer_serializer = RetailerSerializer(manufacturers, many=True)
+
+        # Return the serialized data as JSON response
+        return Response(retailer_serializer.data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def create_manufacturer(request):
+    try:
+        # Extract necessary parameters from the request data
+        company_name = request.data.get('company_name')
+        gstnnumber = request.data.get('gstnnumber')
+        email = request.data.get('email', '')
+        mobile = request.data.get('mobile', '')
+        name = request.data.get('name', '')
+        createdby = request.user 
+        date_joined = timezone.now()
+        created = timezone.now() 
+        is_active = True
+        is_staff = False
+        status = 'active'
+        # Additional parameters
+        gstno = request.data.get('gstno', '')  # Placeholder for gstno
+        idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+
+        # File uploads
+        file_authLetter = request.data.get('file_authLetter')
+        file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_GSTCertificate = request.data.get('file_GSTCertificate')
+        file_idProof = request.data.get('file_idProof')
+        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        hashed_password = make_password(new_password)
+        
+        # Create User instance
+        user = User.objects.create(
+            name=name,
+            email=email,
+            mobile=mobile,
+            role='devicemanufacture',
+            createdby=createdby.id,
+            date_joined=date_joined,
+            created=created, 
+            is_active=is_active,
+            is_staff=is_staff,
+            status=status,
+            password  = hashed_password
+        )
+        # Save the User instance
+        try:
+            
+            send_mail(
+                    'Device Manufacturere Account Created',
+                    f'Temporery password is : {new_password}',
+                    'test@skytrack.tech',
+                    [email],
+                    fail_silently=False,
+            ) 
+        except:
+            pass
+            #return Response({'error': "Error in sendig email"}, status=500)
+
+
+        user.save()
+
+        # Create Manufacturer instance
+        manufacturer = Manufacturer.objects.create(
+            company_name=company_name,
+            gstnnumber=gstnnumber,
+            created=created,
+            expirydate=expirydate,
+            gstno=gstno,
+            idProofno=idProofno,
+            file_authLetter=file_authLetter,
+            file_companRegCertificate=file_companRegCertificate,
+            file_GSTCertificate=file_GSTCertificate,
+            file_idProof=file_idProof,
+            createdby=createdby,
+            status="Created",
+        )
+
+        # Add the user to the manufacturer's users
+        manufacturer.users.add(user)
+ 
+        return Response(ManufacturerSerializer(manufacturer).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_manufacturers(request):
+    try:
+        # Get filter parameters from the request
+        manufacturer_id = request.data.get('manufacturer_id', None)
+        email = request.data.get('email', '')
+        company_name = request.data.get('company_name', '')
+        name = request.data.get('name', '')
+        phone_no = request.data.get('phone_no', '')
+        address = request.data.get('address', '')
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+
+        # Add ID filter if provided
+        if manufacturer_id :
+            manufacturers = Manufacturer.objects.filter(
+                id=manufacturer_id,
+                users__email__icontains=email,
+                company_name__icontains=company_name,
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+        else:
+            manufacturers = Manufacturer.objects.filter(
+                #id=manufacturer_id,
+                users__email__icontains=email,
+                company_name__icontains=company_name,
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+
+        # Serialize the queryset
+        manufacturer_serializer = ManufacturerSerializer(manufacturers, many=True)
+
+        # Return the serialized data as JSON response
+        return Response(manufacturer_serializer.data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
 def download_static_file(request):
     file_path = f"skytron_api/static/StockUpload.xlsx"
     try:
@@ -1449,7 +1953,7 @@ def update_device_model(request, pk):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+'''
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_manufacturer(request):
@@ -1479,4 +1983,4 @@ def create_device(request):
 
  
 
- 
+'''

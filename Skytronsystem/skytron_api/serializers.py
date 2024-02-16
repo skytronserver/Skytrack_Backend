@@ -6,9 +6,9 @@ from .models import Manufacturer, Retailer, Device, DeviceModel
 from .models import Confirmation
 from .models import Vehicle
 from .models import DeviceStock,DeviceTag
-from .models import DeviceCOP
+from .models import DeviceCOP,eSimProvider
 
-from .models import StockAssignment
+from .models import StockAssignment,VehicleOwner
 
 class DeviceTagSerializer(serializers.ModelSerializer):
     class Meta:
@@ -64,14 +64,29 @@ class UserSerializer(serializers.ModelSerializer):
         fields = '__all__'    #, deleting, list view of all , detail view.
 
 class ManufacturerSerializer(serializers.ModelSerializer):
+    users = UserSerializer(many=True, read_only=True)
     class Meta:
         model = Manufacturer
         fields = '__all__'
 
 class RetailerSerializer(serializers.ModelSerializer):
+    users = UserSerializer(many=True, read_only=True)
     class Meta:
         model = Retailer
         fields = '__all__'
+
+class eSimProviderSerializer(serializers.ModelSerializer):
+    users = UserSerializer(many=True, read_only=True)
+    class Meta:
+        model = eSimProvider
+        fields = '__all__'
+class VehicleOwnerSerializer(serializers.ModelSerializer):
+    users = UserSerializer(many=True, read_only=True)
+    class Meta:
+        model = VehicleOwner 
+        fields = '__all__'
+
+
 
 class DeviceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -121,16 +136,7 @@ class ConfirmationSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-
-class ManufacturerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Manufacturer
-        fields = '__all__'
-
-class RetailerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Retailer
-        fields = '__all__'
+  
 
 class DeviceSerializer(serializers.ModelSerializer):
     class Meta:

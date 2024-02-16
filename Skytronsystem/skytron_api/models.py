@@ -27,35 +27,24 @@ class CustomUserManager(BaseUserManager):
 
 class User(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(max_length=255, verbose_name="Name") 
-    companyName=models.CharField(max_length=255, default='',verbose_name="companyName") 
+    #companyName=models.CharField(max_length=255, default='',verbose_name="companyName") 
     #username = models.EmailField(unique=True, verbose_name="Username")
     email = models.EmailField(unique=True, verbose_name="Email")
-    address = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address")
-    address_pin = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address Pin")
     mobile = models.CharField(max_length=15, unique=True, verbose_name="Mobile")
-    role = models.CharField(max_length=20, choices=[("superadmin", "Super Admin"), ("stateadmin", "State Admin"), ("devicemanufacture", "Device Manufacture"), ("dealer", "Dealer"), ("owner", "Owner"), ("filment", "Filment"), ("sosadmin", "SOS Admin"), ("teamleader", "Team Leader"), ("sosexecutive", "SOS Executive")], verbose_name="Role")
+    role = models.CharField(max_length=20, choices=[("superadmin", "Super Admin"), ("stateadmin", "State Admin"), ("devicemanufacture", "Device Manufacture"), ("dealer", "Dealer"), ("owner", "Owner"), ("esimprovider", "eSimProvider"), ("filment", "Filment"), ("sosadmin", "SOS Admin"), ("teamleader", "Team Leader"), ("sosexecutive", "SOS Executive")], verbose_name="Role")
     usertype = models.CharField(max_length=10, default='main', verbose_name="User Type")
-    roleassign = models.JSONField(default=list, verbose_name="Role Assign")
-    parent = models.CharField(max_length=255, blank=True, null=True, verbose_name="Parent")
-    stateid = models.CharField(max_length=255, blank=True, null=True, verbose_name="State ID")
-    status = models.CharField(max_length=10, choices=[("active", "Active"), ("deactive", "Deactive")], verbose_name="Status")
-    dob = models.CharField(max_length=255, blank=True, null=True, verbose_name="Date of Birth")
-    panfile = models.CharField(max_length=255, blank=True, null=True, verbose_name="PAN File")
-    kyctype = models.CharField(max_length=255, blank=True, null=True, verbose_name="KYC Type")
-    kycdocnumber = models.CharField(max_length=255, blank=True, null=True, verbose_name="KYC Doc Number")
-    #kycfile = models.CharField(max_length=255, blank=True, null=True, verbose_name="KYC File")
-    kycfile = models.FileField(upload_to='kyc_files/', null=True, blank=True, verbose_name="KYC File")
-    mobileotp = models.CharField(max_length=255, blank=True, null=True, verbose_name="Mobile OTP")
-    mobileotpsend = models.CharField(max_length=255, blank=True, null=True, verbose_name="Mobile OTP Send")
-    token = models.CharField(max_length=255, blank=True, null=True, verbose_name="Token")
-    gstnnumber = models.CharField(max_length=255, blank=True, null=True, verbose_name="GSTN Number")
     createdby = models.CharField(max_length=255, verbose_name="Created By")
+    date_joined = models.DateTimeField(default=timezone.now)
     created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
     Access = models.JSONField(default=list, verbose_name="Access")
     password = models.CharField(max_length=100,default='12345678')  # Assuming 32 characters for MD5 hash
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    date_joined = models.DateTimeField(default=timezone.now)
+    address = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address")
+    address_pin = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address Pin")
+    address_State = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address State")
+    dob = models.CharField(max_length=255, blank=True, null=True, verbose_name="Date of Birth")
+    status = models.CharField(max_length=10, choices=[("active", "Active"), ("deactive", "Deactive")], verbose_name="Status")
 
     objects = CustomUserManager()
 
@@ -103,27 +92,90 @@ class Confirmation(models.Model):
 
 class Manufacturer(models.Model):
     company_name = models.CharField(max_length=255, verbose_name="Company Name")
-    address = models.CharField(max_length=255, blank=True, null=True)
-    address_pin = models.CharField(max_length=10, blank=True, null=True)
     gstnnumber = models.CharField(max_length=20, blank=True, null=True)
-    users = models.ManyToManyField('User', related_name='manufacturers')
-    deviceModel = models.ManyToManyField('DeviceModel', related_name='manufacturers', blank=True)
-    retailer = models.ManyToManyField('Retailer', related_name='manufacturers', blank=True)
-    document_path = models.CharField(max_length=255, blank=True, null=True)
-    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    users = models.ManyToManyField('User', related_name='manufacturers_user')
     created = models.DateField(auto_now_add=True)
-    Access = models.ManyToManyField('User', related_name='manufacturer_access', blank=True)
+    expirydate = models.DateField(auto_now_add=True)
+    gstno = models.CharField(max_length=255, blank=True, null=True)
+    idProofno = models.CharField(max_length=255, blank=True, null=True)
+    file_authLetter = models.CharField(max_length=255, blank=True, null=True)
+    file_companRegCertificate = models.CharField(max_length=255, blank=True, null=True)
+    file_GSTCertificate = models.CharField(max_length=255, blank=True, null=True)
+    file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    status_choices = [
+            ('Created', 'Created'),
+            ('UserVerified', 'UserVerified'),
+            ('StateAdminVerified', 'StateAdminVerified'),
+            ('UserExpired', 'UserExpired'), 
+            ('Discontinued', 'Discontinued'),
+        ]
+    status = models.CharField(max_length=20, choices=status_choices)
 
-class Retailer(models.Model):
-    name = models.CharField(max_length=255, verbose_name="Name")
-    address = models.CharField(max_length=255, blank=True, null=True)
-    address_pin = models.CharField(max_length=10, blank=True, null=True)
+class eSimProvider(models.Model):
+    company_name = models.CharField(max_length=255, verbose_name="Company Name")
     gstnnumber = models.CharField(max_length=20, blank=True, null=True)
-    document_path = models.CharField(max_length=255, blank=True, null=True)
-    users = models.ManyToManyField('User', related_name='retailers')
-    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    users = models.ManyToManyField('User', related_name='eSimProvider_User')
     created = models.DateField(auto_now_add=True)
-    Access = models.ManyToManyField('User', related_name='retailer_access', blank=True)
+    expirydate = models.DateField(auto_now_add=True)
+    gstno = models.CharField(max_length=255, blank=True, null=True)
+    idProofno = models.CharField(max_length=255, blank=True, null=True)
+    file_authLetter = models.CharField(max_length=255, blank=True, null=True)
+    file_companRegCertificate = models.CharField(max_length=255, blank=True, null=True)
+    file_GSTCertificate = models.CharField(max_length=255, blank=True, null=True)
+    file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    status_choices = [
+            ('Created', 'Created'),
+            ('UserVerified', 'UserVerified'),
+            ('StateAdminVerified', 'StateAdminVerified'),
+            ('UserExpired', 'UserExpired'), 
+            ('Discontinued', 'Discontinued'),
+        ]
+    status = models.CharField(max_length=20, choices=status_choices)
+         
+class Retailer(models.Model):
+    company_name = models.CharField(max_length=255, verbose_name="Company Name")
+    gstnnumber = models.CharField(max_length=20, blank=True, null=True)
+    users = models.ManyToManyField('User', related_name='Retailer_user')
+    created = models.DateField(auto_now_add=True)
+    expirydate = models.DateField(auto_now_add=True)
+    gstno = models.CharField(max_length=255, blank=True, null=True)
+    idProofno = models.CharField(max_length=255, blank=True, null=True)
+    file_authLetter = models.CharField(max_length=255, blank=True, null=True)
+    file_companRegCertificate = models.CharField(max_length=255, blank=True, null=True)
+    file_GSTCertificate = models.CharField(max_length=255, blank=True, null=True)
+    file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    status_choices = [
+            ('Created', 'Created'),
+            ('UserVerified', 'UserVerified'),
+            ('StateAdminVerified', 'StateAdminVerified'),
+            ('UserExpired', 'UserExpired'), 
+            ('Discontinued', 'Discontinued'),
+        ]
+    status = models.CharField(max_length=20, choices=status_choices)
+    
+class VehicleOwner(models.Model):
+    company_name = models.CharField(max_length=255, blank=True, null=True,verbose_name="Company Name")
+    users = models.ManyToManyField('User', related_name='manufacturers')
+    created = models.DateField(auto_now_add=True)
+    expirydate = models.DateField(auto_now_add=True)
+    idProofno = models.CharField(max_length=255, blank=True, null=True)
+    file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    status_choices = [
+        ('Created', 'Created'),
+        ('UserVerified', 'UserVerified'),
+        ('UserExpired', 'UserExpired'), 
+        ('Discontinued', 'Discontinued'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices)
+    
+
+
+
+
 
 class Device(models.Model):
     deviceModel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE)
