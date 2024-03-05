@@ -1,0 +1,274 @@
+{
+	"info": {
+		"_postman_id": "8c46216b-4d11-4238-a883-aaa416d6bddd",
+		"name": "SIM Activation APIs",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "23908893"
+	},
+	"item": [
+		{
+			"name": "SIM Activation Request",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Client_ID",
+						"value": "7iEIvz7mmKXH4s42KIBTbYfIP",
+						"type": "default"
+					},
+					{
+						"key": "Client_Secret",
+						"value": "ziOVV-m5cnA-RS0Xi-R5zRB-GyXB5",
+						"type": "default"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/D:/Taisys-Requirement-list/TaisysNewXlsFile.xlsx"
+						},
+						{
+							"key": "action",
+							"value": "BS",
+							"type": "default"
+						},
+						{
+							"key": "Iccid",
+							"value": "89900000000000000731",
+							"type": "default"
+						},
+						{
+							"key": "PO_Number",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "deviceImei",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "deviceEsn",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "deviceMake",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "deviceModel",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "engineNumber",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "registrationNumber",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "Single/Dual_status",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "PlanName",
+							"value": "Bootstrap_Plan",
+							"type": "default"
+						},
+						{
+							"key": "Validity",
+							"value": "6",
+							"type": "default"
+						},
+						{
+							"key": "Project",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "RTO_State",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "Device_type",
+							"value": "D",
+							"type": "default"
+						},
+						{
+							"key": "custodianName",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "custodianMobNumber",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "poiType",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "poiNumber",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "poaType",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "poaNumber",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "AddressProofPath",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "IDProofS3Path",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "pan_S3_path",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "Address",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "City",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "Pincode",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "IP1",
+							"value": "123.23.34",
+							"type": "default"
+						},
+						{
+							"key": "IP2",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "IP3",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "IP4",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "Mob_1",
+							"value": "9711234567",
+							"type": "default"
+						},
+						{
+							"key": "Mob_2",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "Mob_3",
+							"value": "",
+							"type": "default"
+						},
+						{
+							"key": "Mob_4",
+							"value": "",
+							"type": "default"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://13.232.150.129:4022/esim/api-req/cust-upld",
+					"protocol": "http",
+					"host": [
+						"13",
+						"232",
+						"150",
+						"129"
+					],
+					"port": "4022",
+					"path": [
+						"esim",
+						"api-req",
+						"cust-upld"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "SIM Activation Request Status",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Client_ID",
+						"value": "mnfVZp4t7JF52bKAK4NfuCgA2",
+						"type": "default"
+					},
+					{
+						"key": "Client_Secret",
+						"value": "ctchl-WpvrN-UIl8G-uFKkl-c7oYs",
+						"type": "default"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"reqId\": \"AP020520231116287E943542\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://13.232.150.129:4022/esim/api-req/sim-status",
+					"protocol": "http",
+					"host": [
+						"13",
+						"232",
+						"150",
+						"129"
+					],
+					"port": "4022",
+					"path": [
+						"esim",
+						"api-req",
+						"sim-status"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

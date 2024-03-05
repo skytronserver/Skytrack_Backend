@@ -123,7 +123,10 @@ USE_I18N = True
 USE_TZ = True
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # Add your frontend domain(s) here
+    "http://localhost:3000", 
+    "https://localhost:3000", 
+    "https://skytrack.tech:3000",  
+    "https://skytrack.tech",  # Add your frontend domain(s) here
     #"https://yourfrontenddomain.com",
     # "*" to allow all origins
 ]

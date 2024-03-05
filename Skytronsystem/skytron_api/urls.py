@@ -9,11 +9,13 @@ from .views import manufacturer_details, retailer_details, device_details, devic
 from .views import create_vehicle, update_vehicle, delete_vehicle, list_vehicles, vehicle_details
 from .views import COPCreate,COPAwaitingStateApproval,COPSendStateAdminOtp,COPVerifyStateAdminOtp,COPManufacturerOtpVerify
 from .views import (
+
+    sms_received,sms_queue,
     create_manufacturer , filter_manufacturers,
     create_dealer , filter_dealer,
     create_eSimProvider , filter_eSimProvider,
     create_VehicleOwner , filter_VehicleOwner,
-
+    delete_dealer,delete_eSimProvider,delete_VehicleOwner,
     
     create_device_model,
 
@@ -58,10 +60,13 @@ urlpatterns = [
     path('send_sms_confirmation',  send_sms_confirmation, name='send_sms_confirmation'),
     path('validate_pwrst_confirmation',  validate_pwrst_confirmation, name='validate_pwrst_confirmation'),
     path('send_pwrst_confirmation',  send_pwrst_confirmation, name='send_pwrst_confirmation'),
-
-
+    path('dealer/delete_dealer/<int:dealer_id>/', delete_dealer, name='delete_dealer'),
+    path('eSimProvider/delete_eSimProvider/<int:esimProvider_id>/', delete_eSimProvider, name='delete_eSimProvider'),
+    path('VehicleOwner/delete_VehicleOwner/<int:vo_id>/', delete_VehicleOwner, name='delete_VehicleOwner'),
+    
     path('manufacturer/create_manufacturer/', create_manufacturer, name='create_manufacturer'),
     path('manufacturer/filter_manufacturers/', filter_manufacturers, name='filter_manufacturers'),
+    path('manufacturer/delete_manufacturer/<int:manufacturer_id>/', delete_manufacturer, name='delete_manufacturer'),
     path('dealer/create_dealer/', create_dealer, name='create_dealer'),
     path('dealer/filter_dealer/', filter_dealer, name='filter_dealer'),
     path('eSimProvider/create_eSimProvider/', create_eSimProvider, name='create_eSimProvider'),
@@ -112,6 +117,12 @@ urlpatterns = [
     path('tag/TagSendOwnerOtp/', TagSendOwnerOtp, name='TagSendOwnerOtp'),
     path('tag/TagVerifyOwnerOtp/', TagVerifyOwnerOtp, name='TagVerifyOwnerOtpe'),
     path('tag/TagVerifyDealerOtp/', TagVerifyDealerOtp, name='TagVerifyDealerOtp'),
+    
+
+    path('sms/rcv', sms_received, name='sms_received'),
+    path('sms/que', sms_queue, name='sms_queue'),
+
+    
     
 ]
 '''

@@ -110,6 +110,7 @@ class Manufacturer(models.Model):
             ('UserExpired', 'UserExpired'), 
             ('Discontinued', 'Discontinued'),
         ]
+    
     status = models.CharField(max_length=20, choices=status_choices)
 
 class eSimProvider(models.Model):

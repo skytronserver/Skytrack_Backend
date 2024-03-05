@@ -92,6 +92,27 @@ from django.conf import settings
 from django.http import HttpResponse
 
 
+
+
+@api_view(['POST'])  
+def sms_received(request):
+    try:
+        # Extract necessary parameters from the request data
+        no= request.data.get('no')
+        msg = request.data.get('msg', '')
+        print('SMS Received; NO:'+no+"; MSG:"+msg)
+        return Response({'status':"Success"})
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+@api_view(['get'])  
+def sms_queue(request):
+    try: 
+        return Response({'no':"6661234",'msg':'data to send'})
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @transaction.atomic
@@ -165,6 +186,86 @@ def create_VehicleOwner(request):
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_manufacturer(request, manufacturer_id):
+    try:
+        # Get the Manufacturer instance or return a 404 response
+        manufacturer = get_object_or_404(Manufacturer, id=manufacturer_id)
+
+        # Delete the associated user
+        user = manufacturer.users.first()  # Assuming there is only one associated user
+        if user:
+            user.delete()
+
+        # Delete the manufacturer
+        manufacturer.delete()
+
+        return Response({'message': 'Manufacturer and associated user deleted successfully'})
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_dealer(request, dealer_id):
+    try:
+        # Get the Manufacturer instance or return a 404 response
+        dealer = get_object_or_404(Retailer, id=dealer_id)
+
+        # Delete the associated user
+        user =dealer.users.first()  # Assuming there is only one associated user
+        if user:
+            user.delete()
+
+        # Delete the manufacturer
+        dealer.delete()
+
+        return Response({'message': 'Dealer and associated user deleted successfully'})
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_eSimProvider(request, esimProvider_id):
+    try:
+        # Get the Manufacturer instance or return a 404 response
+        esimProvider = get_object_or_404(eSimProvider, id=esimProvider_id)
+
+        # Delete the associated user
+        user =esimProvider.users.first()  # Assuming there is only one associated user
+        if user:
+            user.delete()
+
+        # Delete the manufacturer
+        esimProvider.delete()
+
+        return Response({'message': 'eSim Provider and associated user deleted successfully'})
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_VehicleOwner(request, vo_id):
+    try:
+        # Get the Manufacturer instance or return a 404 response
+        vo = get_object_or_404(VehicleOwner, id=vo_id)
+
+        # Delete the associated user
+        user =vo.users.first()  # Assuming there is only one associated user
+        if user:
+            user.delete()
+
+        # Delete the manufacturer
+        vo.delete()
+
+        return Response({'message': 'Vehicle Owner and associated user deleted successfully'})
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -1885,13 +1986,7 @@ def list_device_models(request):
     return Response(serializer.data)
 
 
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def delete_manufacturer(request, pk):
-    manufacturer = Manufacturer.objects.get(pk=pk)
-    manufacturer.delete()
-    return Response(status=status.HTTP_204_NO_CONTENT)
-
+ 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_retailer(request, pk):
