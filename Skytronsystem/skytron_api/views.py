@@ -49,7 +49,7 @@ from rest_framework.parsers import MultiPartParser
 
 
 from .models import DeviceStock
-from .serializers import DeviceStockSerializer
+from .serializers import DeviceStockSerializer,DeviceStockSerializer2
 
 
 import pandas as pd
@@ -967,7 +967,7 @@ def deviceStockFilter(request):
     device_stock = DeviceStock.objects.filter(**serializer.validated_data)
 
     # Serialize the data
-    serializer = DeviceStockSerializer(device_stock, many=True)
+    serializer = DeviceStockSerializer2(device_stock, many=True)
 
     return JsonResponse({'data': serializer.data}, status=200)
 
@@ -1054,11 +1054,11 @@ def deviceStockCreate(request):
 @permission_classes([IsAuthenticated])
 def COPCreate(request):
     # Assuming you have user authentication in place
-    manufacturer_id = request.user.id
+    manufacturer = request.user
 
     # Create data for the new DeviceCOP entry
     data = {
-        'created_by': manufacturer_id,
+        'created_by': manufacturer,
         'created': timezone.now(),  # Ensure you import timezone from django.utils
         'status': 'Manufacturer_OTP_Sent',
         'valid':True,

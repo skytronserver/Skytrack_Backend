@@ -214,7 +214,7 @@ class DeviceModel(models.Model):
     tac_no = models.CharField(max_length=255)
     tac_validity = models.DateField()
     hardware_version = models.CharField(max_length=255)
-    created_by = models.IntegerField()
+    created_by = models.ForeignKey('User', on_delete=models.CASCADE)
     created = models.DateTimeField()
     status = models.CharField(max_length=255, choices=STATUS_CHOICES)
     tac_doc_path = models.FileField(upload_to='tac_docs/', null=True, blank=True)
@@ -235,7 +235,7 @@ class DeviceStock(models.Model):
     esim_provider = models.CharField(max_length=255)
     remarks = models.TextField(blank=True, null=True)
     created = models.DateTimeField()
-    created_by = models.IntegerField()
+    created_by = models.ForeignKey('User', on_delete=models.CASCADE)
 
     def __str__(self):
         return f"{self.model} - ESN: {self.device_esn}"
@@ -252,7 +252,7 @@ class DeviceCOP(models.Model):
     cop_no = models.CharField(max_length=255)
     cop_validity = models.DateField()
     cop_file = models.FileField(upload_to='cop_files/', null=True, blank=True)
-    created_by = models.IntegerField()  # Assuming this is the Manufacturer ID
+    created_by = models.ForeignKey('User', on_delete=models.CASCADE)  # Assuming this is the Manufacturer ID
     created = models.DateTimeField()
     valid = models.BooleanField(default=True)
     latest = models.BooleanField(default=True)

@@ -33,7 +33,7 @@ class DeviceStockFilterSerializer(serializers.Serializer):
     esim_validity = serializers.DateField(required=False)
     esim_provider = serializers.CharField(required=False)
     remarks = serializers.CharField(required=False)
-    created_by = serializers.IntegerField(required=False)
+    created_by_id = serializers.IntegerField(required=False)
 class DeviceModelFilterSerializer(serializers.Serializer):
     model_name = serializers.CharField(required=False)
     test_agency = serializers.CharField(required=False)
@@ -41,7 +41,7 @@ class DeviceModelFilterSerializer(serializers.Serializer):
     tac_no = serializers.CharField(required=False)
     tac_validity = serializers.DateField(required=False)
     hardware_version = serializers.CharField(required=False)
-    created_by = serializers.IntegerField(required=False)
+    created_by_id = serializers.IntegerField(required=False)
     created = serializers.DateField(required=False)
     status = serializers.CharField(required=False)
 class DeviceCOPSerializer(serializers.ModelSerializer):
@@ -93,6 +93,19 @@ class DeviceSerializer(serializers.ModelSerializer):
         model = Device
         fields = '__all__'
 
+
+class DeviceStockSerializer2(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+    device_model_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeviceStock
+        fields = '__all__'
+
+    def get_created_by_name(self, obj):
+        return obj.created_by.name if obj.created_by else ''
+    def get_device_model_name(self, obj):
+        return obj.model.model_name if obj.created_by else ''
 
 class DeviceModelSerializer(serializers.ModelSerializer):
     class Meta:
