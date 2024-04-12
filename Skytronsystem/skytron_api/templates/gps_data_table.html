@@ -1,0 +1,143 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>GPS Data Table</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+
+    {{ form.media }}
+</head>
+
+<body>
+
+
+
+
+    <h2>GPS Data Table</h2>
+
+    <div style="position: relative;">
+        <form method="get" action="{% url 'api/gps_data_table' %}">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit">Filter</button>
+        </form>
+    </div>
+
+
+    <table border="1">
+        <tr>
+            <th>ID</th>
+            <th>DateTime</th>
+            <th>Vendor ID</th>
+            <th>Firmware Version</th>
+            <th>Packet Type</th>
+            <th>Alert ID</th>
+            <th>Packet Status</th>
+            <th>IMEI</th>
+            <th>Vehicle Registration Number</th>
+            <th>GPS Status</th>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Latitude</th>
+            <th>Latitude Dir</th>
+            <th>Longitude</th>
+            <th>Longitude Dir</th>
+            <th>Speed</th>
+            <th>Heading</th>
+            <th>Satellites</th>
+            <th>Altitude</th>
+            <th>PDOP</th>
+            <th>HDOP</th>
+            <th>Network Operator</th>
+            <th>Ignition Status</th>
+            <th>Main Power Status</th>
+            <th>Main Input Voltage</th>
+            <th>Internal Battery Voltage</th>
+            <th>Emergency Status</th>
+            <th>Box Tamper Alert</th>
+            <th>GSM Signal Strength</th>
+            <th>MCC</th>
+            <th>MNC</th>
+            <th>LAC</th>
+            <th>Cell ID</th>
+            <th>NBR1 Cell ID</th>
+            <th>NBR1 LAC</th>
+            <th>NBR1 Signal Strength</th>
+            <th>NBR2 Cell ID</th>
+            <th>NBR2 LAC</th>
+            <th>NBR2 Signal Strength</th>
+            <th>NBR3 Cell ID</th>
+            <th>NBR3 LAC</th>
+            <th>NBR3 Signal Strength</th>
+            <th>NBR4 Cell ID</th>
+            <th>NBR4 LAC</th>
+            <th>NBR4 Signal Strength</th>
+            <th>Digital Input Status</th>
+            <th>Digital Output Status</th>
+            <th>Frame Number</th>
+            <th>Odometer</th>
+        </tr>
+        {% for item in data %}
+        <tr>
+            <td>{{ item.id }}</td>
+            <td>{{ item.entry_time|date:"Y-m-d H:i:s" }}</td>
+            <td>{{ item.vendor_id }}</td>
+            <td>{{ item.firmware_version }}</td>
+            <td>{{ item.packet_type }}</td>
+            <td>{{ item.alert_id }}</td>
+            <td>{{ item.packet_status }}</td>
+            <td>{{ item.imei }}</td>
+            <td>{{ item.vehicle_registration_number }}</td>
+            <td>{{ item.gps_status }}</td>
+            <td>{{ item.date }}</td>
+            <td>{{ item.time }}</td>
+            <td>{{ item.latitude }}</td>
+            <td>{{ item.latitude_dir }}</td>
+            <td>{{ item.longitude }}</td>
+            <td>{{ item.longitude_dir }}</td>
+            <td>{{ item.speed }}</td>
+            <td>{{ item.heading }}</td>
+            <td>{{ item.satellites }}</td>
+            <td>{{ item.altitude }}</td>
+            <td>{{ item.pdop }}</td>
+            <td>{{ item.hdop }}</td>
+            <td>{{ item.network_operator }}</td>
+            <td>{{ item.ignition_status }}</td>
+            <td>{{ item.main_power_status }}</td>
+            <td>{{ item.main_input_voltage }}</td>
+            <td>{{ item.internal_battery_voltage }}</td>
+            <td>{{ item.emergency_status }}</td>
+            <td>{{ item.box_tamper_alert }}</td>
+            <td>{{ item.gsm_signal_strength }}</td>
+            <td>{{ item.mcc }}</td>
+            <td>{{ item.mnc }}</td>
+            <td>{{ item.lac }}</td>
+            <td>{{ item.cell_id }}</td>
+            <td>{{ item.nbr1_cell_id }}</td>
+            <td>{{ item.nbr1_lac }}</td>
+            <td>{{ item.nbr1_signal_strength }}</td>
+            <td>{{ item.nbr2_cell_id }}</td>
+            <td>{{ item.nbr2_lac }}</td>
+            <td>{{ item.nbr2_signal_strength }}</td>
+            <td>{{ item.nbr3_cell_id }}</td>
+            <td>{{ item.nbr3_lac }}</td>
+            <td>{{ item.nbr3_signal_strength }}</td>
+            <td>{{ item.nbr4_cell_id }}</td>
+            <td>{{ item.nbr4_lac }}</td>
+            <td>{{ item.nbr4_signal_strength }}</td>
+            <td>{{ item.digital_input_status }}</td>
+            <td>{{ item.digital_output_status }}</td>
+            <td>{{ item.frame_number }}</td>
+            <td>{{ item.odometer }}</td>
+
+        </tr>
+        {% endfor %}
+    </table>
+
+
+</body>
+
+
+</html>

@@ -1,42 +1,13 @@
 from django.urls import path
-from .views import create_user, update_user, password_reset, send_email_otp, send_sms_otp, user_login, user_logout, user_get_parent, get_list, get_details, validate_otp
-from .views import  FileUploadView,DeleteAllUsersView ,validate_email_confirmation,send_email_confirmation,validate_sms_confirmation,  send_sms_confirmation, validate_pwrst_confirmation,send_pwrst_confirmation 
-#from .views import create_manufacturer, create_retailer, create_device, create_device_model
-from .views import update_manufacturer, update_retailer, update_device, update_device_model
-from .views import delete_manufacturer, delete_retailer, delete_device, delete_device_model
-from .views import list_manufacturers, list_retailers, list_devices, list_device_models
-from .views import manufacturer_details, retailer_details, device_details, device_model_details
-from .views import create_vehicle, update_vehicle, delete_vehicle, list_vehicles, vehicle_details
-from .views import COPCreate,COPAwaitingStateApproval,COPSendStateAdminOtp,COPVerifyStateAdminOtp,COPManufacturerOtpVerify
-from .views import (
 
-    sms_received,sms_queue,
-    create_manufacturer , filter_manufacturers,
-    create_dealer , filter_dealer,
-    create_eSimProvider , filter_eSimProvider,
-    create_VehicleOwner , filter_VehicleOwner,
-    delete_dealer,delete_eSimProvider,delete_VehicleOwner,
-    
-    create_device_model,
-
-    list_devicemodel,filter_devicemodel,details_devicemodel,
-    DeviceVerifyStateAdminOtp,DeviceSendStateAdminOtp, 
-    DeviceModelAwaitingStateApproval,   
-    DeviceCreateManufacturerOtpVerify,
-    deviceStockCreate,
-    deviceStockCreateBulk,
-    deviceStockFilter,
-    StockAssignToRetailer,
-    SellFitDevice,
-    SellListAvailableDeviceStock,
-    TagDevice2Vehicle,TagAwaitingOwnerApproval ,  TagSendOwnerOtp ,  
-    TagVerifyOwnerOtp ,TagVerifyDealerOtp, download_static_file
  
-)
-from .views import SellFitDevice, ActivateESIMRequest, ConfirmESIMActivation, ConfigureIPPort, ConfigureSOSGateway, ConfigureSMSGateway, MarkDeviceDefective, ReturnToDeviceManufacturer
+from .views import *#SellFitDevice, ActivateESIMRequest, ConfirmESIMActivation, ConfigureIPPort, ConfigureSOSGateway, ConfigureSMSGateway, MarkDeviceDefective, ReturnToDeviceManufacturer
+from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+
+# ... the rest of your URLconf goes here ...
+
 
 urlpatterns = [
-
     path('validate_otp/', validate_otp, name='validate_otp'),
     path('user_login/', user_login, name='user_login'),
 
@@ -74,6 +45,108 @@ urlpatterns = [
     path('VehicleOwner/create_VehicleOwner/', create_VehicleOwner, name='create_VehicleOwner'),
     path('VehicleOwner/filter_VehicleOwner/', filter_VehicleOwner, name='filter_VehicleOwner'),
 
+
+
+    path('Settings/create_settings_hp_freq/', create_Settings_hp_freq, name='create_settings_hp_freq'),
+    path('Settings/filter_settings_hp_freq/', filter_Settings_hp_freq, name='filter_settings_hp_freq'),
+
+    path('Settings/create_settings_ip/', create_Settings_ip, name='create_settings_ip'),
+    path('Settings/filter_settings_ip/', filter_Settings_ip, name='filter_settings_ip'),
+
+    path('Settings/create_settings_State/', create_Settings_State, name='create_settings_state'),
+    path('Settings/filter_settings_State/', filter_Settings_State, name='filter_settings_state'),
+
+    path('Settings/create_settings_District/', create_Settings_District, name='create_settings_District'),
+    path('Settings/filter_settings_District/', filter_Settings_District, name='filter_settings_District'),
+
+
+    path('Settings/create_settings_VehicleCategory/', create_Settings_VehicleCategory, name='create_settings_VehicleCategory'),
+    path('Settings/filter_settings_VehicleCategory/', filter_Settings_VehicleCategory, name='filter_settings_VehicleCategory'),
+
+    path('Settings/create_settings_firmware/', create_Settings_firmware, name='create_settings_firmware'),
+    path('Settings/filter_settings_firmware/', filter_Settings_firmware, name='filter_settings_firmware'),
+    
+    
+    
+
+    path('StateAdmin/create_StateAdmin/', create_StateAdmin, name='create_StateAdmin'),
+    path('StateAdmin/filter_StateAdmin/', filter_StateAdmin, name='filter_StateAdmin'),
+    path('DTO_RTO/create_DTO_RTO/', create_DTO_RTO, name='create_DTO_RTO'),
+    path('DTO_RTO/filter_DTO_RTO/', filter_DTO_RTO, name='filter_DTO_RTO'),
+
+
+    path('SOSAdmin/create_SOSAdmin/', create_SOS_admin, name='create_SOSAdmin'),
+    path('SOSAdmin/filter_SOSAdmin/', filter_SOS_admin, name='filter_SOSAdmin'),
+      
+
+    path('homepageandstat/homepage/', homepage, name='homepage'),
+    path('homepageandstat/homepage_user1/', homepage_user1, name='homepage_user1'),
+    path('homepageandstat/homepage_user2/', homepage_user2, name='homepage_user2'),
+    path('homepageandstat/homepage_device2/', homepage_device2, name='homepage_device2'),
+    path('homepageandstat/homepage_device1/', homepage_device1, name='homepage_device1'),
+
+    path('homepageandstat/homepage_alart/', homepage_alart, name='homepage_alart'),
+    path('homepageandstat/homepage_state/', homepage_state, name='homepage_state'),
+
+
+    path('SOSuser/create_SOSuser/', create_SOS_user, name='create_SOSuser'),
+    path('SOSuser/filter_SOSuser/', filter_SOS_user, name='filter_SOSuser'),
+
+
+    path('SOS/create_SOSteam/', create_SOS_team, name='create_SOSteam'),
+    path('SOS/filter_SOSteam/', filter_SOS_team, name='filter_SOSteam'),
+
+
+    path('gps-data-table/', gps_data_table, name='gps_data_table'),
+    path('gps_history_map/',gps_history_map , name='gps_history_map'),#
+    path('gps-data-map/',gps_data_allmap , name='gps_data_map'),
+    path('gps-data-log-table/', gps_data_log_table, name='gps_data_log_table'),
+    path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),
+
+
+    
+    path('latest/', latest_gps, name='latest_gps'),
+    path('emergency-call-listener/', emergency_call_listener, name='emergency_call_listener'),
+    path('emergency-call-listener-field/', emergency_call_listener_field, name='emergency_call_listener_field'),
+    path('get-live-call/', get_live_call, name='get_live_call'),
+    path('get-live-call-field/', get_live_call_field, name='get_live_call_field'),
+    path('emergency-call-details-google/<int:emergency_call_id>/', emergency_call_details, name='emergency_call_details'),
+    path('emergency-call-details/<int:emergency_call_id>/', map2, name='emergency_call_details'),
+    path('emergency-call-details-field/<int:emergency_call_id>/', emergency_call_details_field, name='emergency_call_details_field'),
+    path('get-latest-gps-location/<int:emergency_call_id>/', get_latest_gps_location, name='get_latest_gps_location'),
+    path('update-location/', update_location, name='update_location'),
+    path('update-field-status/<str:field_ex>/', update_status, name='update_field_status'),
+    path('broadcast-help/', Broadcast_help, name='assign_help'),
+    path('submit_status/', SubmitStatus, name='SubmitStatus'),
+    path('login/', CustomLoginView.as_view(), name='login'),
+    path('login2/', Login2, name='login2'), 
+    path('loginAndroid/', LoginAndroid, name='loginandroid'),
+    path('map2/<int:emergency_call_id>/',  map2, name='map2'),
+    path('', CustomLoginView.as_view(), name='login'),
+    path('logout/', CustomLogoutView.as_view(), name='logout'),
+    
+
+
+    #path('SOSTeamLead/create_SOSTeamLead/', create_SOSTeamLead, name='create_SOSTeamLead'),
+    #path('SOSTeamLead/filter_SOSTeamLead/', filter_SOSTeamLead, name='filter_SOSTeamLead'),
+
+
+
+    #path('SOSExecutive_desk/create_SOSExecutive_desk/', create_SOSExecutive_desk, name='create_SOSExecutive_desk'),
+    #path('SOSExecutive_desk/filter_SOSExecutive_desk/', filter_SOSExecutive_desk, name='filter_SOSExecutive_desk'),
+
+
+
+    #path('SOSExecutive_desk/create_SOSExecutive_field/', create_SOSExecutive_field, name='create_SOSExecutive_field'),
+    #path('SOSExecutive_desk/filter_SOSExecutive_field/', filter_SOSExecutive_field, name='filter_SOSExecutive_field'),
+
+    #path('SOSTeam/create_SOSTeam/', create_SOSTeam, name='create_SOSTeam'),
+    #path('SOSTeam/filter_SOSTeam/', filter_SOSTeam, name='filter_SOSTeam'),
+    
+   
+ 
+    
+    
 
 
 
@@ -122,8 +195,6 @@ urlpatterns = [
     path('sms/rcv', sms_received, name='sms_received'),
     path('sms/que', sms_queue, name='sms_queue'),
 
-    
-    
 ]
 '''
     path('vehicles/', list_vehicles, name='list_vehicles'),
@@ -164,3 +235,5 @@ urlpatterns = [
 
 
  
+
+urlpatterns += staticfiles_urlpatterns()

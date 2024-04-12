@@ -1,0 +1,31 @@
+<!-- SkytronServer/gps_api/templates/gps_api/latest_gps.html -->
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Latest GPS Location</title>
+    <!-- Include Google Maps API script here if needed -->
+</head>
+
+<body>
+    <h2>Latest GPS Location</h2>
+    {% if user.is_authenticated %}
+    <p>Welcome, {{ user.username }}! <a href="{% url 'logout' %}">Logout</a></p>
+    {% else %}
+    <p><a href="{% url 'login' %}">Login</a></p>
+    {% endif %}
+    {% if location %}
+    <p>Device IMEI: {{ location.device_imei }}</p>
+    <p>Date and Time: {{ location.date }} {{ location.time }}</p>
+    <p>Latitude: {{ location.latitude }} {{ location.latitude_direction }}</p>
+    <p>Longitude: {{ location.longitude }} {{ location.longitude_direction }}</p>
+    <!-- Display other relevant information -->
+    {% else %}
+    <p>No GPS location data found.</p>
+    {% endif %}
+
+    <!-- Display Google Maps with the latest location -->
+    <!-- Use JavaScript to initialize the map with the latitude and longitude -->
+</body>
+
+</html>

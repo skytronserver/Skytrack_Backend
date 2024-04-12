@@ -7,6 +7,165 @@ from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 
  
+
+
+
+
+
+
+
+# SkytronServer/gps_api/models.py
+from django.db import models
+
+from datetime import datetime , timedelta
+
+
+# SkytronServer/gps_api/models.py
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.utils import timezone
+
+class Help(models.Model):
+    TYPE_CHOICES = [
+        ('Emergency', 'Emergency'),
+        ('Assistance', 'Assistance'),
+        # Add other types as needed
+    ]
+
+    type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    field_ex = models.CharField(max_length=50, unique=True)
+    loc_lat = models.CharField(max_length=20, blank=True, null=True)
+    loc_lon = models.CharField(max_length=20, blank=True, null=True)
+    status = models.CharField(max_length=20, blank=True, null=True)
+
+    def __str__(self):
+        return self.field_ex
+class GPSLocation(models.Model):
+    message_type = models.CharField(max_length=3)  # EMR or SEM
+    device_imei = models.CharField(max_length=15)
+    packet_status = models.CharField(max_length=2)  # NM or SP
+    date = models.DateField()
+    time = models.TimeField()
+    gps_validity = models.CharField(max_length=1)  # A or V
+    latitude = models.FloatField()
+    latitude_direction = models.CharField(max_length=1)  # N or S
+    longitude = models.FloatField()
+    longitude_direction = models.CharField(max_length=1)  # E or W
+    altitude = models.FloatField()
+    speed = models.FloatField()
+    distance = models.FloatField()
+    provider = models.CharField(max_length=50)
+    vehicle_reg_no = models.CharField(max_length=20)
+    reply_mob_no = models.CharField(max_length=15)
+    class Meta:
+        app_label = 'gps_api'
+    def __str__(self):
+        return f"{self.device_imei} - {self.date} {self.time}"
+
+    @classmethod
+    def create_from_string(cls, data_list): 
+        if data_list[3]=='x':
+            data_list[3]='01012020'
+        if data_list[4]=='x':
+            data_list[4]='000000'
+        data_list[3] = datetime.strptime(data_list[3], "%d%m%Y").strftime("%Y-%m-%d")
+        data_list[4] = datetime.strptime(data_list[4], "%H%M%S").strftime("%H:%M:%S")
+
+        datetime_str = f"{data_list[3]} {data_list[4]}"
+        dt_object = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S") 
+        adjusted_datetime = dt_object + timedelta(hours=5, minutes=30, seconds=0)
+
+        data_list[3]=adjusted_datetime.strftime("%Y-%m-%d") 
+        data_list[4]=adjusted_datetime.strftime("%H:%M:%S") 
+
+
+
+        return cls(
+            message_type=data_list[0],
+            device_imei=data_list[1],
+            packet_status=data_list[2],
+            date=data_list[3],
+            time=data_list[4],
+            gps_validity=data_list[5],
+            latitude=float(data_list[6]),
+            latitude_direction=data_list[7],
+            longitude=float(data_list[8]),
+            longitude_direction=data_list[9],
+            altitude=float(data_list[10]),
+            speed=float(data_list[11]),
+            distance=float(data_list[12]),
+            provider=data_list[13],
+            vehicle_reg_no=data_list[14],
+            reply_mob_no=data_list[15],
+        )
+
+
+class EmergencyCall(models.Model):
+    call_id = models.AutoField(primary_key=True)
+    device_imei = models.CharField(max_length=15)
+    vehicle_no = models.CharField(max_length=20)
+    start_time = models.DateTimeField()
+    status = models.CharField(max_length=20)
+    desk_executive_id = models.CharField(max_length=50)
+    field_executive_id = models.CharField(max_length=50)
+    final_comment = models.TextField()
+
+    def __str__(self):
+        return f"EmergencyCall {self.call_id}"
+
+
+
+@receiver(post_save, sender=GPSLocation)
+def create_emergency_call(sender, instance, created, **kwargs):
+    if created :#and instance.status == 'Complete':
+        # Check if an EmergencyCall entry already exists for the given vehicle and IMEI
+        existing_emergency_call = EmergencyCall.objects.filter(
+            device_imei=instance.device_imei,
+            vehicle_no=instance.vehicle_reg_no
+        ).last()
+
+        if not existing_emergency_call:
+            # Create a new EmergencyCall entry
+            EmergencyCall.objects.create(
+                device_imei=instance.device_imei,
+                vehicle_no=instance.vehicle_reg_no,
+                start_time=timezone.now(),
+                status='Pending',  # Set the initial status as 'Pending'
+                desk_executive_id='',
+                field_executive_id='',
+                final_comment='',
+            )
+        elif existing_emergency_call.status=="Closed":
+            # Create a new EmergencyCall entry
+            EmergencyCall.objects.create(
+                device_imei=instance.device_imei,
+                vehicle_no=instance.vehicle_reg_no,
+                start_time=timezone.now(),
+                status='Pending',  # Set the initial status as 'Pending'
+                desk_executive_id='',
+                field_executive_id='',
+                final_comment='',
+            )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:
@@ -174,8 +333,134 @@ class VehicleOwner(models.Model):
     status = models.CharField(max_length=20, choices=status_choices)
     
 
+class StateAdmin(models.Model):
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
+    users = models.ManyToManyField('User', related_name='stateadmin_User')
+    created = models.DateField(auto_now_add=True)
+    expirydate = models.DateField(auto_now_add=True)
+    idProofno = models.CharField(max_length=255, blank=True, null=True)
+    file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    status_choices = [
+            ('Created', 'Created'),
+            ('UserVerified', 'UserVerified'),
+            #('StateAdminVerified', 'StateAdminVerified'),
+            ('UserExpired', 'UserExpired'), 
+            ('Discontinued', 'Discontinued'),
+        ]
+    status = models.CharField(max_length=20, choices=status_choices)
+         
+
+class dto_rto(models.Model):
+    dto_rto=   models.CharField(max_length=20, choices=[('DTO','DTO'),("RTO","RTO")])
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
+    district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
+    users = models.ManyToManyField('User', related_name='dto_rto_User')
+    created = models.DateField(auto_now_add=True)
+    expirydate = models.DateField(auto_now_add=True)
+    gstno = models.CharField(max_length=255, blank=True, null=True)
+    idProofno = models.CharField(max_length=255, blank=True, null=True)
+    file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    status_choices = [
+            ('Created', 'Created'),
+            ('UserVerified', 'UserVerified'),
+            ('StateAdminVerified', 'StateAdminVerified'),
+            ('UserExpired', 'UserExpired'), 
+            ('Discontinued', 'Discontinued'),
+        ]
+    status = models.CharField(max_length=20, choices=status_choices)
+         
+
+class SOS_ex(models.Model): 
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
+    district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
+    users = models.ManyToManyField('User', related_name='SOS_ex_user')
+    created = models.DateField(auto_now_add=True)
+    expirydate = models.DateField(auto_now_add=True)
+    idProofno = models.CharField(max_length=255, blank=True, null=True)
+    file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    status_choices = [
+            ('Created', 'Created'),
+            ('UserVerified', 'UserVerified'),
+            ('StateAdminVerified', 'StateAdminVerified'),
+            ('UserExpired', 'UserExpired'), 
+            ('Discontinued', 'Discontinued'),
+        ]
+    status = models.CharField(max_length=20, choices=status_choices)
 
 
+class SOS_user(models.Model): 
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
+    district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
+    users = models.ManyToManyField('User', related_name='SOS_user')
+    created = models.DateField(auto_now_add=True)
+    expirydate = models.DateField(auto_now_add=True)
+    idProofno = models.CharField(max_length=255, blank=True, null=True)
+    file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    status_choices = [
+            ('Created', 'Created'),
+            ('UserVerified', 'UserVerified'),
+            ('StateAdminVerified', 'StateAdminVerified'),
+            ('UserExpired', 'UserExpired'), 
+            ('Discontinued', 'Discontinued'),
+        ]
+    status = models.CharField(max_length=20, choices=status_choices)
+
+class SOS_admin(models.Model): 
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
+    district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
+    users = models.ManyToManyField('User', related_name='SOS_admin')
+    created = models.DateField(auto_now_add=True)
+    expirydate = models.DateField(auto_now_add=True)
+    idProofno = models.CharField(max_length=255, blank=True, null=True)
+    file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    status_choices = [
+            ('Created', 'Created'),
+            ('UserVerified', 'UserVerified'),
+            ('StateAdminVerified', 'StateAdminVerified'),
+            ('UserExpired', 'UserExpired'), 
+            ('Discontinued', 'Discontinued'),
+        ]
+    status = models.CharField(max_length=20, choices=status_choices)
+
+ 
+
+
+class Settings_State(models.Model): 
+    state=models.CharField(max_length=50)
+    status = models.CharField(max_length=20, choices=[('active','active'),('discontinued','discontinued')])
+
+
+class Settings_VehicleCategory(models.Model): 
+    category=models.CharField(max_length=50)
+    maxSpeed=models.CharField(max_length=5)
+    warnSpeed=models.CharField(max_length=5)
+     
+
+class Settings_District(models.Model):  
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
+    district =models.CharField(max_length=50)    
+    status = models.CharField(max_length=20, choices=[('active','active'),('discontinued','discontinued')])
+
+class SOS_team(models.Model):  
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
+    district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
+    admin =models.ForeignKey('SOS_admin', on_delete=models.CASCADE)
+    teamlead =models.ForeignKey('SOS_ex', on_delete=models.CASCADE)
+    desk_team = models.ManyToManyField('SOS_ex', related_name='SOS_Executive_desk_team')
+    field_team = models.ManyToManyField('SOS_ex', related_name='SOS_Executive_field_team')   
+    status = models.CharField(max_length=20, choices=[('active','active'),('discontinued','discontinued')])
+    queue_length = models.CharField(max_length=20)
+    created = models.DateField(auto_now_add=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE,related_name='userc')
+    updated = models.DateField(auto_now_add=True)
+    updatedby = models.ForeignKey('User', on_delete=models.CASCADE,related_name='useru')
+   
+ 
 
 
 class Device(models.Model):
@@ -218,6 +503,54 @@ class DeviceModel(models.Model):
     created = models.DateTimeField()
     status = models.CharField(max_length=255, choices=STATUS_CHOICES)
     tac_doc_path = models.FileField(upload_to='tac_docs/', null=True, blank=True)
+
+
+class Settings_firmware(models.Model): 
+    devicemodel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE)
+    created = models.DateField(auto_now_add=True)
+    firmware_vertion = models.CharField(max_length=255, blank=True, null=True)
+    file_bin = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+     
+
+class Settings_hp_freq(models.Model): 
+    devicemodel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE)
+    created = models.DateField(auto_now_add=True)
+    freq = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+     
+  
+class Settings_ip3(models.Model): 
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE, null=True)
+    devicemodel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE, null=True)
+    created = models.DateField(auto_now_add=True)
+    ip_tracking = models.CharField(max_length=255, blank=True, null=True)
+    ip_tracking2 = models.CharField(max_length=255, blank=True, null=True)
+    ip_sos = models.CharField(max_length=255, blank=True, null=True)
+    port_tracking = models.CharField(max_length=255, blank=True, null=True)
+    port_tracking2 = models.CharField(max_length=255, blank=True, null=True)
+    port_sos = models.CharField(max_length=255, blank=True, null=True)
+    sms_tracking = models.CharField(max_length=255, blank=True, null=True)
+    sms_tracking2 = models.CharField(max_length=255, blank=True, null=True)
+    sms_sos = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+     
+
+class Settings_ip(models.Model): 
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE, null=True)
+    devicemodel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE, null=True)
+    created = models.DateField(auto_now_add=True)
+    ip_tracking = models.CharField(max_length=255, blank=True, null=True)
+    ip_tracking2 = models.CharField(max_length=255, blank=True, null=True)
+    ip_sos = models.CharField(max_length=255, blank=True, null=True)
+    port_tracking = models.CharField(max_length=255, blank=True, null=True)
+    port_tracking2 = models.CharField(max_length=255, blank=True, null=True)
+    port_sos = models.CharField(max_length=255, blank=True, null=True)
+    sms_tracking = models.CharField(max_length=255, blank=True, null=True)
+    sms_tracking2 = models.CharField(max_length=255, blank=True, null=True)
+    sms_sos = models.CharField(max_length=255, blank=True, null=True)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+     
 
 
 class DeviceStock(models.Model):
@@ -312,7 +645,7 @@ class DeviceTag(models.Model):
     tagged = models.DateTimeField()
     def __str__(self):
         return self.vehicle_reg_no
-
+##unused
 class IPList(models.Model):
     STATUS_CHOICES = [
         ('Valid', 'Valid'),
@@ -411,4 +744,64 @@ class Settings(models.Model):
 
     def __str__(self):
         return f"Settings {self.id}"
+
+class GPSData(models.Model):
+    entry_time = models.DateTimeField(auto_now_add=True)
+    start_character = models.CharField(max_length=1)
+    header = models.CharField(max_length=1)
+    vendor_id = models.CharField(max_length=4)
+    firmware_version = models.CharField(max_length=5)
+    packet_type = models.CharField(max_length=2)
+    alert_id = models.CharField(max_length=2)
+    packet_status = models.CharField(max_length=1)
+    imei = models.CharField(max_length=15)
+    vehicle_registration_number = models.CharField(max_length=16)
+    gps_status = models.CharField(max_length=1)
+    date = models.CharField(max_length=8)
+    time = models.CharField(max_length=6)
+    latitude = models.FloatField()
+    latitude_dir = models.CharField(max_length=1)
+    longitude = models.FloatField()
+    longitude_dir = models.CharField(max_length=1)
+    speed = models.FloatField()
+    heading = models.FloatField()
+    satellites = models.IntegerField()
+    altitude = models.IntegerField()
+    pdop = models.FloatField()
+    hdop = models.FloatField()
+    network_operator = models.CharField(max_length=8)
+    ignition_status = models.CharField(max_length=1)
+    main_power_status = models.CharField(max_length=1)
+    main_input_voltage = models.FloatField()
+    internal_battery_voltage = models.FloatField()
+    emergency_status = models.CharField(max_length=1)
+    box_tamper_alert = models.CharField(max_length=1)
+    gsm_signal_strength = models.CharField(max_length=2)
+    mcc = models.CharField(max_length=3)
+    mnc = models.CharField(max_length=3)
+    lac = models.CharField(max_length=3)
+    cell_id = models.CharField(max_length=4)
+    nbr1_cell_id = models.CharField(max_length=4)
+    nbr1_lac = models.CharField(max_length=4)
+    nbr1_signal_strength = models.CharField(max_length=2)
+    nbr2_cell_id = models.CharField(max_length=4)
+    nbr2_lac = models.CharField(max_length=4)
+    nbr2_signal_strength = models.CharField(max_length=2)
+    nbr3_cell_id = models.CharField(max_length=4)
+    nbr3_lac = models.CharField(max_length=4)
+    nbr3_signal_strength = models.CharField(max_length=2)
+    nbr4_cell_id = models.CharField(max_length=4)
+    nbr4_lac = models.CharField(max_length=4)
+    nbr4_signal_strength = models.CharField(max_length=2)
+    digital_input_status = models.CharField(max_length=4)
+    digital_output_status = models.CharField(max_length=2)
+    frame_number = models.IntegerField()
+    odometer = models.FloatField()
+    checksum = models.CharField(max_length=8)
+    end_char = models.CharField(max_length=1) 
+
+class GPSDataLog(models.Model):
+    timestamp = models.DateTimeField(auto_now_add=True)
+    raw_data = models.TextField()
+
   

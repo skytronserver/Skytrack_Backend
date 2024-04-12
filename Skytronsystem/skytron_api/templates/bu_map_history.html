@@ -1,0 +1,557 @@
+<!-- SkytronServer/gps_api/templates/emergency_call_details.html -->
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>GPS Data Table</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    {% load static %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!--
+        <link rel="stylesheet" href="{% static 'ol/ol.css' %}"><script src="{% static 'ol/dist/ol.js' %}"></script>
+    
+    -->
+    <style>
+        #map {
+            height: 800px;
+            width: 100%;
+        }
+    </style>
+
+
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/ol@v8.2.0/dist/ol.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v8.2.0/ol.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <script>
+
+
+        // ...
+
+        // Function to clear all markers from the map
+        function clearMarkers() {
+            for (var i = 0; i < markers.length; i++) {
+                markers[i].getSource().clear();
+            }
+            markers = [];
+        }
+
+        // Function to clear all directions renderers from the map
+        function clearDirectionsRenderers() {
+            for (var i = 0; i < directionsRenderers.length; i++) {
+                directionsRenderers[i].setMap(null);
+            }
+            directionsRenderers = [];
+        }
+
+        // Function to clear all info windows
+        function clearInfoWindows() {
+            for (var i = 0; i < infoWindows.length; i++) {
+                infoWindows[i].close();
+            }
+            infoWindows = [];
+        }
+
+
+        // Periodically fetch the latest GPS location data every 3 seconds
+        // setInterval(updateLatestGpsLocation, 3000);
+    </script>
+
+    <style>
+        .map {
+            position: relative;
+        }
+
+        .dynamic-overlay {
+            position: absolute;
+            background-color: white;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+
+        #controls-container {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        #time-slider {
+            width: 80%;
+            margin-right: 10px;
+        }
+
+        #play-button {
+            cursor: pointer;
+        }
+    </style>
+
+    {{ form.media }}
+</head>
+
+<body>
+
+
+
+
+    <h2>GPS Data Table</h2>
+
+    <div style="position: relative;">
+        <form method="get" action="{% url 'api/gps_history_map' %}">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit">Filter</button>
+        </form>
+    </div>
+
+    <br>
+
+
+
+    <div>
+        <h2>Location Information</h2>
+        <table>
+        </table>
+
+
+    </div>
+
+    <div id="map" style="width: 800px; height: 600px;"></div>
+
+    <div id="dynamic-overlay" class="dynamic-overlay">
+        <p id="overlay-content"> </p>
+    </div>
+
+    </br></br>
+    <div id="controls-container">
+        <input type="range" id="time-slider" min="0" max="{{ mapdata_length }}" step="1" value="0">
+        <button id="play-pause-button" class="control-button">Play</button>
+        <button id="restart-button" class="control-button">Restart</button>
+
+    </div>
+    <script>
+        var map = new ol.Map();
+        var emergencyPoint = "";
+        var emergencyLayer = "";
+        var activePoliceLayer = "";
+        var activePolicePoint = "";
+        let dynamicOverlay;
+        var markers = [];
+        var mapdata = [];
+        mapdata = [
+            {% for item in data %}
+        {
+            entryTime: "{{ item.entry_time|date:'Y-m-d H:i:s' }}",
+                packetStatus: "{{ item.packet_status }}",
+                    imei: "{{ item.imei }}",
+                        vehicleRegistrationNumber: "{{ item.vehicle_registration_number }}",
+                            latitude: "{{ item.latitude }}",
+                                latitudeDir: "{{ item.latitude_dir }}",
+                                    longitude: "{{ item.longitude }}",
+                                        longitudeDir: "{{ item.longitude_dir }}",
+                                            speed: "{{ item.speed }}",
+                                                heading: "{{ item.heading }}",
+                                                    satellites: "{{ item.satellites }}",
+                                                        gps_status: "{{ item.gps_status }}",
+                                                            altitude: "{{ item.altitude }}",
+                } {% if not forloop.last %}, {% endif %}
+        {% endfor %}
+    ];
+
+        document.addEventListener('DOMContentLoaded', function () {
+            // Initialize the map
+            map = new ol.Map({
+                target: 'map',
+                layers: [
+                    new ol.layer.Tile({
+                        source: new ol.source.OSM()
+                    }),
+                    new ol.layer.Tile({
+                        source: new ol.source.TileWMS({
+                            url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',
+                            params: { 'LAYERS': 'lulc:BR_LULC50K_1112', 'TILED': true },
+                            serverType: 'geoserver',
+                            transition: 0,
+                        }),
+                    }),
+                ],
+                view: new ol.View({
+                    center: ol.proj.fromLonLat([91.829437, 26.131644]),
+                    zoom: 11,
+                })
+            });
+
+            //map.addLayer(activePoliceLayer);
+
+            dynamicOverlay = new ol.Overlay({
+                element: document.getElementById('dynamic-overlay'),
+            });
+
+            map.addOverlay(dynamicOverlay);
+
+            var lastEntryTime = new Date(mapdata[0].entryTime);
+            for (var i = 1; i < mapdata.length; i++) {
+                var entry = mapdata[i];
+                if (entry.gps_status == 1) {
+                    var currentEntryTime = new Date(entry.entryTime);
+                    var timeDifferenceInMilliseconds = currentEntryTime - lastEntryTime;
+                    astEntryTime = currentEntryTime;
+
+                    // Convert time difference to seconds
+                    var timeDifference = timeDifferenceInMilliseconds / 1000;
+
+
+                    //console.log('regnoProcess:', entry.latitude);
+                    //console.log('regnoProcess:', entry.longitude);
+                    //addLocationMarkers(entry );
+                    updateEmergencyPointer(entry.longitude, entry.latitude, i, entry.vehicle_registration_number, timeDifference);
+                }
+
+            }
+
+            map.addLayer(markerLayer);
+        });
+
+        var updateCounter = 0;
+
+
+
+        var prevCoordinates = null;
+        var minLat = 10000.0;
+        var minLon = 10000.0;
+        var maxLat = 0.0;
+        var maxLon = 0.0;
+
+        function updateEmergencyPointer(lon, lat, i, no, timeDifference) {
+            var currentCoordinates = ol.proj.fromLonLat([lon, lat]);
+            if (minLat > lat) { minLat = parseFloat(lat); }
+            if (maxLat < lat) { maxLat = parseFloat(lat); }
+            if (minLon > lon) { minLon = parseFloat(lon); }
+            if (maxLon < lon) { maxLon = parseFloat(lon); }
+
+
+            // Draw route if there is a previous point
+            if (prevCoordinates) {
+                var lineFeature = new ol.Feature({
+                    geometry: new ol.geom.LineString([prevCoordinates, currentCoordinates]),
+                });
+
+                var lineStyle = new ol.style.Style({
+                    stroke: new ol.style.Stroke({
+                        color: 'blue',
+                        width: 2,
+                    }),
+                });
+
+                lineFeature.setStyle(lineStyle);
+
+                markers.push(new ol.layer.Vector({
+                    source: new ol.source.Vector({
+                        features: [lineFeature],
+                    }),
+                }));
+                map.addLayer(markers[markers.length - 1]);
+            }
+
+            var centerLon = (parseFloat(minLon) + parseFloat(maxLon)) / 2.0;
+            var centerLat = (parseFloat(minLat) + parseFloat(maxLat)) / 2.0;
+
+            // Calculate the extent based on the given min/max values
+            //var extent = [minLon, maxLon, minLat, maxLat]; [minLon, minLat, maxLon, maxLat];
+            //var extent = [minLon + '', minLat + '', maxLon + '', maxLat + ''];
+
+            //console.log('latlon:' + lon + ',' + lat + '  minmax' + minLat + ',' + minLon + ',' + maxLat + ',' + maxLon);
+            //console.log('latlon:' + centerLon + "," + centerLat + "@@@@" + extent);
+
+            // Create an OpenLayers view
+            var view = new ol.View({
+                center: ol.proj.fromLonLat([centerLon, centerLat]),
+                zoom: 12, // Adjust the initial zoom level as needed
+                minZoom: 2, // Set your desired minimum zoom level
+            });
+            // Set the view to fit the calculated extent with padding and constrain the resolution
+            //view.fit([91.752322, 26.131809, 91.812409, 26.193229], { padding: [10, 10, 10, 10], constrainResolution: false });
+            // Set the view to the map
+            map.setView(view);
+            //map.getView().fit([91.752322, 26.131809, 91.812409, 26.193229], map.getSize());
+
+            /*
+            // Create and add the current point as in your original code
+            var pointFeature = new ol.Feature({
+                geometry: new ol.geom.Point(currentCoordinates),
+            });
+            pointFeature.setStyle(iconStyle);
+
+            var textFeature = new ol.Feature({
+                geometry: new ol.geom.Point(currentCoordinates),
+                name: '[' + i + "]Time def:" + timeDifference,
+            });
+
+            var textStyle = new ol.style.Style({
+                text: new ol.style.Text({
+                    text: textFeature.get('name'),
+                    font: 'bold 16px Arial',
+                    offsetY: -45,
+                    fill: new ol.style.Fill({
+                        color: '#000000',
+                    }),
+                }),
+            });
+
+            textFeature.setStyle(textStyle);
+
+            markers.push(new ol.layer.Vector({
+                source: new ol.source.Vector({
+                    features: [pointFeature, textFeature],
+                }),
+            }));
+
+            map.addLayer(markers[markers.length - 1]);
+
+            */
+
+            // Update previous coordinates for the next iteration
+            prevCoordinates = currentCoordinates;
+        }
+        function updateEmergencyPointer2(lon, lat, i, no, timeDifference) {
+            var Point = new ol.Feature({
+                geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])),
+            });
+            Point.setStyle(iconStyle);
+            var textFeature = new ol.Feature({
+                geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])), // Adjust the position as needed
+                name: '[' + i + "]Time def:" + timeDifference,// no,
+            });
+            var textStyle = new ol.style.Style({
+                text: new ol.style.Text({
+                    text: textFeature.get('name'),
+                    font: 'bold 16px Arial',
+                    offsetY: -45, // Adjust the offset as needed
+                    fill: new ol.style.Fill({
+                        color: '#000000', // Text color
+                    }),
+                }),
+            });
+            textFeature.setStyle(textStyle);
+            markers.push(new ol.layer.Vector({
+                source: new ol.source.Vector({
+                    features: [Point, textFeature],
+                }),
+            }));
+            map.addLayer(markers[markers.length - 1]);
+        }
+
+        var timeSlider = document.getElementById('time-slider');
+        var playPauseButton = document.getElementById('play-pause-button');
+        var restartButton = document.getElementById('restart-button');
+
+        var animationIntervalId;
+        var isPlaying = false;
+        var iconStyle = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "{% static 'track.png' %}", // Replace with the path to your emergency icon
+                scale: 0.06,
+            }),
+            /*text: new ol.style.Text({
+                //text: textFeature.get('name'),
+                font: 'bold 16px Arial',
+                offsetY: -45,
+                fill: new ol.style.Fill({
+                    color: '#000000',
+                }),
+            }),*/
+        });
+
+        var globalMarker = new ol.Feature();
+        globalMarker.setStyle(iconStyle);
+        var markerLayer = new ol.layer.Vector({
+            source: new ol.source.Vector({
+                features: [globalMarker],
+            }),
+        });
+
+
+
+
+
+
+        timeSlider.addEventListener('input', function () {
+            var index = parseInt(timeSlider.value, 10);
+            displayLocationAtTime(index);
+        });
+
+        playPauseButton.addEventListener('click', function () {
+            if (isPlaying) {
+                pauseAnimation();
+            } else {
+                playAnimation();
+            }
+        });
+
+        restartButton.addEventListener('click', function () {
+            timeSlider.value = 0;
+            displayLocationAtTime(0);
+        });
+
+        function playAnimation() {
+            var currentIndex = parseInt(timeSlider.value, 10);
+            clearInterval(animationIntervalId);
+            animationIntervalId = setInterval(function () {
+                if (currentIndex < timeSlider.max) {
+                    currentIndex++;
+                    timeSlider.value = currentIndex;
+                    displayLocationAtTime(currentIndex);
+                } else {
+                    clearInterval(animationIntervalId);
+                    isPlaying = false;
+                    playPauseButton.textContent = 'Play';
+                }
+            }, 10); // Adjust the delay as needed
+            isPlaying = true;
+            playPauseButton.textContent = 'Pause';
+        }
+
+        function pauseAnimation() {
+            clearInterval(animationIntervalId);
+            isPlaying = false;
+            playPauseButton.textContent = 'Play';
+        }
+
+        function displayLocationAtTime(index) {
+            var entry = mapdata[index];
+            console.log('marker data:' + index + ',' + [parseFloat(entry.longitude), parseFloat(entry.latitude)]);
+            console.log(JSON.stringify(entry));
+
+            if (entry.gps_status == 1) {
+                var currentCoordinates = ol.proj.fromLonLat([parseFloat(entry.longitude), parseFloat(entry.latitude)]);
+
+                globalMarker.setGeometry(new ol.geom.Point(currentCoordinates));
+
+
+
+            }
+        }
+
+    </script>
+    </br></br></br>
+    <table border="1">
+        <tr>
+            <th>DateTime</th>
+            <th>Vendor ID</th>
+            <th>Firmware Version</th>
+            <th>Packet Type</th>
+            <th>Alert ID</th>
+            <th>Packet Status</th>
+            <th>IMEI</th>
+            <th>Vehicle Registration Number</th>
+            <th>GPS Status</th>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Latitude</th>
+            <th>Latitude Dir</th>
+            <th>Longitude</th>
+            <th>Longitude Dir</th>
+            <th>Speed</th>
+            <th>Heading</th>
+            <th>Satellites</th>
+            <th>Altitude</th>
+            <th>PDOP</th>
+            <th>HDOP</th>
+            <th>Network Operator</th>
+            <th>Ignition Status</th>
+            <th>Main Power Status</th>
+            <th>Main Input Voltage</th>
+            <th>Internal Battery Voltage</th>
+            <th>Emergency Status</th>
+            <th>Box Tamper Alert</th>
+            <th>GSM Signal Strength</th>
+            <th>MCC</th>
+            <th>MNC</th>
+            <th>LAC</th>
+            <th>Cell ID</th>
+            <th>NBR1 Cell ID</th>
+            <th>NBR1 LAC</th>
+            <th>NBR1 Signal Strength</th>
+            <th>NBR2 Cell ID</th>
+            <th>NBR2 LAC</th>
+            <th>NBR2 Signal Strength</th>
+            <th>NBR3 Cell ID</th>
+            <th>NBR3 LAC</th>
+            <th>NBR3 Signal Strength</th>
+            <th>NBR4 Cell ID</th>
+            <th>NBR4 LAC</th>
+            <th>NBR4 Signal Strength</th>
+            <th>Digital Input Status</th>
+            <th>Digital Output Status</th>
+            <th>Frame Number</th>
+            <th>Odometer</th>
+        </tr>
+        {% for item in data %}
+        <tr>
+            <td>{{ item.entry_time|date:"Y-m-d H:i:s" }}</td>
+            <td>{{ item.vendor_id }}</td>
+            <td>{{ item.firmware_version }}</td>
+            <td>{{ item.packet_type }}</td>
+            <td>{{ item.alert_id }}</td>
+            <td>{{ item.packet_status }}</td>
+            <td>{{ item.imei }}</td>
+            <td>{{ item.vehicle_registration_number }}</td>
+            <td>{{ item.gps_status }}</td>
+            <td>{{ item.date }}</td>
+            <td>{{ item.time }}</td>
+            <td>{{ item.latitude }}</td>
+            <td>{{ item.latitude_dir }}</td>
+            <td>{{ item.longitude }}</td>
+            <td>{{ item.longitude_dir }}</td>
+            <td>{{ item.speed }}</td>
+            <td>{{ item.heading }}</td>
+            <td>{{ item.satellites }}</td>
+            <td>{{ item.altitude }}</td>
+            <td>{{ item.pdop }}</td>
+            <td>{{ item.hdop }}</td>
+            <td>{{ item.network_operator }}</td>
+            <td>{{ item.ignition_status }}</td>
+            <td>{{ item.main_power_status }}</td>
+            <td>{{ item.main_input_voltage }}</td>
+            <td>{{ item.internal_battery_voltage }}</td>
+            <td>{{ item.emergency_status }}</td>
+            <td>{{ item.box_tamper_alert }}</td>
+            <td>{{ item.gsm_signal_strength }}</td>
+            <td>{{ item.mcc }}</td>
+            <td>{{ item.mnc }}</td>
+            <td>{{ item.lac }}</td>
+            <td>{{ item.cell_id }}</td>
+            <td>{{ item.nbr1_cell_id }}</td>
+            <td>{{ item.nbr1_lac }}</td>
+            <td>{{ item.nbr1_signal_strength }}</td>
+            <td>{{ item.nbr2_cell_id }}</td>
+            <td>{{ item.nbr2_lac }}</td>
+            <td>{{ item.nbr2_signal_strength }}</td>
+            <td>{{ item.nbr3_cell_id }}</td>
+            <td>{{ item.nbr3_lac }}</td>
+            <td>{{ item.nbr3_signal_strength }}</td>
+            <td>{{ item.nbr4_cell_id }}</td>
+            <td>{{ item.nbr4_lac }}</td>
+            <td>{{ item.nbr4_signal_strength }}</td>
+            <td>{{ item.digital_input_status }}</td>
+            <td>{{ item.digital_output_status }}</td>
+            <td>{{ item.frame_number }}</td>
+            <td>{{ item.odometer }}</td>
+
+        </tr>
+        {% endfor %}
+    </table>
+
+
+</body>
+
+
+</html>

@@ -8,7 +8,8 @@ from django.contrib.auth import authenticate, login
 from rest_framework.response import Response
 from rest_framework import status
 from .models import User as UserModel
-from .serializers import UserSerializer
+from .models import *
+from .serializers import *
 import random
 from django.contrib.auth.hashers import make_password 
 from django.http import JsonResponse
@@ -30,7 +31,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from .models import User as UserModel, Session,Confirmation
-from .serializers import UserSerializer, SessionSerializer
+from .serializers import StateadminSerializer, UserSerializer, SessionSerializer
 from django.contrib.auth.hashers import make_password, check_password
 
 
@@ -59,13 +60,13 @@ from rest_framework.views import APIView
 
 from rest_framework import generics
 from rest_framework import filters
-from .models import DeviceModel,User
+#from .models import DeviceModel,User
 from .serializers import DeviceModelSerializer
 
 from django.core.files.storage import FileSystemStorage
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .models import DeviceModel
+#from .models import DeviceModel
 from .serializers import DeviceModelSerializer, DeviceModelFileUploadSerializer
 from django.conf import settings
 
@@ -73,13 +74,13 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from .models import DeviceModel,DeviceTag
+#from .models import DeviceModel,DeviceTag
 from .serializers import DeviceModelSerializer
-
+from .models import *
 
 from io import BytesIO
 
-from .models import VehicleOwner,DeviceCOP,StockAssignment,eSimProvider
+from .models import StateAdmin,VehicleOwner,DeviceCOP,StockAssignment,eSimProvider
 from .serializers import DeviceCOPSerializer,DeviceModelFilterSerializer
 
 from .serializers import VehicleOwnerSerializer,eSimProviderSerializer, DeviceStockSerializer,DeviceStockFilterSerializer
@@ -90,6 +91,671 @@ import ast
 from django.views.static import serve
 from django.conf import settings
 from django.http import HttpResponse
+
+
+
+
+
+from django.shortcuts import render
+from .models import GPSData,GPSDataLog
+from django.db.models import Subquery, OuterRef 
+from django.http import JsonResponse 
+from django.views.decorators.csrf import csrf_exempt
+import json
+from django.db.models import Max
+from django.db.models import F
+from django.forms.models import model_to_dict
+from django.db.models import Subquery, OuterRef
+from scipy.signal import butter, lfilter,lfilter
+from .forms import GPSDataFilterForm
+import numpy as np
+
+from django.shortcuts import render
+from django.views import View
+# SkytronServer/gps_api/views.py 
+from .models import GPSLocation
+from django.contrib.auth.decorators import login_required
+from django.utils.decorators import method_decorator
+from django.shortcuts import render, get_object_or_404 
+from django.db.models import Q
+from django.http import HttpResponse, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from .models import EmergencyCall, GPSLocation,Help
+import json
+from django.contrib.auth.views import LoginView
+from django.shortcuts import redirect
+import requests
+
+
+from .models import Help
+
+from django.contrib.auth import logout,login,authenticate
+
+
+@csrf_exempt
+def LoginAndroid(request):
+    if request.method == 'POST':
+        user=authenticate(request,username=request.POST.get('username'),password=request.POST.get('password'))
+        print(user)
+        if user is not None:
+            print("LoginDone")
+            login(request,user)
+            return HttpResponse("LoginDone")
+        else:
+            return HttpResponse("Credentials are Incorrect")
+    else:
+        return HttpResponse("error")
+
+@csrf_exempt
+def Login2(request):
+    if request.method == 'GET':
+        ##print("login2",request.GET )
+        username=request.GET.get('username')
+        password=request.GET.get('password')
+        user=authenticate(request,username=username,password=password)
+        print("login2",user,username,password)
+        if user is not None:
+            print("LoginDone")
+            login(request,user)
+            if "FieldEx" in username:
+                print("Loginvalid")
+                #return HttpResponse("This account is not authorized to use this app.")
+                return redirect('/api/emergency-call-listener-field/') 
+            else:
+                return HttpResponse("This account is not authorized to use this app.")
+        else:
+            return HttpResponse("Credentials are Incorrect")
+    else:
+        return HttpResponse("error")
+
+ 
+#@login_required
+@csrf_exempt
+def update_location(request):
+    live_data={}
+    if request.method == 'POST':
+        loc_lat = request.POST.get('latitude')
+        loc_lon = request.POST.get('longitude')
+        field_ex = request.POST.get('uername')
+ 
+
+        # Update the Help object with the provided FieldEx
+        try:
+            help_obj = Help.objects.get(field_ex=field_ex)
+            help_obj.loc_lat = loc_lat
+            help_obj.loc_lon = loc_lon
+            print(help_obj)
+            help_obj.save()
+
+            existing_emergency_call = EmergencyCall.objects.filter( 
+                Q(status='Broadcast')# Exclude entries with Status 'Complete'
+            ).order_by('-start_time').last()
+
+        
+            running_call = EmergencyCall.objects.filter( 
+                    Q(field_executive_id=field_ex)# Exclude entries with Status 'Complete'
+                ).order_by('-start_time').last()
+            if existing_emergency_call:
+                live_data = {'status': 'success',
+                    'vehicle_no': existing_emergency_call.vehicle_no,
+                    'device_imei': existing_emergency_call.device_imei,
+                    'call_id': existing_emergency_call.call_id, 
+                }
+            else :
+                live_data = {'status': 'success'} 
+
+            if running_call is None:
+                live_data=live_data
+            else:
+                live_data={'status': 'success'}
+    
+
+            return JsonResponse(live_data)
+        except Help.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Help object not found'})
+    else:
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+    
+@login_required
+@csrf_exempt
+def update_status(request, field_ex):
+    if request.method == 'POST':
+        status = request.POST.get('status') 
+
+        # Update the Help object with the provided FieldEx
+        try:
+            help_obj = Help.objects.get(field_ex=field_ex)
+            help_obj.status = status 
+            help_obj.save()
+
+            return JsonResponse({'status': 'success'})
+        except Help.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Help object not found'})
+    else:
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+    
+
+@login_required
+def get_latest_gps_location(request, emergency_call_id):
+    # Get the EmergencyCall object based on the provided emergency_call_id
+    emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
+
+    # Get the latest GPSLocation for the same IMEI and vehicle number
+    latest_gps_location = GPSLocation.objects.filter(
+        device_imei=emergency_call.device_imei,
+        vehicle_reg_no=emergency_call.vehicle_no
+    ).order_by('-date', '-time').first()
+    help_obj = Help.objects.filter(field_ex=emergency_call.field_executive_id).first()
+    if help_obj is not None:
+        loc_lat=help_obj.loc_lat
+        loc_lon=help_obj.loc_lon
+    else:
+        loc_lat=0
+        loc_lon=0
+    headers = {'Content-Type': 'application/json'} 
+
+    
+    try:
+        route = requests.post('https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_state.php?lat1='+str(latest_gps_location.latitude)+'&lon1='+str(latest_gps_location.longitude)+'&lat2='+str(loc_lat)+'&lon2='+str(loc_lon)+'&token=fb46cfb86bea498dce694350fb6dd16d161ff8eb', headers=headers ).json()
+    except Exception as e:
+        print(e)
+        route=json.dumps({"err":"err"}, indent = 4) 
+    
+    #print(route)
+    #route.raise_for_status()  # Check for HTTP errors
+     
+    # Parse message as json
+    #route = json.loads(route['Message'])
+
+    context1 = {
+        'status':emergency_call.status,
+        'desk_executive_id':emergency_call.desk_executive_id,
+        'field_executive_id':emergency_call.field_executive_id,
+        'final_comment':emergency_call.final_comment,
+        'date':latest_gps_location.date.strftime("%Y-%m-%d"),
+        'time':latest_gps_location.time.strftime("%H:%M:%S"), 
+        'latitude':str(latest_gps_location.latitude  ) ,#+ str(  latest_gps_location.latitude_direction ),       
+        'longitude':str( latest_gps_location.longitude),#+str(latest_gps_location.longitude_direction),
+        'field_latitude':str( loc_lat  ) ,#+ str(  latest_gps_location.latitude_direction ),       
+        'field_longitude':str(  loc_lon ),#+str(latest_gps_location.longitude_direction),
+        'route': route,
+        
+    }
+ 
+    '''
+    context = {
+        'lat':str(latest_gps_location.latitude ) ,
+        'lon':str( latest_gps_location.longitude),
+        'html': str(render(request, 'latest_gps_location_partial.html', context1)),
+    }
+    print( render(request, 'latest_gps_location_partial.html', context1))
+    '''
+    
+    data = json.dumps(context1)
+    return   HttpResponse(data)
+
+@login_required
+@csrf_exempt
+def Broadcast_help(request):
+    if request.method == 'POST':
+        call_id = request.POST.get('call_id')
+        ecall=EmergencyCall.objects.get(call_id=call_id)
+        ecall.status="Broadcast"
+        ecall.field_executive_id=""
+        ecall.save()
+        return JsonResponse({'status': 'success'})
+    else:
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+@login_required
+@csrf_exempt
+def SubmitStatus(request):
+    if request.method == 'POST':
+        call_id = request.POST.get('call_id') 
+        print(request.POST.get('status'))
+        print(request.POST.get('comment'))
+        ecall=EmergencyCall.objects.get(call_id=call_id)
+        ecall.status=request.POST.get('status')
+        ecall.final_comment=request.POST.get('comment')
+        if request.POST.get('status')=="Closed":
+            ecall.field_executive_id=""
+        #ecall.field_executive_id=""
+        ecall.save()
+        return JsonResponse({'status': 'success'})
+    else:
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+    
+@login_required
+def emergency_call_details_field(request, emergency_call_id):
+    # Get the EmergencyCall object based on the provided emergency_call_id
+    emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
+
+    # Get the latest GPSLocation for the same IMEI and vehicle number
+    latest_gps_location = GPSLocation.objects.filter(
+        device_imei=emergency_call.device_imei,
+        vehicle_reg_no=emergency_call.vehicle_no
+    ).order_by('-date', '-time').first()
+    help_obj = Help.objects.filter(field_ex=request.user.username ).first()
+     
+    context = {
+        'emergency_call': emergency_call,
+        'latest_gps_location': latest_gps_location,
+        'fieldex': help_obj,
+    }
+
+    return render(request, 'emergency_call_details_field.html', context)
+@login_required
+def emergency_call_details(request, emergency_call_id):
+    # Get the EmergencyCall object based on the provided emergency_call_id
+    emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
+
+    # Get the latest GPSLocation for the same IMEI and vehicle number
+    latest_gps_location = GPSLocation.objects.filter(
+        device_imei=emergency_call.device_imei,
+        vehicle_reg_no=emergency_call.vehicle_no
+    ).order_by('-date', '-time').first()
+    help_obj = Help.objects.filter(status=1 ) 
+     
+    context = {
+        'emergency_call': emergency_call,
+        'latest_gps_location': latest_gps_location,
+        'fieldexs': help_obj,
+    } 
+
+    return render(request, 'emergency_call_details.html', context)
+
+@login_required
+def latest_gps(request):
+    try:
+        latest_location = GPSLocation.objects.latest('id')
+        help_obj = Help.objects.filter(field_ex=request.user.username ) 
+        context = {
+        'lat': latest_location.latitude,
+        'lon': latest_location.longitude,
+        #'html': render(request, 'gps_api/latest_gps.html', {'location': latest_location}),
+        }
+    except GPSLocation.DoesNotExist:
+        # Handle the case where no GPSLocation record is found
+        latest_location = None
+        context = {
+        'lat': '0.0',
+        'lon': '0.0',
+        #'html': render(request, 'gps_api/latest_gps.html', {'location': latest_location}),
+        }
+    
+    data = json.dumps(context )
+    return JsonResponse(context) #HttpResponse(data, content_type="application/json") 
+
+
+
+@csrf_exempt
+def map2(request,emergency_call_id):
+    # Get the EmergencyCall object based on the provided emergency_call_id
+    emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
+
+    # Get the latest GPSLocation for the same IMEI and vehicle number
+    latest_gps_location = GPSLocation.objects.filter(
+        device_imei=emergency_call.device_imei,
+        vehicle_reg_no=emergency_call.vehicle_no
+    ).order_by('-date', '-time').first()
+    help_obj = Help.objects.filter(status=1 ) 
+     
+    context = {
+        'emergency_call': emergency_call,
+        'latest_gps_location': latest_gps_location,
+        'fieldexs': help_obj,
+    } 
+
+    return render(request, 'bhooban.html', context)
+     
+
+    #return render(request, 'bhooban.html', {'live_data': []})
+
+
+@login_required
+@csrf_exempt
+def emergency_call_listener(request):
+    if request.method == 'POST':
+        # Handle the 'Accept' button press
+        data = json.loads(request.body)
+        call_id = data.get('call_id')
+        desk_executive_id = 'DeskEx1'  # Set the desk_executive_id
+
+        # Update the EmergencyCall entry with the desk_executive_id
+        emergency_call = EmergencyCall.objects.get(call_id=call_id)
+        emergency_call.desk_executive_id = desk_executive_id
+        emergency_call.status = 'Accepted'
+        emergency_call.save()
+
+    # Fetch live data updates every 5 seconds
+    live_data = get_live_call_init()
+
+    return render(request, 'emergency_call_listener.html', {'live_data': live_data})
+
+
+def get_live_call_init():
+    # Implement the logic to fetch live data updates (replace with your actual implementation)
+    existing_emergency_call = EmergencyCall.objects.filter( 
+            Q(status='Pending') # Exclude entries with Status 'Complete'
+        ).order_by('-start_time').last()
+    if existing_emergency_call:
+        live_data = {
+            'vehicle_no': existing_emergency_call.vehicle_no,
+            'device_imei': existing_emergency_call.device_imei,
+            'call_id': existing_emergency_call.call_id, 
+        }
+    else :
+        live_data = {}
+
+    return JsonResponse(live_data)
+
+@login_required
+def get_live_call(request):
+    # Implement the logic to fetch live data updates (replace with your actual implementation)
+    existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
+    live_data1=""
+    for call in existing_emergency_call:
+        live_data1 = live_data1+'<a href="/api/emergency-call-details/'+str( call.call_id )+'">Call ID:'+ str( call.call_id )+"("+  str(call.status)+");  Vehicle:"+  str( call.vehicle_no)+"; </a><br>"
+      
+    print(live_data1)
+    existing_emergency_call = EmergencyCall.objects.filter( 
+            Q(status='Pending')# Exclude entries with Status 'Complete'
+        ).order_by('-start_time').last()
+    if existing_emergency_call:
+        live_data = {
+            'vehicle_no': existing_emergency_call.vehicle_no,
+            'device_imei': existing_emergency_call.device_imei,
+            'call_id': existing_emergency_call.call_id, 
+        }
+    else :
+        live_data = {}
+    if live_data1!="":
+        live_data["table_data"]=live_data1
+
+    return JsonResponse(live_data)
+
+
+
+
+
+@login_required
+@csrf_exempt
+def emergency_call_listener_field(request):
+    if request.method == 'POST':
+        # Handle the 'Accept' button press
+        data = json.loads(request.body)
+        call_id = data.get('call_id')  # Set the desk_executive_id
+
+        # Update the EmergencyCall entry with the desk_executive_id
+        emergency_call = EmergencyCall.objects.get(call_id=call_id)
+        emergency_call.field_executive_id = request.user.username
+        emergency_call.status = 'FieldAccepted'
+        emergency_call.save()
+
+    # Fetch live data updates every 5 seconds
+    live_data = get_live_call_field_init()
+
+    return render(request, 'emergency_call_listener_field.html', {'live_data': live_data})
+
+
+def get_live_call_field_init():
+    # Implement the logic to fetch live data updates (replace with your actual implementation)
+    existing_emergency_call = EmergencyCall.objects.filter( 
+            Q(status='Broadcast') # Exclude entries with Status 'Complete'
+        ).order_by('-start_time').last()
+    if existing_emergency_call:
+        if existing_emergency_call.status=='Broadcast':
+            live_data = {
+                'vehicle_no': existing_emergency_call.vehicle_no,
+                'device_imei': existing_emergency_call.device_imei,
+                'call_id': existing_emergency_call.call_id, 
+            }
+        else:
+            ive_data = {}
+    else :
+        live_data = {}
+
+    return JsonResponse(live_data)
+
+@login_required
+def get_live_call_field(request ):
+    # Implement the logic to fetch live data updates (replace with your actual implementation)
+    live_data={}
+    if 1:
+        # Handle the 'Accept' button press  
+        existing_emergency_call = EmergencyCall.objects.filter( 
+                Q(status='Broadcast')# Exclude entries with Status 'Complete'
+            ).order_by('-start_time').last()
+
+        
+         
+        if existing_emergency_call:
+            live_data = {
+                'vehicle_no': existing_emergency_call.vehicle_no,
+                'device_imei': existing_emergency_call.device_imei,
+                'call_id': existing_emergency_call.call_id, 
+            }
+        else :
+            live_data = {} 
+
+        
+    
+    return JsonResponse(live_data)
+
+
+from django.contrib.auth.views import LogoutView
+from django.shortcuts import redirect
+from django.urls import reverse_lazy
+
+class CustomLogoutView(LogoutView):
+    # Customize the behavior after logging out
+    next_page = reverse_lazy('login')  # Replace with the URL where you want to redirect after logout
+
+    def dispatch(self, request, *args, **kwargs):
+        # You can add custom logic here before logging out
+        # For example, logging the user out of other systems or services
+
+        # Call the parent class method to perform the logout
+        response = super().dispatch(request, *args, **kwargs)
+
+        # You can add custom logic here after logging out
+        # For example, setting a custom message or performing additional actions
+
+        return response
+
+@method_decorator(csrf_exempt, name='dispatch')
+class CustomLoginView(LoginView):
+    template_name = 'custom_login.html'  # Create a custom login template
+    
+    def get_success_url(self):
+        # Customize the redirect logic based on the username
+        username = self.request.POST.get('username')
+        if "FieldEx" in username:
+            return '/api/emergency-call-listener-field/'  # Redirect to the admin panel for the admin user
+        else:
+            return '/api/emergency-call-listener/' 
+        
+ 
+
+
+def apply_low_pass_filter(queryset, columns):
+    # Get the values of the specified columns from the queryset
+    column_values = {col: list(queryset.values_list(col, flat=True)) for col in columns}
+
+    # Apply low-pass filter and median filter to each column
+    for col, values in column_values.items():
+        normalized_values,meanv,std_value = normalize(values)
+        median_filtered_values = median_filter(normalized_values)
+        low_pass_filtered_values = moving_average_filter(median_filtered_values, window_size=10) #low_pass_filter(median_filtered_values)
+        column_values[col] = unnormalize(low_pass_filtered_values,meanv,std_value)
+         
+
+    # Update the queryset with the filtered values
+    for i, entry in enumerate(queryset):
+        for col, values in column_values.items():
+            setattr(entry, col, values[i])
+
+    return queryset
+
+def low_pass_filter(data, cutoff_freq=0.4, sampling_rate=1.0, order=16):
+
+
+    # Design a Butterworth low-pass filter
+    nyquist = 0.5 * sampling_rate
+    normal_cutoff = cutoff_freq / nyquist
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+
+    # Initialize filtered data with the first value
+    filtered_data = [data[0]]
+
+    # Initialize the state for the filter
+    zi = [0] * (max(len(a), len(b)) - 1)
+    
+    # Apply the filter to the remaining data
+    for value in data[1:]:
+        filtered_value, zi = lfilter(b, a, [value], zi=zi)
+        filtered_data.append(filtered_value[0])
+
+    return filtered_data
+def moving_average_filter(data, window_size=5):
+    # Apply a simple moving average filter to the data
+    filtered_data = np.convolve(data, np.ones(window_size) / window_size, mode='same')
+    return filtered_data.tolist()
+def normalize(data):
+    # Normalize the data to have zero mean and unit variance
+    mean_value = np.mean(data)
+    std_value = np.std(data)
+    normalized_data = [(x - mean_value) / std_value for x in data]
+
+    return [normalized_data,mean_value,std_value]
+def unnormalize(data,mean_value,std_value):
+    # Normalize the data to have zero mean and unit variance
+    
+    normalized_data = [ mean_value+ (x*std_value) for x in data]
+
+    return normalized_data
+
+def median_filter(data, kernel_size=3):
+    # Apply a median filter to the data
+    filtered_data = np.convolve(data, np.ones(kernel_size) / kernel_size, mode='same')
+
+    return filtered_data.tolist()
+ 
+
+
+def gps_data_table(request):
+    form = GPSDataFilterForm(request.GET)
+    data = GPSData.objects.all()#.order_by('-entry_time')[:200]
+
+    if form.is_valid():
+        vehicle_registration_number = form.cleaned_data.get('vehicle_registration_number')
+        start_datetime = form.cleaned_data.get('start_datetime')
+        end_datetime = form.cleaned_data.get('end_datetime')
+
+        if vehicle_registration_number:
+            data = data.filter(vehicle_registration_number__icontains=vehicle_registration_number)
+
+        if start_datetime and end_datetime:
+            data = data.filter(entry_time__range=(start_datetime, end_datetime))
+    data=data.order_by('-entry_time')[:200]
+    return render(request, 'gps_data_table.html', {'data': data, 'form': form})
+
+def gps_data_table1(request):
+    data = GPSData.objects.all().order_by('-entry_time')[:200]
+    print("data", flush=True)
+    print(data, flush=True)
+    return render(request, 'gps_data_table.html', {'data': data})
+
+
+
+from itertools import chain
+def model_to_dict(instance, fields=None, exclude=None):
+    
+    opts = instance._meta
+    data = {}
+    for f in chain(opts.concrete_fields, opts.private_fields, opts.many_to_many):
+        
+        if fields is not None and f.name not in fields:
+            continue
+        if exclude and f.name in exclude:
+            continue
+        data[f.name] = f.value_from_object(instance)
+    return data
+
+
+
+
+@csrf_exempt  # Disable CSRF protection for simplicity. Make sure to secure your API in production.
+def gps_track_data_api(request):
+    distinct_registration_numbers = GPSData.objects.values('vehicle_registration_number').distinct()
+    data = []
+
+    for x in distinct_registration_numbers:
+        latest_entry = GPSData.objects.filter(vehicle_registration_number=x['vehicle_registration_number']).filter(gps_status=1).order_by('-entry_time').first()
+        excluded_fields = []  # Add any fields you want to exclude
+        if latest_entry:
+            #data.append(latest_entry.values())
+            data.append(model_to_dict(latest_entry, exclude=excluded_fields))
+
+    data_list = list(data)
+    return JsonResponse({'data': data_list})
+
+
+#@csrf_exempt  # Disable CSRF protection for simplicity. Make sure to secure your API in production.
+def gps_history_map(request):
+    
+    form = GPSDataFilterForm(request.GET)
+    
+    mapdata=[]
+    data=[]
+    #return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1, 'form': form})
+
+    
+    mapdata=[]
+    data=[]
+
+    if form.is_valid():
+        #data = GPSData.objects.all().filter(gps_status=1)#[:1000]#.order_by('-entry_time')
+        vehicle_registration_number = form.cleaned_data.get('vehicle_registration_number')
+        start_datetime = form.cleaned_data.get('start_datetime')
+        end_datetime = form.cleaned_data.get('end_datetime')
+        
+        if vehicle_registration_number!="":
+            if vehicle_registration_number:
+                data = GPSData.objects.all().filter(gps_status=1).filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).filter(vehicle_registration_number__icontains=vehicle_registration_number)
+                
+
+                if start_datetime and end_datetime:
+                    data = data.filter(entry_time__range=(start_datetime, end_datetime))
+                    #mapdata=mapdata.filter(entry_time__range=(start_datetime, end_datetime))
+                    print("histry length",len(data))
+                    data=data.filter(gps_status=1).order_by('entry_time')[:17280]
+                    mapdata=apply_low_pass_filter(data, ['longitude', 'latitude'])#[3:]
+    #return JsonResponse({})
+    return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1, 'form': form})
+
+
+def gps_data_allmap(request):
+    # Get the latest entry for each unique vehicle_registration_number
+    latest_data = GPSData.objects.filter(
+        vehicle_registration_number=OuterRef('vehicle_registration_number')
+    ).filter(gps_status=1).order_by('-entry_time').values('id')[:1]
+
+    # Retrieve the complete GPSData objects using the latest entry IDs
+    data = GPSData.objects.filter(id__in=Subquery(latest_data))
+
+    return render(request, 'map.html', {'data': data})
+def gps_data_log_table(request):
+    # Filter data based on the search query
+    search_query = request.GET.get('search', '')
+    if search_query:
+        data = GPSDataLog.objects.filter(raw_data__contains=search_query).order_by('-timestamp')[:200]
+    else:
+        data = GPSDataLog.objects.all().order_by('-timestamp')[:200]
+    
+    return render(request, 'gps_data_log_table.html', {'data': data, 'search_query': search_query})
+     
+
+
 
 
 
@@ -169,6 +835,8 @@ def create_VehicleOwner(request):
 
 
         user.save()
+        if not company_name:
+            company_name=""
 
         # Create Manufacturer instance
         retailer = VehicleOwner.objects.create(
@@ -694,6 +1362,538 @@ def filter_manufacturers(request):
         return Response({'error': str(e)}, status=500)
 
 
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def create_StateAdmin(request):
+    try:
+        # Extract necessary parameters from the request data
+         
+        email = request.data.get('email', '')
+        mobile = request.data.get('mobile', '')
+        name = request.data.get('name', '')
+        createdby = request.user 
+        date_joined = timezone.now()
+        created = timezone.now() 
+        is_active = True
+        is_staff = False
+        status = 'active'
+        # Additional parameters
+        idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        state= request.data.get('state', '')
+        # File uploads
+        file_idProof = request.data.get('file_idProof')
+        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        hashed_password = make_password(new_password)
+        
+        # Create User instance
+        user = User.objects.create(
+            name=name,
+            email=email,
+            mobile=mobile,
+            role='stateadmin',
+            createdby=createdby.id,
+            date_joined=date_joined,
+            created=created, 
+            is_active=is_active,
+            is_staff=is_staff,
+            status=status,
+            password  = hashed_password
+        )
+        # Save the User instance
+        try:
+            
+            send_mail(
+                    'State Admin Account Created',
+                    f'Temporery password is : {new_password}',
+                    'test@skytrack.tech',
+                    [email],
+                    fail_silently=False,
+            ) 
+        except:
+            pass
+            #return Response({'error': "Error in sendig email"}, status=500)
+
+
+        user.save()
+
+        # Create Manufacturer instance
+        retailer = StateAdmin.objects.create( 
+            created=created,
+            state_id=state,
+            expirydate=expirydate, 
+            idProofno=idProofno, 
+            file_idProof=file_idProof,
+            createdby=createdby,
+            status="Created",
+        ) 
+        retailer.users.add(user) 
+        return Response(StateadminSerializer(retailer).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_StateAdmin(request):
+    try:
+        # Get filter parameters from the request
+        manufacturer_id = request.data.get('StateAdmin_id', None)
+        email = request.data.get('email', '') 
+        name = request.data.get('name', '')
+        phone_no = request.data.get('phone_no', '')
+        address = request.data.get('address', '')
+        state = request.data.get('state', '')
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+
+        # Add ID filter if provided
+        if manufacturer_id :
+            manufacturers = StateAdmin.objects.filter(
+                id=manufacturer_id,
+                users__email__icontains=email, 
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+        else:
+            manufacturers = StateAdmin.objects.filter(
+                #id=manufacturer_id,
+                users__email__icontains=email, 
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+
+        # Serialize the queryset
+        serializer = StateadminSerializer(manufacturers, many=True)
+
+        # Return the serialized data as JSON response
+        return Response(serializer.data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def create_DTO_RTO(request):
+    try:
+        # Extract necessary parameters from the request data
+         
+        email = request.data.get('email', '')
+        mobile = request.data.get('mobile', '')
+        name = request.data.get('name', '')
+        createdby = request.user 
+        date_joined = timezone.now()
+        created = timezone.now() 
+        is_active = True
+        is_staff = False
+        status = 'active'
+        # Additional parameters
+        idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        state= request.data.get('state', '')
+        dto_rto1= request.data.get('dto_rto', '')
+        district = request.data.get('district', '')
+        # File uploads
+        file_idProof = request.data.get('file_idProof')
+        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        hashed_password = make_password(new_password)
+        
+        # Create User instance
+        user = User.objects.create(
+            name=name,
+            email=email,
+            mobile=mobile,
+            role='dtorto',
+            createdby=createdby.id,
+            date_joined=date_joined,
+            created=created, 
+            is_active=is_active,
+            is_staff=is_staff,
+            status=status,
+            password  = hashed_password
+        )
+        # Save the User instance
+        try:
+            
+            send_mail(
+                     dto_rto1+' Account Created',
+                    f'Temporery password is : {new_password}',
+                    'test@skytrack.tech',
+                    [email],
+                    fail_silently=False,
+            ) 
+        except:
+            pass
+            #return Response({'error': "Error in sendig email"}, status=500)
+
+
+        user.save()
+
+        # Create Manufacturer instance
+        retailer = dto_rto.objects.create( 
+            created=created,
+            state_id=state,
+            dto_rto=dto_rto1,
+            district_id=district,
+            expirydate=expirydate, 
+            idProofno=idProofno, 
+            file_idProof=file_idProof,
+            createdby=createdby,
+            status="Created",
+        ) 
+        retailer.users.add(user) 
+        return Response(dto_rtoSerializer(retailer).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_DTO_RTO(request):
+    try:
+        # Get filter parameters from the request
+        manufacturer_id = request.data.get('dto_rto_id', None)
+        email = request.data.get('email', '') 
+        name = request.data.get('name', '')
+        phone_no = request.data.get('phone_no', '')
+        address = request.data.get('address', '')
+        state = request.data.get('state', '')
+        district = request.data.get('district', '')
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+
+        # Add ID filter if provided
+        if manufacturer_id :
+            manufacturers = dto_rto.objects.filter(
+                id=manufacturer_id,
+                users__email__icontains=email, 
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+        else:
+            manufacturers = dto_rto.objects.filter(
+                #id=manufacturer_id,
+                users__email__icontains=email, 
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+
+        # Serialize the queryset
+        serializer = dto_rtoSerializer(manufacturers, many=True)
+
+        # Return the serialized data as JSON response
+        return Response(serializer.data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+ 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def create_SOS_user(request):
+    try:
+        # Extract necessary parameters from the request data
+         
+        email = request.data.get('email', '')
+        mobile = request.data.get('mobile', '')
+        name = request.data.get('name', '')
+        createdby = request.user 
+        date_joined = timezone.now()
+        created = timezone.now() 
+        is_active = True
+        is_staff = False
+        status = 'active'
+        # Additional parameters
+        idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        state= request.data.get('state', '') 
+        district = request.data.get('district', '')
+        # File uploads
+        file_idProof = request.data.get('file_idProof')
+        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        hashed_password = make_password(new_password)
+        
+        # Create User instance
+        user = User.objects.create(
+            name=name,
+            email=email,
+            mobile=mobile,
+            role='sosuser',
+            createdby=createdby.id,
+            date_joined=date_joined,
+            created=created, 
+            is_active=is_active,
+            is_staff=is_staff,
+            status=status,
+            password  = hashed_password
+        )
+        # Save the User instance
+        try:
+            
+            send_mail( 'SOS user Account Created',
+                    f'Temporery password is : {new_password}',
+                    'test@skytrack.tech',
+                    [email],
+                    fail_silently=False,
+            ) 
+        except:
+            pass
+            #return Response({'error': "Error in sendig email"}, status=500)
+
+
+        user.save()
+
+        # Create Manufacturer instance
+        retailer = SOS_ex.objects.create( 
+            created=created,
+            state_id=state, 
+            district_id=district,
+            expirydate=expirydate, 
+            idProofno=idProofno, 
+            file_idProof=file_idProof,
+            createdby=createdby,
+            status="Created",
+        ) 
+        retailer.users.add(user) 
+        return Response(SOS_userSerializer(retailer).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_SOS_user(request):
+    try:
+        # Get filter parameters from the request
+        manufacturer_id = request.data.get('dto_rto_id', None)
+        email = request.data.get('email', '') 
+        name = request.data.get('name', '')
+        phone_no = request.data.get('phone_no', '')
+        address = request.data.get('address', '')
+        state = request.data.get('state', '')
+        district = request.data.get('district', '')
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+
+        # Add ID filter if provided
+        if manufacturer_id :
+            manufacturers = SOS_ex.objects.filter(
+                id=manufacturer_id,
+                users__email__icontains=email, 
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+        else:
+            manufacturers = SOS_ex.objects.filter(
+                #id=manufacturer_id,
+                users__email__icontains=email, 
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+
+        # Serialize the queryset
+        serializer = SOS_userSerializer(manufacturers, many=True)
+
+        # Return the serialized data as JSON response
+        return Response(serializer.data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def create_SOS_admin(request):
+    try:
+        # Extract necessary parameters from the request data
+         
+        email = request.data.get('email', '')
+        mobile = request.data.get('mobile', '')
+        name = request.data.get('name', '')
+        createdby = request.user 
+        date_joined = timezone.now()
+        created = timezone.now() 
+        is_active = True
+        is_staff = False
+        status = 'active'
+        # Additional parameters
+        idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        state= request.data.get('state', '') 
+        district = request.data.get('district', '')
+        # File uploads
+        file_idProof = request.data.get('file_idProof')
+        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        hashed_password = make_password(new_password)
+        
+        # Create User instance
+        user = User.objects.create(
+            name=name,
+            email=email,
+            mobile=mobile,
+            role='sosadmin',
+            createdby=createdby.id,
+            date_joined=date_joined,
+            created=created, 
+            is_active=is_active,
+            is_staff=is_staff,
+            status=status,
+            password  = hashed_password
+        )
+        # Save the User instance
+        try:
+            
+            send_mail(
+                      ' SOS Admin Account Created',
+                    f'Temporery password is : {new_password}',
+                    'test@skytrack.tech',
+                    [email],
+                    fail_silently=False,
+            ) 
+        except:
+            pass
+            #return Response({'error': "Error in sendig email"}, status=500)
+
+
+        user.save()
+
+        # Create Manufacturer instance
+        retailer = SOS_admin.objects.create( 
+            created=created,
+            state_id=state, 
+            district_id=district,
+            expirydate=expirydate, 
+            idProofno=idProofno, 
+            file_idProof=file_idProof,
+            createdby=createdby,
+            status="Created",
+        ) 
+        retailer.users.add(user) 
+        return Response(SOS_adminSerializer(retailer).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_SOS_admin(request):
+    try:
+        # Get filter parameters from the request
+        manufacturer_id = request.data.get('dto_rto_id', None)
+        email = request.data.get('email', '') 
+        name = request.data.get('name', '')
+        phone_no = request.data.get('phone_no', '')
+        address = request.data.get('address', '')
+        state = request.data.get('state', '')
+        district = request.data.get('district', '')
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+
+        # Add ID filter if provided
+        if manufacturer_id :
+            manufacturers = SOS_admin.objects.filter(
+                id=manufacturer_id,
+                users__email__icontains=email, 
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+        else:
+            manufacturers = SOS_admin.objects.filter(
+                #id=manufacturer_id,
+                users__email__icontains=email, 
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+
+        # Serialize the queryset
+        serializer = SOS_adminSerializer(manufacturers, many=True)
+
+        # Return the serialized data as JSON response
+        return Response(serializer.data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+
+  
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def create_SOS_team(request):
+    try:  
+        createdby = request.user  
+        created = timezone.now()  
+        status = 'active'
+        state= request.data.get('state', '') 
+        district = request.data.get('district', '')
+         
+         
+         
+        return Response({'error': str('')}, status=500)#Response(SOS_userSerializer(retailer).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_SOS_team(request):
+    try:
+        
+        state = request.data.get('state', '')
+        district = request.data.get('district', '')
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        manufacturers = SOS_team.objects.filter(
+                 
+            ).distinct()
+
+        # Serialize the queryset
+        serializer = SOS_teamSerializer(manufacturers, many=True)
+
+        # Return the serialized data as JSON response
+        return Response(serializer.data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+
+
+
+
+
+
 def download_static_file(request):
     file_path = f"skytron_api/static/StockUpload.xlsx"
     try:
@@ -1054,7 +2254,7 @@ def deviceStockCreate(request):
 @permission_classes([IsAuthenticated])
 def COPCreate(request):
     # Assuming you have user authentication in place
-    manufacturer = request.user
+    manufacturer = request.user.id
 
     # Create data for the new DeviceCOP entry
     data = {
@@ -1261,6 +2461,578 @@ def DeviceCreateManufacturerOtpVerify(request  ):
         return Response({"message": "Manufacturer OTP verified successfully."}, status=200)
     else:
         return HttpResponseBadRequest("Invalid OTP")
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_Settings_hp_freq(request):
+    # Assuming you have user authentication in place
+    user_id = request.user.id 
+
+    # Create data for the new DeviceModel entry
+    data = {
+        'createdby': user_id,
+        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        #'status': 'Manufacturer_OTP_Sent',
+    }
+
+    # Attach the file to the request data
+    request_data = request.data.copy()
+    request_data.update(data)
+    #print(request_data)
+    serializer = Settings_hp_freqSerializer(data=request_data)
+
+    if serializer.is_valid():
+        instance = serializer.save()
+    
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_Settings_hp_freq(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            manufacturers = Settings_hp_freq.objects.filter(
+                 
+            ).distinct()
+        # Serialize the queryset
+        retailer_serializer = Settings_hp_freqSerializer(manufacturers, many=True)
+        # Return the serialized data as JSON response
+        return Response(retailer_serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_Settings_ip(request):
+    # Assuming you have user authentication in place
+    user_id = request.user.id 
+
+    # Create data for the new DeviceModel entry
+    data = {
+        'createdby': user_id,
+        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        #'status': 'Manufacturer_OTP_Sent',
+    }
+
+    # Attach the file to the request data
+    request_data = request.data.copy()
+    request_data.update(data)
+    #print(request_data)
+    serializer = Settings_ipSerializer(data=request_data)
+
+    if serializer.is_valid():
+        instance = serializer.save()
+    
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_Settings_District(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            manufacturers = Settings_District.objects.filter(
+                 
+            ).distinct()
+        # Serialize the queryset
+        retailer_serializer = Settings_DistrictSerializer(manufacturers, many=True)
+        # Return the serialized data as JSON response
+        return Response(retailer_serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_Settings_District(request):
+    # Assuming you have user authentication in place
+    user_id = request.user.id 
+
+    # Create data for the new DeviceModel entry
+    data = {
+        'createdby': user_id,
+        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        #'status': 'Manufacturer_OTP_Sent',
+    }
+
+    # Attach the file to the request data
+    request_data = request.data.copy()
+    request_data.update(data)
+    #print(request_data)
+    serializer = Settings_DistrictSerializer(data=request_data)
+
+    if serializer.is_valid():
+        instance = serializer.save()
+    
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_Settings_firmware(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            manufacturers = Settings_firmware.objects.filter(
+                 
+            ).distinct()
+        # Serialize the queryset
+        retailer_serializer = Settings_firmwareSerializer(manufacturers, many=True)
+        # Return the serialized data as JSON response
+        return Response(retailer_serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_Settings_firmware(request):
+    # Assuming you have user authentication in place
+    user_id = request.user.id 
+
+    # Create data for the new DeviceModel entry
+    data = {
+        'createdby': user_id,
+        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        'file_bin':'file',
+        #'status': 'Manufacturer_OTP_Sent',
+    }
+
+    
+        
+
+    # Attach the file to the request data
+    request_data = request.data.copy()
+    request_data.update(data)
+    #print(request_data)
+    serializer = Settings_firmwareSerializer(data=request_data)
+
+    if serializer.is_valid():
+        instance = serializer.save()
+        uploaded_file = request.FILES.get('file_bin')
+        if uploaded_file:
+            # Save the file to a specific location
+            file_path = 'file_bin/' + str(instance.id) + '_' + uploaded_file.name
+            with open(file_path, 'wb') as file:
+                for chunk in uploaded_file.chunks():
+                    file.write(chunk)
+            
+            # Update the cop_file field in the DeviceCOP instance
+            instance.file_bin = file_path
+            instance.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_Settings_VehicleCategory(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            manufacturers = Settings_VehicleCategory.objects.filter(
+                 
+            ).distinct()
+        # Serialize the queryset
+        retailer_serializer = Settings_VehicleCategorySerializer(manufacturers, many=True)
+        # Return the serialized data as JSON response
+        return Response(retailer_serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_Settings_VehicleCategory(request):
+    # Assuming you have user authentication in place
+    user_id = request.user.id 
+
+    # Create data for the new DeviceModel entry
+    data = {
+        'createdby': user_id,
+        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        #'status': 'Manufacturer_OTP_Sent',
+    }
+
+    # Attach the file to the request data
+    request_data = request.data.copy()
+    request_data.update(data)
+    #print(request_data)
+    serializer = Settings_VehicleCategorySerializer(data=request_data)
+
+    if serializer.is_valid():
+        instance = serializer.save()
+    
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            count_dict = {
+            'Manufacture': Manufacturer.objects.count(),
+            'eSimProvider': eSimProvider.objects.count(),
+            'Retailer': Retailer.objects.count(),
+            'VehicleOwner': VehicleOwner.objects.count(),
+            'dto_rto': dto_rto.objects.count(),
+            'SOS_ex': SOS_ex.objects.count(),
+            'SOS_user': SOS_user.objects.count(),
+            'SOS_admin': SOS_admin.objects.count(),
+            
+            'TotalVehicles':0,
+            
+            'SOS_team': SOS_team.objects.count(),
+            
+            'TotalAlerts':0,
+            'TotalAlerts_month':0,
+            'TotalAlerts_today':0,
+            'SpeedAlerts':0,
+            'SpeedAlerts_month':0,
+            'SpeedAlerts_today':0,
+
+            'TotalDevice': Device.objects.count(),
+            'TotalTaggedDevice':0,
+            'TotalOnlineDevice':0,
+            'TotalOfflineDevice':0,
+            'TotalDeviceModel': DeviceModel.objects.count(),
+            
+            'Active_States':0,
+            'Inactive_States':0,
+            'Total_States':0,
+
+        }
+        # Return the serialized data as JSON response
+        return Response(count_dict)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_state(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            count_dict = {
+            'total_state':0,
+            'active_state': 0,
+            'inactive_state':0, 
+
+        }
+        # Return the serialized data as JSON response
+        return Response(count_dict)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_alart(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            count_dict = {
+            'total_alart':0,
+            'alart_month': 0,
+            'alart_today':0, 
+
+        }
+        # Return the serialized data as JSON response
+        return Response(count_dict)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_device1(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            count_dict = {
+            'total_device':0,
+            'active_device': 0,
+            'idle_device':0, 
+
+        }
+        # Return the serialized data as JSON response
+        return Response(count_dict)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_device2(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            count_dict = {
+            'tag_device':0,
+            'online_device': 0,
+            'offline_device':0, 
+        }
+        # Return the serialized data as JSON response
+        return Response(count_dict)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_user1(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            count_dict = {
+            'total_user': Manufacturer.objects.count(),
+            'state_admin': StateAdmin.objects.count(),
+            'manufacturer_admin': Manufacturer.objects.count(),
+            'dtorto_admin': dto_rto.objects.count(),
+            'eSimProvider': eSimProvider.objects.count(),
+            'Retailer': Retailer.objects.count(),
+            'VehicleOwner': VehicleOwner.objects.count(), 
+            'SOS_ex': SOS_ex.objects.count(),
+            'SOS_user': SOS_user.objects.count(),
+            'SOS_admin': SOS_admin.objects.count(),
+             
+        }
+        # Return the serialized data as JSON response
+        return Response(count_dict)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_user2(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            count_dict = {
+             
+            'dtorto_admin': dto_rto.objects.count(),
+            'eSimProvider': eSimProvider.objects.count(),
+            'Retailer': Retailer.objects.count(),
+            'VehicleOwner': VehicleOwner.objects.count(), 
+            'SOS_ex': SOS_ex.objects.count(),
+            'SOS_user': SOS_user.objects.count(),
+            'SOS_admin': SOS_admin.objects.count(),
+             
+        }
+        # Return the serialized data as JSON response
+        return Response(count_dict)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_Settings_State(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            manufacturers = Settings_State.objects.filter(
+                 
+            ).distinct()
+        # Serialize the queryset
+        retailer_serializer = Settings_StateSerializer(manufacturers, many=True)
+        # Return the serialized data as JSON response
+        return Response(retailer_serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_Settings_State(request):
+    # Assuming you have user authentication in place
+    user_id = request.user.id 
+
+    # Create data for the new DeviceModel entry
+    data = {
+        'createdby': user_id,
+        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        #'status': 'Manufacturer_OTP_Sent',
+    }
+
+    # Attach the file to the request data
+    request_data = request.data.copy()
+    request_data.update(data)
+    #print(request_data)
+    serializer = Settings_StateSerializer(data=request_data)
+
+    if serializer.is_valid():
+        instance = serializer.save()
+    
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_Settings_ip(request):
+    try:
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if True:
+            manufacturers = Settings_ip.objects.filter(
+                 
+            ).distinct()
+        # Serialize the queryset
+        retailer_serializer = Settings_ipSerializer(manufacturers, many=True)
+        # Return the serialized data as JSON response
+        return Response(retailer_serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_VehicleOwner(request):
+    try:
+        # Get filter parameters from the request
+        dealer_id = request.data.get('eSimProvider_id', None)
+        email = request.data.get('email', '')
+        company_name = request.data.get('company_name', '')
+        name = request.data.get('name', '')
+        phone_no = request.data.get('phone_no', '')
+        address = request.data.get('address', '')
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+
+        # Add ID filter if provided
+        if dealer_id :
+            manufacturers = VehicleOwner.objects.filter(
+                id=dealer_id ,
+                users__email__icontains=email,
+                #company_name__icontains=company_name,
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+        else:
+            manufacturers = VehicleOwner.objects.filter(
+                #id=manufacturer_id,
+                users__email__icontains=email,
+                #company_name__icontains=company_name,
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no, 
+            ).distinct()
+
+        # Serialize the queryset
+        retailer_serializer = VehicleOwnerSerializer(manufacturers, many=True)
+
+        # Return the serialized data as JSON response
+        return Response(retailer_serializer.data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

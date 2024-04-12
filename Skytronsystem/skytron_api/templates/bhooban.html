@@ -1,0 +1,455 @@
+<!-- SkytronServer/gps_api/templates/emergency_call_details.html -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Emergency Call Details</title>
+
+    {% load static %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{% static 'ol/ol.css' %}">
+    <style>
+        #map {
+            height: 500px;
+            width: 100%;
+        }
+    </style>
+
+
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+
+    <script src="{% static 'ol/dist/ol.js' %}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <script>
+
+        function initMap() {
+            // Function to initialize the map (you can leave it empty for now)
+        }
+        // Function to fetch the latest GPS location data and update the content
+        function updateLatestGpsLocation() {
+            $.ajax({
+                type: 'GET',
+                url: '/gps/get-latest-gps-location/' + '{{ emergency_call.call_id }}',  // Create a URL for fetching the latest GPS location data
+                success: function (response) {
+                    response = JSON.parse(response);
+                    // Update the content of the 'latestGpsLocation' div with the fetched data
+                    //$('#latestGpsLocation').html(response);
+                    $('#status').html('Status: ' + response['status']);
+                    $('#desk_executive_id').html('DeskExecutive: ' + response['desk_executive_id']);
+                    $('#field_executive_id').html('FieldExecutive: ' + response['field_executive_id']);
+                    $('#final_comment').html('FinalComment: ' + response['final_comment']);
+                    $('#comment').val(response['final_comment']);
+                    $('#date').html('Date: ' + response['date']);
+                    $('#time').html('Time: ' + response['time']);
+                    $('#latitude').html('Latitude: ' + response['latitude']);
+                    $('#longitude').html('Longitude: ' + response['longitude']);
+                    //console.log('Data:', response['route']);
+                    if (response['status'] == "Closed") { back(); }
+
+
+                    plotOnGoogleMap(response['latitude'], response['longitude'], response['field_latitude'], response['field_longitude'], response['route']);
+
+
+                    //console.log('Data:', response['html']);
+                    //console.log('Data:', response.html);
+                    //console.log('Data:', response['lat']);
+                    //console.log('Data:', response['lon']);
+                    // Plot the latitude and longitude on Google Map
+                    //plotOnGoogleMap(response['latitude'], response['longitude']);
+
+
+                },
+                error: function (error) {
+                    console.error('Error fetching latest GPS location data:', error);
+                }
+            });
+        }
+
+        // ...
+
+        // Function to clear all markers from the map
+        function clearMarkers() {
+            for (var i = 0; i < markers.length; i++) {
+                markers[i].setMap(null);
+            }
+            markers = [];
+        }
+
+        // Function to clear all directions renderers from the map
+        function clearDirectionsRenderers() {
+            for (var i = 0; i < directionsRenderers.length; i++) {
+                directionsRenderers[i].setMap(null);
+            }
+            directionsRenderers = [];
+        }
+
+        // Function to clear all info windows
+        function clearInfoWindows() {
+            for (var i = 0; i < infoWindows.length; i++) {
+                infoWindows[i].close();
+            }
+            infoWindows = [];
+        }
+
+        // ...
+        function gmNoop() { console.log('GMap Callback') }
+
+        var updateCounter = 0;
+        var iconStyle = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "{% static 'sos.png' %}", // Replace with the path to your emergency icon
+                scale: 0.1,
+            })
+        });
+        function updateEmergencyPointer(lon, lat) {
+            //var emergencyPoint = map.getLayers().getArray().find(layer => layer.get('name') === 'emergencyLayer');
+            var emergencyPoint = emergencyLayer;
+            console.log('lat:', lat);
+            if (emergencyPoint) {
+                emergencyPoint.getSource().clear();
+                console.log('lon:', lon);
+
+                var iconStyle = new ol.style.Style({
+                    image: new ol.style.Icon({
+                        anchor: [0.5, 1],
+                        src: "{% static 'sos.png' %}", // Replace with the path to your emergency icon
+                        scale: 0.1,
+                    })
+                });
+
+                var updatedEmergencyPoint = new ol.Feature({
+                    geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])),
+                });
+
+                updatedEmergencyPoint.setStyle(iconStyle);
+
+                emergencyPoint.getSource().addFeature(updatedEmergencyPoint);
+            }
+            else {
+
+
+            }
+        }
+
+        function updateactivePolicePointer(lon, lat) {
+            //var emergencyPoint = map.getLayers().getArray().find(layer => layer.get('name') === 'emergencyLayer');
+            var emergencyPoint = activePoliceLayer;
+            console.log('latpol:', lat);
+            if (emergencyPoint) {
+                emergencyPoint.getSource().clear();
+                console.log('lonpol:', lon);
+
+                var iconStyle = new ol.style.Style({
+                    image: new ol.style.Icon({
+                        anchor: [0.5, 1],
+                        src: "{% static 'police.png' %}", // Replace with the path to your emergency icon
+                        scale: 0.3,
+                    })
+                });
+
+                var updatedEmergencyPoint = new ol.Feature({
+                    geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])),
+                });
+
+                updatedEmergencyPoint.setStyle(iconStyle);
+
+                emergencyPoint.getSource().addFeature(updatedEmergencyPoint);
+            }
+            else {
+
+
+            }
+        }
+
+
+        function plotOnGoogleMap(latitude, longitude, field_latitude, field_longitude, route) {
+            updateEmergencyPointer(longitude, latitude);//longitude, latitude); 
+            if (field_latitude != 0) {
+                updateactivePolicePointer(field_longitude, field_latitude);
+                console.log("log data ", route);
+                var geojsonData = route;
+                //const data = JSON.parse(// Construct the API URL with parameters 
+                const geoJsonFormat = new ol.format.GeoJSON();
+
+                // Parse the GeoJSON data
+                const features = geoJsonFormat.readFeatures(geojsonData, {
+                    dataProjection: 'EPSG:4326',
+                    featureProjection: 'EPSG:3857'
+                });
+                //const distance = turf.length(turf.lineString(features), { units: 'kilometers' });
+                //const coordinates = features;//[0].getGeometry().getCoordinates();
+                // Calculate the route distance using Turf.js
+                //const distance = turf.length(coordinates, { units: 'kilometers' });
+
+                // Display the route distance
+                //console.log('Route Distance:', distance, 'kilometers');
+
+                // Create a vector source and layer
+                const vectorSource = new ol.source.Vector({
+                    features: features
+                });
+                //const distance = turf.length(turf.lineString(coordinates), { units: 'kilometers' });
+
+                const vectorLayer = new ol.layer.Vector({
+                    source: vectorSource,
+                    style: new ol.style.Style({
+                        stroke: new ol.style.Stroke({
+                            color: 'rgba(0, 0, 128, 1)', // Deep blue color
+                            width: 4 // Line width in pixels
+                        })
+                    })
+                });
+                const coordinates = features[0].getGeometry().getCoordinates();
+                const lineString = new ol.geom.LineString(coordinates).transform('EPSG:4326', 'EPSG:3857');
+                const routeLength = lineString.getLength(); // Length in meters
+                var totalDistance = 0;
+
+                // Loop through each set of coordinates
+                for (var i = 0; i < coordinates.length; i++) {
+                    // Create a LineString geometry for the current set of coordinates
+                    var lineStrings = new ol.geom.LineString(coordinates[i]);
+                    var distance = lineStrings.getLength();
+                    totalDistance += distance;
+                    //console.log('Route Length:', distance, 'meters');
+                }
+
+                totalDistance = totalDistance / 1000;
+                // to show something//popup.hide();
+                // The totalDistance variable now contains the sum of distances for all coordinates
+                console.log("Total Distance:", totalDistance);
+
+                var overlayContent = "Distance:" + totalDistance.toFixed(2) + 'KM';
+
+                // Update overlay position and content
+                dynamicOverlay.setPosition(ol.proj.fromLonLat([longitude, latitude]));
+
+                document.getElementById('overlay-content').innerHTML = overlayContent;
+
+                // Show the overlay
+                dynamicOverlay.getElement().style.display = 'block';
+
+
+                map.addLayer(vectorLayer);
+
+                // Fit the view to the extent of the route
+                map.getView().fit(vectorSource.getExtent(), { padding: [50, 50, 50, 50] });
+
+
+
+            }
+
+        }
+        function broadcastHelp2() {
+            // Make an AJAX request to the AssignHelp API
+            var status = document.getElementById('status_in').value;
+            var comment = document.getElementById('comment').value;
+            $.ajax({
+                type: 'POST',
+                url: '/gps/submit_status/',
+                data: { 'call_id': '{{ emergency_call.call_id }}', 'status': status, "comment": comment },  // Include any necessary data
+                success: function (response) {
+                    //console.log('Help assigned successfully:', response);
+                    // Add any additional logic or UI updates here
+                },
+                error: function (error) {
+                    console.error('Error broadcasting help:', error);
+                }
+            });
+        }
+        function broadcastHelp() {
+            // Make an AJAX request to the AssignHelp API
+            $.ajax({
+                type: 'POST',
+                url: '/gps/broadcast-help/',
+                data: { 'call_id': '{{ emergency_call.call_id }}' },  // Include any necessary data
+                success: function (response) {
+                    //console.log('Help assigned successfully:', response);
+                    // Add any additional logic or UI updates here
+                },
+                error: function (error) {
+                    console.error('Error broadcasting help:', error);
+                }
+            });
+        }
+        function back() {
+            // Replace 'https://example.com' with the URL you want to redirect to
+            window.location.href = '/gps/emergency-call-listener';
+        }
+        // Periodically fetch the latest GPS location data every 3 seconds
+        setInterval(updateLatestGpsLocation, 3000);
+    </script>
+
+    <style>
+        .map {
+            position: relative;
+        }
+
+        .dynamic-overlay {
+            position: absolute;
+            background-color: white;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    {% if user.is_authenticated %}
+    <p>{{ user.username }}! <a href="{% url 'logout' %}">Logout</a></p>
+    {% else %}
+    <p><a href="{% url 'login' %}">Login</a></p>
+    {% endif %}
+    <div>
+
+
+
+        <div><button id="back" onclick="back()">Back</button>
+            <h2>Emergency Call Detailse [Call ID: {{ emergency_call.call_id }}]</h2>
+            <table>
+                <tbody>
+                    <tr>
+                        <td>Device IMEI: </td>
+                        <td> {{ emergency_call.device_imei }}</td>
+                        <td>Vehicle No: </td>
+                        <td> {{ emergency_call.vehicle_no }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <h2>Location Information</h2>
+            <table>
+                <tbody>
+                    <tr>
+                        <td>
+                            <p id="status">Status: </p>
+                        </td>
+                        <td>
+                            <p id="desk_executive_id">DeskExecutive: </p>
+                        </td>
+                        <td>
+                            <p id="field_executive_id">FieldExecutive: </p>
+                        </td>
+                        <td>
+                            <p id="final_comment">FinalComment: </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <p id="date">Date: </p>
+                        </td>
+                        <td>
+                            <p id="time">Time: </p>
+                        </td>
+                        <td>
+                            <p id="latitude">Latitude: </p>
+                        </td>
+                        <td>
+                            <p id="longitude">Longitude: </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><button id="broadcastHelpButton" onclick="broadcastHelp()">Broadcast</button></td>
+                        <td> </td>
+                        <td> </td>
+                        <td> </td>
+                    </tr>
+                    <tr>
+                        <td><label for="status">Select Status:</label> </td>
+                        <td> <select name="status" id="status_in">
+                                <option value="MissInformation">MissInformationClosed</option>
+                                <option value="">NeedBackup</option>
+                                <option value="Closed">Close</option>
+                            </select></td>
+                        <td> <input name="status" id="comment" placeholder="Comment"> </input> </td>
+                        <td> <button id="broadcastHelpButton2" onclick="broadcastHelp2()">Submit Final Report</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+
+        </div>
+
+        <div id="map" style="width: 100%; height: 500px;"></div>
+
+        <div id="dynamic-overlay" class="dynamic-overlay">
+            <p id="overlay-content"> </p>
+        </div>
+
+        <script>
+            var map = new ol.Map();
+            var emergencyPoint = "";
+            var emergencyLayer = "";
+            var activePoliceLayer = "";
+            var activePolicePoint = "";
+            let dynamicOverlay;
+
+            document.addEventListener('DOMContentLoaded', function () {
+                // Initialize the map
+                map = new ol.Map({
+                    target: 'map',
+                    layers: [
+                        new ol.layer.Tile({
+                            source: new ol.source.OSM()
+                        }),
+                        new ol.layer.Tile({
+                            source: new ol.source.TileWMS({
+                                url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',
+                                params: { 'LAYERS': 'lulc:BR_LULC50K_1112', 'TILED': true },
+                                serverType: 'geoserver',
+                                transition: 0,
+                            }),
+                        }),
+                    ],
+                    view: new ol.View({
+                        center: ol.proj.fromLonLat([91.829437, 26.131644]),
+                        zoom: 12,
+                    })
+                });
+                emergencyPoint = new ol.Feature({
+                    geometry: new ol.geom.Point(ol.proj.fromLonLat([91.829437, 26.131644])),
+                });
+
+                emergencyPoint.setStyle(iconStyle);
+                emergencyLayer = new ol.layer.Vector({
+                    source: new ol.source.Vector({
+                        features: [emergencyPoint],
+                    }),
+                });
+                activePolicePoint = new ol.Feature({
+                    geometry: new ol.geom.Point(ol.proj.fromLonLat([91.829437, 26.131644])),
+                });
+                activePoliceLayer = new ol.layer.Vector({
+                    source: new ol.source.Vector({
+                        features: [activePolicePoint],
+                    }),
+                });
+                map.addLayer(emergencyLayer);
+                map.addLayer(activePoliceLayer);
+
+                dynamicOverlay = new ol.Overlay({
+                    element: document.getElementById('dynamic-overlay'),
+                });
+
+                map.addOverlay(dynamicOverlay);
+
+
+            });
+        </script>
+</body>
+
+</html>
+
+
+
+
+<body>
+
+</body>
+
+</html>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>GPS Data Log Table</title>
+</head>
+
+<body>
+    <h2>GPS Data Log Table</h2>
+
+    <form method="get" action="{% url 'api/gps_data_log_table' %}">
+        <label for="search">Search:</label>
+        <input type="text" name="search" value="{{ search_query }}">
+        <button type="submit">Search</button>
+    </form>
+
+    <table border="1">
+        <tr>
+            <th>Timestamp</th>
+            <th>Raw Data</th>
+        </tr>
+        {% for item in data %}
+        <tr>
+            <td>{{ item.timestamp|date:"Y-m-d H:i:s" }}</td>
+            <td>{{ item.raw_data }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+
+</html>

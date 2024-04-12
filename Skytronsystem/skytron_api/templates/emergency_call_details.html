@@ -1,0 +1,394 @@
+<!-- SkytronServer/gps_api/templates/emergency_call_details.html -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergency Call Details</title>
+    <script
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDrSHFa5wxQ3w13VGGLEWCxvE_rvW__SkE&libraries=places&callback=gmNoop"></script>
+
+
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script>
+
+        function initMap() {
+            // Function to initialize the map (you can leave it empty for now)
+        }
+        // Function to fetch the latest GPS location data and update the content
+        function updateLatestGpsLocation() {
+            $.ajax({
+                type: 'GET',
+                url: '/gps/get-latest-gps-location/' + '{{ emergency_call.call_id }}',  // Create a URL for fetching the latest GPS location data
+                success: function (response) {
+                    response = JSON.parse(response);
+                    // Update the content of the 'latestGpsLocation' div with the fetched data
+                    //$('#latestGpsLocation').html(response);
+                    console.log('Data:', response['status']);
+                    $('#status').html('Status: ' + response['status']);
+                    $('#desk_executive_id').html('DeskExecutive: ' + response['desk_executive_id']);
+                    $('#field_executive_id').html('FieldExecutive: ' + response['field_executive_id']);
+                    $('#final_comment').html('FinalComment: ' + response['final_comment']);
+                    $('#comment').val(response['final_comment']);
+                    $('#date').html('Date: ' + response['date']);
+                    $('#time').html('Time: ' + response['time']);
+                    $('#latitude').html('Latitude: ' + response['latitude']);
+                    $('#longitude').html('Longitude: ' + response['longitude']);
+                    if (response['status'] == "Closed") { back(); }
+
+                    plotOnGoogleMap(response['latitude'], response['longitude'], response['field_latitude'], response['field_longitude']);
+
+
+                    //console.log('Data:', response['html']);
+                    //console.log('Data:', response.html);
+                    //console.log('Data:', response['lat']);
+                    //console.log('Data:', response['lon']);
+                    // Plot the latitude and longitude on Google Map
+                    //plotOnGoogleMap(response['latitude'], response['longitude']);
+
+
+                },
+                error: function (error) {
+                    console.error('Error fetching latest GPS location data:', error);
+                }
+            });
+        }
+
+        // ...
+
+        // Function to clear all markers from the map
+        function clearMarkers() {
+            for (var i = 0; i < markers.length; i++) {
+                markers[i].setMap(null);
+            }
+            markers = [];
+        }
+
+        // Function to clear all directions renderers from the map
+        function clearDirectionsRenderers() {
+            for (var i = 0; i < directionsRenderers.length; i++) {
+                directionsRenderers[i].setMap(null);
+            }
+            directionsRenderers = [];
+        }
+
+        // Function to clear all info windows
+        function clearInfoWindows() {
+            for (var i = 0; i < infoWindows.length; i++) {
+                infoWindows[i].close();
+            }
+            infoWindows = [];
+        }
+
+        // ...
+        function gmNoop() { console.log('GMap Callback') }
+
+        var updateCounter = 0;
+        function plotOnGoogleMap(latitude, longitude, field_latitude, field_longitude) {
+            var latlng = new google.maps.LatLng(latitude, longitude);
+            //field_latitude = 26.193018;//Latitude: 26.193018   Longitude: 91.752701
+            //field_longitude = 91.762701;
+            //marker.setPosition(latlng);
+            //map.setCenter(latlng);
+            if (field_latitude != 0) {
+                var latlng2 = new google.maps.LatLng(field_latitude, field_longitude);
+                //marker2.setPosition(latlng2);
+                var request = {
+                    origin: latlng2,
+                    destination: latlng,
+                    provideRouteAlternatives: false, //true,
+                    travelMode: 'DRIVING'
+
+                };
+                directionsService.route(request, function (response, status) {
+                    if (status == 'OK') {
+                        clearMarkers();
+                        clearInfoWindows();
+                        clearDirectionsRenderers();
+
+                        routes = response.routes;
+
+                        for (var i = 0; i < routes.length; i++) {
+
+                            clearMarkers();
+                            clearInfoWindows();
+                            clearDirectionsRenderers();
+                            const route = routes[i];
+                            var distance = route.legs[0].distance.text;
+                            var duration = route.legs[0].duration.text;
+
+                            // Display distance and duration as markers on the map
+                            var startLocation = route.legs[0].start_location;
+                            const marker = new google.maps.Marker({
+                                position: startLocation,
+                                map: map,
+                                label: "FieldExecutive[Route" + (i + 1).toString() + "]",  // Marker label
+                                title: 'Distance: ' + distance + '\nDuration: ' + duration
+                            });
+
+                            markers.push(marker);
+                            if (i == 0) {
+                                const marker2 = new google.maps.Marker({
+                                    position: latlng,
+                                    map: map,
+                                    label: "VehicleLocation",  // Marker label
+                                    title: 'Distance: ' + distance + '\nDuration: ' + duration
+                                });
+
+                                markers.push(marker2);
+                            }
+
+
+                            // Show info window on marker click
+                            const infoWindow = new google.maps.InfoWindow({
+                                content: 'Route ' + (i + 1) + ':<br>' +
+                                    'Distance: ' + distance + '<br>' +
+                                    'Duration: ' + duration
+                            });
+
+                            clearInfoWindows();
+                            infoWindows.push(infoWindow);
+                            infoWindow.open(map, marker);
+
+
+                            // Display route on a separate DirectionsRenderer
+                            const routeDirectionsRenderer = new google.maps.DirectionsRenderer({
+                                map: map,
+                                directions: response,
+                                routeIndex: i, suppressMarkers: true,
+                                preserveViewport: true  // Set preserveViewport to true
+                            });
+
+                            /*
+                            google.maps.event.addListener(routeDirectionsRenderer, 'click', function (event) {
+                                // Close all other info windows before opening the clicked one
+                                //clearInfoWindows();
+
+                                // You can access information about the clicked route or event here
+                                var route = response.routes[i];
+                                var routeInfo = 'Route ' + (i + 1) + ':<br>' +
+                                    'Distance: ' + route.legs[0].distance.text + '<br>' +
+                                    'Duration: ' + route.legs[0].duration.text;
+                                console.log("!" + routeInfo);
+                                var infoWindow = new google.maps.InfoWindow({
+                                    content: routeInfo,
+                                    position: event.latLng  // Open the info window at the clicked position
+                                });
+
+                                infoWindows.push(infoWindow);
+                                infoWindow.open(map);
+                            });
+                            */
+                            directionsRenderers.push(routeDirectionsRenderer);
+                        }
+                    }
+                    else {
+                        clearMarkers();
+                        clearInfoWindows();
+                        clearDirectionsRenderers();
+                        if (field_latitude != 0) {
+                            const marker = new google.maps.Marker({
+                                position: latlng2,
+                                map: map,
+                                label: "FieldExecutive ",  // Marker label
+                                title: 'No distance Data found'
+                            });
+
+                            markers.push(marker);
+                        }
+
+                        const marker2 = new google.maps.Marker({
+                            position: latlng,
+                            map: map,
+                            label: "VehicleLocation",  // Marker label
+                            title: 'No distance Data found '
+                        });
+
+                        markers.push(marker2);
+                        clearInfoWindows();
+
+                    }
+                }
+                );
+                if (updateCounter < 2) {
+                    map.setZoom(12);  // Adjust the desired zoom level
+                    map.setCenter(latlng);  // Set the center to the start location
+                    updateCounter++;
+                }
+
+
+            }
+            else {
+                map.setCenter(latlng);
+                clearMarkers();
+                clearInfoWindows();
+                clearDirectionsRenderers();
+
+                const marker2 = new google.maps.Marker({
+                    position: latlng,
+                    map: map,
+                    label: "VehicleLocation",  // Marker label
+                    title: 'No Field executive assigned'
+                });
+
+                markers.push(marker2);
+                clearInfoWindows();
+            }
+        }
+        function broadcastHelp2() {
+            // Make an AJAX request to the AssignHelp API
+            var status = document.getElementById('status_in').value;
+            var comment = document.getElementById('comment').value;
+            $.ajax({
+                type: 'POST',
+                url: '/gps/submit_status/',
+                data: { 'call_id': '{{ emergency_call.call_id }}', 'status': status, "comment": comment },  // Include any necessary data
+                success: function (response) {
+                    //console.log('Help assigned successfully:', response);
+                    // Add any additional logic or UI updates here
+                },
+                error: function (error) {
+                    console.error('Error broadcasting help:', error);
+                }
+            });
+        }
+        function broadcastHelp() {
+            // Make an AJAX request to the AssignHelp API
+            $.ajax({
+                type: 'POST',
+                url: '/gps/broadcast-help/',
+                data: { 'call_id': '{{ emergency_call.call_id }}' },  // Include any necessary data
+                success: function (response) {
+                    //console.log('Help assigned successfully:', response);
+                    // Add any additional logic or UI updates here
+                },
+                error: function (error) {
+                    console.error('Error broadcasting help:', error);
+                }
+            });
+        }
+        function back() {
+            window.location.href = '/gps/emergency-call-listener';
+        }
+        // Periodically fetch the latest GPS location data every 3 seconds
+        setInterval(updateLatestGpsLocation, 3000);
+    </script>
+
+
+</head>
+
+<body>
+    {% if user.is_authenticated %}
+    <p>{{ user.username }}! <a href="{% url 'logout' %}">Logout</a></p>
+    {% else %}
+    <p><a href="{% url 'login' %}">Login</a></p>
+    {% endif %}
+    <div>
+
+
+
+        <div><button id="back" onclick="back()">Back</button>
+            <h2>Emergency Call Detailse [Call ID: {{ emergency_call.call_id }}]</h2>
+            <table>
+                <tbody>
+                    <tr>
+                        <td>Device IMEI: </td>
+                        <td> {{ emergency_call.device_imei }}</td>
+                        <td>Vehicle No: </td>
+                        <td> {{ emergency_call.vehicle_no }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <h2>Location Information</h2>
+            <table>
+                <tbody>
+                    <tr>
+                        <td>
+                            <p id="status">Status: </p>
+                        </td>
+                        <td>
+                            <p id="desk_executive_id">DeskExecutive: </p>
+                        </td>
+                        <td>
+                            <p id="field_executive_id">FieldExecutive: </p>
+                        </td>
+                        <td>
+                            <p id="final_comment">FinalComment: </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <p id="date">Date: </p>
+                        </td>
+                        <td>
+                            <p id="time">Time: </p>
+                        </td>
+                        <td>
+                            <p id="latitude">Latitude: </p>
+                        </td>
+                        <td>
+                            <p id="longitude">Longitude: </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><button id="broadcastHelpButton" onclick="broadcastHelp()">Broadcast</button></td>
+                        <td> </td>
+                        <td> </td>
+                        <td> </td>
+                    </tr>
+                    <tr>
+                        <td><label for="status">Select Status:</label> </td>
+                        <td> <select name="status" id="status_in">
+                                <option value="MissInformation">MissInformationClosed</option>
+                                <option value="">NeedBackup</option>
+                                <option value="Closed">Close</option>
+                            </select></td>
+                        <td> <input name="status" id="comment" placeholder="Comment"> </input> </td>
+                        <td> <button id="broadcastHelpButton2" onclick="broadcastHelp2()">Submit Final Report</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div id="googleMap" style="height: 400px;width: 1200px;"></div>
+        </div>
+        <script>
+            var latitude = 0;
+            var longitude = 0;
+            var markers = [];
+
+            // Declare a global array to store directions renderers
+            var directionsRenderers = [];
+
+            // Declare a global array to store info windows
+            var infoWindows = [];
+            var mapOptions = {
+                center: new google.maps.LatLng(latitude, longitude),
+                zoom: 7,
+            };
+            var map = new google.maps.Map(document.getElementById('googleMap'), mapOptions);
+
+            var directionsService = new google.maps.DirectionsService();
+            /*var directionsRenderer = new google.maps.DirectionsRenderer();
+            directionsRenderer.setMap(map);
+
+            console.log('Datalat:', latitude);
+            console.log('Datalon:', longitude);
+
+            var marker = new google.maps.Marker({
+                position: new google.maps.LatLng(latitude, longitude),
+                map: map,
+                title: 'Incident Location'
+            });
+            var marker2 = new google.maps.Marker({
+                position: new google.maps.LatLng(latitude, longitude),
+                map: map,
+                title: 'Field Executive'
+            });
+
+            */
+        </script>
+</body>
+
+</html>

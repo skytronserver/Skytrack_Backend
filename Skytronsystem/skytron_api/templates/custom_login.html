@@ -1,0 +1,18 @@
+<!-- SkytronServer/gps_api/templates/custom_login.html -->
+{% extends 'admin/login.html' %}
+
+{% block branding %}
+<h1 id="site-name"><a href="{% url 'login' %}">Skytron Login</a></h1>
+{% endblock %}
+{% block content %}
+<h2>Skytron Login</h2>
+<form method="post" action="{% url 'login' %}">
+    {% csrf_token %}
+    {{ form.username.label_tag }} {{ form.username }}
+    <br>
+    {{ form.password.label_tag }} {{ form.password }}
+    {{ form.errors }}
+    <br>
+    <input type="submit" value="Log in">
+</form>
+{% endblock %}

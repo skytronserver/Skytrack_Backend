@@ -1,0 +1,111 @@
+<!-- SkytronServer/gps_api/templates/emergency_call_listener.html -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    {% load static %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergency Call Listener</title>
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script>
+        function showPopup(ret) {
+            // Display popup with details and 'Accept' button
+            // Add your custom styling and behavior for the popup
+
+            var confirmation = window.confirm(
+                `Emergency Call ID: ${ret['call_id']}\nVehicleNo: ${ret['vehicle_no']}\nIMEINo: ${ret['device_imei']}\n\nPress 'OK' to accept the call.`
+            );
+
+            // If the user clicks "OK" in the confirmation dialog
+            if (confirmation) {
+                // Call the function to handle the "Accept" action
+                acceptCall(ret['call_id']);
+
+                stopBuzzer();
+            }
+        }
+
+        // Function to handle the "Accept" action
+        function acceptCall(call_id) {
+            // Send a POST request to the server to update the desk_executive_id
+            $.ajax({
+                type: 'POST',
+                url: '/gps/emergency-call-listener/',
+                data: JSON.stringify({ 'call_id': call_id }),
+                contentType: 'application/json',
+                success: function (response) {
+                    console.log('Data:', response);
+                    window.location.href = '/gps/emergency-call-details/' + call_id;
+
+                },
+                error: function (error) {
+                    console.error('Error accepting call:', error);
+                }
+            });
+
+
+        }
+
+
+        // Periodically fetch live data updates every 5 seconds
+        function fetchLiveCall() {
+            setInterval(function () {
+                $.ajax({
+                    type: 'GET',
+                    url: '/gps/get-live-call/',  // Create a URL for live data updates
+                    success: function (response) {
+                        // Update the UI with live data (replace or append as needed)
+                        console.log('Live Data:', response);
+                        if ('call_id' in response) {
+                            // Call the function to show the popup
+                            audio.play();
+                            showPopup(response);
+                        }
+                        if ('table_data' in response) {
+                            $('#Running_Calls').html(response['table_data']);
+                        }
+
+                    },
+                    error: function (error) {
+                        console.error('Error fetching live data:', error);
+                    }
+                });
+            }, 5000);
+        }
+
+        // Start fetching live data
+        fetchLiveCall();
+    </script>
+</head>
+
+<body>
+    {% if user.is_authenticated %}
+    <p>Welcome, {{ user.username }}! <a href="{% url 'logout' %}">Logout</a></p>
+    {% else %}
+    <p><a href="{% url 'login' %}">Login</a></p>
+    {% endif %}
+    <h1>Waiting for Call....</h1>
+    <h3>Previus Calls</h3>
+    <div id="Running_Calls"></div>
+
+    <!-- Add your HTML content here (e.g., a button to trigger the popup) -->
+    <script>
+        var audio = new Audio('{% static "bell.wav" %}');
+        audio.load();
+
+
+        function playBuzzer() {
+            audio.play();
+        }
+
+        function stopBuzzer() {
+            audio.pause();
+            audio.currentTime = 0;
+        }
+        document.getElementById('pl').onclick(playBuzzer());
+
+    </script>
+</body>
+
+</html>

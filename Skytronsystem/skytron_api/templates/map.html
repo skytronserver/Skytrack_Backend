@@ -1,0 +1,349 @@
+<!-- SkytronServer/gps_api/templates/emergency_call_details.html -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Live Tracking Map</title>
+
+    {% load static %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!--
+        <link rel="stylesheet" href="{% static 'ol/ol.css' %}"><script src="{% static 'ol/dist/ol.js' %}"></script>
+    
+    -->
+    <style>
+        #map {
+            height: 500px;
+            width: 100%;
+        }
+    </style>
+
+
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+
+    <script src="https://skytrack.tech:2000/static/ol/dist/ol.js"></script>
+    <link rel="stylesheet" href="https://skytrack.tech:2000/static/ol/ol.css">
+
+
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <script>
+        function createOverlayContent(markerInfo) {
+            var content = '<h3>Marker Details</h3>';
+            content += '<p><strong>Vehicle Registration Number:</strong> ' + markerInfo.vehicleRegistrationNumber + '</p>';
+            // Add more details as needed
+            return content;
+        }
+
+        function updateLatestGpsLocation() {
+            $.ajax({
+                type: 'GET',
+                url: 'https://skytrack.tech:2000/api/gps_track_data_api/',  // Create a URL for fetching the latest GPS location data
+
+                success: function (response) {
+                    // Process the individual data
+                    //processData(response.data);  
+                    var data = response.data; clearMarkers();
+                    for (var i = 0; i < data.length; i++) {
+                        var entry = data[i];
+                        // Your processing logic goes here
+                        // console.log('regnoProcess:', entry);
+                        //addLocationMarkers(entry );
+                        updateEmergencyPointer(entry.longitude, entry.latitude, i, entry.vehicle_registration_number, entry);
+
+                    }
+
+
+
+
+
+                },
+                error: function (error) {
+                    console.error('Error fetching latest GPS location data:', error);
+                }
+            });
+        }
+        function clearMarkers() {
+            for (var i = 0; i < markers.length; i++) {
+                markers[i].getSource().clear();
+            }
+            markers = [];
+        }
+
+
+        // Function to clear all info windows
+
+        var updateCounter = 0;
+        var iconStyle = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "https://skytrack.tech:2000/static/track.png", // Replace with the path to your emergency icon
+                scale: 0.06,
+            })
+        });
+
+        var iconStyle2 = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "https://skytrack.tech:2000/static/gpserror.png", // Replace with the path to your emergency icon
+                scale: 0.3,
+            })
+        });
+
+        var iconStyle3 = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "https://skytrack.tech:2000/static/gpserror2.png", // Replace with the path to your emergency icon
+                scale: 0.6,
+            })
+        });
+
+
+
+        function updateLocationDetailsTable(entry) {
+
+            var tableContent = "<table border='1' id='location-details-table'>" +
+                "<tr><th>Key</th><th>Value</th></tr>" +
+                "<tr><td>id</td><td>" + entry.id + "</td></tr>" +
+                "<tr><td>DateTime</td><td>" + new Date(Date.parse(entry.entry_time)) + "</td></tr>" +
+                "<tr><td>Vendor ID</td><td>" + entry.vendor_id + "</td></tr>" +
+                "<tr><td>Firmware Version</td><td>" + entry.firmware_version + "</td></tr>" +
+                "<tr><td>Packet Type</td><td>" + entry.packet_type + "</td></tr>" +
+                "<tr><td>Alert ID</td><td>" + entry.alert_id + "</td></tr>" +
+                "<tr><td>Packet Status</td><td>" + entry.packet_status + "</td></tr>" +
+                "<tr><td>IMEI</td><td>" + entry.imei + "</td></tr>" +
+                "<tr><td>Vehicle Registration Number</td><td>" + entry.vehicle_registration_number + "</td></tr>" +
+                "<tr><td>GPS Status</td><td>" + entry.gps_status + "</td></tr>" +
+                "<tr><td>Date</td><td>" + entry.date + "</td></tr>" +
+                "<tr><td>Time</td><td>" + entry.time + "</td></tr>" +
+                "<tr><td>Latitude</td><td>" + entry.latitude + "</td></tr>" +
+                "<tr><td>Latitude Dir</td><td>" + entry.latitude_dir + "</td></tr>" +
+                "<tr><td>Longitude</td><td>" + entry.longitude + "</td></tr>" +
+                "<tr><td>Longitude Dir</td><td>" + entry.longitude_dir + "</td></tr>" +
+                "<tr><td>Speed</td><td>" + entry.speed + "</td></tr>" +
+                "<tr><td>Heading</td><td>" + entry.heading + "</td></tr>" +
+                "<tr><td>Satellites</td><td>" + entry.satellites + "</td></tr>" +
+                "<tr><td>Altitude</td><td>" + entry.altitude + "</td></tr>" +
+                "<tr><td>PDOP</td><td>" + entry.pdop + "</td></tr>" +
+                "<tr><td>HDOP</td><td>" + entry.hdop + "</td></tr>" +
+                "<tr><td>Network Operator</td><td>" + entry.network_operator + "</td></tr>" +
+                "<tr><td>Ignition Status</td><td>" + entry.ignition_status + "</td></tr>" +
+                "<tr><td>Main Power Status</td><td>" + entry.main_power_status + "</td></tr>" +
+                "<tr><td>Main Input Voltage</td><td>" + entry.main_input_voltage + "</td></tr>" +
+                "<tr><td>Internal Battery Voltage</td><td>" + entry.internal_battery_voltage + "</td></tr>" +
+                "<tr><td>Emergency Status</td><td>" + entry.emergency_status + "</td></tr>" +
+                "<tr><td>Box Tamper Alert</td><td>" + entry.box_tamper_alert + "</td></tr>" +
+                "<tr><td>GSM Signal Strength</td><td>" + entry.gsm_signal_strength + "</td></tr>" +
+                "<tr><td>MCC</td><td>" + entry.mcc + "</td></tr>" +
+                "<tr><td>MNC</td><td>" + entry.mnc + "</td></tr>" +
+                "<tr><td>LAC</td><td>" + entry.lac + "</td></tr>" +
+                "<tr><td>Cell ID</td><td>" + entry.cell_id + "</td></tr>" +
+                "<tr><td>NBR1 Cell ID</td><td>" + entry.nbr1_cell_id + "</td></tr>" +
+                "<tr><td>NBR1 LAC</td><td>" + entry.nbr1_lac + "</td></tr>" +
+                "<tr><td>NBR1 Signal Strength</td><td>" + entry.nbr1_signal_strength + "</td></tr>" +
+                "<tr><td>NBR2 Cell ID</td><td>" + entry.nbr2_cell_id + "</td></tr>" +
+                "<tr><td>NBR2 LAC</td><td>" + entry.nbr2_lac + "</td></tr>" +
+                "<tr><td>NBR2 Signal Strength</td><td>" + entry.nbr2_signal_strength + "</td></tr>" +
+                "<tr><td>NBR3 Cell ID</td><td>" + entry.nbr3_cell_id + "</td></tr>" +
+                "<tr><td>NBR3 LAC</td><td>" + entry.nbr3_lac + "</td></tr>" +
+                "<tr><td>NBR3 Signal Strength</td><td>" + entry.nbr3_signal_strength + "</td></tr>" +
+                "<tr><td>NBR4 Cell ID</td><td>" + entry.nbr4_cell_id + "</td></tr>" +
+                "<tr><td>NBR4 LAC</td><td>" + entry.nbr4_lac + "</td></tr>" +
+                "<tr><td>NBR4 Signal Strength</td><td>" + entry.nbr4_signal_strength + "</td></tr>" +
+                "<tr><td>Digital Input Status</td><td>" + entry.digital_input_status + "</td></tr>" +
+                "<tr><td>Digital Output Status</td><td>" + entry.digital_output_status + "</td></tr>" +
+                "<tr><td>Frame Number</td><td>" + entry.frame_number + "</td></tr>" +
+                "<tr><td>Odometer</td><td>" + entry.odometer + "</td></tr>" +
+                "</table>";
+
+
+            return tableContent;
+        }
+
+        function calculateTimeDifference(startTime, endTime) {
+            // Calculate the time difference in milliseconds
+            const timeDifferenceMillis = endTime - startTime;
+
+            // Convert milliseconds to minutes
+            const timeDifferenceMinutes = timeDifferenceMillis / (1000 * 60);
+
+            return timeDifferenceMinutes;
+        }
+        function updateEmergencyPointer(lon, lat, i, no, data) {
+            var Point = new ol.Feature({
+                geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])),
+            });
+            console.log('data:', data);
+
+            const dateTimeString = data['date'] + " " + data['time'];
+            //const timeString = data['time'];
+            const entryTimeString = data['entry_time'];
+
+            // Convert date and time strings to JavaScript Date objects
+            var date = new Date(`${dateTimeString.slice(4, 8)}-${dateTimeString.slice(2, 4)}-${dateTimeString.slice(0, 2)}T${dateTimeString.slice(9, 11)}:${dateTimeString.slice(11, 13)}:${dateTimeString.slice(13, 15)}`);
+            // new Date(`${dateString.slice(2, 4)}/${dateString.slice(0, 2)}/${dateString.slice(4)}   ${entryTimeString.slice(0, 10)}T${timeString.slice(0, 2)}:${timeString.slice(2, 4)}:${timeString.slice(4)}`);
+            //date.setMinutes(date.getMinutes()  330);
+            const entryTime = new Date(entryTimeString);
+
+            // Calculate the time differences
+            const entryTimeDifference = calculateTimeDifference(entryTime, new Date());
+            const dateTimeDifference = calculateTimeDifference(date, new Date());
+
+            // Log the results
+            console.log("datestring :", dateTimeString);
+            console.log("Entry Time :", entryTime);
+            console.log("date:", date);
+
+            console.log("Entry Time Difference (minutes):", entryTimeDifference);
+            console.log("Date-Time Difference (minutes):", dateTimeDifference);
+            if (entryTimeDifference > 5) { Point.setStyle(iconStyle2); }
+
+            else if (dateTimeDifference > 5) { Point.setStyle(iconStyle3); }
+
+            else { Point.setStyle(iconStyle); }
+
+
+            var textFeature = new ol.Feature({
+                geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])),
+                name: '' + no,
+            });
+
+            var textStyle = new ol.style.Style({
+                text: new ol.style.Text({
+                    text: textFeature.get('name'),
+                    font: 'bold 16px Arial',
+                    offsetY: -45,
+                    fill: new ol.style.Fill({
+                        color: '#000000',
+                    }),
+                }),
+            });
+
+            textFeature.setStyle(textStyle);
+
+            // Store overlay content directly in the Point feature's properties
+            Point.set('overlayContent', updateLocationDetailsTable(data));
+
+            markers.push(new ol.layer.Vector({
+                source: new ol.source.Vector({
+                    features: [Point, textFeature],
+                }),
+            }));
+
+            map.on('click', function (event) {
+                var feature = map.forEachFeatureAtPixel(event.pixel, function (feature, layer) {
+                    return feature;
+                });
+
+                if (feature && markers.some(markerLayer => markerLayer.getSource().getFeatures().includes(feature))) {
+                    var coordinate = feature.getGeometry().getCoordinates();
+                    var overlayContent = feature.get('overlayContent');
+
+                    document.getElementById('overlay-content').innerHTML = overlayContent;
+                    dynamicOverlay.setPosition(coordinate);
+                    dynamicOverlay.getElement().style.display = 'block';
+                } else {
+                    dynamicOverlay.getElement().style.display = 'none';
+                }
+            });
+
+            map.addLayer(markers[markers.length - 1]);
+        }
+
+
+
+
+        // Periodically fetch the latest GPS location data every 3 seconds
+        setInterval(updateLatestGpsLocation, 3000);
+    </script>
+
+    <style>
+        .map {
+            position: relative;
+        }
+
+        .dynamic-overlay {
+            position: absolute;
+            background-color: white;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            display: none;
+            max-height: 200px;
+            /* Set a fixed height */
+            overflow-y: auto;
+            /* Enable vertical scrolling */
+        }
+    </style>
+</head>
+
+<body>
+    <div>
+        <div>
+            <h2>Live Location Information</h2>
+            <table>
+            </table>
+        </div>
+        <div id="map" style="width: 100%; height: 500px;"></div>
+        <div id="dynamic-overlay" class="dynamic-overlay">
+            <p id="overlay-content"> </p>
+        </div>
+        <script>
+
+            var map = new ol.Map();
+            var emergencyPoint = "";
+            var emergencyLayer = "";
+            var activePoliceLayer = "";
+            var activePolicePoint = "";
+            let dynamicOverlay;
+            var markers = [];
+            document.addEventListener('DOMContentLoaded', function () {
+                map = new ol.Map({
+                    target: 'map',
+                    layers: [
+                        new ol.layer.Tile({
+                            source: new ol.source.OSM()
+                        }),
+                        new ol.layer.Tile({
+                            source: new ol.source.TileWMS({
+                                url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',
+                                params: { 'LAYERS': 'lulc:BR_LULC50K_1112', 'TILED': true },
+                                serverType: 'geoserver',
+                                transition: 0,
+                            }),
+                        }),
+                    ],
+                    view: new ol.View({
+                        center: ol.proj.fromLonLat([91.829437, 26.131644]),
+                        zoom: 7,
+                    })
+                });
+
+                //map.addLayer(activePoliceLayer);
+
+                dynamicOverlay = new ol.Overlay({
+                    element: document.getElementById('dynamic-overlay'),
+                });
+
+                map.addOverlay(dynamicOverlay);
+                map.getView().setCenter(ol.proj.fromLonLat([91.73556, 26.14667]));
+                map.on('click', function (event) {
+                    dynamicOverlay.getElement().style.display = 'none';
+                });
+
+            });
+        </script>
+</body>
+
+</html>
+
+
+
+
+<body>
+
+</body>
+
+</html>

@@ -41,12 +41,16 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',    
     'rest_framework', 
+     
+    'bootstrap4',
+    'bootstrap_datepicker_plus',  
     'rest_framework.authtoken',
     'drf_spectacular', 
     'corsheaders',
     'skytron_api',"django_extensions",
 ]
 
+FORM_RENDERER = 'django.forms.renderers.DjangoTemplates'
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -134,7 +138,10 @@ CORS_ALLOW_ALL_ORIGINS = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
-STATIC_URL = 'static/'
+#STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+
+STATIC_ROOT = os.path.join('/var/www/html/skytron_backend/Skytronsystem', '../staticfiles/')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

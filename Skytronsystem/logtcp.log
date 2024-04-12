@@ -1,2 +1,240 @@
-Unknown command: 'tcp_server'. Did you mean testserver?
-Type 'manage.py help' for usage.
+nohup: ignoring input
+TCP Socket Server listening on 0.0.0.0:6000
+Accepted connection from ('223.180.224.184', 38902)
+Accepted connection from ('223.180.224.180', 64947)
+Accepted connection from ('223.180.224.180', 50587)
+Error handling client ('223.180.224.184', 38902): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.184', 38902) closed.
+Accepted connection from ('223.180.224.211', 53445)
+Accepted connection from ('223.180.224.180', 64731)
+Accepted connection from ('223.180.224.184', 63884)
+Accepted connection from ('223.180.224.180', 55149)
+Accepted connection from ('223.180.224.184', 5968)
+Accepted connection from ('223.180.224.180', 54676)
+Error handling client ('223.180.224.211', 53445): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.211', 53445) closed.
+Accepted connection from ('223.180.224.211', 60352)
+Accepted connection from ('223.180.224.184', 64401)
+Accepted connection from ('223.180.224.180', 51677)
+Accepted connection from ('223.180.224.184', 57929)
+Accepted connection from ('223.180.224.180', 51705)
+Error handling client ('223.180.224.184', 57929): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.184', 57929) closed.
+Accepted connection from ('223.180.224.180', 33259)
+Accepted connection from ('223.180.224.118', 32558)
+Accepted connection from ('223.180.224.184', 64301)
+Data processing error main: create() argument after ** must be a mapping, not NoneType
+Error handling client ('223.180.224.180', 33259): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.180', 33259) closed.
+Error handling client ('223.180.224.118', 32558): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 32558) closed.
+Accepted connection from ('223.180.224.180', 14257)
+Accepted connection from ('223.180.224.180', 53043)
+Error handling client ('223.180.224.184', 64301): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.184', 64301) closed.
+Client ('223.180.224.211', 60352) timed out. Closing the connection.
+Connection from ('223.180.224.211', 60352) closed.
+Accepted connection from ('223.180.224.180', 65056)
+Accepted connection from ('223.180.224.118', 59402)
+Accepted connection from ('223.180.224.118', 33897)
+Accepted connection from ('223.180.224.184', 49981)
+Accepted connection from ('223.180.224.180', 63399)
+Accepted connection from ('223.180.224.184', 59525)
+Accepted connection from ('223.180.224.118', 58070)
+Accepted connection from ('223.180.224.180', 52335)
+Accepted connection from ('223.180.224.184', 27250)
+Accepted connection from ('223.180.224.180', 64654)
+Error handling client ('223.180.224.118', 58070): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 58070) closed.
+Accepted connection from ('223.180.224.184', 61780)
+Accepted connection from ('223.180.224.118', 55646)
+Accepted connection from ('223.180.224.118', 53239)
+Accepted connection from ('223.180.224.118', 64720)
+Data processing error main: create() argument after ** must be a mapping, not NoneType
+Error handling client ('223.180.224.180', 64654): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.180', 64654) closed.
+Accepted connection from ('223.180.224.180', 56618)
+Data processing error main: create() argument after ** must be a mapping, not NoneType
+Accepted connection from ('223.180.224.180', 61147)
+Accepted connection from ('223.180.224.118', 56179)
+Accepted connection from ('223.180.224.184', 56076)
+Accepted connection from ('223.180.224.180', 57815)
+Error handling client ('223.180.224.118', 56179): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 56179) closed.
+Accepted connection from ('223.180.224.118', 56878)
+Accepted connection from ('223.180.224.180', 60218)
+Accepted connection from ('223.180.224.118', 62093)
+Error handling client ('223.180.224.184', 56076): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.184', 56076) closed.
+Accepted connection from ('223.180.224.184', 49935)
+Error handling client ('223.180.224.180', 60218): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.180', 60218) closed.
+Accepted connection from ('223.180.224.180', 50253)
+Error handling client ('223.180.224.118', 62093): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 62093) closed.
+Accepted connection from ('223.180.224.118', 50129)
+Error handling client ('223.180.224.180', 50253): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.180', 50253) closed.
+Accepted connection from ('223.180.224.180', 43821)
+Accepted connection from ('223.180.224.118', 58259)
+Accepted connection from ('223.180.224.118', 56252)
+Error handling client ('223.180.224.118', 50129): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 50129) closed.
+Accepted connection from ('223.180.224.118', 50862)
+Accepted connection from ('223.180.224.118', 58090)
+Accepted connection from ('223.180.224.118', 60795)
+Accepted connection from ('223.180.224.118', 58342)
+Client ('223.180.224.184', 49935) timed out. Closing the connection.
+Connection from ('223.180.224.184', 49935) closed.
+Accepted connection from ('223.180.224.118', 50209)
+Accepted connection from ('223.180.224.211', 5057)
+Accepted connection from ('223.180.224.211', 56785)
+Accepted connection from ('223.180.224.211', 62720)
+Accepted connection from ('223.180.224.118', 60914)
+Error handling client ('223.180.224.118', 58342): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 58342) closed.
+Accepted connection from ('223.180.224.211', 61795)
+Accepted connection from ('223.180.224.118', 24713)
+Accepted connection from ('223.180.224.118', 52288)
+Accepted connection from ('223.180.224.211', 63676)
+Client ('223.180.224.180', 43821) timed out. Closing the connection.
+Connection from ('223.180.224.180', 43821) closed.
+Accepted connection from ('223.180.224.118', 49832)
+Accepted connection from ('223.180.224.118', 63828)
+Accepted connection from ('223.180.224.211', 53476)
+Error handling client ('223.180.224.118', 49832): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 49832) closed.
+Accepted connection from ('223.180.224.118', 59521)
+Error handling client ('223.180.224.118', 63828): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 63828) closed.
+Error handling client ('223.180.224.118', 59521): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 59521) closed.
+Accepted connection from ('223.180.224.118', 61320)
+Accepted connection from ('223.180.224.211', 65311)
+Accepted connection from ('223.180.224.118', 50437)
+Accepted connection from ('223.180.224.118', 53809)
+Accepted connection from ('223.180.224.118', 50178)
+Accepted connection from ('223.180.224.211', 3598)
+Accepted connection from ('223.180.224.118', 64586)
+Accepted connection from ('223.180.224.211', 52019)
+Accepted connection from ('223.180.224.118', 52919)
+Accepted connection from ('223.180.224.211', 60968)
+Error handling client ('223.180.224.118', 50178): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 50178) closed.
+Accepted connection from ('223.180.224.118', 62013)
+Accepted connection from ('223.180.224.211', 62638)
+Accepted connection from ('223.180.224.118', 51281)
+Accepted connection from ('223.180.224.118', 40232)
+Accepted connection from ('223.180.224.211', 57973)
+Accepted connection from ('223.180.224.118', 24314)
+Accepted connection from ('223.180.224.118', 59647)
+Accepted connection from ('223.180.224.211', 62060)
+Accepted connection from ('223.180.224.118', 53948)
+Accepted connection from ('223.180.224.211', 6425)
+Accepted connection from ('223.180.224.118', 56928)
+Accepted connection from ('223.180.224.118', 49246)
+Accepted connection from ('223.180.224.211', 63982)
+Accepted connection from ('223.180.224.118', 54061)
+Accepted connection from ('223.180.224.118', 64267)
+Accepted connection from ('80.66.88.215', 65408)
+Error handling client ('80.66.88.215', 65408): 'utf-8' codec can't decode byte 0xe0 in position 5: invalid continuation byte
+Connection from ('80.66.88.215', 65408) closed.
+Accepted connection from ('223.180.224.211', 49171)
+Accepted connection from ('223.180.224.211', 62489)
+Data processing error main: create() argument after ** must be a mapping, not NoneType
+Error handling client ('223.180.224.118', 54061): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 54061) closed.
+Accepted connection from ('223.180.224.118', 61860)
+Accepted connection from ('223.180.224.118', 59524)
+Accepted connection from ('223.180.224.118', 51187)
+Accepted connection from ('223.180.224.211', 62538)
+Accepted connection from ('223.180.224.118', 62823)
+Accepted connection from ('223.180.224.211', 55384)
+Data processing error main: create() argument after ** must be a mapping, not NoneType
+Accepted connection from ('223.180.224.211', 51470)
+Accepted connection from ('223.180.224.118', 64975)
+Error handling client ('223.180.224.118', 62823): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 62823) closed.
+Accepted connection from ('223.180.224.118', 62681)
+Accepted connection from ('223.180.224.211', 61717)
+Accepted connection from ('223.180.224.118', 64936)
+Accepted connection from ('223.180.224.118', 53358)
+Accepted connection from ('223.180.224.211', 49803)
+Accepted connection from ('223.180.224.118', 34490)
+Accepted connection from ('223.180.224.118', 65275)
+Accepted connection from ('223.180.224.118', 55241)
+Accepted connection from ('223.180.224.211', 49565)
+Accepted connection from ('223.180.224.118', 56140)
+Accepted connection from ('223.180.224.118', 62544)
+Accepted connection from ('223.180.224.118', 52093)
+Accepted connection from ('223.180.224.118', 52779)
+Accepted connection from ('223.180.224.211', 60046)
+Accepted connection from ('223.180.224.118', 53857)
+Error handling client ('223.180.224.118', 53857): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 53857) closed.
+Error handling client ('223.180.224.118', 52779): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 52779) closed.
+Accepted connection from ('223.180.224.211', 64989)
+Accepted connection from ('223.180.224.118', 59399)
+Accepted connection from ('223.180.224.118', 64825)
+Accepted connection from ('223.180.224.118', 55133)
+Accepted connection from ('223.180.224.211', 61520)
+Accepted connection from ('223.180.224.118', 49421)
+Accepted connection from ('223.180.224.211', 59664)
+Accepted connection from ('223.180.224.211', 56237)
+Accepted connection from ('223.180.224.118', 62769)
+Accepted connection from ('223.180.224.211', 60632)
+Error handling client ('223.180.224.118', 55133): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 55133) closed.
+Accepted connection from ('223.180.224.118', 6646)
+Accepted connection from ('223.180.224.118', 54500)
+Accepted connection from ('223.180.224.211', 55901)
+Accepted connection from ('223.180.224.211', 60979)
+Error handling client ('223.180.224.118', 54500): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 54500) closed.
+Accepted connection from ('223.180.224.211', 50271)
+Accepted connection from ('223.180.224.118', 49602)
+Accepted connection from ('223.180.224.118', 58537)
+Accepted connection from ('223.180.224.211', 49869)
+Accepted connection from ('223.180.224.180', 52244)
+Accepted connection from ('223.180.224.180', 18801)
+Accepted connection from ('223.180.224.211', 57980)
+Accepted connection from ('223.180.224.118', 65071)
+Accepted connection from ('223.180.224.211', 58546)
+Error handling client ('223.180.224.180', 18801): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.180', 18801) closed.
+Accepted connection from ('223.180.224.180', 62138)
+Client ('223.180.224.118', 6646) timed out. Closing the connection.
+Connection from ('223.180.224.118', 6646) closed.
+Accepted connection from ('223.180.224.211', 25275)
+Error handling client ('223.180.224.180', 62138): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.180', 62138) closed.
+Error handling client ('223.180.224.118', 65071): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.118', 65071) closed.
+Accepted connection from ('223.180.224.118', 60633)
+Error handling client ('223.180.224.211', 25275): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.211', 25275) closed.
+Accepted connection from ('223.180.224.180', 56294)
+Accepted connection from ('223.180.224.180', 51901)
+Accepted connection from ('223.180.224.211', 52159)
+Accepted connection from ('223.180.224.180', 51310)
+Error handling client ('223.180.224.180', 51310): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.180', 51310) closed.
+Error handling client ('223.180.224.211', 52159): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.211', 52159) closed.
+Accepted connection from ('223.180.224.211', 56087)
+Accepted connection from ('223.180.224.211', 64066)
+Accepted connection from ('223.180.224.211', 51887)
+Accepted connection from ('223.180.224.180', 53648)
+Accepted connection from ('223.180.224.211', 57688)
+Client ('223.180.224.118', 60633) timed out. Closing the connection.
+Connection from ('223.180.224.118', 60633) closed.
+Error handling client ('223.180.224.211', 56087): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.211', 56087) closed.
+Accepted connection from ('223.180.224.211', 51616)
+Error handling client ('223.180.224.180', 53648): [Errno 104] Connection reset by peer
+Connection from ('223.180.224.180', 53648) closed.
+Accepted connection from ('223.180.224.180', 61905)
+Accepted connection from ('223.180.224.211', 16904)
+Accepted connection from ('223.180.224.211', 51684)
+Accepted connection from ('223.180.224.180', 64070)
