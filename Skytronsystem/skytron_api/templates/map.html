@@ -261,6 +261,7 @@
     <style>
         .map {
             position: relative;
+
         }
 
         .dynamic-overlay {
@@ -286,7 +287,12 @@
             <table>
             </table>
         </div>
-        <div id="map" style="width: 100%; height: 500px;"></div>
+
+
+        <div id="loading" style="width: 100%; height: 500px; visibility:visible;">
+            <img src="https://skytrack.tech:2000/static/loading.gif" alt="Loading...">
+        </div>
+        <div id="map" style="width: 100%; height: 500px;visibility: hidden; "></div>
         <div id="dynamic-overlay" class="dynamic-overlay">
             <p id="overlay-content"> </p>
         </div>
@@ -321,14 +327,42 @@
                     })
                 });
 
-                //map.addLayer(activePoliceLayer);
-
                 dynamicOverlay = new ol.Overlay({
                     element: document.getElementById('dynamic-overlay'),
                 });
 
                 map.addOverlay(dynamicOverlay);
                 map.getView().setCenter(ol.proj.fromLonLat([91.73556, 26.14667]));
+
+                // Handling map loading completion
+                var tileLoadStart = 0;
+                var tileLoadEnd = 0;
+                map.getLayers().forEach(function (layer) {
+                    if (layer instanceof ol.layer.Tile) {
+                        layer.getSource().on('tileloadstart', function () {
+                            tileLoadStart++;
+                        });
+
+                        layer.getSource().on('tileloadend', function () {
+                            tileLoadEnd++;
+                            checkTilesLoaded();
+                        });
+
+                        layer.getSource().on('tileloaderror', function () {
+                            tileLoadEnd++;
+                            checkTilesLoaded();
+                        });
+                    }
+                });
+
+                function checkTilesLoaded() {
+                    if (tileLoadEnd === tileLoadStart) {
+                        document.getElementById('loading').style.visibility = 'hidden';
+                        document.getElementById('map').style.visibility = 'visible';
+                        document.getElementById('loading').style.display = 'none';
+                    }
+                }
+
                 map.on('click', function (event) {
                     dynamicOverlay.getElement().style.display = 'none';
                 });
