@@ -24,3 +24,5 @@ nohup  python3 manage.py tcp_server --traceback >logtcp.log 2>&1 &
 nohup gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application 
 
 nohup  python3 em_server.py > tcplogem.log 2>&1 &
+#export MAIL_ID=testskytrack@gmail.com
+#export MAIL_PW=zmzmexdnrlmsqrlr

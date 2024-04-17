@@ -240,14 +240,27 @@
                     var coordinate = feature.getGeometry().getCoordinates();
                     var overlayContent = feature.get('overlayContent');
 
-                    document.getElementById('overlay-content').innerHTML = overlayContent;
-                    dynamicOverlay.setPosition(coordinate);
-                    dynamicOverlay.getElement().style.display = 'block';
+                    // Check current zoom level
+                    var currentZoom = map.getView().getZoom();
+                    var streetLevelZoom = 18;  // Define your street-level zoom threshold here
+
+                    if (currentZoom < streetLevelZoom) {
+                        // If zoom level is higher than street level, zoom to street level and center on the feature
+                        map.getView().animate({
+                            zoom: streetLevelZoom,
+                            center: coordinate,
+                            duration: 500  // Duration of the animation in milliseconds
+                        });
+                    } else {
+                        // If zoom level is already at or below street level, display the overlay
+                        document.getElementById('overlay-content').innerHTML = overlayContent;
+                        dynamicOverlay.setPosition(coordinate);
+                        dynamicOverlay.getElement().style.display = 'block';
+                    }
                 } else {
                     dynamicOverlay.getElement().style.display = 'none';
                 }
             });
-
             map.addLayer(markers[markers.length - 1]);
         }
 
@@ -283,7 +296,7 @@
 <body>
     <div>
         <div>
-            <h2>Live Location Information</h2>
+            <!--  <h2>Live Location Information</h2> -->
             <table>
             </table>
         </div>
@@ -333,7 +346,6 @@
 
                 map.addOverlay(dynamicOverlay);
                 map.getView().setCenter(ol.proj.fromLonLat([91.73556, 26.14667]));
-
                 // Handling map loading completion
                 var tileLoadStart = 0;
                 var tileLoadEnd = 0;

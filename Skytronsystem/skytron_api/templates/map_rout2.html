@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>RoutFixing</title>
+
+    {% load static %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        #map {
+            height: 500px;
+            width: 100%;
+        }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script src="https://skytrack.tech:2000/static/ol/dist/ol.js"></script>
+    <link rel="stylesheet" href="https://skytrack.tech:2000/static/ol/ol.css">
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <script>
+        var updateCounter = 0;
+        var iconStyle = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "https://skytrack.tech:2000/static/track.png", // Replace with the path to your emergency icon
+                scale: 0.06,
+            })
+        });
+
+        var iconStyle2 = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "https://skytrack.tech:2000/static/gpserror.png", // Replace with the path to your emergency icon
+                scale: 0.3,
+            })
+        });
+
+        var iconStyle3 = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "https://skytrack.tech:2000/static/gpserror2.png", // Replace with the path to your emergency icon
+                scale: 0.6,
+            })
+        }); 
+    </script>
+
+    <style>
+        .map {
+            position: relative;
+
+        }
+
+        .dynamic-overlay {
+            position: absolute;
+            background-color: white;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            display: none;
+            max-height: 200px;
+            /* Set a fixed height */
+            overflow-y: auto;
+            /* Enable vertical scrolling */
+        }
+    </style>
+</head>
+
+<body>
+    <div>
+        <div>
+            <table>
+            </table>
+        </div>
+        <div id="loading" style="width: 100%; height: 500px; visibility:visible;">
+            <img src="https://skytrack.tech:2000/static/loading.gif" alt="Loading...">
+        </div>
+        <div id="map" style="width: 100%; height: 500px;visibility: hidden; "></div>
+        <div id="dynamic-overlay" class="dynamic-overlay">
+            <p id="overlay-content"> </p>
+        </div>
+        <script>
+
+            var map = new ol.Map();
+            var emergencyPoint = "";
+            var emergencyLayer = "";
+            var activePoliceLayer = "";
+            var activePolicePoint = "";
+            let dynamicOverlay;
+            var markers = [];
+            document.addEventListener('DOMContentLoaded', function () {
+                map = new ol.Map({
+                    target: 'map',
+                    layers: [
+                        new ol.layer.Tile({
+                            source: new ol.source.OSM()
+                        }),
+                        new ol.layer.Tile({
+                            source: new ol.source.TileWMS({
+                                url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',
+                                params: { 'LAYERS': 'lulc:BR_LULC50K_1112', 'TILED': true },
+                                serverType: 'geoserver',
+                                transition: 0,
+                            }),
+                        }),
+                    ],
+                    view: new ol.View({
+                        center: ol.proj.fromLonLat([91.829437, 26.131644]),
+                        zoom: 7,
+                    })
+                });
+
+                dynamicOverlay = new ol.Overlay({
+                    element: document.getElementById('dynamic-overlay'),
+                });
+
+                map.addOverlay(dynamicOverlay);
+                map.getView().setCenter(ol.proj.fromLonLat([91.73556, 26.14667]));
+                // Handling map loading completion
+                var tileLoadStart = 0;
+                var tileLoadEnd = 0;
+                map.getLayers().forEach(function (layer) {
+                    if (layer instanceof ol.layer.Tile) {
+                        layer.getSource().on('tileloadstart', function () {
+                            tileLoadStart++;
+                        });
+
+                        layer.getSource().on('tileloadend', function () {
+                            tileLoadEnd++;
+                            checkTilesLoaded();
+                        });
+
+                        layer.getSource().on('tileloaderror', function () {
+                            tileLoadEnd++;
+                            checkTilesLoaded();
+                        });
+                    }
+                });
+
+                function checkTilesLoaded() {
+                    if (tileLoadEnd === tileLoadStart) {
+                        document.getElementById('loading').style.visibility = 'hidden';
+                        document.getElementById('map').style.visibility = 'visible';
+                        document.getElementById('loading').style.display = 'none';
+                    }
+                }
+
+                map.on('click', function (event) {
+                    dynamicOverlay.getElement().style.display = 'none';
+                });
+
+            });
+        </script>
+</body>
+
+</html>
+
+<body>
+
+</body>
+
+</html>

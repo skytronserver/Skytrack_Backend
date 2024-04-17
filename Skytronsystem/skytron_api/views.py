@@ -235,7 +235,7 @@ def update_status(request, field_ex):
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
     
 
-@login_required
+#@login_required
 def get_latest_gps_location(request, emergency_call_id):
     # Get the EmergencyCall object based on the provided emergency_call_id
     emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
@@ -258,7 +258,7 @@ def get_latest_gps_location(request, emergency_call_id):
     try:
         route = requests.post('https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_state.php?lat1='+str(latest_gps_location.latitude)+'&lon1='+str(latest_gps_location.longitude)+'&lat2='+str(loc_lat)+'&lon2='+str(loc_lon)+'&token=fb46cfb86bea498dce694350fb6dd16d161ff8eb', headers=headers ).json()
     except Exception as e:
-        print(e)
+        print("no rout",e)
         route=json.dumps({"err":"err"}, indent = 4) 
     
     #print(route)
@@ -294,7 +294,7 @@ def get_latest_gps_location(request, emergency_call_id):
     data = json.dumps(context1)
     return   HttpResponse(data)
 
-@login_required
+#@login_required
 @csrf_exempt
 def Broadcast_help(request):
     if request.method == 'POST':
@@ -306,7 +306,7 @@ def Broadcast_help(request):
         return JsonResponse({'status': 'success'})
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
-@login_required
+#@login_required
 @csrf_exempt
 def SubmitStatus(request):
     if request.method == 'POST':
@@ -411,6 +411,28 @@ def map2(request,emergency_call_id):
     #return render(request, 'bhooban.html', {'live_data': []})
 
 
+#@login_required
+@csrf_exempt
+def emergency_call_listener_admin(request):
+    #return JsonResponse({"ok":"ok"})
+    if request.method == 'POST':
+        # Handle the 'Accept' button press
+        data = json.loads(request.body)
+        call_id = data.get('call_id')
+        desk_executive_id = 'DeskEx1'  # Set the desk_executive_id
+
+        # Update the EmergencyCall entry with the desk_executive_id
+        emergency_call = EmergencyCall.objects.get(call_id=call_id)
+        emergency_call.desk_executive_id = desk_executive_id
+        emergency_call.status = 'Accepted'
+        emergency_call.save()
+
+    # Fetch live data updates every 5 seconds
+    live_data = get_live_call_init()
+
+    return render(request, 'emergency_call_listener_admin.html', {'live_data': live_data})
+
+
 @login_required
 @csrf_exempt
 def emergency_call_listener(request):
@@ -448,15 +470,17 @@ def get_live_call_init():
 
     return JsonResponse(live_data)
 
-@login_required
+#@login_required
 def get_live_call(request):
     # Implement the logic to fetch live data updates (replace with your actual implementation)
     existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
     live_data1=""
     for call in existing_emergency_call:
-        live_data1 = live_data1+'<a href="/api/emergency-call-details/'+str( call.call_id )+'">Call ID:'+ str( call.call_id )+"("+  str(call.status)+");  Vehicle:"+  str( call.vehicle_no)+"; </a><br>"
+        live_data1 = live_data1+"<button onclick=\"loadCallDetails('"+str(call.call_id)+"')\">Call ID: "+str(call.call_id)+" ("+str(call.status)+"); Vehicle: "+str(call.vehicle_no)+";</button><br>"
+
+        #'<a href="https://skytrack.tech:2000/api/emergency-call-details/'+str( call.call_id )+'"  target="_self">Call ID:'+ str( call.call_id )+"("+  str(call.status)+");  Vehicle:"+  str( call.vehicle_no)+"; </a><br>"
       
-    print(live_data1)
+    #print(live_data1)
     existing_emergency_call = EmergencyCall.objects.filter( 
             Q(status='Pending')# Exclude entries with Status 'Complete'
         ).order_by('-start_time').last()
@@ -474,10 +498,37 @@ def get_live_call(request):
     return JsonResponse(live_data)
 
 
+def get_all_call(request):
+    # Implement the logic to fetch live data updates (replace with your actual implementation)
+    existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
+    live_data1=[]
+    for call in existing_emergency_call:
+        live_data1.append({"call_id":str(call.call_id), 'device_imei': call.device_imei,"status":str(call.status),"Vehicle": str(call.vehicle_no)})
+        #= live_data1+"<button onclick=\"loadCallDetails('"+str(call.call_id)+"')\">Call ID: "+str(call.call_id)+" ("+str(call.status)+"); Vehicle: "+str(call.vehicle_no)+";</button><br>"
+
+        #'<a href="https://skytrack.tech:2000/api/emergency-call-details/'+str( call.call_id )+'"  target="_self">Call ID:'+ str( call.call_id )+"("+  str(call.status)+");  Vehicle:"+  str( call.vehicle_no)+"; </a><br>"
+      
+    #print(live_data1)
+    existing_emergency_call = EmergencyCall.objects.filter( 
+            Q(status='Pending')# Exclude entries with Status 'Complete'
+        ).order_by('-start_time').last()
+    if existing_emergency_call:
+        live_data = {"Notification":{
+            'vehicle_no': existing_emergency_call.vehicle_no,
+            'device_imei': existing_emergency_call.device_imei,
+            'call_id': existing_emergency_call.call_id, },
+        }
+    else :
+        live_data = {"Notification":None}
+     
+    live_data["Call_list"]=live_data1
+
+    return JsonResponse(live_data)
 
 
 
-@login_required
+
+#@login_required
 @csrf_exempt
 def emergency_call_listener_field(request):
     if request.method == 'POST':
@@ -516,7 +567,7 @@ def get_live_call_field_init():
 
     return JsonResponse(live_data)
 
-@login_required
+#@login_required
 def get_live_call_field(request ):
     # Implement the logic to fetch live data updates (replace with your actual implementation)
     live_data={}
@@ -701,38 +752,111 @@ def gps_track_data_api(request):
 
 
 #@csrf_exempt  # Disable CSRF protection for simplicity. Make sure to secure your API in production.
-def gps_history_map(request):
-    
-    form = GPSDataFilterForm(request.GET)
-    
+#@csrf_exempt
+def gps_history_map(request):     
+
+    mapdata=[]
+    data=[]     
     mapdata=[]
     data=[]
-    #return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1, 'form': form})
-
     
-    mapdata=[]
-    data=[]
-
-    if form.is_valid():
-        #data = GPSData.objects.all().filter(gps_status=1)#[:1000]#.order_by('-entry_time')
-        vehicle_registration_number = form.cleaned_data.get('vehicle_registration_number')
-        start_datetime = form.cleaned_data.get('start_datetime')
-        end_datetime = form.cleaned_data.get('end_datetime')
+    
+    try:
         
+        vehicle_registration_number ="L89_003-0000"
+        start_datetime = "2024-04-11"
+        end_datetime = "2024-04-12" 
+        
+        
+        try:
+            vehicle_registration_number = request.GET.get('vehicle_registration_number', None)
+            start_datetime = request.GET.get('start_datetime', None)
+            end_datetime = request.GET.get('end_datetime', None)
+        except:
+            vehicle_registration_number ="L89_003-0000"
+            start_datetime = "2024-04-11"
+            end_datetime = "2024-04-12"
+
+        #return JsonResponse({"eg":vehicle_registration_number})
+        if vehicle_registration_number:
+            pass
+        else:
+            vehicle_registration_number ="L89_003-0000"
+            start_datetime = "2024-04-11"
+            end_datetime = "2024-04-12"
         if vehicle_registration_number!="":
             if vehicle_registration_number:
                 data = GPSData.objects.all().filter(gps_status=1).filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).filter(vehicle_registration_number__icontains=vehicle_registration_number)
-                
-
                 if start_datetime and end_datetime:
-                    data = data.filter(entry_time__range=(start_datetime, end_datetime))
-                    #mapdata=mapdata.filter(entry_time__range=(start_datetime, end_datetime))
-                    print("histry length",len(data))
-                    data=data.filter(gps_status=1).order_by('entry_time')[:17280]
-                    mapdata=apply_low_pass_filter(data, ['longitude', 'latitude'])#[3:]
-    #return JsonResponse({})
-    return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1, 'form': form})
+                        data = data.filter(entry_time__range=(start_datetime, end_datetime))                        
+                        data=data.filter(gps_status=1).order_by('entry_time')[:17280]
+                        mapdata=apply_low_pass_filter(data, ['longitude', 'latitude'])#[3:]
+                try:    #return JsonResponse({"eg":vehicle_registration_number})     
+                    return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
+                except:
+                    return JsonResponse({"error": "No Record Found: "+vehicle_registration_number}, status=403) 
+            else:
+                return JsonResponse({'error': "Invalid Search 22"}, status=403) 
+        return JsonResponse({'error': "Invalid Search"}, status=403) 
+        return Response({'error': "Invalid Search"}, status=403)
+        return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
+        return Response({'error': "Invalid Search"}, status=403)
+    except Exception as e: 
+        return JsonResponse({'error': e}) 
+        return Response({'error': "ww"}, status=400)
 
+
+
+def setRout(request):
+    # Get the latest entry for each unique vehicle_registration_number
+    latest_data = GPSData.objects.filter(
+        vehicle_registration_number=OuterRef('vehicle_registration_number')
+    ).filter(gps_status=1).order_by('-entry_time').values('id')[:1]
+
+
+    # Retrieve the complete GPSData objects using the latest entry IDs
+    data = GPSData.objects.filter(id__in=Subquery(latest_data))
+
+    return render(request, 'map_rout.html', {'data': data})
+
+
+
+@csrf_exempt
+def saveRout(request):
+    if request.method == 'POST':
+        print(request.body)
+        data =json.loads( request.body )
+        try:
+            createdby =  User.objects.get(id=data['createdby_id'])
+            device =  DeviceStock.objects.get(id=data['device_id'])
+            rout = Rout(
+                rout=data['rout'],
+                status='Active',  # Assuming status is 'Active' when created
+                device=device,
+                createdby=createdby
+            )
+            rout.save()
+            return JsonResponse({"message": "Route saved successfully!"}, status=201)
+        except Exception as e:
+            print(e)
+            return JsonResponse({"error": str(e)}, status=400)
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def getRout(request):
+    if request.method == 'GET':
+        device_id = 1 #request.GET.get('device_id')
+        try:
+            device = DeviceStock.objects.get(id=device_id)
+            rout = Rout.objects.filter(device=device, status='Active').latest('id')
+            return JsonResponse({"rout": rout.rout}, status=200)
+        except Rout.DoesNotExist:
+            return JsonResponse({"error": "No active route found for this device"}, status=404)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=400)
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
 
 def gps_data_allmap(request):
     # Get the latest entry for each unique vehicle_registration_number
@@ -776,6 +900,28 @@ def sms_queue(request):
         return Response({'no':"6661234",'msg':'data to send'})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def get_live_vehicle_no(request):
+    try:
+        if request.method == 'POST':
+            # Fetch distinct vehicle registration numbers
+            vehicles = GPSData.objects.all().values('vehicle_registration_number').distinct()
+            vehicle_list = [vehicle['vehicle_registration_number'] for vehicle in vehicles]
+            return Response(vehicle_list)
+        else:
+            return Response({'error': "POST request only"}, status=500)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+ 
+    
 
 
 
@@ -1989,21 +2135,24 @@ def TagVerifyOwnerOtp(request):
 @permission_classes([IsAuthenticated])
 def TagVerifyDealerOtp(request  ):
     # Assuming you have user authentication in place
-    user_id = request.user.id
-    otp = request.data.get('otp')
-    device_tag_id = request.data.get('device_id')
-    if not otp or not otp.isdigit() or len(otp) != 6:
-        return HttpResponseBadRequest("Invalid OTP format")
-    device_tag = DeviceTag.objects.filter(device=device_tag_id, status='Dealer_OTP_Sent') 
+    try:
+        user_id = request.user.id
+        otp = request.data.get('otp')
+        device_tag_id = request.data.get('device_id')
+        if not otp or not otp.isdigit() or len(otp) != 6:
+            return HttpResponseBadRequest("Invalid OTP format")
+        device_tag = DeviceTag.objects.filter(device=device_tag_id, status='Dealer_OTP_Sent') 
 
-    #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
-    device_tag = device_tag.first()
-    if otp == '123456':  # Replace with your actual OTP verification logic
-        device_tag.status = 'Dealer_OTP_Verified'
-        device_tag.save()
-        return Response({"message": "Dealer OTP verified successfully."}, status=200)
-    else:
-        return HttpResponseBadRequest("Invalid OTP")
+        #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
+        device_tag = device_tag.first()
+        if otp == '123456':  # Replace with your actual OTP verification logic
+            device_tag.status = 'Dealer_OTP_Verified'
+            device_tag.save()
+            return Response({"message": "Dealer OTP verified successfully."}, status=200)
+        else:
+            return HttpResponseBadRequest("Invalid OTP")
+    except Exception as e:
+            return HttpResponseBadRequest(str(e))
 
 
 
@@ -2752,7 +2901,7 @@ def homepage(request):
             'SpeedAlerts_month':0,
             'SpeedAlerts_today':0,
 
-            'TotalDevice': Device.objects.count(),
+            'TotalDevice': DeviceStock.objects.count(),
             'TotalTaggedDevice':0,
             'TotalOnlineDevice':0,
             'TotalOfflineDevice':0,

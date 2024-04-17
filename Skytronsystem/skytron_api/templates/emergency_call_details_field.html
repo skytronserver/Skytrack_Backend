@@ -20,7 +20,7 @@
         function updateLatestGpsLocation() {
             $.ajax({
                 type: 'GET',
-                url: '/gps/get-latest-gps-location/' + '{{ emergency_call.call_id }}',  // Create a URL for fetching the latest GPS location data
+                url: 'https://skytrack.tech:2000/api/get-latest-gps-location/' + '{{ emergency_call.call_id }}',  // Create a URL for fetching the latest GPS location data
                 success: function (response) {
                     response = JSON.parse(response);
                     // Update the content of the 'latestGpsLocation' div with the fetched data
@@ -236,7 +236,7 @@
             var comment = document.getElementById('comment').value;
             $.ajax({
                 type: 'POST',
-                url: '/gps/submit_status/',
+                url: 'https://skytrack.tech:2000/api/submit_status/',
                 data: { 'call_id': '{{ emergency_call.call_id }}', 'status': status, "comment": comment },  // Include any necessary data
                 success: function (response) {
                     //console.log('Help assigned successfully:', response);
@@ -249,7 +249,7 @@
         }
         function back() {
             // Replace 'https://example.com' with the URL you want to redirect to
-            window.location.href = '/gps/emergency-call-listener-field';
+            window.location.href = 'https://skytrack.tech:2000/api/emergency-call-listener-field';
         }
         // Periodically fetch the latest GPS location data every 3 seconds
         setInterval(updateLatestGpsLocation, 3000);

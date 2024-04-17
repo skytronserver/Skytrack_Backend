@@ -8,7 +8,7 @@
     {% load static %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="{% static 'ol/ol.css' %}">
+    <link rel="stylesheet" href="https://skytrack.tech:2000/static/ol/ol.css">
     <style>
         #map {
             height: 500px;
@@ -19,7 +19,7 @@
 
     <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
 
-    <script src="{% static 'ol/dist/ol.js' %}"></script>
+    <script src="https://skytrack.tech:2000/static/ol/dist/ol.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
     <script>
@@ -31,7 +31,7 @@
         function updateLatestGpsLocation() {
             $.ajax({
                 type: 'GET',
-                url: '/gps/get-latest-gps-location/' + '{{ emergency_call.call_id }}',  // Create a URL for fetching the latest GPS location data
+                url: 'https://skytrack.tech:2000/api/get-latest-gps-location/' + '{{ emergency_call.call_id }}',  // Create a URL for fetching the latest GPS location data
                 success: function (response) {
                     response = JSON.parse(response);
                     // Update the content of the 'latestGpsLocation' div with the fetched data
@@ -100,7 +100,7 @@
         var iconStyle = new ol.style.Style({
             image: new ol.style.Icon({
                 anchor: [0.5, 1],
-                src: "{% static 'sos.png' %}", // Replace with the path to your emergency icon
+                src: "https://skytrack.tech:2000/static/sos.png", // Replace with the path to your emergency icon
                 scale: 0.1,
             })
         });
@@ -115,7 +115,7 @@
                 var iconStyle = new ol.style.Style({
                     image: new ol.style.Icon({
                         anchor: [0.5, 1],
-                        src: "{% static 'sos.png' %}", // Replace with the path to your emergency icon
+                        src: "https://skytrack.tech:2000/static/sos.png", // Replace with the path to your emergency icon
                         scale: 0.1,
                     })
                 });
@@ -145,7 +145,7 @@
                 var iconStyle = new ol.style.Style({
                     image: new ol.style.Icon({
                         anchor: [0.5, 1],
-                        src: "{% static 'police.png' %}", // Replace with the path to your emergency icon
+                        src: "https://skytrack.tech:2000/static/police.png", // Replace with the path to your emergency icon
                         scale: 0.3,
                     })
                 });
@@ -248,9 +248,10 @@
             var comment = document.getElementById('comment').value;
             $.ajax({
                 type: 'POST',
-                url: '/gps/submit_status/',
+                url: 'https://skytrack.tech:2000/api/submit_status/',
                 data: { 'call_id': '{{ emergency_call.call_id }}', 'status': status, "comment": comment },  // Include any necessary data
                 success: function (response) {
+                    console.log('success:', response);
                     //console.log('Help assigned successfully:', response);
                     // Add any additional logic or UI updates here
                 },
@@ -263,9 +264,11 @@
             // Make an AJAX request to the AssignHelp API
             $.ajax({
                 type: 'POST',
-                url: '/gps/broadcast-help/',
+                url: 'https://skytrack.tech:2000/api/broadcast-help/',
                 data: { 'call_id': '{{ emergency_call.call_id }}' },  // Include any necessary data
                 success: function (response) {
+
+                    console.log('success:', response);
                     //console.log('Help assigned successfully:', response);
                     // Add any additional logic or UI updates here
                 },
@@ -276,7 +279,7 @@
         }
         function back() {
             // Replace 'https://example.com' with the URL you want to redirect to
-            window.location.href = '/gps/emergency-call-listener';
+            window.location.href = 'https://skytrack.tech:2000/api/emergency-call-listener';
         }
         // Periodically fetch the latest GPS location data every 3 seconds
         setInterval(updateLatestGpsLocation, 3000);
@@ -362,7 +365,7 @@
                         <td><label for="status">Select Status:</label> </td>
                         <td> <select name="status" id="status_in">
                                 <option value="MissInformation">MissInformationClosed</option>
-                                <option value="">NeedBackup</option>
+                                <option value="NeedBackup">NeedBackup</option>
                                 <option value="Closed">Close</option>
                             </select></td>
                         <td> <input name="status" id="comment" placeholder="Comment"> </input> </td>

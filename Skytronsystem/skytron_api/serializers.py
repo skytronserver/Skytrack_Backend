@@ -250,6 +250,10 @@ class DeviceModelFileUploadSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class GPSdata_vehIdentitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GPSData
+        fields = ('vehicle_registration_number', 'imei') 
 class StateadminSerializer(serializers.ModelSerializer):
     
     users = UserSerializer(many=True, read_only=True)

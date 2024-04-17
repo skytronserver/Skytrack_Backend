@@ -31,12 +31,27 @@
             // Send a POST request to the server to update the desk_executive_id
             $.ajax({
                 type: 'POST',
-                url: 'https://skytrack.tech:2000/api/emergency-call-listener/',
+                url: 'https://skytrack.tech:2000/api/emergency-call-listener-admin/',
                 data: JSON.stringify({ 'call_id': call_id }),
                 contentType: 'application/json',
                 success: function (response) {
                     console.log('Data:', response);
-                    window.location.href = 'https://skytrack.tech:2000/api/emergency-call-details/' + call_id;
+                    //window.location.href = 'https://skytrack.tech:2000/api/emergency-call-details/' + call_id;
+                    var parentDoc = window.parent.document;
+
+                    // Find the iframe in the parent document. This assumes there's a unique iframe or you know its specific characteristics.
+                    /*var iframe = parentDoc.querySelector('iframe');
+                    if (iframe) {
+                        //iframe.src = newUrl;
+                        iframe.src = ;
+
+                    } else {
+                        console.error('Iframe not found in parent document');
+                    }*/
+
+
+                    window.open('https://skytrack.tech:2000/api/emergency-call-details/' + call_id);
+
 
                 },
                 error: function (error) {
@@ -47,7 +62,14 @@
 
         }
 
+        function loadCallDetails(callId) {
+            var url = 'https://skytrack.tech:2000/api/emergency-call-details/' + callId;
+            // Assuming the iframe is directly in the parent document 
+            console.error('loaidng url to iframe ' + url);
 
+            window.open(url);
+
+        }
         // Periodically fetch live data updates every 5 seconds
         function fetchLiveCall() {
             setInterval(function () {
@@ -79,7 +101,7 @@
     </script>
 </head>
 
-<body>
+<body id="insideiframe">
     <!--   {% if user.is_authenticated %}
     <p>Welcome, {{ user.username }}! <a href="{% url 'logout' %}">Logout</a></p>
     {% else %}
@@ -87,13 +109,14 @@
     {% endif %}
 
 -->
+
     <h1>Waiting for Call....</h1>
     <h3>Previus Calls</h3>
     <div id="Running_Calls"></div>
 
     <!-- Add your HTML content here (e.g., a button to trigger the popup) -->
     <script>
-        var audio = new Audio('{% static "bell.wav" %}');
+        var audio = new Audio("https://skytrack.tech:2000/static/bell.wav");
         audio.load();
 
 
@@ -105,7 +128,7 @@
             audio.pause();
             audio.currentTime = 0;
         }
-        document.getElementById('pl').onclick(playBuzzer());
+        // document.getElementById('pl').onclick(playBuzzer());
 
     </script>
 </body>

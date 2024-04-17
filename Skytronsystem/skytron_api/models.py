@@ -58,7 +58,7 @@ class GPSLocation(models.Model):
     vehicle_reg_no = models.CharField(max_length=20)
     reply_mob_no = models.CharField(max_length=15)
     class Meta:
-        app_label = 'gps_api'
+        app_label = 'skytron_api'
     def __str__(self):
         return f"{self.device_imei} - {self.date} {self.time}"
 
@@ -480,6 +480,21 @@ class Device(models.Model):
     vehicle = models.IntegerField()
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
     created = models.DateField(auto_now_add=True)
+
+
+
+
+class Rout(models.Model): 
+    status_choices = [
+        ('Active', 'Active'),
+        ('Deleted', 'Deleted'), 
+    ]
+    status = models.CharField(max_length=20, choices=status_choices)
+    rout = models.TextField( ) 
+    device = models.ForeignKey('DeviceStock', on_delete=models.CASCADE)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    created = models.DateField(auto_now_add=True)
+
 
 
 

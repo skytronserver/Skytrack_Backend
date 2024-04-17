@@ -110,7 +110,7 @@
         }
     </style>
 
-    {{ form.media }}
+
 </head>
 
 <body>
@@ -132,6 +132,7 @@
   -->
 
     <div style="position: relative;">
+        <!-- 
         <form method="get" action="https://skytrack.tech:2000/api/gps_history_map/">
             {% csrf_token %}
 
@@ -155,7 +156,7 @@
             </fieldset>
 
             <button type="submit">Filter</button>
-        </form>
+        </form> -->
     </div>
 
 
@@ -164,14 +165,18 @@
 
 
     <div>
-        <h2>Location Information</h2>
+        <!-- <h2>Location Information</h2> -->
+
         <table>
         </table>
 
 
     </div>
 
-    <div id="map" style="width: 800px; height: 600px;"></div>
+    <div id="loading" style="width: 100%; height: 500px; visibility:visible;">
+        <img src="https://skytrack.tech:2000/static/loading.gif" alt="Loading...">
+    </div>
+    <div id="map" style="width: 800px; height: 600px; visibility:hidden;"></div>
 
 
     <div id="dynamic-overlay" class="dynamic-overlay">
@@ -182,7 +187,7 @@
     </div>
 
     </br></br>
-    <div id="controls-container">
+    <div id="controls-container" style="  visibility:hidden;">
         <input type="range" id="time-slider" min="0" max="{{ mapdata_length }}" step="1" value="0">
         <button id="play-pause-button" class="control-button">Play</button>
         <button id="restart-button" class="control-button">Restart</button>
@@ -297,6 +302,34 @@
                 }
 
                 map.addLayer(markerLayer);
+
+                var tileLoadStart = 0;
+                var tileLoadEnd = 0;
+                map.getLayers().forEach(function (layer) {
+                    if (layer instanceof ol.layer.Tile) {
+                        layer.getSource().on('tileloadstart', function () {
+                            tileLoadStart++;
+                        });
+
+                        layer.getSource().on('tileloadend', function () {
+                            tileLoadEnd++;
+                            checkTilesLoaded();
+                        });
+
+                        layer.getSource().on('tileloaderror', function () {
+                            tileLoadEnd++;
+                            checkTilesLoaded();
+                        });
+                    }
+                });
+                function checkTilesLoaded() {
+                    if (tileLoadEnd === tileLoadStart) {
+                        document.getElementById('loading').style.visibility = 'hidden';
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('map').style.visibility = 'visible';
+                        document.getElementById('controls-container').style.visibility = 'visible';
+                    }
+                }
 
 
                 map.on('click', function (event) {
@@ -514,7 +547,7 @@
 
     </script>
     </br></br></br>
-    <table border="1">
+    <table border="1" style="width: 800px; height: 600px; visibility:hidden;">
         <tr>
             <th>DateTime</th>
             <th>Vendor ID</th>

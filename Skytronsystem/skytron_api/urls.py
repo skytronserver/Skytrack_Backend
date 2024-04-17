@@ -98,10 +98,19 @@ urlpatterns = [
 
 
     path('gps-data-table/', gps_data_table, name='gps_data_table'),
-    path('gps_history_map/',gps_history_map , name='gps_history_map'),#
+    path('gps_history_map/',gps_history_map , name='gps_history_map'),
+    path('get_live_vehicle_no/',get_live_vehicle_no , name='get_live_vehicle_no'),#
     path('gps-data-map/',gps_data_allmap , name='gps_data_map'),
     path('gps-data-log-table/', gps_data_log_table, name='gps_data_log_table'),
     path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),
+    #emergency_call_listener_admin
+    path('emergency-call-listener-admin/',emergency_call_listener_admin, name='emergency-call-listener-admin'), 
+    path('emergency-call-listener-deskexecutive/',setRout, name='emergency-call-listener-deskexecutive'), 
+    path('emergency-call-listener-team-lead/',emergency_call_listener_admin, name='emergency-call-listener-team-lead'), 
+    path('setRout/',setRout, name='setRout'), 
+    path('saveRout/',saveRout, name='saveRout'), 
+    path('getRout/',getRout, name='getRout'), 
+    #path('emergency-call-listener-admin/',emergency_call_listener_admin, name='emergency-call-listener-admin'), 
 
 
     
@@ -109,6 +118,7 @@ urlpatterns = [
     path('emergency-call-listener/', emergency_call_listener, name='emergency_call_listener'),
     path('emergency-call-listener-field/', emergency_call_listener_field, name='emergency_call_listener_field'),
     path('get-live-call/', get_live_call, name='get_live_call'),
+    path('get-all-call/', get_all_call, name='get_all_call'),
     path('get-live-call-field/', get_live_call_field, name='get_live_call_field'),
     path('emergency-call-details-google/<int:emergency_call_id>/', emergency_call_details, name='emergency_call_details'),
     path('emergency-call-details/<int:emergency_call_id>/', map2, name='emergency_call_details'),
