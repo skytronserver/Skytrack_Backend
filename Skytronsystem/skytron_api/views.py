@@ -135,6 +135,7 @@ from django.contrib.auth import logout,login,authenticate
 @csrf_exempt
 def LoginAndroid(request):
     if request.method == 'POST':
+        return HttpResponse("LoginDone")
         user=authenticate(request,username=request.POST.get('username'),password=request.POST.get('password'))
         print(user)
         if user is not None:
@@ -150,6 +151,7 @@ def LoginAndroid(request):
 def Login2(request):
     if request.method == 'GET':
         ##print("login2",request.GET )
+        return redirect('/api/emergency-call-listener-field/') 
         username=request.GET.get('username')
         password=request.GET.get('password')
         user=authenticate(request,username=username,password=password)
@@ -157,6 +159,7 @@ def Login2(request):
         if user is not None:
             print("LoginDone")
             login(request,user)
+
             if "FieldEx" in username:
                 print("Loginvalid")
                 #return HttpResponse("This account is not authorized to use this app.")
@@ -216,7 +219,7 @@ def update_location(request):
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
     
-@login_required
+#@login_required
 @csrf_exempt
 def update_status(request, field_ex):
     if request.method == 'POST':
@@ -324,7 +327,7 @@ def SubmitStatus(request):
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
     
-@login_required
+#@login_required
 def emergency_call_details_field(request, emergency_call_id):
     # Get the EmergencyCall object based on the provided emergency_call_id
     emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
@@ -343,7 +346,7 @@ def emergency_call_details_field(request, emergency_call_id):
     }
 
     return render(request, 'emergency_call_details_field.html', context)
-@login_required
+#@login_required
 def emergency_call_details(request, emergency_call_id):
     # Get the EmergencyCall object based on the provided emergency_call_id
     emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
@@ -363,7 +366,7 @@ def emergency_call_details(request, emergency_call_id):
 
     return render(request, 'emergency_call_details.html', context)
 
-@login_required
+#@login_required
 def latest_gps(request):
     try:
         latest_location = GPSLocation.objects.latest('id')
@@ -433,7 +436,7 @@ def emergency_call_listener_admin(request):
     return render(request, 'emergency_call_listener_admin.html', {'live_data': live_data})
 
 
-@login_required
+#@login_required
 @csrf_exempt
 def emergency_call_listener(request):
     if request.method == 'POST':
