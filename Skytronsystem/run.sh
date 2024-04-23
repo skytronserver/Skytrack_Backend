@@ -16,6 +16,12 @@ gunicorn Skytronsystem.wsgi:application
 
 gunicorn -c gunicorn.conf.py Skytronsystem.wsgi:application
 
+python3 722767 root    7u  IPv4  9337826      0t0  TCP *:cisco-sccp (LISTEN)
+python3 725033 root    7u  IPv4  9337826      0t0  TCP *:cisco-sccp (LISTEN)
+python3 725033 root    8u  IPv4  9337826      0t0  TCP *:cisco-sccp (LISTEN)
+python3 725033 root    9u  IPv4 10026146      0t0  TCP admiring-solomon.216-10-244-243.plesk.page:cisco-sccp->internettl.org:49380 (ESTABLISHED)
+
+
 
 nohup gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application  --static-map /static:/var/www/html/skytron_backend/staticfiles
 --static-map /static=/var/www/html/skytron_backend/Skytronsystem/skytron_api/static

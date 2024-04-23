@@ -99,6 +99,8 @@ urlpatterns = [
 
     path('gps-data-table/', gps_data_table, name='gps_data_table'),
     path('gps_history_map/',gps_history_map , name='gps_history_map'),
+    path('gps_history_map_data/',gps_history_map_data , name='gps_history_map_data'),
+    
     path('get_live_vehicle_no/',get_live_vehicle_no , name='get_live_vehicle_no'),#
     path('gps-data-map/',gps_data_allmap , name='gps_data_map'),
     path('gps-data-log-table/', gps_data_log_table, name='gps_data_log_table'),
@@ -109,6 +111,7 @@ urlpatterns = [
     path('emergency-call-listener-team-lead/',emergency_call_listener_admin, name='emergency-call-listener-team-lead'), 
     path('setRout/',setRout, name='setRout'), 
     path('saveRout/',saveRout, name='saveRout'), 
+    path('delRout/',delRout, name='delRout'), 
     path('getRout/',getRout, name='getRout'), 
     #path('emergency-call-listener-admin/',emergency_call_listener_admin, name='emergency-call-listener-admin'), 
 

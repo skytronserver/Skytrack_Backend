@@ -11,6 +11,7 @@ from .models import User as UserModel
 from .models import *
 from .serializers import *
 import random
+from itertools import islice
 from django.contrib.auth.hashers import make_password 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -33,7 +34,7 @@ from rest_framework import status
 from .models import User as UserModel, Session,Confirmation
 from .serializers import StateadminSerializer, UserSerializer, SessionSerializer
 from django.contrib.auth.hashers import make_password, check_password
-
+import sys
 
 from django.db import transaction
 
@@ -47,7 +48,7 @@ from django.shortcuts import get_object_or_404
 
 from .serializers import ConfirmationSerializer
 from rest_framework.parsers import MultiPartParser
-
+import time
 
 from .models import DeviceStock
 from .serializers import DeviceStockSerializer,DeviceStockSerializer2
@@ -754,18 +755,37 @@ def gps_track_data_api(request):
     return JsonResponse({'data': data_list})
 
 
+
+def get_size(obj, seen=None):
+    """Recursively finds size of objects"""
+    size = sys.getsizeof(obj)
+    if seen is None:
+        seen = set()
+    obj_id = id(obj)
+    if obj_id in seen:
+        return 0
+    # Important mark as seen *before* entering recursion to gracefully handle
+    # self-referential objects
+    seen.add(obj_id)
+    if isinstance(obj, dict):
+        size += sum([get_size(v, seen) for v in obj.values()])
+        size += sum([get_size(k, seen) for k in obj.keys()])
+    elif hasattr(obj, '__dict__'):
+        size += get_size(obj.__dict__, seen)
+    elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
+        size += sum([get_size(i, seen) for i in obj])
+    return size
 #@csrf_exempt  # Disable CSRF protection for simplicity. Make sure to secure your API in production.
 #@csrf_exempt
-def gps_history_map(request):     
+def gps_history_map(request): 
+    t = time.time()
+    print("Timer init",time.time() - t )   
 
     mapdata=[]
     data=[]     
     mapdata=[]
     data=[]
-    
-    
     try:
-        
         vehicle_registration_number ="L89_003-0000"
         start_datetime = "2024-04-11"
         end_datetime = "2024-04-12" 
@@ -787,17 +807,102 @@ def gps_history_map(request):
             vehicle_registration_number ="L89_003-0000"
             start_datetime = "2024-04-11"
             end_datetime = "2024-04-12"
+        
+        
         if vehicle_registration_number!="":
-            if vehicle_registration_number:
+            if vehicle_registration_number: 
+                return render(request, 'map_history.html',{'start_datetime':start_datetime,"end_datetime":end_datetime,"vehicle_registration_number":vehicle_registration_number})
+               
+                print("Timer input",time.time() - t ) 
                 data = GPSData.objects.all().filter(gps_status=1).filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).filter(vehicle_registration_number__icontains=vehicle_registration_number)
+                 
+                print("Data select done")
+                print("filter1 ",time.time() - t ) 
                 if start_datetime and end_datetime:
-                        data = data.filter(entry_time__range=(start_datetime, end_datetime))                        
-                        data=data.filter(gps_status=1).order_by('entry_time')[:17280]
-                        mapdata=apply_low_pass_filter(data, ['longitude', 'latitude'])#[3:]
+                        data = data.filter(entry_time__range=(start_datetime, end_datetime))   
+                         
+                        print("Date fileter done")  
+                        print("filter2 ",time.time() - t )                    
+                        data=data.filter(gps_status=1).order_by('entry_time')#[:17280]  
+                        print("sorting done")  
+                        print("sort ",time.time() - t ) 
+                        mapdata=apply_low_pass_filter(data, ['longitude', 'latitude'])#[3:]  
+                        print("lpf done done")  
+                        print("lpf ",time.time() - t ) 
+                        print("total dataSize ",get_size(data))
                 try:    #return JsonResponse({"eg":vehicle_registration_number})     
                     return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
                 except:
                     return JsonResponse({"error": "No Record Found: "+vehicle_registration_number}, status=403) 
+            else:
+                return JsonResponse({'error': "Invalid  Search "}, status=403) 
+        return JsonResponse({'error': "Invalid Search"}, status=403) 
+        return Response({'error': "Invalid Search"}, status=403)
+        return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
+        return Response({'error': "Invalid Search"}, status=403)
+    except Exception as e: 
+        return JsonResponse({'error': e}) 
+        return Response({'error': "ww"}, status=400)
+
+#@csrf_exempt
+def gps_history_map_data(request): 
+    t = time.time()
+    print("Timer init",time.time() - t )   
+
+    mapdata=[]
+    data=[]     
+    mapdata=[]
+    data=[]
+    try:
+        vehicle_registration_number ="L89_003-0000"
+        start_datetime = "2024-04-11"
+        end_datetime = "2024-04-12" 
+        
+        
+        try:
+            vehicle_registration_number = request.GET.get('vehicle_registration_number', None)
+            start_datetime = request.GET.get('start_datetime', None)
+            end_datetime = request.GET.get('end_datetime', None)
+        except:
+            vehicle_registration_number ="L89_003-0000"
+            start_datetime = "2024-04-11"
+            end_datetime = "2024-04-12"
+
+        #return JsonResponse({"eg":vehicle_registration_number})
+        if vehicle_registration_number:
+            pass
+        else:
+            vehicle_registration_number ="L89_003-0000"
+            start_datetime = "2024-04-11"
+            end_datetime = "2024-04-12"
+        
+        
+        if vehicle_registration_number!="":
+            if vehicle_registration_number:
+                print("Timer input",time.time() - t ) 
+                data = GPSData.objects.all().filter(gps_status=1).filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).filter(vehicle_registration_number__icontains=vehicle_registration_number)
+                 
+                print("Data select done")
+                print("filter1 ",time.time() - t ) 
+                if start_datetime and end_datetime:
+                        data = data.filter(entry_time__range=(start_datetime, end_datetime))   
+                         
+                        print("Date fileter done")  
+                        print("filter2 ",time.time() - t )                    
+                        data=data.filter(gps_status=1).order_by('entry_time')#[:17280]  
+                        datalen=len(data)-1
+                        print("sorting done")  
+                        print("sort ",time.time() - t ) 
+                        #mapdata=apply_low_pass_filter(data, ['longitude', 'latitude'])#[3:]  
+                        print("lpf done done")  
+                        print("lpf ",time.time() - t ) 
+                        print("total dataSize ",get_size(data))
+                        data=GPSData_modSerializer(data, many=True).data
+                        #mapdata=GPSData_modSerializer(mapdata, many=True).data
+                try:    #return JsonResponse({"eg":vehicle_registration_number})     
+                    return JsonResponse( {'data': data,'mapdata': mapdata,'mapdata_length': datalen })
+                except Exception as e:
+                    return JsonResponse({"error": str(e) +"No Record Found 1: "+vehicle_registration_number}, status=403) 
             else:
                 return JsonResponse({'error': "Invalid Search 22"}, status=403) 
         return JsonResponse({'error': "Invalid Search"}, status=403) 
@@ -812,15 +917,43 @@ def gps_history_map(request):
 
 def setRout(request):
     # Get the latest entry for each unique vehicle_registration_number
-    latest_data = GPSData.objects.filter(
-        vehicle_registration_number=OuterRef('vehicle_registration_number')
-    ).filter(gps_status=1).order_by('-entry_time').values('id')[:1]
+    #latest_data = GPSData.objects.filter(
+    #    vehicle_registration_number=OuterRef('vehicle_registration_number')
+    #).filter(gps_status=1).order_by('-entry_time').values('id')#[:1]
 
 
     # Retrieve the complete GPSData objects using the latest entry IDs
-    data = GPSData.objects.filter(id__in=Subquery(latest_data))
+    #data = GPSData.objects.filter(id__in=Subquery(latest_data))
+    if request.method == 'GET':
+        device_id = 1 #request.GET.get('device_id')
+        device = DeviceStock.objects.get(id=device_id)   
+        rout = Rout.objects.filter(device=device ) 
+        return render(request, 'map_rout.html',{"routs": rout } )
+    
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
 
-    return render(request, 'map_rout.html', {'data': data})
+
+ 
+@csrf_exempt
+def delRout(request):
+    if request.method == 'POST':
+        data =json.loads( request.body )
+        try:
+            id=data['id']  
+            device =  DeviceStock.objects.get(id=data['device_id'])
+
+            if id:
+                route = Rout.objects.get(id=id)
+                route.delete()
+                rout = Rout.objects.filter(device=device ).all()
+                return JsonResponse({"message": "Route deleted successfully!",'new':[],"data": routSerializer(rout, many=True).data }, status=201)
+        
+        except Exception as e:
+            print(e)
+            return JsonResponse({"error": str(e)}, status=400)
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
 
@@ -829,17 +962,33 @@ def saveRout(request):
     if request.method == 'POST':
         print(request.body)
         data =json.loads( request.body )
+        id =None
+        try:
+            id=data['id']
+        except Exception as e:
+            print(e)
         try:
             createdby =  User.objects.get(id=data['createdby_id'])
             device =  DeviceStock.objects.get(id=data['device_id'])
-            rout = Rout(
-                rout=data['rout'],
-                status='Active',  # Assuming status is 'Active' when created
-                device=device,
-                createdby=createdby
-            )
-            rout.save()
-            return JsonResponse({"message": "Route saved successfully!"}, status=201)
+
+            if id:
+                route = Rout.objects.get(id=id)
+                route.rout = data['rout']
+                route.createdby = User.objects.get(id=data['createdby_id']) 
+                route.save()
+                rout = Rout.objects.filter(device=device ).all()
+                return JsonResponse({"message": "Route saved successfully!",'new':routSerializer(route).data,"data": routSerializer(rout, many=True).data }, status=201)
+        
+            else:
+                route = Rout(
+                    rout=data['rout'],
+                    status='Active',  # Assuming status is 'Active' when created
+                    device=device,
+                    createdby=createdby
+                )
+                route.save()
+                rout = Rout.objects.filter(device=device ).all()
+                return JsonResponse({"message": "New Route saved successfully!",'new':routSerializer(route).data,"data": routSerializer(rout, many=True).data }, status=201)
         except Exception as e:
             print(e)
             return JsonResponse({"error": str(e)}, status=400)
@@ -848,6 +997,19 @@ def saveRout(request):
 
 
 def getRout(request):
+    if request.method == 'GET':
+        device_id = 1 #request.GET.get('device_id')
+        try:
+            device = DeviceStock.objects.get(id=device_id)
+            rout = Rout.objects.filter(device=device ) 
+            return JsonResponse({"rout": rout }, status=200)
+        except Rout.DoesNotExist:
+            return JsonResponse({"error": "No active route found for this device"}, status=404)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=400)
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+def getRoutlist(request):
     if request.method == 'GET':
         device_id = 1 #request.GET.get('device_id')
         try:
@@ -2317,7 +2479,8 @@ def deviceStockFilter(request):
 
     # Filter DeviceStock instances based on parameters
     device_stock = DeviceStock.objects.filter(**serializer.validated_data)
-
+    for item in device_stock:
+        item.is_tagged = DeviceTag.objects.filter(device=item).exists()
     # Serialize the data
     serializer = DeviceStockSerializer2(device_stock, many=True)
 

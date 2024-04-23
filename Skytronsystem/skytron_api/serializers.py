@@ -123,6 +123,7 @@ class DeviceStockSerializer2(serializers.ModelSerializer):
     #created_by_name = serializers.SerializerMethodField()
     model = DeviceModelSerializer(many=False, read_only=True)
     created_by = UserSerializer(many=False, read_only=True)
+    is_tagged=serializers.CharField( )
     class Meta:
         model = DeviceStock
         fields = '__all__'
@@ -250,6 +251,69 @@ class DeviceModelFileUploadSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+
+class GPSData_modSerializer(serializers.ModelSerializer):
+    et = serializers.DateTimeField(source='entry_time')
+    ps = serializers.CharField(source='packet_status')
+    imei = serializers.CharField()
+    rn = serializers.CharField(source='vehicle_registration_number')
+    lat = serializers.CharField(source='latitude')
+    #latitudeDir = serializers.CharField(source='latitude_dir')
+    lon  = serializers.CharField(source='longitude')
+    #longitudeDir = serializers.CharField(source='longitude_dir')  
+    s = serializers.CharField(source='speed')
+    h  = serializers.CharField(source='heading')
+    sat  = serializers.CharField(source='satellites')
+    gpsS  = serializers.CharField(source='gps_status')
+    alt  = serializers.CharField(source='altitude')
+    #pdop = serializers.CharField()
+    #hdop = serializers.CharField()
+    no = serializers.CharField(source='network_operator')
+    igs = serializers.CharField(source='ignition_status')
+    mps = serializers.CharField(source='main_power_status')
+    miv = serializers.CharField(source='main_input_voltage')
+    ibv = serializers.CharField(source='internal_battery_voltage')
+    ems = serializers.CharField(source='emergency_status')
+    bta = serializers.CharField(source='box_tamper_alert')
+    gss = serializers.CharField(source='gsm_signal_strength')
+    #mcc = serializers.CharField()
+    #mnc = serializers.CharField()
+    #lac = serializers.CharField()
+    #cellId = serializers.CharField(source='cell_id')
+    #nbr1CellId = serializers.CharField(source='nbr1_cell_id')
+    #nbr1Lac = serializers.CharField(source='nbr1_lac')
+    #nbr1SignalStrength = serializers.CharField(source='nbr1_signal_strength')
+    #nbr2CellId = serializers.CharField(source='nbr2_cell_id')
+    #nbr2Lac = serializers.CharField(source='nbr2_lac')
+    #nbr2SignalStrength = serializers.CharField(source='nbr2_signal_strength')
+    #nbr3CellId = serializers.CharField(source='nbr3_cell_id')
+    #nbr3Lac = serializers.CharField(source='nbr3_lac')
+    #nbr3SignalStrength = serializers.CharField(source='nbr3_signal_strength')
+    #nbr4CellId = serializers.CharField(source='nbr4_cell_id')
+    #nbr4Lac = serializers.CharField(source='nbr4_lac')
+    #nbr4SignalStrength = serializers.CharField(source='nbr4_signal_strength')
+    dis = serializers.CharField(source='digital_input_status')
+    dos = serializers.CharField(source='digital_output_status')
+    fn = serializers.CharField(source='frame_number')
+    om = serializers.CharField(source='odometer')
+
+    class Meta:
+        model = GPSData
+        fields = [ 'et','ps','imei','rn','lat','lon','s','h','sat','gpsS','alt','no','igs',
+                  'mps','miv','ibv','ems','bta','gss','dis','dos','fn','om']
+        ''' entryTime', 'packetStatus', 'imei', 'vehicleRegistrationNumber',
+                  'latitude',  'longitude',#'latitudeDir', 'longitudeDir',
+                  'speed', 'heading', 'satellites', 'gpsStatus', 'altitude',
+                  'pdop', 'hdop', 'networkOperator', 'ignitionStatus',
+                  'mainPowerStatus', 'mainInputVoltage', 'internalBatteryVoltage',
+                  'emergencyStatus', 'boxTamperAlert', 'gsmSignalStrength',
+                  'mcc', 'mnc', 'lac', 'cellId',# 'nbr1CellId', 'nbr1Lac',
+                  #'nbr1SignalStrength', 'nbr2CellId', 'nbr2Lac', 'nbr2SignalStrength',
+                  #'nbr3CellId', 'nbr3Lac', 'nbr3SignalStrength', 'nbr4CellId',
+                  #'nbr4Lac', 'nbr4SignalStrength', 
+                  'digitalInputStatus',
+                  'digitalOutputStatus', 'frameNumber', 'odometer']'''
+
 class GPSdata_vehIdentitySerializer(serializers.ModelSerializer):
     class Meta:
         model = GPSData
@@ -263,7 +327,10 @@ class StateadminSerializer(serializers.ModelSerializer):
     class Meta:
         model = StateAdmin
         fields = '__all__'
-
+class routSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Rout
+        fields = ("id" ,"device_id","createdby_id","rout")
 
 class dto_rtoSerializer(serializers.ModelSerializer):
     

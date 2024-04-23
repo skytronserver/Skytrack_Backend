@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-    <title>Route Editing Map</title>
+    <title>Route Setting Map</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://skytrack.tech:2000/static/ol/ol.css">
@@ -22,13 +22,75 @@
 </head>
 
 <body>
-    <div class="button-container">
-        <button onclick="submitRoute()">Submit Route</button>
-        <button onclick="loadRoute()">Load Route</button>
+    <div class="button-container" id="buttons">
+
+
+        <select id="routeDropdown" onchange="loadSelectedRoute()">
+            <option value="" selected disabled>Select a route</option>
+            {% for item in routs %}
+            <option value="{{ item.id }}|{{ item.rout }}">Route #{{ item.id}}</option>
+            {% endfor %}
+        </select>
+
+        <button onclick="addRoute()">Add Route</button>
+        <button onclick="delRoute()">Delete Route</button>
     </div>
 
     <div id="map"></div>
     <script>
+        function loadSelectedRoute() {
+            var dropdown = document.getElementById('routeDropdown');
+            var selectedOption = dropdown.options[dropdown.selectedIndex];
+            if (selectedOption) {
+                var values = selectedOption.value.split('|');
+                var routeId = values[0];
+                var routeRout = values[1];
+                loadRoute(routeRout, routeId);
+            } else {
+                alert('Please select a route.');
+            }
+        }
+        function updateButtons(data, id) {
+            var buttonContainer = document.getElementById('buttons');
+            buttonContainer.innerHTML = ''; // Clear existing buttons
+
+            // Create a dropdown menu
+            var dropdown = document.createElement('select');
+            dropdown.id = 'routeDropdown';
+            dropdown.addEventListener('change', loadSelectedRoute);
+
+            // Add a default option
+            var defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.text = 'Select a route';
+            defaultOption.disabled = true;
+            //defaultOption.selected = true;
+            dropdown.appendChild(defaultOption);
+
+            // Add options for each route in the data
+            data.forEach(function (route) {
+                var option = document.createElement('option');
+                option.value = route.id + '|' + route.rout;
+                option.text = 'Route #' + route.id;
+                dropdown.appendChild(option);
+                if (route.id == id) { option.selected = true; }
+            });
+
+            buttonContainer.appendChild(dropdown);
+
+            // Add the "Add Route" button
+            var addButton = document.createElement('button');
+            addButton.textContent = 'Add Route';
+            addButton.onclick = addRoute;
+            buttonContainer.appendChild(addButton);
+            var delButton = document.createElement('button');
+            delButton.textContent = 'Delete Route';
+            delButton.onclick = delRoute;
+            buttonContainer.appendChild(delButton);
+
+
+        }
+
         var map = new ol.Map({
             target: 'map',
             layers: [
@@ -41,6 +103,7 @@
                 zoom: 7
             })
         });
+        var selected_id = '';
 
         var vectorSource = new ol.source.Vector();
         var vectorLayer = new ol.layer.Vector({
@@ -48,36 +111,86 @@
         });
         map.addLayer(vectorLayer);
 
-        var points = [];
+        var Points = [];
         var modify = new ol.interaction.Modify({ source: vectorSource });
         map.addInteraction(modify);
 
         function addPoint(coord) {
-            var point = new ol.Feature({
-                geometry: new ol.geom.Point(coord)
-            });
-            point.setStyle(new ol.style.Style({
-                image: new ol.style.Icon({
-                    src: 'https://skytrack.tech:2000/static/track.png',
-                    scale: 0.1
-                })
-            }));
-            vectorSource.addFeature(point);
-            points.push(point);
-            updateRoute();
+            if (selected_id == '') { }
+            else {
+                var point = new ol.Feature({
+                    geometry: new ol.geom.Point(coord)
+                });
+                point.setStyle(new ol.style.Style({
+                    image: new ol.style.Icon({
+                        src: 'https://skytrack.tech:2000/static/track.png',
+                        scale: 0.1
+                    })
+                }));
+                vectorSource.addFeature(point);
+                Points.push(point);
+                updateRoute();
+            }
         }
 
         function updateRoute() {
             vectorSource.clear();
-            vectorSource.addFeatures(points);
-            if (points.length > 1) {
-                var coordinates = points.map(p => p.getGeometry().getCoordinates());
+            vectorSource.addFeatures(Points);
+            if (Points.length > 1) {
+                var coordinates = Points.map(p => p.getGeometry().getCoordinates());
                 var line = new ol.geom.LineString(coordinates);
+
                 var route = new ol.Feature({
                     geometry: line
                 });
+
+
+                // Iterate through the Points array to create routes between consecutive pairs of points
+                for (var i = 0; i < Points.length - 1; i++) {
+                    var coord1 = Points[i].getGeometry().getCoordinates();
+                    var coord2 = Points[i + 1].getGeometry().getCoordinates();
+
+                    // Make a request to the Bhuvan API to get the route coordinates for the current pair of coordinates
+                    var apiUrl = 'https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_state.php?' +
+                        'lat1=' + coord1[1] + '&lon1=' + coord1[0] +
+                        '&lat2=' + coord2[1] + '&lon2=' + coord2[0] +
+                        '&token=4281216c012ee14ac75f57857e42985d3099e4a8';
+
+                    fetch(apiUrl, {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            // Check if route data is available
+                            if (data.success && data.route.length > 1) {
+                                var routeCoordinates = data.route.map(coord => {
+                                    return ol.proj.fromLonLat([coord[1], coord[0]]);
+                                });
+
+                                // Create a LineString geometry using the route coordinates
+                                var routeLine = new ol.geom.LineString(routeCoordinates);
+
+                                // Create a feature using the routeLine geometry
+                                var routeFeature = new ol.Feature({
+                                    geometry: routeLine
+                                });
+
+                                // Add the routeFeature to the vector source
+                                vectorSource.addFeature(routeFeature);
+                            } else {
+                                console.error('No route data available.');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error fetching route data:', error);
+                        });
+                }
                 vectorSource.addFeature(route);
             }
+            submitRoute();
         }
 
         function updateRoute2(points) {
@@ -110,16 +223,18 @@
         });
 
         function submitRoute() {
-            var rdata = points.map(p => ol.proj.toLonLat(p.getGeometry().getCoordinates()));
+            var rdata = Points.map(p => ol.proj.toLonLat(p.getGeometry().getCoordinates()));
             //  $.post('https://skytrack.tech:2000/api/saveRout/', { route: JSON.stringify(data) }, function (response) {
             //       console.log('Response from server:', response);
             //   });
 
             var data = {
+                id: selected_id,
                 device_id: 1,  // Example device ID
                 createdby_id: 1,  // Example created by user ID
                 rout: rdata // Example route data
             };
+            console.log('saving data :', data);
 
             $.ajax({
                 url: 'https://skytrack.tech:2000/api/saveRout/',
@@ -127,15 +242,104 @@
                 contentType: 'application/json',  // Setting the content type to application/json
                 data: JSON.stringify(data),  // Converting the JavaScript object to a JSON string
                 success: function (response) {
+                    selected_id = response.new.id;
+                    updateButtons(response.data, selected_id)
+
+
                     console.log('Response from server:', response);
                 },
                 error: function (xhr, status, error) {
                     console.log('Error:', error);
                 }
             });
+            //location.reload();
+        }
+        function addRoute() {
+
+            var data = {
+                device_id: 1,  // Example device ID
+                createdby_id: 1,  // Example created by user ID
+                rout: '' // Example route data
+            };
+            console.log('saving data :', data);
+
+            $.ajax({
+                url: 'https://skytrack.tech:2000/api/saveRout/',
+                type: 'POST',
+                contentType: 'application/json',  // Setting the content type to application/json
+                data: JSON.stringify(data),  // Converting the JavaScript object to a JSON string
+                success: function (response) {
+                    selected_id = response.new.id;
+                    updateButtons(response.data, selected_id)
+
+
+                    console.log('Response from server:', response);
+                },
+                error: function (xhr, status, error) {
+                    console.log('Error:', error);
+                }
+            });
+            //location.reload();
         }
 
-        function loadRoute() {
+        function delRoute() {
+
+            var data = {
+                id: selected_id,
+                device_id: 1,  // Example device ID
+                createdby_id: 1,
+            };
+            console.log('deleting data :', data);
+
+            $.ajax({
+                url: 'https://skytrack.tech:2000/api/delRout/',
+                type: 'POST',
+                contentType: 'application/json',  // Setting the content type to application/json
+                data: JSON.stringify(data),  // Converting the JavaScript object to a JSON string
+                success: function (response) {
+                    selected_id = response.data[0].id;
+                    updateButtons(response.data, selected_id)
+
+
+                    console.log('Response from server:', response);
+                },
+                error: function (xhr, status, error) {
+                    console.log('Error:', error);
+                }
+            });
+            //location.reload();
+        }
+
+        function loadRoute(rout, id) {
+            selected_id = id;
+
+            console.log('routloaded:', selected_id);
+
+            vectorSource.clear();  // Assuming vectorSource is already defined
+
+            let points = JSON.parse(rout);  // Parse if the route data is not already an array
+            var pts = [];
+            Points = [];
+            points.forEach(coords => {
+                console.log('coords', coords);
+                var point = new ol.Feature({
+                    geometry: new ol.geom.Point(ol.proj.fromLonLat(coords))
+                });
+                point.setStyle(new ol.style.Style({
+                    image: new ol.style.Icon({
+                        src: 'https://skytrack.tech:2000/static/track.png',
+                        scale: 0.1
+                    })
+                }));
+                pts.push(point);
+                Points.push(point);
+                vectorSource.addFeature(point);
+            });
+            updateRoute2(pts);
+
+        }
+
+        /*function loadRouteold() {
             $.get('https://skytrack.tech:2000/api/getRout/', function (data) {
                 vectorSource.clear();  // Assuming vectorSource is already defined
                 console.log('rout', data);
@@ -160,7 +364,7 @@
             }).fail(function (error) {
                 console.log('Error fetching route:', error);
             });
-        }
+        }*/
     </script>
 </body>
 

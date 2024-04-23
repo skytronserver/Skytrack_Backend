@@ -176,6 +176,12 @@
     <div id="loading" style="width: 100%; height: 500px; visibility:visible;">
         <img src="https://skytrack.tech:2000/static/loading.gif" alt="Loading...">
     </div>
+    <div id="controls-container" style="  visibility:hidden;">
+        <input type="range" id="time-slider" min="0" max="0" step="1" value="0">
+        <button id="play-pause-button" class="control-button">Play</button>
+        <button id="restart-button" class="control-button">Restart</button>
+
+    </div>
     <div id="map" style="width: 800px; height: 600px; visibility:hidden;"></div>
 
 
@@ -187,12 +193,7 @@
     </div>
 
     </br></br>
-    <div id="controls-container" style="  visibility:hidden;">
-        <input type="range" id="time-slider" min="0" max="{{ mapdata_length }}" step="1" value="0">
-        <button id="play-pause-button" class="control-button">Play</button>
-        <button id="restart-button" class="control-button">Restart</button>
 
-    </div>
     <script>
         var map = new ol.Map();
         var emergencyPoint = "";
@@ -202,155 +203,126 @@
         let dynamicOverlay;
         var markers = [];
         var mapdata = [];
-        var mapdata = [
-            {% for item in data %}
-        {
-            entryTime: "{{ item.entry_time|date:'Y-m-d H:i:s' }}",
-                packetStatus: "{{ item.packet_status }}",
-                    imei: "{{ item.imei }}",
-                        vehicleRegistrationNumber: "{{ item.vehicle_registration_number }}",
-                            latitude: "{{ item.latitude }}",
-                                latitudeDir: "{{ item.latitude_dir }}",
-                                    longitude: "{{ item.longitude }}",
-                                        longitudeDir: "{{ item.longitude_dir }}",
-                                            speed: "{{ item.speed }}",
-                                                heading: "{{ item.heading }}",
-                                                    satellites: "{{ item.satellites }}",
-                                                        gps_status: "{{ item.gps_status }}",
-                                                            altitude: "{{ item.altitude }}",
-                                                                pdop: "{{ item.pdop }}",
-                                                                    hdop: "{{ item.hdop }}",
-                                                                        networkOperator: "{{ item.network_operator }}",
-                                                                            ignitionStatus: "{{ item.ignition_status }}",
-                                                                                mainPowerStatus: "{{ item.main_power_status }}",
-                                                                                    mainInputVoltage: "{{ item.main_input_voltage }}",
-                                                                                        internalBatteryVoltage: "{{ item.internal_battery_voltage }}",
-                                                                                            emergencyStatus: "{{ item.emergency_status }}",
-                                                                                                boxTamperAlert: "{{ item.box_tamper_alert }}",
-                                                                                                    gsmSignalStrength: "{{ item.gsm_signal_strength }}",
-                                                                                                        mcc: "{{ item.mcc }}",
-                                                                                                            mnc: "{{ item.mnc }}",
-                                                                                                                lac: "{{ item.lac }}",
-                                                                                                                    cellId: "{{ item.cell_id }}",
-                                                                                                                        nbr1CellId: "{{ item.nbr1_cell_id }}",
-                                                                                                                            nbr1Lac: "{{ item.nbr1_lac }}",
-                                                                                                                                nbr1SignalStrength: "{{ item.nbr1_signal_strength }}",
-                                                                                                                                    nbr2CellId: "{{ item.nbr2_cell_id }}",
-                                                                                                                                        nbr2Lac: "{{ item.nbr2_lac }}",
-                                                                                                                                            nbr2SignalStrength: "{{ item.nbr2_signal_strength }}",
-                                                                                                                                                nbr3CellId: "{{ item.nbr3_cell_id }}",
-                                                                                                                                                    nbr3Lac: "{{ item.nbr3_lac }}",
-                                                                                                                                                        nbr3SignalStrength: "{{ item.nbr3_signal_strength }}",
-                                                                                                                                                            nbr4CellId: "{{ item.nbr4_cell_id }}",
-                                                                                                                                                                nbr4Lac: "{{ item.nbr4_lac }}",
-                                                                                                                                                                    nbr4SignalStrength: "{{ item.nbr4_signal_strength }}",
-                                                                                                                                                                        digitalInputStatus: "{{ item.digital_input_status }}",
-                                                                                                                                                                            digitalOutputStatus: "{{ item.digital_output_status }}",
-                                                                                                                                                                                frameNumber: "{{ item.frame_number }}",
-                                                                                                                                                                                    odometer: "{{ item.odometer }}"
-        }
-        {% if not forloop.last %}, {% endif %}
-        {% endfor %}
-];
+
+
 
 
         document.addEventListener('DOMContentLoaded', function () {
             // Initialize the map
-            map = new ol.Map({
-                target: 'map',
-                layers: [
-                    new ol.layer.Tile({
-                        source: new ol.source.OSM()
-                    }),
-                    new ol.layer.Tile({
-                        source: new ol.source.TileWMS({
-                            url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',
-                            params: { 'LAYERS': 'lulc:BR_LULC50K_1112', 'TILED': true },
-                            serverType: 'geoserver',
-                            transition: 0,
-                        }),
-                    }),
-                ],
-                view: new ol.View({
-                    center: ol.proj.fromLonLat([91.829437, 26.131644]),
-                    zoom: 11,
-                })
+
+            $.ajax({
+                type: 'GET',
+                url: 'https://skytrack.tech:2000/api/gps_history_map_data/?start_datetime={{ start_datetime }}&end_datetime={{ end_datetime }}&vehicle_registration_number={{ vehicle_registration_number }}',
+                //data: { 'call_id': '{{ emergency_call.call_id }}' },  // Include any necessary data
+                success: function (response) {
+
+                    console.log('success:', response);
+                    mapdata = response.data;
+                    var timeSlider = document.getElementById('time-slider');
+                    timeSlider.max = response.mapdata_length;
+
+                    map = new ol.Map({
+                        target: 'map',
+                        layers: [
+                            new ol.layer.Tile({
+                                source: new ol.source.OSM()
+                            }),
+                            new ol.layer.Tile({
+                                source: new ol.source.TileWMS({
+                                    url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',
+                                    params: { 'LAYERS': 'lulc:BR_LULC50K_1112', 'TILED': true },
+                                    serverType: 'geoserver',
+                                    transition: 0,
+                                }),
+                            }),
+                        ],
+                        view: new ol.View({
+                            center: ol.proj.fromLonLat([91.829437, 26.131644]),
+                            zoom: 11,
+                        })
+                    });
+
+                    //map.addLayer(activePoliceLayer);
+
+                    dynamicOverlay = new ol.Overlay({
+                        element: document.getElementById('dynamic-overlay'),
+                    });
+                    map.addOverlay(dynamicOverlay);
+                    if (mapdata.length > 0) {
+
+
+
+                        var lastEntryTime = new Date(mapdata[0].et);
+                        for (var i = 1; i < mapdata.length; i++) {
+                            var entry = mapdata[i];
+                            if (entry.gpsS == 1) {
+                                var currentEntryTime = new Date(entry.et);
+                                var timeDifferenceInMilliseconds = currentEntryTime - lastEntryTime;
+                                astEntryTime = currentEntryTime;
+                                var timeDifference = timeDifferenceInMilliseconds / 1000;
+                                updateEmergencyPointer(entry.lon, entry.lat, i, entry.vehicle_registration_number, timeDifference);
+                            }
+
+                        }
+
+                        map.addLayer(markerLayer);
+
+                        var tileLoadStart = 0;
+                        var tileLoadEnd = 0;
+                        map.getLayers().forEach(function (layer) {
+                            if (layer instanceof ol.layer.Tile) {
+                                layer.getSource().on('tileloadstart', function () {
+                                    tileLoadStart++;
+                                });
+
+                                layer.getSource().on('tileloadend', function () {
+                                    tileLoadEnd++;
+                                    checkTilesLoaded();
+                                });
+
+                                layer.getSource().on('tileloaderror', function () {
+                                    tileLoadEnd++;
+                                    checkTilesLoaded();
+                                });
+                            }
+                        });
+                        function checkTilesLoaded() {
+                            if (tileLoadEnd === tileLoadStart) {
+                                document.getElementById('loading').style.visibility = 'hidden';
+                                document.getElementById('loading').style.display = 'none';
+                                document.getElementById('map').style.visibility = 'visible';
+                                document.getElementById('controls-container').style.visibility = 'visible';
+                            }
+                        }
+
+
+                        map.on('click', function (event) {
+                            var clickedFeatures = map.getFeaturesAtPixel(event.pixel);
+
+                            // Check if globalMarker is among the clicked features
+                            var isGlobalMarkerClicked = clickedFeatures && clickedFeatures.includes(globalMarker);
+
+                            var element = dynamicOverlay.getElement();
+                            var isVisible = element.style.display === 'block';
+
+                            // Toggle visibility if globalMarker is clicked
+                            if (isGlobalMarkerClicked) {
+                                dynamicOverlay.setPosition(isVisible ? undefined : currentCoordinates1);
+                                element.style.display = isVisible ? 'none' : 'block';
+                            } else {
+                                // Hide the overlay if clicked outside globalMarker
+                                hideOverlay();
+                            }
+                        });
+                    }
+
+                },
+                error: function (error) {
+                    console.error('Error geting data:' + url, error);
+                }
             });
 
-            //map.addLayer(activePoliceLayer);
 
-            dynamicOverlay = new ol.Overlay({
-                element: document.getElementById('dynamic-overlay'),
-            });
-
-            map.addOverlay(dynamicOverlay);
-            if (mapdata.length > 0) {
-
-
-
-                var lastEntryTime = new Date(mapdata[0].entryTime);
-                for (var i = 1; i < mapdata.length; i++) {
-                    var entry = mapdata[i];
-                    if (entry.gps_status == 1) {
-                        var currentEntryTime = new Date(entry.entryTime);
-                        var timeDifferenceInMilliseconds = currentEntryTime - lastEntryTime;
-                        astEntryTime = currentEntryTime;
-                        var timeDifference = timeDifferenceInMilliseconds / 1000;
-                        updateEmergencyPointer(entry.longitude, entry.latitude, i, entry.vehicle_registration_number, timeDifference);
-                    }
-
-                }
-
-                map.addLayer(markerLayer);
-
-                var tileLoadStart = 0;
-                var tileLoadEnd = 0;
-                map.getLayers().forEach(function (layer) {
-                    if (layer instanceof ol.layer.Tile) {
-                        layer.getSource().on('tileloadstart', function () {
-                            tileLoadStart++;
-                        });
-
-                        layer.getSource().on('tileloadend', function () {
-                            tileLoadEnd++;
-                            checkTilesLoaded();
-                        });
-
-                        layer.getSource().on('tileloaderror', function () {
-                            tileLoadEnd++;
-                            checkTilesLoaded();
-                        });
-                    }
-                });
-                function checkTilesLoaded() {
-                    if (tileLoadEnd === tileLoadStart) {
-                        document.getElementById('loading').style.visibility = 'hidden';
-                        document.getElementById('loading').style.display = 'none';
-                        document.getElementById('map').style.visibility = 'visible';
-                        document.getElementById('controls-container').style.visibility = 'visible';
-                    }
-                }
-
-
-                map.on('click', function (event) {
-                    var clickedFeatures = map.getFeaturesAtPixel(event.pixel);
-
-                    // Check if globalMarker is among the clicked features
-                    var isGlobalMarkerClicked = clickedFeatures && clickedFeatures.includes(globalMarker);
-
-                    var element = dynamicOverlay.getElement();
-                    var isVisible = element.style.display === 'block';
-
-                    // Toggle visibility if globalMarker is clicked
-                    if (isGlobalMarkerClicked) {
-                        dynamicOverlay.setPosition(isVisible ? undefined : currentCoordinates1);
-                        element.style.display = isVisible ? 'none' : 'block';
-                    } else {
-                        // Hide the overlay if clicked outside globalMarker
-                        hideOverlay();
-                    }
-                });
-            }
         });
 
         var updateCounter = 0;
@@ -476,49 +448,48 @@
         }
         function updateLocationDetailsTable(entry) {
             var tableContent = "<table border='1' id='location-details-table'>" +
-                "<tr><td>DateTime</td><td>" + entry.entryTime + "</td></tr>" +
-                "<tr><td>Packet Status</td><td>" + entry.packetStatus + "</td></tr>" +
+                "<tr><td>DateTime</td><td>" + entry.et + "</td></tr>" +
+                "<tr><td>Packet Status</td><td>" + entry.ps + "</td></tr>" +
                 "<tr><td>IMEI</td><td>" + entry.imei + "</td></tr>" +
-                "<tr><td>Vehicle Registration Number</td><td>" + entry.vehicleRegistrationNumber + "</td></tr>" +
-                "<tr><td>Latitude</td><td>" + entry.latitude + "</td></tr>" +
-                "<tr><td>Latitude Direction</td><td>" + entry.latitudeDir + "</td></tr>" +
-                "<tr><td>Longitude</td><td>" + entry.longitude + "</td></tr>" +
-                "<tr><td>Longitude Direction</td><td>" + entry.longitudeDir + "</td></tr>" +
-                "<tr><td>Speed</td><td>" + entry.speed + "</td></tr>" +
-                "<tr><td>Heading</td><td>" + entry.heading + "</td></tr>" +
-                "<tr><td>Satellites</td><td>" + entry.satellites + "</td></tr>" +
-                "<tr><td>GPS Status</td><td>" + entry.gps_status + "</td></tr>" +
-                "<tr><td>Altitude</td><td>" + entry.altitude + "</td></tr>" +
-                "<tr><td>PDOP</td><td>" + entry.pdop + "</td></tr>" +
-                "<tr><td>HDOP</td><td>" + entry.hdop + "</td></tr>" +
-                "<tr><td>Network Operator</td><td>" + entry.networkOperator + "</td></tr>" +
-                "<tr><td>Ignition Status</td><td>" + entry.ignitionStatus + "</td></tr>" +
-                "<tr><td>Main Power Status</td><td>" + entry.mainPowerStatus + "</td></tr>" +
-                "<tr><td>Main Input Voltage</td><td>" + entry.mainInputVoltage + "</td></tr>" +
-                "<tr><td>Internal Battery Voltage</td><td>" + entry.internalBatteryVoltage + "</td></tr>" +
-                "<tr><td>Emergency Status</td><td>" + entry.emergencyStatus + "</td></tr>" +
-                "<tr><td>Box Tamper Alert</td><td>" + entry.boxTamperAlert + "</td></tr>" +
-                "<tr><td>GSM Signal Strength</td><td>" + entry.gsmSignalStrength + "</td></tr>" +
-                "<tr><td>MCC</td><td>" + entry.mcc + "</td></tr>" +
-                "<tr><td>MNC</td><td>" + entry.mnc + "</td></tr>" +
-                "<tr><td>LAC</td><td>" + entry.lac + "</td></tr>" +
-                "<tr><td>Cell ID</td><td>" + entry.cellId + "</td></tr>" +
-                "<tr><td>NBR1 Cell ID</td><td>" + entry.nbr1CellId + "</td></tr>" +
-                "<tr><td>NBR1 LAC</td><td>" + entry.nbr1Lac + "</td></tr>" +
-                "<tr><td>NBR1 Signal Strength</td><td>" + entry.nbr1SignalStrength + "</td></tr>" +
-                "<tr><td>NBR2 Cell ID</td><td>" + entry.nbr2CellId + "</td></tr>" +
-                "<tr><td>NBR2 LAC</td><td>" + entry.nbr2Lac + "</td></tr>" +
-                "<tr><td>NBR2 Signal Strength</td><td>" + entry.nbr2SignalStrength + "</td></tr>" +
-                "<tr><td>NBR3 Cell ID</td><td>" + entry.nbr3CellId + "</td></tr>" +
-                "<tr><td>NBR3 LAC</td><td>" + entry.nbr3Lac + "</td></tr>" +
-                "<tr><td>NBR3 Signal Strength</td><td>" + entry.nbr3SignalStrength + "</td></tr>" +
-                "<tr><td>NBR4 Cell ID</td><td>" + entry.nbr4CellId + "</td></tr>" +
-                "<tr><td>NBR4 LAC</td><td>" + entry.nbr4Lac + "</td></tr>" +
-                "<tr><td>NBR4 Signal Strength</td><td>" + entry.nbr4SignalStrength + "</td></tr>" +
-                "<tr><td>Digital Input Status</td><td>" + entry.digitalInputStatus + "</td></tr>" +
-                "<tr><td>Digital Output Status</td><td>" + entry.digitalOutputStatus + "</td></tr>" +
-                "<tr><td>Frame Number</td><td>" + entry.frameNumber + "</td></tr>" +
-                "<tr><td>Odometer</td><td>" + entry.odometer + "</td></tr>" +
+                "<tr><td>Vehicle Registration Number</td><td>" + entry.rn + "</td></tr>" +
+                "<tr><td>Latitude</td><td>" + entry.lat + "</td></tr>" +
+                //"<tr><td>Latitude Direction</td><td>" + entry.latDir + "</td></tr>" +
+                "<tr><td>Longitude</td><td>" + entry.lon + "</td></tr>" +
+                //"<tr><td>Longitude Direction</td><td>" + entry.lonDir + "</td></tr>" +
+                "<tr><td>Speed</td><td>" + entry.s + "</td></tr>" +
+                "<tr><td>Heading</td><td>" + entry.h + "</td></tr>" +
+                "<tr><td>Satellites</td><td>" + entry.sat + "</td></tr>" +
+                "<tr><td>GPS Status</td><td>" + entry.gpsS + "</td></tr>" +
+                "<tr><td>Altitude</td><td>" + entry.alt + "</td></tr>" +
+                //"<tr><td>PDOP</td><td>" + entry.pdop + "</td></tr>" +
+                //"<tr><td>HDOP</td><td>" + entry.hdop + "</td></tr>" +
+                "<tr><td>Network Operator</td><td>" + entry.no + "</td></tr>" +
+                "<tr><td>Ignition Status</td><td>" + entry.igs + "</td></tr>" +
+                "<tr><td>Main Power Status</td><td>" + entry.mps + "</td></tr>" +
+                "<tr><td>Main Input Voltage</td><td>" + entry.miv + "</td></tr>" +
+                "<tr><td>Internal Battery Voltage</td><td>" + entry.ibv +
+                "<tr><td>Box Tamper Alert</td><td>" + entry.bta + "</td></tr>" +
+                "<tr><td>GSM Signal Strength</td><td>" + entry.gss + "</td></tr>" +
+                //"<tr><td>MCC</td><td>" + entry.mcc + "</td></tr>" +
+                //"<tr><td>MNC</td><td>" + entry.mnc + "</td></tr>" +
+                // "<tr><td>LAC</td><td>" + entry.lac + "</td></tr>" +
+                //"<tr><td>Cell ID</td><td>" + entry.cellId + "</td></tr>" +
+                //"<tr><td>NBR1 Cell ID</td><td>" + entry.nbr1CellId + "</td></tr>" +
+                //"<tr><td>NBR1 LAC</td><td>" + entry.nbr1Lac + "</td></tr>" +
+                //"<tr><td>NBR1 Signal Strength</td><td>" + entry.nbr1SignalStrength + "</td></tr>" +
+                // "<tr><td>NBR2 Cell ID</td><td>" + entry.nbr2CellId + "</td></tr>" +
+                // "<tr><td>NBR2 LAC</td><td>" + entry.nbr2Lac + "</td></tr>" +
+                // "<tr><td>NBR2 Signal Strength</td><td>" + entry.nbr2SignalStrength + "</td></tr>" +
+                // "<tr><td>NBR3 Cell ID</td><td>" + entry.nbr3CellId + "</td></tr>" +
+                // "<tr><td>NBR3 LAC</td><td>" + entry.nbr3Lac + "</td></tr>" +
+                // "<tr><td>NBR3 Signal Strength</td><td>" + entry.nbr3SignalStrength + "</td></tr>" +
+                // //  "<tr><td>NBR4 Cell ID</td><td>" + entry.nbr4CellId + "</td></tr>" +
+                //   "<tr><td>NBR4 LAC</td><td>" + entry.nbr4Lac + "</td></tr>" +
+                //   "<tr><td>NBR4 Signal Strength</td><td>" + entry.nbr4SignalStrength + "</td></tr>" +
+                "<tr><td>Digital Input Status</td><td>" + entry.dis + "</td></tr>" +
+                "<tr><td>Digital Output Status</td><td>" + entry.dos + "</td></tr>" +
+                "<tr><td>Frame Number</td><td>" + entry.fn + "</td></tr>" +
+                "<tr><td>Odometer</td><td>" + entry.om + "</td></tr>" +
                 "</table>";
 
             document.getElementById('location-details-table-container').innerHTML = tableContent;
@@ -532,14 +503,14 @@
         function displayLocationAtTime(index) {
             var entry = mapdata[index];
 
-            if (entry.gps_status == 1) {
-                currentCoordinates1 = ol.proj.fromLonLat([parseFloat(entry.longitude), parseFloat(entry.latitude)]);
+            if (entry.gpsS == 1) {
+                currentCoordinates1 = ol.proj.fromLonLat([parseFloat(entry.lon), parseFloat(entry.lat)]);
 
                 globalMarker.setGeometry(new ol.geom.Point(currentCoordinates1));
                 updateLocationDetailsTable(entry);
                 dynamicOverlay.setPosition(currentCoordinates1);
 
-                console.log('marker data:' + index + ',' + [parseFloat(entry.longitude), parseFloat(entry.latitude)]);
+                console.log('marker data:' + index + ',' + [parseFloat(entry.lon), parseFloat(entry.lat)]);
                 console.log(JSON.stringify(entry));
 
             }
@@ -547,6 +518,8 @@
 
     </script>
     </br></br></br>
+    <!--
+
     <table border="1" style="width: 800px; height: 600px; visibility:hidden;">
         <tr>
             <th>DateTime</th>
@@ -609,13 +582,13 @@
             <td>{{ item.packet_status }}</td>
             <td>{{ item.imei }}</td>
             <td>{{ item.vehicle_registration_number }}</td>
-            <td>{{ item.gps_status }}</td>
+            <td>{{ item.gpsS }}</td>
             <td>{{ item.date }}</td>
             <td>{{ item.time }}</td>
-            <td>{{ item.latitude }}</td>
-            <td>{{ item.latitude_dir }}</td>
-            <td>{{ item.longitude }}</td>
-            <td>{{ item.longitude_dir }}</td>
+            <td>{{ item.lat }}</td>
+            <td>{{ item.lat_dir }}</td>
+            <td>{{ item.lon }}</td>
+            <td>{{ item.lon_dir }}</td>
             <td>{{ item.speed }}</td>
             <td>{{ item.heading }}</td>
             <td>{{ item.satellites }}</td>
@@ -655,6 +628,7 @@
         {% endfor %}
     </table>
 
+    -->
 
 </body>
 
