@@ -2482,6 +2482,14 @@ def deviceStockFilter(request):
     for item in device_stock:
         item.is_tagged = DeviceTag.objects.filter(device=item).exists()
     # Serialize the data
+    #is_tagged_filter = serializer.validated_data.get('is_tagged')
+    is_tagged_filter = request.data.get('is_tagged')
+
+    # Filter based on 'is_tagged' value if provided
+    if is_tagged_filter is not None:
+        is_tagged_filter= is_tagged_filter=='True'
+        device_stock = [item for item in device_stock if item.is_tagged == is_tagged_filter]
+
     serializer = DeviceStockSerializer2(device_stock, many=True)
 
     return JsonResponse({'data': serializer.data}, status=200)

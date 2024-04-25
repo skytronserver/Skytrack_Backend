@@ -50,6 +50,7 @@ class DeviceStockFilterSerializer(serializers.Serializer):
     esim_provider = serializers.CharField(required=False)
     remarks = serializers.CharField(required=False)
     created_by_id = serializers.IntegerField(required=False)
+    #is_tagged=serializers.CharField(required=False)
 class DeviceModelFilterSerializer(serializers.Serializer):
     model_name = serializers.CharField(required=False)
     test_agency = serializers.CharField(required=False)
