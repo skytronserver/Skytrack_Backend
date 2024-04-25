@@ -19,6 +19,30 @@
     <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
     <script src="https://skytrack.tech:2000/static/ol/dist/ol.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <style>
+        .popup-container {
+            position: absolute;
+            z-index: 1000;
+            display: none;
+        }
+
+        .popup-menu {
+            background-color: white;
+            border: 1px solid black;
+            padding: 5px;
+            font-size: 24px;
+        }
+
+        .popup-menu>div {
+            cursor: pointer;
+            margin-bottom: 25px;
+        }
+
+        .popup-menu>div:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
 </head>
 
 <body>
@@ -124,7 +148,7 @@
                 point.setStyle(new ol.style.Style({
                     image: new ol.style.Icon({
                         src: 'https://skytrack.tech:2000/static/track.png',
-                        scale: 0.1
+                        scale: 0.051
                     })
                 }));
                 vectorSource.addFeature(point);
@@ -208,21 +232,131 @@
             }
         }
 
-        map.on('click', function (e) {
-            addPoint(e.coordinate);
+        // Add a container for the popup menu
+        var popupContainer = document.createElement('div');
+        popupContainer.className = 'popup-container';
+        document.body.appendChild(popupContainer);
+
+        // Create an ol.Overlay instance for the popup menu
+        var popupOverlay = new ol.Overlay({
+            element: popupContainer,
+            positioning: 'bottom-center',
+            stopEvent: false,
+            offset: [0, -15]
+        });
+        map.addOverlay(popupOverlay);
+
+        // Function to show the popup menu at a specific coordinate
+        function showPopupMenu(coord) {
+            popupOverlay.setPosition(coord);
+            popupContainer.style.display = 'block';
+        }
+
+        // Function to hide the popup menu
+        function hidePopupMenu() {
+            popupContainer.style.display = 'none';
+        }
+
+        var isDragging = false;
+        var dragStartCoord;
+
+
+
+        map.on('pointerup', function (e) {
+            updateRoute();
+
         });
 
-        map.on('contextmenu', function (e) {
-            e.preventDefault(); // Prevent the browser context menu from opening
-            map.forEachFeatureAtPixel(e.pixel, function (feature) {
-                const index = Points.findIndex(p => p === feature);
-                if (index > -1) {
-                    Points.splice(index, 1); // Remove the point from the array
-                    vectorSource.removeFeature(feature);
-                    updateRoute();
-                }
+
+
+
+        map.on('singleclick', function (e) {
+            var pixel = map.getEventPixel(e.originalEvent);
+            var feature = map.forEachFeatureAtPixel(pixel, function (feature) {
+                return feature;
             });
+            var popupMenuClicked = $(e.originalEvent.target).closest('.popup-menu').length > 0;
+
+
+            if (feature) {
+                // If a feature (point) is clicked
+                var coord = feature.getGeometry().getCoordinates();
+                showPopupMenu(coord);
+                // Event listener for clicking the "Move" option
+                $('#move').click(function () {
+                    modify.setActive(true); // Enable modification interaction
+                    hidePopupMenu();
+                });
+                // Event listener for clicking the "Delete" option
+                $('#delete').click(function () {
+                    var index = Points.indexOf(feature);
+                    if (index > -1) {
+                        Points.splice(index, 1); // Remove the point from the array
+                        vectorSource.removeFeature(feature); // Remove the point from the map
+                        updateRoute(); // Update the route
+                    }
+                    hidePopupMenu();
+                });
+                // Event listener for clicking the "Cancel" option
+                $('#cancel').click(function () {
+                    hidePopupMenu();
+                });
+            } else if (!popupMenuClicked) {
+                hidePopupMenu(); // Hide the popup menu if clicked outside of a feature
+                {
+                    // Handle mouse events
+                    addPoint(e.coordinate);
+                }
+            } else {
+                hidePopupMenu();
+            }
         });
+
+        // Function to find the closest point on a line between two existing points
+        function findClosestPoint(coord) {
+            var closestPoint = null;
+            var closestDistance = Infinity;
+            for (var i = 0; i < Points.length - 1; i++) {
+                var startCoord = Points[i].getGeometry().getCoordinates();
+                var endCoord = Points[i + 1].getGeometry().getCoordinates();
+                var line = new ol.geom.LineString([startCoord, endCoord]);
+                var closestCoord = line.getClosestPoint(coord);
+                var distance = ol.coordinate.distSquared(closestCoord, coord);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestPoint = closestCoord;
+                }
+            }
+            return closestPoint;
+        }
+
+        var clickTimer;
+
+        // Add the popup menu HTML to the popup container 
+        //<div id="move">Move</div>
+        popupContainer.innerHTML = `
+    <div class="popup-menu">
+        <div id="delete">Delete</div>
+        <div id="cancel">Cancel</div>
+    </div>
+`;
+        /*
+                map.on('click', function (e) {
+                    addPoint(e.coordinate);
+                });
+        
+                map.on('contextmenu', function (e) {
+                    e.preventDefault(); // Prevent the browser context menu from opening
+                    map.forEachFeatureAtPixel(e.pixel, function (feature) {
+                        const index = Points.findIndex(p => p === feature);
+                        if (index > -1) {
+                            Points.splice(index, 1); // Remove the point from the array
+                            vectorSource.removeFeature(feature);
+                            updateRoute();
+                        }
+                    });
+                });
+                */
 
         function submitRoute() {
             var rdata = Points.map(p => ol.proj.toLonLat(p.getGeometry().getCoordinates()));
@@ -330,7 +464,7 @@
                 point.setStyle(new ol.style.Style({
                     image: new ol.style.Icon({
                         src: 'https://skytrack.tech:2000/static/track.png',
-                        scale: 0.1
+                        scale: 0.051
                     })
                 }));
                 pts.push(point);
@@ -341,32 +475,6 @@
 
         }
 
-        /*function loadRouteold() {
-            $.get('https://skytrack.tech:2000/api/getRout/', function (data) {
-                vectorSource.clear();  // Assuming vectorSource is already defined
-                console.log('rout', data);
-                console.log('rout', data.rout);
-                let points = JSON.parse(data.rout);  // Parse if the route data is not already an array
-                var pts = [];
-                points.forEach(coords => {
-                    console.log('coords', coords);
-                    var point = new ol.Feature({
-                        geometry: new ol.geom.Point(ol.proj.fromLonLat(coords))
-                    });
-                    point.setStyle(new ol.style.Style({
-                        image: new ol.style.Icon({
-                            src: 'https://skytrack.tech:2000/static/track.png',
-                            scale: 0.1
-                        })
-                    }));
-                    pts.push(point);
-                    vectorSource.addFeature(point);
-                });
-                updateRoute2(pts);
-            }).fail(function (error) {
-                console.log('Error fetching route:', error);
-            });
-        }*/
     </script>
 </body>
 
