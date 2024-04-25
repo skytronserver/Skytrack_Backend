@@ -151,7 +151,7 @@
                     var coord2 = Points[i + 1].getGeometry().getCoordinates();
 
                     // Make a request to the Bhuvan API to get the route coordinates for the current pair of coordinates
-                    var apiUrl = 'https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_state.php?' +
+                    /*var apiUrl = 'https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_state.php?' +
                         'lat1=' + coord1[1] + '&lon1=' + coord1[0] +
                         '&lat2=' + coord2[1] + '&lon2=' + coord2[0] +
                         '&token=4281216c012ee14ac75f57857e42985d3099e4a8';
@@ -187,7 +187,9 @@
                         .catch(error => {
                             console.error('Error fetching route data:', error);
                         });
+                        */
                 }
+
                 vectorSource.addFeature(route);
             }
             submitRoute();
@@ -196,8 +198,8 @@
         function updateRoute2(points) {
             //vectorSource.clear();
             //vectorSource.addFeatures(points);
-            if (points.length > 1) {
-                var coordinates = points.map(p => p.getGeometry().getCoordinates());
+            if (Points.length > 1) {
+                var coordinates = Points.map(p => p.getGeometry().getCoordinates());
                 var line = new ol.geom.LineString(coordinates);
                 var route = new ol.Feature({
                     geometry: line
@@ -213,9 +215,9 @@
         map.on('contextmenu', function (e) {
             e.preventDefault(); // Prevent the browser context menu from opening
             map.forEachFeatureAtPixel(e.pixel, function (feature) {
-                const index = points.findIndex(p => p === feature);
+                const index = Points.findIndex(p => p === feature);
                 if (index > -1) {
-                    points.splice(index, 1); // Remove the point from the array
+                    Points.splice(index, 1); // Remove the point from the array
                     vectorSource.removeFeature(feature);
                     updateRoute();
                 }
