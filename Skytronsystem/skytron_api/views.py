@@ -2034,6 +2034,51 @@ def filter_SOS_user(request):
         return Response({'error': str(e)}, status=500)
 
 
+from collections import defaultdict
+
+@api_view(['POST'])
+def list_alert_logs(request):
+    if request.method == 'POST':
+        start_datetime = request.POST.get('start_datetime')
+        end_datetime = request.POST.get('end_datetime')
+        district_id = request.POST.get('district_id')
+        state_id = request.POST.get('state_id')
+
+        queryset = AlertsLog.objects.all()
+
+        # Filter queryset based on optional POST inputs
+        if start_datetime:
+            queryset = queryset.filter(timestamp__gte=start_datetime)
+        if end_datetime:
+            queryset = queryset.filter(timestamp__lte=end_datetime)
+        if district_id:
+            queryset = queryset.filter(district_id=district_id)
+        if state_id:
+            queryset = queryset.filter(state_id=state_id)
+
+        # Get all alert types
+        all_alert_types = dict(AlertsLog.TYPE_CHOICES)
+
+        # Group queryset by alert type
+        alert_groups = defaultdict(list)
+        for item in queryset:
+            alert_groups[item.type].append(AlertsLogSerializer(item).data)
+
+        # Create response dictionary with all types, even if not present in queryset
+        response_data = {}
+        for alert_type, alert_type_name in all_alert_types.items():
+            response_data[alert_type_name] = {
+                'count': len(alert_groups[alert_type]),
+                'details': alert_groups[alert_type]
+            }
+
+        return JsonResponse(response_data)
+
+    # Handle GET requests or other HTTP methods
+    return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
+
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @transaction.atomic
@@ -2248,6 +2293,33 @@ def TagDevice2Vehicle(request):
     serializer = DeviceTagSerializer(device_tag)
 
     return JsonResponse({'data': serializer.data, 'message': 'Device taging successful.'}, status=201)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def unTagDevice2Vehicle(request):
+    # Extract data from the request or adjust as needed
+    if request.method == 'POST':
+        # Get tag_id from POST data
+        tag_id = request.POST.get('tag_id')
+
+        # Check if tag_id is provided
+        if not tag_id:
+            return JsonResponse({'error': 'tag_id is required'}, status=400)
+
+        try:
+            # Retrieve DeviceTag instance by tag_id
+            device_tag = DeviceTag.objects.get(id=tag_id)
+        except DeviceTag.DoesNotExist:
+            return JsonResponse({'error': 'DeviceTag with the given tag_id does not exist'}, status=404)
+
+        # Update the status to Device_Untagged
+        device_tag.status = 'Device_Untagged'
+        device_tag.save()
+
+        return JsonResponse({'message': 'Device successfully untagged'})
+
+    # Handle GET requests or other HTTP methods
+    return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
 
 
 

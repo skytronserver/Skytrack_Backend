@@ -35,6 +35,10 @@ class StockAssignmentSerializer(serializers.ModelSerializer):
         model = StockAssignment
         fields = ['device', 'dealer', 'assigned_by', 'assigned', 'shipping_remark', 'stock_status']
 
+class AlertsLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AlertsLog
+        fields = '__all__'
 class DeviceStockFilterSerializer(serializers.Serializer):
     model_id = serializers.IntegerField(required=False)
     device_esn = serializers.CharField(required=False)

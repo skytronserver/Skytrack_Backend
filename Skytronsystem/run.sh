@@ -32,3 +32,16 @@ nohup gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsys
 nohup  python3 em_server.py > tcplogem.log 2>&1 &
 #export MAIL_ID=testskytrack@gmail.com
 #export MAIL_PW=zmzmexdnrlmsqrlr
+
+IMEI:868019065935497
+regNo:DL-01-0002
+
+IMEI:868960065434082
+regNo:L89_001-0000
+
+IMEI:868960065505253
+regNo:GEM1205-05-000
+
+IMEI:868960065504918
+regNo:GEM1205-04-00
+

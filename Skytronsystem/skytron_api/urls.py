@@ -97,6 +97,7 @@ urlpatterns = [
     path('SOS/filter_SOSteam/', filter_SOS_team, name='filter_SOSteam'),
 
 
+    path('list-alerts/', list_alert_logs, name='list_alert_logs'),
     path('gps-data-table/', gps_data_table, name='gps_data_table'),
     path('gps_history_map/',gps_history_map , name='gps_history_map'),
     path('gps_history_map_data/',gps_history_map_data , name='gps_history_map_data'),
@@ -199,6 +200,7 @@ urlpatterns = [
     
     #Devicetag
     path('tag/TagDevice2Vehicle/', TagDevice2Vehicle, name='TagDevice2Vehicle'),
+    path('tag/untag/', unTagDevice2Vehicle, name='unTagDevice2Vehicle'),
     path('tag/TagAwaitingOwnerApproval/', TagAwaitingOwnerApproval, name='TagAwaitingOwnerApproval'),
     path('tag/TagSendOwnerOtp/', TagSendOwnerOtp, name='TagSendOwnerOtp'),
     path('tag/TagVerifyOwnerOtp/', TagVerifyOwnerOtp, name='TagVerifyOwnerOtpe'),

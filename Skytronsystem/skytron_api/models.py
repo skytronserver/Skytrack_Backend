@@ -820,3 +820,40 @@ class GPSDataLog(models.Model):
     raw_data = models.TextField()
 
   
+class AlertsLog(models.Model):
+    TYPE_CHOICES = [
+        ('Route_in', 'Route_in'),
+        ('Route_out', 'Route_out'),
+        ('Em_in', 'Em_in'),
+        ('Em_out', 'Em_out'),
+        ('Eng_on', 'Eng_on'),
+        ('Eng_off', 'Eng_off'),
+        ('OverSpeed_in', 'OverSpeed_in'),
+        ('OverSpeed_out', 'OverSpeed_out'),
+        ('LowIntBat_in', 'LowIntBat_in'),
+        ('LowIntBat_out', 'LowIntBat_out'),
+        ('LowExtBat_in', 'LowExtBat_in'),
+        ('LowExtBat_out', 'LowExtBat_out'),
+        ('ExtBatDiscnt_in', 'ExtBatDiscnt_in'),
+        ('ExtBatDiscnt_out', 'ExtBatDiscnt_out'),
+        ('BoxTemp_in', 'BoxTemp_in'),
+        ('BoxTemp_out', 'BoxTemp_out'),
+        ('EmTemp_in', 'EmTemp_in'),
+        ('EmTemp_out', 'EmTemp_out'),
+        ('Tilt_in', 'Tilt_in'),
+        ('Tilt_out', 'Tilt_out'),
+        ('HarshBreak', 'HarshBreak'),
+        ('HarshTurn', 'HarshTurn'),
+        ('HarshAccileration', 'HarshAccileration'), 
+    ]
+
+    status = models.CharField(max_length=50, choices=TYPE_CHOICES)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    gps_ref=models.ForeignKey(GPSData, on_delete=models.CASCADE)
+    route_ref=models.ForeignKey(Rout, on_delete=models.CASCADE,null=True, blank=True)
+    em_ref=models.ForeignKey(EmergencyCall, on_delete=models.CASCADE,null=True, blank=True)
+    vehicle=models.ForeignKey(Vehicle, on_delete=models.CASCADE) 
+    deviceTag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE) 
+    district=models.ForeignKey(dto_rto, on_delete=models.CASCADE) 
+    state=models.ForeignKey( StateAdmin, on_delete=models.CASCADE) 
+    
