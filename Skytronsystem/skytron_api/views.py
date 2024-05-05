@@ -2519,20 +2519,45 @@ def SellFitDevice(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def StockAssignToRetailer(request):
-    # Deserialize the input data
     data = request.data.copy()
+    assigned_by_id = request.user.id
+    assigned_at = timezone.now()
+    stock_status = "Available_for_fitting"
+    dealer_id = int(data.get('dealer'))
+    device_ids = ast.literal_eval(str(data.get('device')))
+
+    stock_assignments = []
+    for device_id in device_ids:
+        try:
+            assignment = StockAssignment.objects.create(
+                device_id=int(device_id),
+                dealer_id=dealer_id,
+                assigned_by_id=assigned_by_id,
+                assigned=assigned_at,
+                shipping_remark=data.get('shipping_remark'),
+                stock_status=stock_status
+            )
+            stock_assignments.append(StockAssignmentSerializer(assignment).data)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    return JsonResponse({'data': stock_assignments , 'message': 'Stock assigned successfully.'}, status=201)
+def StockAssignToRetailer3333(request):
+    # Deserialize the input data
+    data = request.data.copy() 
     data['assigned_by'] = request.user.id
     data['assigned'] = timezone.now()
     data['stock_status']= "Available_for_fitting"
-    data['dealer']=int(data['dealer'])
+    data['dealer_id']= int(data['dealer']) 
     device_ids = ast.literal_eval(str(data['device']))
      
 
     # Create individual StockAssignment entries for each device
     stock_assignments = []
     for device_id in device_ids:
-        data['device'] = int(device_id)
-        serializer = StockAssignmentSerializer(data=data)
+        data['device_id'] = int(device_id)
+        print(data)
+        serializer = StockAssignmentSerializer2(data=data)
         if serializer.is_valid():
             serializer.save()
             stock_assignments.append(serializer.data)

@@ -83,14 +83,20 @@ class Command(BaseCommand):
 '''
 
 
-
+import time
 def handle_client(conn, client_address):
     print(f"Accepted connection from {client_address}", flush=True)
     try:
         conn.settimeout(180)
-
+        last_data_time=time.time()
         while True:
             data = conn.recv(1024)
+            if not data:
+                if time.time() - last_data_time > 600:
+                        print(f"No data received from {client_address} for more than 10 minutes. Closing the connection.", flush=True)
+                        break 
+
+            
 
             if  data:
             #    break  # Connection closed by the client
@@ -108,7 +114,10 @@ def handle_client(conn, client_address):
                         dat = '$' + dat
                         if len(dat) > 4:
                             gps_data = process_gps_data(dat)
-                            GPSData.objects.create(**gps_data)
+                            if gps_data:
+                                GPSData.objects.create(**gps_data)
+                            else:
+                                print("Data format errot error:", dat, flush=True)
                     except Exception as e:
                         print("Data processing error main:", e, flush=True)
 
