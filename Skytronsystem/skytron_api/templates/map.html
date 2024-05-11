@@ -98,6 +98,42 @@
                 scale: 0.6,
             })
         });
+        var iconBlue = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "https://skytrack.tech:2000/static/logo/blue-skytron-transparent.png", // Replace with the path to your emergency icon
+                scale: 0.06,
+            })
+        });
+        var iconGreen = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "https://skytrack.tech:2000/static/logo/green-skytron-transparent.png", // Replace with the path to your emergency icon
+                scale: 0.06,
+            })
+        });
+        var iconGrey = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "https://skytrack.tech:2000/static/logo/grey-skytron-transparent.png", // Replace with the path to your emergency icon
+                scale: 0.06,
+            })
+        });
+        var iconOrange = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "https://skytrack.tech:2000/static/logo/orange-skytron-transparent.png", // Replace with the path to your emergency icon
+                scale: 0.06,
+            })
+        });
+
+        var iconRed = new ol.style.Style({
+            image: new ol.style.Icon({
+                anchor: [0.5, 1],
+                src: "https://skytrack.tech:2000/static/logo/red-skytron-transparent.png", // Replace with the path to your emergency icon
+                scale: 0.06,
+            })
+        });
 
 
 
@@ -197,9 +233,24 @@
 
             console.log("Entry Time Difference (minutes):", entryTimeDifference);
             console.log("Date-Time Difference (minutes):", dateTimeDifference);
-            if (entryTimeDifference > 5) { Point.setStyle(iconStyle2); }
 
-            else if (dateTimeDifference > 5) { Point.setStyle(iconStyle3); }
+            ////RED- device with EA packet
+
+            //Orange- Device with any alert packet except EA
+
+            //Blue- device with ignition on but stationary status packet
+
+            //Green- device with ignition on AND moving status packet
+
+            //Grey- Offline device (no packets from device to server)
+            if (data['packet_type'] == "EA") { Point.setStyle(iconRed); }
+            else if (data['packet_type'] != "NR") { Point.setStyle(iconOrange); }
+            // && data['speed'] == 0
+            else if (data['ignition_status'] == 0) { Point.setStyle(iconBlue); }
+            //&& data['speed'] > 0
+            else if (data['ignition_status'] == 1) { Point.setStyle(iconGreen); }
+            else if (entryTimeDifference > 5) { Point.setStyle(iconGrey); }
+
 
             else { Point.setStyle(iconStyle); }
 

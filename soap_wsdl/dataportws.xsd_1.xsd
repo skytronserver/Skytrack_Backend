@@ -1,0 +1,130 @@
+<?xml version='1.0' encoding='UTF-8'?><!-- Published by JAX-WS RI at http://jax-ws.dev.java.net. RI's version is JAX-WS RI 2.2-hudson-740-. --><xs:schema xmlns:tns="http://service.web.homologation.transport.nic/" xmlns:xs="http://www.w3.org/2001/XMLSchema" version="1.0" targetNamespace="http://service.web.homologation.transport.nic/">
+
+<xs:element name="DeactivatedDataDobj" type="tns:deactivatedDataDobj" />
+
+<xs:element name="InventoryDetails" type="tns:vltdUploadDobj" />
+
+<xs:element name="NonAisDataDobj" type="tns:nonAisDataDobj" />
+
+<xs:element name="deactivationDataUpload" type="tns:deactivationDataUpload" />
+
+<xs:element name="deactivationDataUploadResponse" type="tns:deactivationDataUploadResponse" />
+
+<xs:element name="getVltdInfo" type="tns:getVltdInfo" />
+
+<xs:element name="getVltdInfoByIMEI" type="tns:getVltdInfoByIMEI" />
+
+<xs:element name="getVltdInfoByIMEIResponse" type="tns:getVltdInfoByIMEIResponse" />
+
+<xs:element name="getVltdInfoResponse" type="tns:getVltdInfoResponse" />
+
+<xs:element name="nonAISDataUploadForDL" type="tns:nonAISDataUploadForDL" />
+
+<xs:element name="nonAISDataUploadForDLResponse" type="tns:nonAISDataUploadForDLResponse" />
+
+<xs:element name="vltdDataUpload" type="tns:vltdDataUpload" />
+
+<xs:element name="vltdDataUploadResponse" type="tns:vltdDataUploadResponse" />
+
+<xs:complexType name="nonAISDataUploadForDL">
+<xs:sequence>
+<xs:element name="userId" type="xs:string" minOccurs="0" />
+<xs:element name="transactionPass" type="xs:string" minOccurs="0" />
+<xs:element name="fileName" type="xs:string" minOccurs="0" />
+<xs:element name="noAisDetails" type="tns:nonAisDataDobj" nillable="true" minOccurs="0" maxOccurs="unbounded" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="nonAisDataDobj">
+<xs:sequence>
+<xs:element name="activeFlag" type="xs:boolean" />
+<xs:element name="dataRecievedDate" type="xs:string" minOccurs="0" />
+<xs:element name="inactiveSince" type="xs:int" />
+<xs:element name="mobileNo" type="xs:string" minOccurs="0" />
+<xs:element name="permitOwnerName" type="xs:string" minOccurs="0" />
+<xs:element name="regnNo" type="xs:string" minOccurs="0" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="nonAISDataUploadForDLResponse">
+<xs:sequence>
+<xs:element name="return" type="xs:string" minOccurs="0" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="deactivationDataUpload">
+<xs:sequence>
+<xs:element name="userId" type="xs:string" minOccurs="0" />
+<xs:element name="transactionPass" type="xs:string" minOccurs="0" />
+<xs:element name="fileName" type="xs:string" minOccurs="0" />
+<xs:element name="vltdDetails" type="tns:deactivatedDataDobj" nillable="true" minOccurs="0" maxOccurs="unbounded" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="deactivatedDataDobj">
+<xs:sequence>
+<xs:element name="deviceActivationStatus" type="xs:boolean" />
+<xs:element name="deviceSrNo" type="xs:string" minOccurs="0" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="deactivationDataUploadResponse">
+<xs:sequence>
+<xs:element name="return" type="xs:string" minOccurs="0" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="vltdDataUpload">
+<xs:sequence>
+<xs:element name="userId" type="xs:string" minOccurs="0" />
+<xs:element name="transactionPass" type="xs:string" minOccurs="0" />
+<xs:element name="fileName" type="xs:string" minOccurs="0" />
+<xs:element name="vltdDetails" type="tns:vltdUploadDobj" nillable="true" minOccurs="0" maxOccurs="unbounded" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="vltdUploadDobj">
+<xs:sequence>
+<xs:element name="activation_rcpt_no" type="xs:string" minOccurs="0" />
+<xs:element name="device_activated_upto" type="xs:string" minOccurs="0" />
+<xs:element name="device_activation_date" type="xs:string" minOccurs="0" />
+<xs:element name="device_activation_status" type="xs:boolean" minOccurs="0" />
+<xs:element name="device_sr_no" type="xs:string" minOccurs="0" />
+<xs:element name="icc_id_valid_upto" type="xs:string" minOccurs="0" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="vltdDataUploadResponse">
+<xs:sequence>
+<xs:element name="return" type="xs:string" minOccurs="0" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="getVltdInfoByIMEI">
+<xs:sequence>
+<xs:element name="userId" type="xs:string" minOccurs="0" />
+<xs:element name="transactionPass" type="xs:string" minOccurs="0" />
+<xs:element name="imeiNo" type="xs:string" minOccurs="0" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="getVltdInfoByIMEIResponse">
+<xs:sequence>
+<xs:element name="return" type="xs:string" minOccurs="0" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="getVltdInfo">
+<xs:sequence>
+<xs:element name="userId" type="xs:string" minOccurs="0" />
+<xs:element name="transactionPass" type="xs:string" minOccurs="0" />
+<xs:element name="deviceSerialNo" type="xs:string" minOccurs="0" />
+</xs:sequence>
+</xs:complexType>
+
+<xs:complexType name="getVltdInfoResponse">
+<xs:sequence>
+<xs:element name="return" type="xs:string" minOccurs="0" />
+</xs:sequence>
+</xs:complexType>
+</xs:schema>

@@ -2265,34 +2265,39 @@ def download_static_file(request):
 def TagDevice2Vehicle(request):
     # Extract data from the request or adjust as needed
     device_id = int(request.data['device'])
-    user_id = request.user.id  # Assuming the user is authenticated
-    current_datetime = timezone.now()
-    uploaded_file = request.FILES.get('rcFile')
-    if uploaded_file:
-        file_path = 'cop_files/' + str(device_id) + '_' + uploaded_file.name
-        with open(file_path, 'wb') as file:
-            for chunk in uploaded_file.chunks():
-                file.write(chunk)
-             
-        device_tag = DeviceTag.objects.create(
-        device_id=device_id,
-        vehicle_owner_id=request.data['vehicle_owner'],
-        vehicle_reg_no=request.data['vehicle_reg_no'],
-        engine_no=request.data['engine_no'],
-        chassis_no=request.data['chassis_no'],
-        vehicle_make=request.data['vehicle_make'],
-        vehicle_model=request.data['vehicle_model'],
-        category=request.data['category'],
-        rc_file=file_path,
-        status='Dealer_OTP_Sent',
-        tagged_by=user_id,
-        tagged=current_datetime,
-    )
+    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='Fitted') 
+    if stock_assignment:
+        user_id = request.user.id  # Assuming the user is authenticated
+        current_datetime = timezone.now()
+        uploaded_file = request.FILES.get('rcFile')
+        if uploaded_file:
+            file_path = 'cop_files/' + str(device_id) + '_' + uploaded_file.name
+            with open(file_path, 'wb') as file:
+                for chunk in uploaded_file.chunks():
+                    file.write(chunk)
+                
+            device_tag = DeviceTag.objects.create(
+            device_id=device_id,
+            vehicle_owner_id=request.data['vehicle_owner'],
+            vehicle_reg_no=request.data['vehicle_reg_no'],
+            engine_no=request.data['engine_no'],
+            chassis_no=request.data['chassis_no'],
+            vehicle_make=request.data['vehicle_make'],
+            vehicle_model=request.data['vehicle_model'],
+            category=request.data['category'],
+            rc_file=file_path,
+            status='Dealer_OTP_Sent',
+            tagged_by=user_id,
+            tagged=current_datetime,
+            )
+            
 
-    # Serialize the created data
-    serializer = DeviceTagSerializer(device_tag)
+        # Serialize the created data
+        serializer = DeviceTagSerializer(device_tag)
 
-    return JsonResponse({'data': serializer.data, 'message': 'Device taging successful.'}, status=201)
+        return JsonResponse({'data': serializer.data, 'message': 'Device taging successful.'}, status=201)
+    else:
+        return JsonResponse({  'message': 'Device is not Fitted'}, status=201)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -2356,17 +2361,19 @@ def TagVerifyOwnerOtp(request):
     device_tag_id = request.data.get('device_id')
     if not otp or not otp.isdigit() or len(otp) != 6:
         return HttpResponseBadRequest("Invalid OTP format")
-    device_tag = DeviceTag.objects.filter(device=device_tag_id, status='Owner_OTP_Sent') 
+    device_tag = DeviceTag.objects.filter(device_id=device_tag_id, status='Owner_OTP_Sent') 
 
-    #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
+    #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Owner_OTP_Verified')#'Owner_OTP_Sent')
     device_tag = device_tag.first()
-    if otp == '123456':  # Replace with your actual OTP verification logic
-        device_tag.status = 'Owner_OTP_Verified'
-        device_tag.save()
-        return Response({"message": "Owner OTP verified successfully."}, status=200)
+    if device_tag:
+        if otp == '123456':  # Replace with your actual OTP verification logic
+            device_tag.status = 'Owner_OTP_Verified'
+            device_tag.save()
+            return Response({"message": "Owner OTP verified successfully."}, status=200)
+        else:
+            return HttpResponseBadRequest("Invalid OTP")
     else:
-        return HttpResponseBadRequest("Invalid OTP")
-
+        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -2382,12 +2389,15 @@ def TagVerifyDealerOtp(request  ):
 
         #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
         device_tag = device_tag.first()
-        if otp == '123456':  # Replace with your actual OTP verification logic
-            device_tag.status = 'Dealer_OTP_Verified'
-            device_tag.save()
-            return Response({"message": "Dealer OTP verified successfully."}, status=200)
+        if device_tag:
+            if otp == '123456':  # Replace with your actual OTP verification logic
+                device_tag.status = 'Dealer_OTP_Verified'
+                device_tag.save()
+                return Response({"message": "Dealer OTP verified successfully."}, status=200)
+            else:
+                return HttpResponseBadRequest("Invalid OTP")
         else:
-            return HttpResponseBadRequest("Invalid OTP")
+            return HttpResponseBadRequest("Device not found with Status:Dealer_OTP_Sent")
     except Exception as e:
             return HttpResponseBadRequest(str(e))
 
