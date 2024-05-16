@@ -1042,8 +1042,59 @@ def gps_data_log_table(request):
         data = GPSDataLog.objects.all().order_by('-timestamp')[:200]
     
     return render(request, 'gps_data_log_table.html', {'data': data, 'search_query': search_query})
-     
+#1     Registration of new user-
+#tpid ="1007135935525313027"
+#text="Dear User,To confirm your registration in SkyTron platform, please click at the following link and validate the registration request-{#var#}The link will expire in 5 minutes.-SkyTron"
 
+#2   not working   Tagging of device and vehicle- owner confirmation:
+#tpid ="1007941652638984780"
+#text="Dear Vehicle Owner,To confirm Tagging of your vehicle with your tracking device in SkyTron platform, please click at the following link and validate the tagging request-{#var#}The link will expire in 5 minutes.-SkyTron"
+
+#3      Set/Re-set new password-
+#tpid ="1007927199705544392"
+#text="Dear User,To activate your new password in SkyTron portal, please enter the OTP {#var#} valid for 5 minutes.Please do NOT share with anyone.-SkyTron"
+
+#4. Dealer/Manufacturer confirmation of Tagging-
+#tpid ="1007201930295888818"
+#text="Dear VLTD Dealer/ Manufacturer,We have received request for tagging and activation of following device and vehicle-Vehicle Reg No: {#var#}Device IMEI No: {#var#}To confirm, please enter the OTP {#var#}.- SkyTron"
+
+
+#5. Owner verification link sent during tagging and activation-
+#tpid ="1007671504419591069"
+#text="Dear Vehicle Owner,To confirm tagging and activation of your VLTD with your vehicle in SkyTron platform, kindly click on the following link and validate: {#var#}Link will expire in 5 minutes. Please do NOT share.-SkyTron"
+
+#6. Owner OTP- after tagging / activation is successful-
+#tpid ="1007937055979875563"
+#text="Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {#var#} will expire in 5 minutes. Please do NOT share.-SkyTron"
+
+#7. New User create OTP- (OTP at the time of creating a new user)-
+#tpid ="1007274756418421381"
+#text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {#var#}.Valid for 5 minutes. Please do not share.-SkyTron"
+
+
+def send_SMS(no,text,tpid):
+    #text = "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+    url = "http://tra.bulksmshyderabad.co.in/websms/sendsms.aspx"
+    params = {
+        'userid': "Gobell",
+        'password':"1234566",
+        'sender': "SKYTRN",
+        'mobileno': no,
+        'msg': text,
+        'peid': '1001371511701977986',
+        'tpid':  tpid
+    } 
+
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()  # Raise error for bad responses (non-200)
+        print("Message Sent Successfully")
+    except requests.exceptions.HTTPError as errh:
+        print("Loginotpsend HTTP Error:", errh)
+    except requests.exceptions.RequestException as err:
+        print("Loginotpsend Request Exception:", err)
+    except Exception as e :
+        print("Loginotpsend:", err)
 
 
 
@@ -1113,7 +1164,7 @@ def create_VehicleOwner(request):
 
         # File uploads
         file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        new_password=''.join(random.choices('0123456789', k=6))#abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
         hashed_password = make_password(new_password)
         
         # Create User instance
@@ -1132,6 +1183,10 @@ def create_VehicleOwner(request):
         )
         # Save the User instance
         try:
+            tpid ="1007274756418421381"
+            text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
+ 
+            send_SMS(user.mobile,text,tpid) 
             
             send_mail(
                     'Vehicle Owner Account Created',
@@ -1140,6 +1195,7 @@ def create_VehicleOwner(request):
                     [email],
                     fail_silently=False,
             ) 
+
         except:
             pass
             #return Response({'error': "Error in sendig email"}, status=500)
@@ -1315,7 +1371,7 @@ def create_eSimProvider(request):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        new_password=''.join(random.choices('0123456789', k=6))
         hashed_password = make_password(new_password)
         
         # Create User instance
@@ -1334,6 +1390,11 @@ def create_eSimProvider(request):
         )
         # Save the User instance
         try:
+            
+            tpid ="1007274756418421381"
+            text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
+ 
+            send_SMS(user.mobile,text,tpid) 
             
             send_mail(
                     'E Sim Provider Account Created',
@@ -1441,7 +1502,7 @@ def create_dealer(request):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        new_password=''.join(random.choices('0123456789', k=6))
         hashed_password = make_password(new_password)
         
         # Create User instance
@@ -1461,6 +1522,10 @@ def create_dealer(request):
         # Save the User instance
         try:
             
+            tpid ="1007274756418421381"
+            text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
+ 
+            send_SMS(user.mobile,text,tpid) 
             send_mail(
                     'Dealer Account Created',
                     f'Temporery password is : {new_password}',
@@ -1571,7 +1636,7 @@ def create_manufacturer(request):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        new_password=''.join(random.choices('0123456789', k=6))
         hashed_password = make_password(new_password)
         
         # Create User instance
@@ -1590,6 +1655,10 @@ def create_manufacturer(request):
         )
         # Save the User instance
         try:
+            tpid ="1007274756418421381"
+            text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
+ 
+            send_SMS(user.mobile,text,tpid) 
             
             send_mail(
                     'Device Manufacturere Account Created',
@@ -1698,7 +1767,7 @@ def create_StateAdmin(request):
         state= request.data.get('state', '')
         # File uploads
         file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        new_password=''.join(random.choices('0123456789', k=6))
         hashed_password = make_password(new_password)
         
         # Create User instance
@@ -1717,7 +1786,10 @@ def create_StateAdmin(request):
         )
         # Save the User instance
         try:
-            
+            tpid ="1007274756418421381"
+            text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
+ 
+            send_SMS(user.mobile,text,tpid) 
             send_mail(
                     'State Admin Account Created',
                     f'Temporery password is : {new_password}',
@@ -1821,7 +1893,7 @@ def create_DTO_RTO(request):
         district = request.data.get('district', '')
         # File uploads
         file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        new_password=''.join(random.choices('0123456789', k=6))
         hashed_password = make_password(new_password)
         
         # Create User instance
@@ -1840,7 +1912,10 @@ def create_DTO_RTO(request):
         )
         # Save the User instance
         try:
-            
+            tpid ="1007274756418421381"
+            text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
+ 
+            send_SMS(user.mobile,text,tpid) 
             send_mail(
                      dto_rto1+' Account Created',
                     f'Temporery password is : {new_password}',
@@ -1941,7 +2016,7 @@ def create_SOS_user(request):
         district = request.data.get('district', '')
         # File uploads
         file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        new_password=''.join(random.choices('0123456789', k=6))
         hashed_password = make_password(new_password)
         
         # Create User instance
@@ -1960,7 +2035,10 @@ def create_SOS_user(request):
         )
         # Save the User instance
         try:
-            
+            tpid ="1007274756418421381"
+            text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
+ 
+            send_SMS(user.mobile,text,tpid) 
             send_mail( 'SOS user Account Created',
                     f'Temporery password is : {new_password}',
                     'test@skytrack.tech',
@@ -2102,7 +2180,7 @@ def create_SOS_admin(request):
         district = request.data.get('district', '')
         # File uploads
         file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        new_password=''.join(random.choices('0123456789', k=6))
         hashed_password = make_password(new_password)
         
         # Create User instance
@@ -2121,6 +2199,10 @@ def create_SOS_admin(request):
         )
         # Save the User instance
         try:
+            tpid ="1007274756418421381"
+            text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
+ 
+            send_SMS(user.mobile,text,tpid) 
             
             send_mail(
                       ' SOS Admin Account Created',
@@ -3603,18 +3685,23 @@ def send_email_confirmation(request):
     if not user:
         return Response({'error': 'User not provided'}, status=400)
     # Generate a unique token for email confirmation
-    confirmation_token = get_random_string(length=32)
+    confirmation_token = get_random_string(length=11)
 
     # Save the email confirmation data to the model
     email_confirmation_data = {'user': user.id, 'token': confirmation_token}
     email_confirmation_serializer = ConfirmationSerializer(data=email_confirmation_data)
     if email_confirmation_serializer.is_valid():
         email_confirmation_serializer.save()
+        url=f"https://skytron.com/{confirmation_token}"
+        tpid ="1007135935525313027"
+        text=f"Dear User,To confirm your registration in SkyTron platform, please click at the following link and validate the registration request-{url}The link will expire in 5 minutes.-SkyTron"
+
+        send_SMS(user.mobile,text,tpid) 
 
         # Send confirmation email
         send_mail(
             'Email Confirmation',
-            f'Click the link to confirm your email: http://yourdomain.com/confirm-email/{confirmation_token}',
+            f'Click the link to confirm your email: {url}',
             'from@example.com',
             [user.email],
             fail_silently=False,
@@ -3762,7 +3849,7 @@ def create_user(request):
     if request.method == 'POST':
         data = request.data.copy() 
         data['createdby'] = 'admin'
-        new_password=''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=10))
+        new_password=''.join(random.choices('0123456789', k=6))
         hashed_password = make_password(new_password)
         data['password']  = hashed_password
 
@@ -3879,6 +3966,10 @@ def send_sms_otp(request):
         return Response({'message': 'SMS OTP sent successfully'})
 
 
+
+
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
 def user_login(request):
@@ -3922,18 +4013,19 @@ def user_login(request):
         session_serializer = SessionSerializer(data=session_data)  # Replace with your actual SessionSerializer
         if session_serializer.is_valid():
             session_serializer.save()
-
-            # Send OTP to the user's email
-             
+            # Send OTP to the user's email             
+            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            tpid="1007536593942813283"
+            send_SMS(user.mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                f'Your login OTP is: {otp}',
+                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
                 'test@skytrack.tech',
                 [user.email],
                 fail_silently=False,
             ) 
             
-            return Response({'status':'Email OTP Sent to '+str(user.email),'token': token.key}, status=status.HTTP_200_OK)
+            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token.key}, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
