@@ -3900,16 +3900,16 @@ def password_reset(request):
     Reset user password.
     """
     if request.method == 'POST':
-        email = request.data.get('email', None)
+        mobile = request.data.get('mobile', None)
         new_password = request.data.get('new_password', None)
 
-        if not email:
-            return Response({'error': 'Email not provided'}, status=status.HTTP_400_BAD_REQUEST)
+        if not mobile:
+            return Response({'error': 'Mobile no not provided'}, status=status.HTTP_400_BAD_REQUEST)
         if not new_password:
             return Response({'error': 'Password not provided'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            user = UserModel.objects.get(email=email)
+            user = UserModel.objects.get(mobile=mobile)
         except UserModel.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -3980,7 +3980,7 @@ def user_login(request):
         if not username or not password:
             return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = UserModel.objects.filter(email=username).first() or UserModel.objects.filter(mobile=username).first()
+        user = UserModel.objects.filter(mobile=username).first() or UserModel.objects.filter(mobile=username).first()
         #print(user,password, user.password)
         #print(check_password(password, user.password), )
         user.is_active=True
@@ -4042,7 +4042,7 @@ def validate_otp(request):
             return Response({'error': 'OTP or session token not provided'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Find the session based on the provided token
-        session = Session.objects.filter(token=token).first()
+        session = Session.objects.filter(token=token).last()
 
         if not session:
             return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
