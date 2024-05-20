@@ -717,7 +717,7 @@ class Vehicle(models.Model):
  
 class Session(models.Model):
     loginTime = models.DateTimeField(default=timezone.now, verbose_name="Login Time")
-    user = models.IntegerField(verbose_name="User")
+    user = models.ForeignKey(User, on_delete=models.CASCADE)# models.IntegerField(verbose_name="User")
     token = models.CharField(max_length=255, verbose_name="Token")
     otp = models.IntegerField(blank=True, null=True, verbose_name="OTP")
     status = models.CharField(max_length=10, choices=[("otpsent", "OTP Sent"), ("login", "Login"), ("logout", "Logout"), ("timeout", "Timeout")], verbose_name="Status")

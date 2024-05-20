@@ -89,7 +89,10 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = '__all__'    #, deleting, list view of all , detail view.
 
-
+class UserSerializer2(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id","last_login","is_superuser","name","email", "mobile","role", "usertype","date_joined", "created","Access","is_active",  "address",   "address_pin",  "address_State",  "dob",  "status", "groups",  "user_permissions"]#'__all__'    #, deleting, list view of all , detail view.
 
 class VehicleSerializer(serializers.ModelSerializer):
     class Meta:

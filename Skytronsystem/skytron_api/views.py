@@ -21,7 +21,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from .models import User as UserModel
-from .serializers import UserSerializer
+from .serializers import UserSerializer2
 import random
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail
@@ -4025,7 +4025,7 @@ def user_login(request):
                 fail_silently=False,
             ) 
             
-            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token.key}, status=status.HTTP_200_OK)
+            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token.key,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -4046,18 +4046,21 @@ def validate_otp(request):
 
         if not session:
             return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
+        
+         
+        
 
         if session.status == 'login':
-            return Response({'status':'Login Successful','token': session.token}, status=status.HTTP_200_OK)
+            return Response({'status':'Login Successful','token': session.token,'user':UserSerializer2(session.user).data}, status=status.HTTP_200_OK)
 
         # Validate the OTP
-        print(otp,session.otp)
+        #print(otp,session.otp)
         if str(otp) == str(session.otp):
             # OTP is valid, change session status to 'login'
             session.status = 'login'
             session.save()
 
-            return Response({'status':'Login Successful','token': session.token}, status=status.HTTP_200_OK)
+            return Response({'status':'Login Successful','token': session.token,'user':UserSerializer2(session.user).data}, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)
             
