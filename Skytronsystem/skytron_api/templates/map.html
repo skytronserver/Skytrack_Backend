@@ -39,7 +39,7 @@
         function updateLatestGpsLocation() {
             $.ajax({
                 type: 'GET',
-                url: 'https://skytrack.tech:2000/api/gps_track_data_api/',  // Create a URL for fetching the latest GPS location data
+                url: 'https://skytrack.tech:2000/api/gps_track_data_api/?regno={{regno}}&imei={{imei}}',  // Create a URL for fetching the latest GPS location data
 
                 success: function (response) {
                     // Process the individual data

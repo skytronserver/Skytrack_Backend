@@ -205,10 +205,13 @@ urlpatterns = [
     path('tag/TagSendOwnerOtp/', TagSendOwnerOtp, name='TagSendOwnerOtp'),
     path('tag/TagVerifyOwnerOtp/', TagVerifyOwnerOtp, name='TagVerifyOwnerOtpe'),
     path('tag/TagVerifyDealerOtp/', TagVerifyDealerOtp, name='TagVerifyDealerOtp'),
-    
+    path('tag/download_receiptPDF/', download_receiptPDF, name='download_receiptPDF'),
+    path('tag/upload_receiptPDF/', upload_receiptPDF, name='upload_receiptPDF'),
+   
 
     path('sms/rcv', sms_received, name='sms_received'),
     path('sms/que', sms_queue, name='sms_queue'),
+    path('sms/send', sms_send, name='sms_send'),
 
 ]
 '''

@@ -655,6 +655,8 @@ class DeviceTag(models.Model):
     vehicle_model = models.CharField(max_length=255)
     category = models.CharField(max_length=255)
     rc_file = models.CharField(max_length=255)
+    receipt_file_or = models.CharField(max_length=255)
+    receipt_file_ul = models.CharField(max_length=255)
     status = models.CharField(max_length=255, choices=STATUS_CHOICES)
     tagged_by = models.IntegerField()
     tagged = models.DateTimeField()
