@@ -352,7 +352,7 @@ class dto_rtoSerializer(serializers.ModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
     state_info = Settings_StateSerializer(source='state', read_only=True)
-    district_info = Settings_DistrictSerializer(source='district', read_only=True)
+    #district_info = Settings_DistrictSerializer(source='district', read_only=True)
 
     class Meta:
         model = dto_rto

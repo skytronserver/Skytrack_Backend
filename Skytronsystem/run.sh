@@ -12,6 +12,8 @@ nohup python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0
 #https://skytrack.tech:2000/
 #export MAIL_ID=testskytrack@gmail.com
 #export MAIL_PW=zmzmexdnrlmsqrlr
+
+tmux new -s run_main
 gunicorn Skytronsystem.wsgi:application
 
 gunicorn -c gunicorn.conf.py Skytronsystem.wsgi:application
@@ -45,3 +47,7 @@ regNo:GEM1205-05-000
 IMEI:868960065504918
 regNo:GEM1205-04-00
 
+hCAPTCHA
+sitekey :156ecd3a-9f4e-4549-a7d2-b8274bb9ed59
+
+sitekey  :ES_6fc59979a06246568e25f281986eb133

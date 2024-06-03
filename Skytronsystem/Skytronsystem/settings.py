@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['216.10.244.243','skytrack.tech']
+ALLOWED_HOSTS = ['216.10.244.243','skytrack.tech','admiring-solomon.216-10-244-243.plesk.page']
 
 DATA_UPLOAD_MAX_NUMBER_FIELD = 71193766
 # Application definition
@@ -169,4 +169,9 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
 ]
 LOGIN_URL = 'admin:login'
-LOGIN_REDIRECT_URL = 'admin:index'
+LOGIN_REDIRECT_URL = 'admin:index' 
+
+
+HC_CAPTCHA_SECRET_KEY = 'ES_6fc59979a06246568e25f281986eb133'
+HC_CAPTCHA_SITE_KEY = '156ecd3a-9f4e-4549-a7d2-b8274bb9ed59'
+ 

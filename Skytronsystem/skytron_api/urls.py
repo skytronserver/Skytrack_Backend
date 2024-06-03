@@ -73,7 +73,9 @@ urlpatterns = [
     path('StateAdmin/filter_StateAdmin/', filter_StateAdmin, name='filter_StateAdmin'),
     path('DTO_RTO/create_DTO_RTO/', create_DTO_RTO, name='create_DTO_RTO'),
     path('DTO_RTO/filter_DTO_RTO/', filter_DTO_RTO, name='filter_DTO_RTO'),
-
+    path('DTO_RTO/getDistrictList/', getDistrictList, name='getDistrictList'),
+    path('DTO_RTO/transfer_DTO_RTO/', transfer_DTO_RTO, name='transfer_DTO_RTO'),
+    
 
     path('SOSAdmin/create_SOSAdmin/', create_SOS_admin, name='create_SOSAdmin'),
     path('SOSAdmin/filter_SOSAdmin/', filter_SOS_admin, name='filter_SOSAdmin'),
@@ -181,6 +183,8 @@ urlpatterns = [
     path('devicemodel/devicemodelDetails/', details_devicemodel, name='devicemodel-detail'),
     
     #devicestock
+    
+    path('devicestock/esim_provider_list/', esim_provider_list, name='esim_provider_list'),
     path('devicestock/deviceStockCreate/', deviceStockCreate, name='deviceStockCreate'),
     path('devicestock/deviceStockBulkSample/', download_static_file, name='download_static_file'),
     path('devicestock/deviceStockCreateBulk/', deviceStockCreateBulk, name='deviceStockCreateBulk'),
@@ -205,6 +209,7 @@ urlpatterns = [
     path('tag/TagSendOwnerOtp/', TagSendOwnerOtp, name='TagSendOwnerOtp'),
     path('tag/TagVerifyOwnerOtp/', TagVerifyOwnerOtp, name='TagVerifyOwnerOtpe'),
     path('tag/TagVerifyDealerOtp/', TagVerifyDealerOtp, name='TagVerifyDealerOtp'),
+    path('tag/TagVerifyDTOOtp/', TagVerifyDTOOtp, name='TagVerifyDTOOtp'),
     path('tag/download_receiptPDF/', download_receiptPDF, name='download_receiptPDF'),
     path('tag/upload_receiptPDF/', upload_receiptPDF, name='upload_receiptPDF'),
    

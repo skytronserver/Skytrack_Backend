@@ -354,7 +354,7 @@ class StateAdmin(models.Model):
 class dto_rto(models.Model):
     dto_rto=   models.CharField(max_length=20, choices=[('DTO','DTO'),("RTO","RTO")])
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
-    district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
+    district =models.CharField(max_length=255, blank=True, null=True)#models.ForeignKey('Settings_District', on_delete=models.CASCADE)
     users = models.ManyToManyField('User', related_name='dto_rto_User')
     created = models.DateField(auto_now_add=True)
     expirydate = models.DateField(auto_now_add=True)
@@ -374,7 +374,7 @@ class dto_rto(models.Model):
 
 class SOS_ex(models.Model): 
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
-    district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
+    district =models.CharField(max_length=255, blank=True, null=True)#models.ForeignKey('Settings_District', on_delete=models.CASCADE)
     users = models.ManyToManyField('User', related_name='SOS_ex_user')
     created = models.DateField(auto_now_add=True)
     expirydate = models.DateField(auto_now_add=True)
@@ -393,7 +393,7 @@ class SOS_ex(models.Model):
 
 class SOS_user(models.Model): 
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
-    district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
+    district =models.CharField(max_length=255, blank=True, null=True)#models.ForeignKey('Settings_District', on_delete=models.CASCADE)
     users = models.ManyToManyField('User', related_name='SOS_user')
     created = models.DateField(auto_now_add=True)
     expirydate = models.DateField(auto_now_add=True)

@@ -1173,7 +1173,15 @@ def sms_received(request):
 @api_view(['get'])  
 def sms_queue(request):
     try: 
-        return Response({'no':"6661234",'msg':'data to send'})
+        return Response({'no':"+917635975648",'msg':'data to send'})
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+    
+@api_view(['get'])  
+def esim_provider_list(request):
+    try: 
+        return Response({'airtel':"active",'jio':'not active'})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
@@ -1956,10 +1964,12 @@ def filter_StateAdmin(request):
 
 
 
+Districtlist={'Kamrup':'AS01','Kamrup Rural':'AS25','Nagaon':'AS02','Jorhat':'AS03','Sibsagar':'AS04','Golaghat':'AS05','Dibrugarh':'AS06','Lakhimpur':'AS07','Dima Hasao':'AS08','Karbi anglong':'AS09','Karimganj':'AS10','Cachar':'AS11','Tezpur':'AS12','Darrang':'AS13','Nalbari':'AS14','Barpeta':'AS15','Kokrajhar':'AS16','The woman':'AS17',' Goalpara':'AS18','Bongaigaon':'AS19','Marigaon':'AS21','Dhemaji':'AS22','Tinsukia':'AS23','Hailakandi':'AS24','Chirang':'AS26','Udalguri':'AS27','Baksa':'AS28','Hojai':'AS31','Biswanath':'AS32','Charaideo':'AS33','South Salmara':'AS34'}
 
+@csrf_exempt
 
-
-
+def getDistrictList(request):
+    return JsonResponse(Districtlist)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -1982,7 +1992,10 @@ def create_DTO_RTO(request):
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         state= request.data.get('state', '')
         dto_rto1= request.data.get('dto_rto', '')
-        district = request.data.get('district', '')
+        district = request.data.get('district_code', '')
+        if district not in Districtlist.values():
+            return Response({'error': "Invalid Dtrict Code:"+district}, status=400)
+
         # File uploads
         file_idProof = request.data.get('file_idProof')
         new_password=''.join(random.choices('0123456789', k=30))
@@ -2035,7 +2048,7 @@ def create_DTO_RTO(request):
             created=created,
             state_id=state,
             dto_rto=dto_rto1,
-            district_id=district,
+            district=district,
             expirydate=expirydate, 
             idProofno=idProofno, 
             file_idProof=file_idProof,
@@ -2091,6 +2104,37 @@ def filter_DTO_RTO(request):
         return Response({'error': str(e)}, status=500)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def transfer_DTO_RTO(request):
+    try:
+        # Get filter parameters from the request
+        id = request.data.get('dto_rto_id', None) 
+        district = request.data.get('new_district_code', '')
+        
+        if district not in Districtlist.values():
+            return Response({'error': "Invalid Dtrict Code:"+district}, status=400)
+
+        
+        if  id :
+            dto = dto_rto.objects.get(id=id) 
+            if dto:
+                dd=dto.district
+                if dd==district:
+                    return Response({'error': 'No change in district code'}, status=400)
+                dto.district=district
+                dto.save()
+                serializer = dto_rtoSerializer(dto, many=False)
+                return Response({'Status': 'Successfully transfered from '+str(dd)+' to '+district,'dto_data':serializer.data})
+            return Response({'error': 'DTO with given id ont found'}, status=400)
+        return Response({'error': 'dto_rto_id not found'}, status=400)
+
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+ 
  
 
 @api_view(['POST'])
@@ -2634,6 +2678,33 @@ def TagVerifyOwnerOtp(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def TagVerifyDealerOtp(request  ):
+    # Assuming you have user authentication in place
+    try:
+        user_id = request.user.id
+        otp = request.data.get('otp')
+        device_tag_id = request.data.get('device_id')
+        if not otp or not otp.isdigit() or len(otp) != 6:
+            return HttpResponseBadRequest("Invalid OTP format")
+        device_tag = DeviceTag.objects.filter(device=device_tag_id, status='Dealer_OTP_Sent') 
+
+        #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
+        device_tag = device_tag.first()
+        if device_tag:
+            if otp == '123456':  # Replace with your actual OTP verification logic
+                device_tag.status = 'Dealer_OTP_Verified'
+                device_tag.save()
+                return Response({"message": "Dealer OTP verified successfully."}, status=200)
+            else:
+                return HttpResponseBadRequest("Invalid OTP")
+        else:
+            return HttpResponseBadRequest("Device not found with Status:Dealer_OTP_Sent")
+    except Exception as e:
+            return HttpResponseBadRequest(str(e))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def TagVerifyDTOOtp(request  ):
     # Assuming you have user authentication in place
     try:
         user_id = request.user.id
@@ -4160,6 +4231,21 @@ def user_login(request):
     if request.method == 'POST':
         username = request.data.get('username', None)
         password = request.data.get('password', None)
+        hcaptcha_response = request.data.get('h-captcha-response', None)
+
+        if not username or not password or not hcaptcha_response:
+            #return Response({'error': 'Username, password or hCaptcha response not provided'}, status=status.HTTP_400_BAD_REQUEST)
+            pass
+        else:
+            hcaptcha_secret = settings.HC_CAPTCHA_SECRET_KEY
+            hcaptcha_verification_url = 'https://hcaptcha.com/siteverify'
+            hcaptcha_payload = {'secret': hcaptcha_secret, 'response': hcaptcha_response}
+            hcaptcha_verification_response = requests.post(hcaptcha_verification_url, data=hcaptcha_payload)
+            hcaptcha_result = hcaptcha_verification_response.json()
+
+            if not hcaptcha_result.get('success'):
+                return Response({'error': 'Invalid hCaptcha. Please try again.'}, status=status.HTTP_400_BAD_REQUEST)
+
         if not username or not password:
             return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
         user = UserModel.objects.filter(mobile=username).first() or UserModel.objects.filter(mobile=username).first()
