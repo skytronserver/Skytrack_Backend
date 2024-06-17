@@ -17,6 +17,8 @@ urlpatterns = [
     path('send_email_otp/', send_email_otp, name='send_email_otp'),
     path('send_sms_otp/', send_sms_otp, name='send_sms_otp'),
     path('user_login/', user_login, name='user_login'),
+    path('reset_password_request/', reset_password, name='reset_password'),
+     
     path('user_logout/', user_logout, name='user_logout'),
     path('user_get_parent/<int:user_id>/', user_get_parent, name='user_get_parent'),
     path('get_list/', get_list, name='get_list'),
@@ -107,6 +109,7 @@ urlpatterns = [
     path('get_live_vehicle_no/',get_live_vehicle_no , name='get_live_vehicle_no'),#
     path('gps-data-map/',gps_data_allmap , name='gps_data_map'),
     path('gps-data-log-table/', gps_data_log_table, name='gps_data_log_table'),
+    path('gps-em-data-log-table/', gps_em_data_log_table, name='gps_em_data_log_table'),
     path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),
     #emergency_call_listener_admin
     path('emergency-call-listener-admin/',emergency_call_listener_admin, name='emergency-call-listener-admin'), 

@@ -8,7 +8,7 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "Skytronsystem.settings")
 django.setup()
 
-from skytron_api.models import GPSLocation,EmergencyCall
+from skytron_api.models import GPSLocation,EmergencyCall,GPSemDataLog
 from django.core.management import call_command
 import socket
 import threading
@@ -64,8 +64,12 @@ def handle_client(client_socket, client_address):
         if not data:
             break  # No more data to receive
         str_data=data.decode('utf-8')
-        print(f"Received data from {client_address}: {str_data}:::: ")
+        #print(f"Received data from {client_address}: {str_data}:::: ")
         RegNo=""
+        try:
+            GPSemDataLog.objects.create(raw_data=str_data)
+        except Exception as e:
+            print("Data processing error log:", e, flush=True)
         data_l = str_data.split('$')
         for dat in data_l:
             dat='$'+dat

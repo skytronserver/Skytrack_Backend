@@ -1,6 +1,6 @@
 import socket,re
 from django.core.management.base import BaseCommand
-from skytron_api.models import GPSData, GPSDataLog 
+from skytron_api.models import GPSData, GPSDataLog ,DeviceTag
 
 import threading
 '''
@@ -98,9 +98,7 @@ def handle_client(conn, client_address):
 
             
 
-            if  data:
-            #    break  # Connection closed by the client
-
+            if  data: 
                 data_str = data.decode('utf-8')
 
                 try:
@@ -114,8 +112,15 @@ def handle_client(conn, client_address):
                         dat = '$' + dat
                         if len(dat) > 4:
                             gps_data = process_gps_data(dat)
+                            
                             if gps_data:
-                                GPSData.objects.create(**gps_data)
+                                reg=gps_data['vehicle_registration_number']
+                                device_tag=DeviceTag.objects.filter(vehicle_reg_no=reg,status='Device_Active').last()
+                                if device_tag:
+                                    gps_data['device_tag']=device_tag.id
+                                g=GPSData.objects.create(**gps_data)
+                                g.save()
+                                #print(gps_data)
                             else:
                                 print("Data format errot error:", dat, flush=True)
                     except Exception as e:

@@ -25,6 +25,35 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
+
+
+import random
+
+class MathCaptcha(models.Model):
+    question = models.CharField(max_length=255)
+    answer = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @classmethod
+    def generate_question(cls):
+        num1 = random.randint(1, 10)
+        num2 = random.randint(1, 10)
+        operation = random.choice(['+', '-'])
+        if operation == '+':
+            question = f"{num1} + {num2}"
+            answer = num1 + num2
+        else:
+            question = f"{num1} - {num2}"
+            answer = num1 - num2
+        return question, answer
+
+    def is_expired(self):
+        return (timezone.now() - self.created_at).total_seconds() > 180  # 3 minute
+
+
+
+
+
 class Help(models.Model):
     TYPE_CHOICES = [
         ('Emergency', 'Emergency'),
@@ -40,65 +69,8 @@ class Help(models.Model):
 
     def __str__(self):
         return self.field_ex
-class GPSLocation(models.Model):
-    message_type = models.CharField(max_length=3)  # EMR or SEM
-    device_imei = models.CharField(max_length=15)
-    packet_status = models.CharField(max_length=2)  # NM or SP
-    date = models.DateField()
-    time = models.TimeField()
-    gps_validity = models.CharField(max_length=1)  # A or V
-    latitude = models.FloatField()
-    latitude_direction = models.CharField(max_length=1)  # N or S
-    longitude = models.FloatField()
-    longitude_direction = models.CharField(max_length=1)  # E or W
-    altitude = models.FloatField()
-    speed = models.FloatField()
-    distance = models.FloatField()
-    provider = models.CharField(max_length=50)
-    vehicle_reg_no = models.CharField(max_length=20)
-    reply_mob_no = models.CharField(max_length=15)
-    class Meta:
-        app_label = 'skytron_api'
-    def __str__(self):
-        return f"{self.device_imei} - {self.date} {self.time}"
 
-    @classmethod
-    def create_from_string(cls, data_list): 
-        if data_list[3]=='x':
-            data_list[3]='01012020'
-        if data_list[4]=='x':
-            data_list[4]='000000'
-        data_list[3] = datetime.strptime(data_list[3], "%d%m%Y").strftime("%Y-%m-%d")
-        data_list[4] = datetime.strptime(data_list[4], "%H%M%S").strftime("%H:%M:%S")
-
-        datetime_str = f"{data_list[3]} {data_list[4]}"
-        dt_object = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S") 
-        adjusted_datetime = dt_object + timedelta(hours=5, minutes=30, seconds=0)
-
-        data_list[3]=adjusted_datetime.strftime("%Y-%m-%d") 
-        data_list[4]=adjusted_datetime.strftime("%H:%M:%S") 
-
-
-
-        return cls(
-            message_type=data_list[0],
-            device_imei=data_list[1],
-            packet_status=data_list[2],
-            date=data_list[3],
-            time=data_list[4],
-            gps_validity=data_list[5],
-            latitude=float(data_list[6]),
-            latitude_direction=data_list[7],
-            longitude=float(data_list[8]),
-            longitude_direction=data_list[9],
-            altitude=float(data_list[10]),
-            speed=float(data_list[11]),
-            distance=float(data_list[12]),
-            provider=data_list[13],
-            vehicle_reg_no=data_list[14],
-            reply_mob_no=data_list[15],
-        )
-
+ 
 
 class EmergencyCall(models.Model):
     call_id = models.AutoField(primary_key=True)
@@ -112,53 +84,6 @@ class EmergencyCall(models.Model):
 
     def __str__(self):
         return f"EmergencyCall {self.call_id}"
-
-
-
-@receiver(post_save, sender=GPSLocation)
-def create_emergency_call(sender, instance, created, **kwargs):
-    if created :#and instance.status == 'Complete':
-        # Check if an EmergencyCall entry already exists for the given vehicle and IMEI
-        existing_emergency_call = EmergencyCall.objects.filter(
-            device_imei=instance.device_imei,
-            vehicle_no=instance.vehicle_reg_no
-        ).last()
-
-        if not existing_emergency_call:
-            # Create a new EmergencyCall entry
-            EmergencyCall.objects.create(
-                device_imei=instance.device_imei,
-                vehicle_no=instance.vehicle_reg_no,
-                start_time=timezone.now(),
-                status='Pending',  # Set the initial status as 'Pending'
-                desk_executive_id='',
-                field_executive_id='',
-                final_comment='',
-            )
-        elif existing_emergency_call.status=="Closed":
-            # Create a new EmergencyCall entry
-            EmergencyCall.objects.create(
-                device_imei=instance.device_imei,
-                vehicle_no=instance.vehicle_reg_no,
-                start_time=timezone.now(),
-                status='Pending',  # Set the initial status as 'Pending'
-                desk_executive_id='',
-                field_executive_id='',
-                final_comment='',
-            )
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -262,6 +187,7 @@ class Manufacturer(models.Model):
     file_GSTCertificate = models.CharField(max_length=255, blank=True, null=True)
     file_idProof = models.CharField(max_length=255, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     status_choices = [
             ('Created', 'Created'),
             ('UserVerified', 'UserVerified'),
@@ -349,8 +275,22 @@ class StateAdmin(models.Model):
             ('Discontinued', 'Discontinued'),
         ]
     status = models.CharField(max_length=20, choices=status_choices)
-         
 
+
+
+class sms_in(models.Model):     
+    sms_text = models.CharField(max_length=500)
+    no = models.CharField(max_length=20 )
+    status = models.CharField(max_length=20, choices=[('Received','Received'),("Processed","Processed"),("Error","Error")])
+    created = models.DateField(auto_now_add=True)
+    
+class sms_out(models.Model):     
+    sms_text = models.CharField(max_length=500)
+    no = models.CharField(max_length=20 )
+    status = models.CharField(max_length=20, choices=[('Queue','Queue'),("Sent","Sent"),("Error","Error")])
+    created = models.DateField(auto_now_add=True)
+    
+    
 class dto_rto(models.Model):
     dto_rto=   models.CharField(max_length=20, choices=[('DTO','DTO'),("RTO","RTO")])
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
@@ -378,6 +318,11 @@ class SOS_ex(models.Model):
     users = models.ManyToManyField('User', related_name='SOS_ex_user')
     created = models.DateField(auto_now_add=True)
     expirydate = models.DateField(auto_now_add=True)
+    user_type=models.CharField(max_length=20, choices=[
+            ('Team_lead', 'Team_lead'),
+            ('Desk_executive', 'Desk_executive'),
+            ('Field_executive', 'Field_executive'),  
+        ])
     idProofno = models.CharField(max_length=255, blank=True, null=True)
     file_idProof = models.CharField(max_length=255, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
@@ -443,7 +388,8 @@ class Settings_VehicleCategory(models.Model):
 
 class Settings_District(models.Model):  
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
-    district =models.CharField(max_length=50)    
+    district =models.CharField(max_length=50)  
+    district_code =models.CharField(max_length=50)    
     status = models.CharField(max_length=20, choices=[('active','active'),('discontinued','discontinued')])
 
 class SOS_team(models.Model):  
@@ -513,6 +459,8 @@ class DeviceModel(models.Model):
     vendor_id = models.CharField(max_length=255)
     tac_no = models.CharField(max_length=255)
     tac_validity = models.DateField()
+    eSimProviders = models.ManyToManyField(eSimProvider, related_name='eSimProvider_devicemodle',  blank=True)
+    
     hardware_version = models.CharField(max_length=255)
     created_by = models.ForeignKey('User', on_delete=models.CASCADE)
     created = models.DateTimeField()
@@ -663,6 +611,139 @@ class DeviceTag(models.Model):
     def __str__(self):
         return self.vehicle_reg_no
 ##unused
+
+
+
+       
+class GPSLocation(models.Model):
+    message_type = models.CharField(max_length=3)  # EMR or SEM
+    device_imei = models.CharField(max_length=15)
+    packet_status = models.CharField(max_length=2)  # NM or SP
+    date = models.DateField()
+    time = models.TimeField()
+    gps_validity = models.CharField(max_length=1)  # A or V
+    latitude = models.FloatField()
+    latitude_direction = models.CharField(max_length=1)  # N or S
+    longitude = models.FloatField()
+    longitude_direction = models.CharField(max_length=1)  # E or W
+    altitude = models.FloatField()
+    speed = models.FloatField()
+    distance = models.FloatField()
+    provider = models.CharField(max_length=50)
+    vehicle_reg_no = models.CharField(max_length=20)
+    reply_mob_no = models.CharField(max_length=15)    
+    device_tag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE,null=True, blank=True)
+    class Meta:
+        app_label = 'skytron_api'
+    def __str__(self):
+        return f"{self.device_imei} - {self.date} {self.time}"
+
+    @classmethod
+    def create_from_string(cls, data_list): 
+        if data_list[3]=='x':
+            data_list[3]='01012020'
+        if data_list[4]=='x':
+            data_list[4]='000000'
+        data_list[3] = datetime.strptime(data_list[3], "%d%m%Y").strftime("%Y-%m-%d")
+        data_list[4] = datetime.strptime(data_list[4], "%H%M%S").strftime("%H:%M:%S")
+
+        datetime_str = f"{data_list[3]} {data_list[4]}"
+        dt_object = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S") 
+        adjusted_datetime = dt_object + timedelta(hours=5, minutes=30, seconds=0)
+
+        data_list[3]=adjusted_datetime.strftime("%Y-%m-%d") 
+        data_list[4]=adjusted_datetime.strftime("%H:%M:%S") 
+        device_tag=DeviceTag.objects.filter(vehicle_reg_no=data_list[14],status='Device_Active').last()
+        if device_tag:
+            return cls(
+                message_type=data_list[0],
+                device_imei=data_list[1],
+                packet_status=data_list[2],
+                date=data_list[3],
+                time=data_list[4],
+                gps_validity=data_list[5],
+                latitude=float(data_list[6]),
+                latitude_direction=data_list[7],
+                longitude=float(data_list[8]),
+                longitude_direction=data_list[9],
+                altitude=float(data_list[10]),
+                speed=float(data_list[11]),
+                distance=float(data_list[12]),
+                provider=data_list[13],
+                vehicle_reg_no=data_list[14],
+                reply_mob_no=data_list[15],
+                device_tag=device_tag.id,
+            )
+
+
+
+
+        return cls(
+            message_type=data_list[0],
+            device_imei=data_list[1],
+            packet_status=data_list[2],
+            date=data_list[3],
+            time=data_list[4],
+            gps_validity=data_list[5],
+            latitude=float(data_list[6]),
+            latitude_direction=data_list[7],
+            longitude=float(data_list[8]),
+            longitude_direction=data_list[9],
+            altitude=float(data_list[10]),
+            speed=float(data_list[11]),
+            distance=float(data_list[12]),
+            provider=data_list[13],
+            vehicle_reg_no=data_list[14],
+            reply_mob_no=data_list[15],
+        )
+
+
+@receiver(post_save, sender=GPSLocation)
+def create_emergency_call(sender, instance, created, **kwargs):
+    if created :#and instance.status == 'Complete':
+        # Check if an EmergencyCall entry already exists for the given vehicle and IMEI
+        existing_emergency_call = EmergencyCall.objects.filter(
+            device_imei=instance.device_imei,
+            vehicle_no=instance.vehicle_reg_no
+        ).last()
+
+        if not existing_emergency_call:
+            # Create a new EmergencyCall entry
+            EmergencyCall.objects.create(
+                device_imei=instance.device_imei,
+                vehicle_no=instance.vehicle_reg_no,
+                start_time=timezone.now(),
+                status='Pending',  # Set the initial status as 'Pending'
+                desk_executive_id='',
+                field_executive_id='',
+                final_comment='',
+            )
+        elif existing_emergency_call.status=="Closed":
+            # Create a new EmergencyCall entry
+            EmergencyCall.objects.create(
+                device_imei=instance.device_imei,
+                vehicle_no=instance.vehicle_reg_no,
+                start_time=timezone.now(),
+                status='Pending',  # Set the initial status as 'Pending'
+                desk_executive_id='',
+                field_executive_id='',
+                final_comment='',
+            )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class IPList(models.Model):
     STATUS_CHOICES = [
         ('Valid', 'Valid'),
@@ -723,7 +804,8 @@ class Session(models.Model):
     token = models.CharField(max_length=255, verbose_name="Token")
     otp = models.IntegerField(blank=True, null=True, verbose_name="OTP")
     status = models.CharField(max_length=10, choices=[("otpsent", "OTP Sent"), ("login", "Login"), ("logout", "Logout"), ("timeout", "Timeout")], verbose_name="Status")
-
+    lastactivity=models.DateTimeField(default=timezone.now, verbose_name="lastactivity")
+   
     def __str__(self):
         return f"Session {self.id}"
 
@@ -816,8 +898,13 @@ class GPSData(models.Model):
     odometer = models.FloatField()
     checksum = models.CharField(max_length=8)
     end_char = models.CharField(max_length=1) 
+    device_tag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE,null=True, blank=True)
 
 class GPSDataLog(models.Model):
+    timestamp = models.DateTimeField(auto_now_add=True)
+    raw_data = models.TextField()
+
+class GPSemDataLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     raw_data = models.TextField()
 

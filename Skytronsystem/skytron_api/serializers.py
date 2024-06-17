@@ -10,6 +10,15 @@ from .models import *
 
 from .models import StockAssignment,VehicleOwner
 
+        
+class Settings_StateSerializer(serializers.ModelSerializer):
+    #state_info = DeviceModelSerializer(source='devicemodel', read_only=True)
+    #devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
+    #createdby_info = UserSerializer(source='createdby', read_only=True)
+
+    class Meta:
+        model = Settings_State
+        fields = '__all__'
 
 
 class DeviceStockSerializer(serializers.ModelSerializer):
@@ -85,9 +94,20 @@ class DeviceStockSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = User
         fields = '__all__'    #, deleting, list view of all , detail view.
+    def get_created_by_name(self, obj):
+        if obj.createdby:
+            try: 
+                created_by_user = User.objects.get(id=obj.createdby)
+                return created_by_user.name
+            except User.DoesNotExist:
+                return ''
+            except ValueError:
+                return ''  
+        return ''
 
 class UserSerializer2(serializers.ModelSerializer):
     class Meta:
@@ -101,6 +121,7 @@ class VehicleSerializer(serializers.ModelSerializer):
 
 class ManufacturerSerializer(serializers.ModelSerializer):
     users = UserSerializer(many=True, read_only=True)
+    state = Settings_StateSerializer(many=False, read_only=True)
     class Meta:
         model = Manufacturer
         fields = '__all__'
@@ -195,6 +216,16 @@ class DeviceSerializer(serializers.ModelSerializer):
 
 
 class DeviceModelSerializer(serializers.ModelSerializer):
+    eSimProviders = serializers.PrimaryKeyRelatedField(many=True, queryset=eSimProvider.objects.all())
+    #eSimProviders = eSimProviderSerializer( many=True, read_only=True)
+
+    class Meta:
+        model = DeviceModel
+        fields = '__all__'
+class DeviceModelSerializer_disp(serializers.ModelSerializer):
+    #eSimProviders = serializers.PrimaryKeyRelatedField(many=True, queryset=eSimProvider.objects.all())
+    eSimProviders = eSimProviderSerializer( many=True, read_only=True)
+
     class Meta:
         model = DeviceModel
         fields = '__all__'
@@ -218,15 +249,6 @@ class Settings_firmwareSerializer(serializers.ModelSerializer):
         model = Settings_firmware
         fields = '__all__'
 
-        
-class Settings_StateSerializer(serializers.ModelSerializer):
-    #state_info = DeviceModelSerializer(source='devicemodel', read_only=True)
-    devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
-    createdby_info = UserSerializer(source='createdby', read_only=True)
-
-    class Meta:
-        model = Settings_State
-        fields = '__all__'
 
 class Settings_DistrictSerializer(serializers.ModelSerializer):
     state_info = Settings_StateSerializer(source='state', read_only=True)
