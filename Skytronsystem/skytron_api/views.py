@@ -1,149 +1,92 @@
 # skytron_api/views.py
 from rest_framework.authtoken.models import Token 
-from django.http import HttpResponseBadRequest, JsonResponse
+from django.http import HttpResponseBadRequest, JsonResponse,HttpResponse 
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from django.contrib.auth import authenticate, login
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from django.contrib.auth import authenticate,logout,login 
 from rest_framework.response import Response
-from rest_framework import status
-from .models import User as UserModel
+from rest_framework import status 
 from .models import *
 from .serializers import *
 import random
-from itertools import islice
-from django.contrib.auth.hashers import make_password 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from .models import User as UserModel
-from .serializers import UserSerializer2
-import random
+from itertools import islice 
+from django.utils import timezone     
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail
-from django.utils.crypto import get_random_string
-from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
-from rest_framework import status
-from .models import User as UserModel, Session,Confirmation
-from .serializers import StateadminSerializer, UserSerializer, SessionSerializer
-from django.contrib.auth.hashers import make_password, check_password
+from django.utils.crypto import get_random_string   
 import sys
 
 from django.db import transaction
 
 from django.contrib.auth import get_user_model
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
+from rest_framework.views import APIView  
 
-from django.shortcuts import get_object_or_404
-
-
-from .serializers import ConfirmationSerializer
-from rest_framework.parsers import MultiPartParser
-import time
-
-from .models import DeviceStock
-from .serializers import DeviceStockSerializer,DeviceStockSerializer2
-
-
-import pandas as pd
-from rest_framework.parsers import FileUploadParser
-from rest_framework.response import Response
+from django.shortcuts import get_object_or_404 
+from rest_framework.parsers import MultiPartParser,FileUploadParser
+import time 
+import pandas as pd 
 from rest_framework.views import APIView 
 
-from rest_framework import generics
-from rest_framework import filters
-#from .models import DeviceModel,User
-from .serializers import DeviceModelSerializer
+from rest_framework import generics,filters  
 
 from django.core.files.storage import FileSystemStorage
-from rest_framework import generics, status
-from rest_framework.response import Response
-#from .models import DeviceModel
-from .serializers import DeviceModelSerializer, DeviceModelFileUploadSerializer
+from rest_framework import generics, status 
 from django.conf import settings
-
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-#from .models import DeviceModel,DeviceTag
-from .serializers import DeviceModelSerializer
-from .models import *
-
-from io import BytesIO
-
-from .models import StateAdmin,VehicleOwner,DeviceCOP,StockAssignment,eSimProvider
-from .serializers import DeviceCOPSerializer,DeviceModelFilterSerializer
-
-from .serializers import VehicleOwnerSerializer,eSimProviderSerializer, DeviceStockSerializer,DeviceStockFilterSerializer
-from .serializers import StockAssignmentSerializer, DeviceTagSerializer
-from django.utils import timezone
-import ast
- 
+     
+import ast 
 from django.views.static import serve
-from django.conf import settings
-from django.http import HttpResponse
-
-
-
-
-
-from django.shortcuts import render
-from .models import GPSData,GPSDataLog,GPSemDataLog
-from django.db.models import Subquery, OuterRef 
-from django.http import JsonResponse 
-from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings 
+from django.shortcuts import render  
 import json
-from django.db.models import Max
-from django.db.models import F
+from django.db.models import Subquery, OuterRef, Max, F,Subquery, OuterRef,Q  
 from django.forms.models import model_to_dict
-from django.db.models import Subquery, OuterRef
 from scipy.signal import butter, lfilter,lfilter
 from .forms import GPSDataFilterForm
 import numpy as np
-
 from django.shortcuts import render
-from django.views import View
-# SkytronServer/gps_api/views.py 
-from .models import GPSLocation
+from django.views import View 
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
 from django.shortcuts import render, get_object_or_404 
-from django.db.models import Q
-from django.http import HttpResponse, JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from .models import EmergencyCall, GPSLocation,Help
-import json
 from django.contrib.auth.views import LoginView
 from django.shortcuts import redirect
 import requests
 
+import base64
+import uuid   
+from .utils import generate_captcha
 
-from .models import Help
+@csrf_exempt
+def generate_captcha_api(request):
+    byte_io, result = generate_captcha()
+    key = uuid.uuid4().hex
+    Captcha.objects.create(key=key, answer=result)
 
-from django.contrib.auth import logout,login,authenticate
+    # Convert image blob to base64
+    img_base64 = base64.b64encode(byte_io.getvalue()).decode('utf-8')
 
+    return JsonResponse({'key': key, 'captcha': img_base64})
 
+@csrf_exempt
+def verify_captcha_api(request):
+    key = request.POST.get('key')
+    user_input = request.POST.get('captcha')
 
+    try:
+        captcha = Captcha.objects.get(key=key)
+        if not captcha.is_valid():
+            captcha.delete()  # Optionally, delete the expired captcha
+            return JsonResponse({'success': False, 'error': 'Captcha expired'})
 
- 
-
-from .models import MathCaptcha
-
-class GenerateMathCaptchaView(APIView):
-    def get(self, request, format=None):
-        question, answer = MathCaptcha.generate_question()
-        captcha = MathCaptcha.objects.create(question=question, answer=answer)
-        return Response({'captcha_id': captcha.id, 'question': question}, status=status.HTTP_200_OK)
+        if int(user_input) == captcha.answer:
+            captcha.delete()  # Optionally, delete the captcha after successful verification
+            return JsonResponse({'success': True})
+        else:
+            return JsonResponse({'success': False, 'error': 'Invalid captcha'})
+    except Captcha.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Captcha not found'})
+  
 
 @csrf_exempt
 def LoginAndroid(request):
@@ -1256,93 +1199,37 @@ def get_live_vehicle_no(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_VehicleOwner(request):
-    try:
-        # Extract necessary parameters from the request data
-        company_name = request.data.get('company_name')
-
-        email = request.data.get('email', '')
-        mobile = request.data.get('mobile', '')
-        name = request.data.get('name', '')
+    try: 
+        company_name = request.data.get('company_name') 
         createdby = request.user 
         date_joined = timezone.now()
-        created = timezone.now() 
-        is_active = True
-        is_staff = False
-        status = 'active'
-        # Additional parameters
+        created = timezone.now()  
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
-
-        # File uploads
-        file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('0123456789', k=30))#abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
-        hashed_password = make_password(new_password)
-        
-        # Create User instance
-        try:
-            user = User.objects.create(
-                name=name,
-                email=email,
-                mobile=mobile,
-                role='owner',
-                createdby=createdby.id,
-                date_joined=date_joined,
-                created=created, 
-                is_active=is_active,
-                is_staff=is_staff,
-                status=status,
-                password  = hashed_password
-            )
-            user.save()
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
-        # Save the User instance
-        token=Token.objects.create(user=user,key=new_password)
-        #    name=name,
-        #    email=email,)
-        #token, created1 = Token.objects.get_or_create(user=user)
-
-        try:
-            tpid ="1007387007813205696" #1007274756418421381"
-            #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
-            text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
-            
-            send_SMS(user.mobile,text,tpid) 
-            
-            send_mail(
-                    'Vehicle Owner Account Created',
-                    text,
-                    'test@skytrack.tech',
-                    [email],
-                    fail_silently=False,
-            ) 
-
-        except:
-            pass
-            #return Response({'error': "Error in sendig email"}, status=500)
-
-
+        file_idProof = request.data.get('file_idProof') 
+        user,error,new_password=create_user('owner',request)
         if not company_name:
             company_name=""
-
-        # Create Manufacturer instance
-        try:
-            retailer = VehicleOwner.objects.create(
-                company_name=company_name, 
-                created=created,
-                expirydate=expirydate, 
-                idProofno=idProofno, 
-                file_idProof=file_idProof,
-                createdby=createdby,
-                status="Created",
-            ) 
-        except Exception as e:
-            user.delete()
-            return Response({'error': str(e)}, status=500)
-        retailer.users.add(user) 
-        return Response(VehicleOwnerSerializer(retailer).data)
-
+        if user: 
+            try:
+                retailer = VehicleOwner.objects.create(
+                    company_name=company_name, 
+                    created=created,
+                    expirydate=expirydate, 
+                    idProofno=idProofno, 
+                    file_idProof=file_idProof,
+                    createdby=createdby,
+                    status="Created",
+                ) 
+            except Exception as e:
+                user.delete()
+                return Response({'error': str(e)}, status=500)
+            retailer.users.add(user) 
+            send_usercreation_otp(user,new_password,'Vehicle Owner ')
+             
+            return Response(VehicleOwnerSerializer(retailer).data)
+        else:
+            return Response(error, status=500)        
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
@@ -1473,101 +1360,46 @@ def filter_VehicleOwner(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_eSimProvider(request):
-    try:
-        # Extract necessary parameters from the request data
+    try: 
         company_name = request.data.get('company_name')
-        gstnnumber = request.data.get('gstnnumber')
-        email = request.data.get('email', '')
-        mobile = request.data.get('mobile', '')
-        name = request.data.get('name', '')
+        gstnnumber = request.data.get('gstnnumber') 
         createdby = request.user 
         date_joined = timezone.now()
-        created = timezone.now() 
-        is_active = True
-        is_staff = False
-        status = 'active'
-        # Additional parameters
+        created = timezone.now()   
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
-
-        # File uploads
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
-        file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('0123456789', k=30))
-        hashed_password = make_password(new_password)
-        
-        # Create User instance
-        try:
-            user = User.objects.create(
-                name=name,
-                email=email,
-                mobile=mobile,
-                role='esimprovider',
-                createdby=createdby.id,
-                date_joined=date_joined,
-                created=created, 
-                is_active=is_active,
-                is_staff=is_staff,
-                status=status,
-                password  = hashed_password
-            )
-            user.save()
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
-        # Save the User instance
-        token=Token.objects.create(user=user,key=new_password)
-        #    name=name,
-        #    email=email,)
-        #token, created1 = Token.objects.get_or_create(user=user)
-
-        try:
-            tpid ="1007387007813205696" #1007274756418421381"
-            #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
-            text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
-            
-            send_SMS(user.mobile,text,tpid) 
-            
-            send_mail(
-                    'E Sim Provider Account Created',
-                    text,
-                    'test@skytrack.tech',
-                    [email],
-                    fail_silently=False,
-            ) 
-        except:
-            pass
-            #return Response({'error': "Error in sendig email"}, status=500)
-
-
-
-        # Create Manufacturer instance
-        try:
-            retailer = eSimProvider.objects.create(
-                company_name=company_name,
-                gstnnumber=gstnnumber,
-                created=created,
-                expirydate=expirydate,
-                gstno=gstno,
-                idProofno=idProofno,
-                file_authLetter=file_authLetter,
-                file_companRegCertificate=file_companRegCertificate,
-                file_GSTCertificate=file_GSTCertificate,
-                file_idProof=file_idProof,
-                createdby=createdby,
-                status="Created",
-            )
-        except Exception as e:
-            user.delete()
-            return Response({'error': str(e)}, status=500)
-
-        # Add the user to the manufacturer's users
-        retailer.users.add(user)
- 
-        return Response(eSimProviderSerializer(retailer).data)
+        file_idProof = request.data.get('file_idProof') 
+        user,error,new_password=create_user('esimprovider',request)
+        if user:  
+         
+            try:
+                retailer = eSimProvider.objects.create(
+                    company_name=company_name,
+                    gstnnumber=gstnnumber,
+                    created=created,
+                    expirydate=expirydate,
+                    gstno=gstno,
+                    idProofno=idProofno,
+                    file_authLetter=file_authLetter,
+                    file_companRegCertificate=file_companRegCertificate,
+                    file_GSTCertificate=file_GSTCertificate,
+                    file_idProof=file_idProof,
+                    createdby=createdby,
+                    status="Created",
+                )
+            except Exception as e:
+                user.delete()
+                return Response({'error': str(e)}, status=500)
+            retailer.users.add(user)
+            send_usercreation_otp(user,new_password,'EsimProvider ')
+             
+            return Response(eSimProviderSerializer(retailer).data)
+        else:
+            return Response(error, status=500)
 
     except Exception as e:
         return Response({'error': str(e)}, status=500)
@@ -1617,102 +1449,44 @@ def filter_eSimProvider(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_dealer(request):
-    try:
-        # Extract necessary parameters from the request data
+    try: 
         company_name = request.data.get('company_name')
-        gstnnumber = request.data.get('gstnnumber')
-        email = request.data.get('email', '')
-        mobile = request.data.get('mobile', '')
-        name = request.data.get('name', '')
+        gstnnumber = request.data.get('gstnnumber') 
         createdby = request.user 
         date_joined = timezone.now()
-        created = timezone.now() 
-        is_active = True
-        is_staff = False
-        status = 'active'
-        # Additional parameters
+        created = timezone.now()   
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
-
-        # File uploads
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
-        file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('0123456789', k=30))
-        hashed_password = make_password(new_password)
-        
-        # Create User instance
-        try:
-            user = User.objects.create(
-                name=name,
-                email=email,
-                mobile=mobile,
-                role='dealer',
-                createdby=createdby.id,
-                date_joined=date_joined,
-                created=created, 
-                is_active=is_active,
-                is_staff=is_staff,
-                status=status,
-                password  = hashed_password
-            )
-            # Save the User instance
-
-            user.save()
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
-
-        token=Token.objects.create(user=user,key=new_password)
-        #    name=name,
-        #    email=email,)
-        #token, created1 = Token.objects.get_or_create(user=user)
-
-        try:
-            tpid ="1007387007813205696" #1007274756418421381"
-            #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
-            text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
-            
-            send_SMS(user.mobile,text,tpid) 
-            send_mail(
-                    'Dealer Account Created',
-                   text,
-                    'test@skytrack.tech',
-                    [email],
-                    fail_silently=False,
-            ) 
-        except:
-            pass
-            #return Response({'error': "Error in sendig email"}, status=500)
-
-
-        # Create Manufacturer instance
-        try:
-            retailer = Retailer.objects.create(
-                company_name=company_name,
-                gstnnumber=gstnnumber,
-                created=created,
-                expirydate=expirydate,
-                gstno=gstno,
-                idProofno=idProofno,
-                file_authLetter=file_authLetter,
-                file_companRegCertificate=file_companRegCertificate,
-                file_GSTCertificate=file_GSTCertificate,
-                file_idProof=file_idProof,
-                createdby=createdby,
-                status="Created",
-            )
-        except Exception as e:
-            user.delete()
-            return Response({'error': str(e)}, status=500)
-
-        # Add the user to the manufacturer's users
-        retailer.users.add(user)
- 
-        return Response(RetailerSerializer(retailer).data)
-
+        file_idProof = request.data.get('file_idProof') 
+        user,error,new_password=create_user('dealer',request)
+        if user:         
+            try:
+                retailer = Retailer.objects.create(
+                    company_name=company_name,
+                    gstnnumber=gstnnumber,
+                    created=created,
+                    expirydate=expirydate,
+                    gstno=gstno,
+                    idProofno=idProofno,
+                    file_authLetter=file_authLetter,
+                    file_companRegCertificate=file_companRegCertificate,
+                    file_GSTCertificate=file_GSTCertificate,
+                    file_idProof=file_idProof,
+                    createdby=createdby,
+                    status="Created",
+                )
+            except Exception as e:
+                user.delete()
+                return Response({'error': str(e)}, status=500) 
+            retailer.users.add(user)
+            send_usercreation_otp(user,new_password,'Dealer ')             
+            return Response(RetailerSerializer(retailer).data)
+        else:
+            return Response(error, status=500)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
@@ -1766,102 +1540,45 @@ def filter_dealer(request):
 @transaction.atomic
 def create_manufacturer(request):
     try:
-        # Extract necessary parameters from the request data
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber')
-        email = request.data.get('email', '')
-        mobile = request.data.get('mobile', '')
-        name = request.data.get('name', '')
         createdby = request.user 
         date_joined = timezone.now()
         created = timezone.now() 
-        is_active = True
-        is_staff = False
-        status = 'active'
         state=request.data.get('state', '')
-        # Additional parameters
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
-
-        # File uploads
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('0123456789', k=30))
-        hashed_password = make_password(new_password)
-        
-        # Create User instance
-        try:
-            user = User.objects.create(
-                name=name,
-                email=email,
-                mobile=mobile,
-                role='devicemanufacture',
-                createdby=createdby.id,
-                date_joined=date_joined,
-                created=created, 
-                is_active=is_active,
-                is_staff=is_staff,
-                status=status,
-                password  = hashed_password
-            )
-            user.save()
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
-        # Save the User instance
-        token=Token.objects.create(user=user,key=new_password)
-        #    name=name,
-        #    email=email,)
-        #token, created1 = Token.objects.get_or_create(user=user)
-
-        try:
-            tpid ="1007387007813205696" #1007274756418421381"
-            #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
-            text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
-            
-            send_SMS(user.mobile,text,tpid) 
-            
-            send_mail(
-                    '   Device Manufacturere Account Created',text ,
-                    'test@skytrack.tech',
-                    [email],
-                    fail_silently=False,
-            ) 
-        except:
-            pass
-            #return Response({'error': "Error in sendig email"}, status=500)
-
-
-        try:
-            # Create Manufacturer instance
-            manufacturer = Manufacturer.objects.create(
-                company_name=company_name,
-                gstnnumber=gstnnumber,
-                created=created,
-                expirydate=expirydate,
-                gstno=gstno,
-                idProofno=idProofno,
-                file_authLetter=file_authLetter,
-                file_companRegCertificate=file_companRegCertificate,
-                file_GSTCertificate=file_GSTCertificate,
-                file_idProof=file_idProof,
-                state_id=state,
-                createdby=createdby,
-                status="Created",
-            )
-        except Exception as e:
-            user.delete()
-            return Response({'error': str(e)}, status=500)
-
-
-        # Add the user to the manufacturer's users
-        manufacturer.users.add(user)
- 
-        return Response(ManufacturerSerializer(manufacturer).data)
-
+        user,error,new_password=create_user('devicemanufacture',request)
+        if user:  
+            try:
+                manufacturer = Manufacturer.objects.create(
+                    company_name=company_name,
+                    gstnnumber=gstnnumber,
+                    created=created,
+                    expirydate=expirydate,
+                    gstno=gstno,
+                    idProofno=idProofno,
+                    file_authLetter=file_authLetter,
+                    file_companRegCertificate=file_companRegCertificate,
+                    file_GSTCertificate=file_GSTCertificate,
+                    file_idProof=file_idProof,
+                    state_id=state,
+                    createdby=createdby,
+                    status="Created",
+                )
+            except Exception as e:
+                user.delete()
+                return Response({'error': str(e)}, status=500)
+            manufacturer.users.add(user) 
+            send_usercreation_otp(user,new_password,'Device Manufacture ')
+            return Response(ManufacturerSerializer(manufacturer).data)
+        else:
+            return Response(error, status=500)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
@@ -1911,39 +1628,24 @@ def filter_manufacturers(request):
 
 
 
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-@transaction.atomic
-def create_StateAdmin(request):
+def create_user(role,req):
     try:
-        # Extract necessary parameters from the request data
-         
-        email = request.data.get('email', '')
-        mobile = request.data.get('mobile', '')
-        name = request.data.get('name', '')
-        createdby = request.user 
+        email = req.data.get('email', '')
+        mobile = req.data.get('mobile', '')
+        name = req.data.get('name', '')
+        createdby = req.user 
         date_joined = timezone.now()
         created = timezone.now() 
         is_active = True
         is_staff = False
-        status = 'active'
-        # Additional parameters
-        idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
-        state= request.data.get('state', '')
-        # File uploads
-        file_idProof = request.data.get('file_idProof')
+        status = 'active' 
         new_password=''.join(random.choices('0123456789', k=30))
         hashed_password = make_password(new_password)
-        
-        # Create User instance
-        try:
-            user = User.objects.create(
+        user = User.objects.create(
                 name=name,
                 email=email,
                 mobile=mobile,
-                role='stateadmin',
+                role=role,
                 createdby=createdby.id,
                 date_joined=date_joined,
                 created=created, 
@@ -1951,51 +1653,68 @@ def create_StateAdmin(request):
                 is_staff=is_staff,
                 status=status,
                 password  = hashed_password
-            )
+        )
             
-            user.save()
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
+        user.save()
         token=Token.objects.create(user=user,key=new_password)
-        #    name=name,
-        #    email=email,)
-        #token, created1 = Token.objects.get_or_create(user=user)
+        return [user,None,new_password]
+    except Exception as e:
+        return [None,{'error': str(e)},None]#Response({'error': str(e)}, status=500)
+def send_usercreation_otp(user,new_password,type):
+    try:
+        tpid ="1007387007813205696" #1007274756418421381"
+        #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
+        #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
+        text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
+        send_SMS(user.mobile,text,tpid) 
+        send_mail(
+                type+' Account Created',text
+                #f'Temporery password is : {new_password}'
+                ,'test@skytrack.tech',
+                [user.email],
+                fail_silently=False,
+                ) 
+    except Exception as e:
+        pass
+        # Response({'error': "Error in sendig email  "+str(e)}, status=500)
+    
 
-        try:
-            tpid ="1007387007813205696" #1007274756418421381"
-            #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
-            text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
-            send_SMS(user.mobile,text,tpid) 
-            send_mail(
-                    'State Admin Account Created',text
-                    #f'Temporery password is : {new_password}'
-                    ,'test@skytrack.tech',
-                    [email],
-                    fail_silently=False,
-            ) 
-        except Exception as e:
-            #pass
-            return Response({'error': "Error in sendig email  "+str(e)}, status=500)
-
-
-
-        # Create Manufacturer instance
-        try:
-            retailer = StateAdmin.objects.create( 
-                created=created,
-                state_id=state,
-                expirydate=expirydate, 
-                idProofno=idProofno, 
-                file_idProof=file_idProof,
-                createdby=createdby,
-                status="Created",
-            ) 
-        except Exception as e:
-            user.delete()
-            return Response({'error': str(e)}, status=500)
-        retailer.users.add(user) 
-        return Response(StateadminSerializer(retailer).data)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def create_StateAdmin(request):
+    try:
+        email = request.data.get('email','') 
+        idProofno = request.data.get('idProofno' )  # Placeholder for idProofno
+        state= request.data.get('state','')  
+        
+        createdby = request.user 
+        date_joined = timezone.now()
+        created = timezone.now()  
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        file_idProof = request.data.get('file_idProof')
+         
+        user,error,new_password=create_user('stateadmin',request)
+        if user:         
+            try:
+                retailer = StateAdmin.objects.create( 
+                    created=created,
+                    state_id=state,
+                    expirydate=expirydate, 
+                    idProofno=idProofno, 
+                    file_idProof=file_idProof,
+                    createdby=createdby,
+                    status="Created",
+                ) 
+            except Exception as e:
+                user.delete()
+                return Response({'error': str(e)}, status=500)
+            retailer.users.add(user)
+            send_usercreation_otp(user,new_password,'State Admin ')
+             
+            return Response(StateadminSerializer(retailer).data)
+        else:
+            return Response(error, status=500)
 
     except Exception as e:
         return Response({'error': str(e)}, status=500)
@@ -2067,19 +1786,10 @@ def getDistrictList(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_DTO_RTO(request):
-    try:
-        # Extract necessary parameters from the request data
-         
-        email = request.data.get('email', '')
-        mobile = request.data.get('mobile', '')
-        name = request.data.get('name', '')
+    try: 
         createdby = request.user 
         date_joined = timezone.now()
-        created = timezone.now() 
-        is_active = True
-        is_staff = False
-        status = 'active'
-        # Additional parameters
+        created = timezone.now()  
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         state= request.data.get('state', '1')
@@ -2090,77 +1800,32 @@ def create_DTO_RTO(request):
         Districtlist = {}
         for district in districts:
             Districtlist[district.district] = district.district_code
-        
-
         if district not in Districtlist.values():
             return Response({'error': "Invalid Dtrict Code:"+district}, status=400)
-
-        # File uploads
-        file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('0123456789', k=30))
-        hashed_password = make_password(new_password)
-        
-        # Create User instance
-        try:
-            user = User.objects.create(
-                name=name,
-                email=email,
-                mobile=mobile,
-                role='dtorto',
-                createdby=createdby.id,
-                date_joined=date_joined,
-                created=created, 
-                is_active=is_active,
-                is_staff=is_staff,
-                status=status,
-                password  = hashed_password
-            )
-            user.save()
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
-        # Save the User instance
-        token=Token.objects.create(user=user,key=new_password)
-        #    name=name,
-        #    email=email,)
-        #token, created1 = Token.objects.get_or_create(user=user)
-
-        try:
-            tpid ="1007387007813205696" #1007274756418421381"
-            #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
-            text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
-            
-            send_SMS(user.mobile,text,tpid) 
-            send_mail(
-                     dto_rto1+' Account Created',
-                    text,
-                    'test@skytrack.tech',
-                    [email],
-                    fail_silently=False,
-            ) 
-        except:
-            pass
-            #return Response({'error': "Error in sendig email"}, status=500)
-
- 
-        try:
-            retailer = dto_rto.objects.create( 
-                created=created,
-                state_id=state,
-                dto_rto=dto_rto1,
-                district=district,
-                expirydate=expirydate, 
-                idProofno=idProofno, 
-                file_idProof=file_idProof,
-                createdby=createdby,
-                status="Created",
-            ) 
-        except Exception as e:
-            user.delete()
-            return Response({'error': str(e)}, status=500)
-        retailer.users.add(user) 
-        return Response(dto_rtoSerializer(retailer).data)
-
+        file_idProof = request.data.get('file_idProof') 
+        user,error,new_password=create_user('dtorto',request)
+        if user:         
+            try:
+                retailer = dto_rto.objects.create( 
+                    created=created,
+                    state_id=state,
+                    dto_rto=dto_rto1,
+                    district=district,
+                    expirydate=expirydate, 
+                    idProofno=idProofno, 
+                    file_idProof=file_idProof,
+                    createdby=createdby,
+                    status="Created",
+                ) 
+            except Exception as e:
+                user.delete()
+                return Response({'error': str(e)}, status=500)
+            retailer.users.add(user) 
+            send_usercreation_otp(user,new_password,'DTO/RTO ')
+             
+            return Response(dto_rtoSerializer(retailer).data)
+        else:
+            return Response(error, status=500)          
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
@@ -2244,92 +1909,38 @@ def transfer_DTO_RTO(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_SOS_user(request):
-    try:
-        # Extract necessary parameters from the request data
-         
-        email = request.data.get('email', '')
-        mobile = request.data.get('mobile', '')
-        name = request.data.get('name', '')
+    try: 
         createdby = request.user 
         date_joined = timezone.now()
-        created = timezone.now() 
-        is_active = True
-        is_staff = False
-        status = 'active'
-        # Additional parameters
+        created = timezone.now()   
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         state= request.data.get('state', '') 
         district = request.data.get('district', '')
-        user_type = request.data.get('user_type', '')
-
-        # File uploads
-        file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('0123456789', k=30))
-        hashed_password = make_password(new_password)
-        
-        # Create User instance
-        try:
-            user = User.objects.create(
-                name=name,
-                email=email,
-                mobile=mobile,
-                role='sosuser',
-                createdby=createdby.id,
-                date_joined=date_joined,
-                created=created, 
-                is_active=is_active,
-                is_staff=is_staff,
-                status=status,
-                password  = hashed_password
-            )
-            user.save()
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
-        # Save the User instance
-        token=Token.objects.create(user=user,key=new_password)
-        #    name=name,
-        #    email=email,)
-        #token, created1 = Token.objects.get_or_create(user=user)
-
-        try:
-            tpid ="1007387007813205696" #1007274756418421381"
-            #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
-            text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
-            
-            send_SMS(user.mobile,text,tpid) 
-            send_mail( 'SOS user Account Created',
-                    text,
-                    'test@skytrack.tech',
-                    [email],
-                    fail_silently=False,
-            ) 
-        except:
-            pass
-            #return Response({'error': "Error in sendig email"}, status=500)
-
-
-
-        # Create Manufacturer instance
-        try:
-            retailer = SOS_ex.objects.create( 
-                created=created,
-                state_id=state, 
-                district_id=district,
-                expirydate=expirydate, 
-                idProofno=idProofno, 
-                file_idProof=file_idProof,
-                user_type=user_type,
-                createdby=createdby,
-                status="Created",
-            ) 
-        except Exception as e:
-            user.delete()
-            return Response({'error': str(e)}, status=500)
-        retailer.users.add(user) 
-        return Response(SOS_userSerializer(retailer).data)
-
+        user_type = request.data.get('user_type', '') 
+        file_idProof = request.data.get('file_idProof') 
+        user,error,new_password=create_user('sosuser',request)
+        if user:  
+            try:
+                retailer = SOS_ex.objects.create( 
+                    created=created,
+                    state_id=state, 
+                    district_id=district,
+                    expirydate=expirydate, 
+                    idProofno=idProofno, 
+                    file_idProof=file_idProof,
+                    user_type=user_type,
+                    createdby=createdby,
+                    status="Created",
+                ) 
+            except Exception as e:
+                user.delete()
+                return Response({'error': str(e)}, status=500)
+            retailer.users.add(user) 
+            send_usercreation_otp(user,new_password,'SOS user ')             
+            return Response(SOS_userSerializer(retailer).data)
+        else:
+            return Response(error, status=500)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
@@ -2425,91 +2036,38 @@ def list_alert_logs(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_SOS_admin(request):
-    try:
-        # Extract necessary parameters from the request data
-         
-        email = request.data.get('email', '')
-        mobile = request.data.get('mobile', '')
-        name = request.data.get('name', '')
+    try: 
         createdby = request.user 
         date_joined = timezone.now()
-        created = timezone.now() 
-        is_active = True
-        is_staff = False
-        status = 'active'
-        # Additional parameters
+        created = timezone.now()  
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         state= request.data.get('state', '') 
-        district = request.data.get('district', '')
-        # File uploads
-        file_idProof = request.data.get('file_idProof')
-        new_password=''.join(random.choices('0123456789', k=30))
-        hashed_password = make_password(new_password)
-        
-        # Create User instance
-        try:
-            user = User.objects.create(
-                name=name,
-                email=email,
-                mobile=mobile,
-                role='sosadmin',
-                createdby=createdby.id,
-                date_joined=date_joined,
-                created=created, 
-                is_active=is_active,
-                is_staff=is_staff,
-                status=status,
-                password  = hashed_password
-            )
-            user.save()
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
-        # Save the User instance
-        token=Token.objects.create(user=user,key=new_password)
-        #    name=name,
-        #    email=email,)
-        #token, created1 = Token.objects.get_or_create(user=user)
-
-        try:
-            tpid ="1007387007813205696" #1007274756418421381"
-            #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
-            text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
+        district = request.data.get('district', '') 
+        file_idProof = request.data.get('file_idProof') 
+        user,error,new_password=create_user('sosadmin',request)
+        if user:
             
-            send_SMS(user.mobile,text,tpid) 
-            
-            send_mail(
-                      ' SOS Admin Account Created',
-                   text,
-                    'test@skytrack.tech',
-                    [email],
-                    fail_silently=False,
-            ) 
-        except:
-            pass
-            #return Response({'error': "Error in sendig email"}, status=500)
-
-
-
-        # Create Manufacturer instance
-        try:
-            retailer = SOS_admin.objects.create( 
-                created=created,
-                state_id=state, 
-                district_id=district,
-                expirydate=expirydate, 
-                idProofno=idProofno, 
-                file_idProof=file_idProof,
-                createdby=createdby,
-                status="Created",
-            ) 
-        except Exception as e:
-            user.delete()
-            return Response({'error': str(e)}, status=500)
-        retailer.users.add(user) 
-        return Response(SOS_adminSerializer(retailer).data)
-
+            try:
+                retailer = SOS_admin.objects.create( 
+                    created=created,
+                    state_id=state, 
+                    district_id=district,
+                    expirydate=expirydate, 
+                    idProofno=idProofno, 
+                    file_idProof=file_idProof,
+                    createdby=createdby,
+                    status="Created",
+                ) 
+            except Exception as e:
+                user.delete()
+                return Response({'error': str(e)}, status=500)
+            retailer.users.add(user) 
+            send_usercreation_otp(user,new_password,'State Admin ')
+             
+            return Response(SOS_adminSerializer(retailer).data)
+        else:
+            return Response(error, status=500)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
@@ -3976,11 +3534,11 @@ class FileUploadView(APIView):
             return Response({'error': 'email not provided'}, status=400)
             
         try:
-            user = UserModel.objects.get(email=email)
+            user = User.objects.get(email=email)
         
-        except UserModel.DoesNotExist:
+        except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-        #user = get_object_or_404(UserModel, email=email)
+        #user = get_object_or_404(User, email=email)
         if user:
             print(email)
             if 'file' not in request.data:
@@ -4189,7 +3747,7 @@ class DeleteAllUsersView(APIView):
             return Response({'message': 'All users deleted successfully.'}, status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+'''
 @csrf_exempt
 @api_view(['POST'])
 def create_user(request):
@@ -4223,7 +3781,7 @@ def create_user(request):
 
             return Response(custom_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+'''
 @csrf_exempt
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
@@ -4232,8 +3790,8 @@ def update_user(request, user_id):
     Update user details.
     """
     try:
-        user = UserModel.objects.get(id=user_id)
-    except UserModel.DoesNotExist:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'PUT':
@@ -4297,7 +3855,7 @@ def password_reset(request):
                 pass 
     
             
-        except UserModel.DoesNotExist:
+        except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
             
         if not user:
@@ -4326,8 +3884,8 @@ def send_email_otp(request):
             return Response({'error': 'Email not provided'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            user = UserModel.objects.get(email=email)
-        except UserModel.DoesNotExist:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
         # Generate and send OTP via email (Implementation depends on your email service)
@@ -4378,7 +3936,7 @@ def send_sms_otp(request):
                 fail_silently=False,
             ) 
              
-        except UserModel.DoesNotExist:
+        except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
         # Generate and send OTP via SMS (Implementation depends on your SMS service)
@@ -4444,24 +4002,29 @@ def user_login(request):
     if request.method == 'POST':
         username = request.data.get('username', None)
         password = request.data.get('password', None)
-        hcaptcha_response = request.data.get('h-captcha-response', None)
+        key = request.POST.get('captcha_key', None)
+        user_input = request.POST.get('captcha_reply', None)
+        captchaSuccess=False
 
-        if not username or not password :#or not hcaptcha_response:
-            return Response({'error': 'Username, password or hCaptcha response not provided'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            captcha = Captcha.objects.get(key=key)
+            if not captcha.is_valid():
+                captcha.delete()  # Optionally, delete the expired captcha
+                return JsonResponse({'success': False, 'error': 'Captcha expired'})
+
+            if int(user_input) == captcha.answer:
+                captcha.delete()  # Optionally, delete the captcha after successful verification
+                captchaSuccess=True
+            else:
+                return JsonResponse({'success': False, 'error': 'Invalid captcha'})
+        except Captcha.DoesNotExist:
+            # JsonResponse({'success': False, 'error': 'Captcha not found'})
             pass
-        else:
-            hcaptcha_secret = settings.HC_CAPTCHA_SECRET_KEY
-            hcaptcha_verification_url = 'https://hcaptcha.com/siteverify'
-            hcaptcha_payload = {'secret': hcaptcha_secret, 'response': hcaptcha_response}
-            #hcaptcha_verification_response = requests.post(hcaptcha_verification_url, data=hcaptcha_payload)
-            #hcaptcha_result = hcaptcha_verification_response.json()
-
-            #if not hcaptcha_result.get('success'):
-            #    return Response({'error': 'Invalid hCaptcha. Please try again.'}, status=status.HTTP_400_BAD_REQUEST)
-
+    
+ 
         if not username or not password:
             return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
-        user = UserModel.objects.filter(mobile=username).last() #or UserModel.objects.filter(mobile=username).first()
+        user = User.objects.filter(mobile=username).last() #or User.objects.filter(mobile=username).first()
         user.is_active=True
         user.save()
         if not user or not  check_password(password, user.password):
@@ -4579,8 +4142,8 @@ def user_get_parent(request, user_id):
     Get parent user details.
     """
     try:
-        user = UserModel.objects.get(id=user_id)
-    except UserModel.DoesNotExist:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
     parent_id = user.parent
@@ -4589,8 +4152,8 @@ def user_get_parent(request, user_id):
         return Response({'message': 'User has no parent'})
 
     try:
-        parent_user = UserModel.objects.get(id=parent_id)
-    except UserModel.DoesNotExist:
+        parent_user = User.objects.get(id=parent_id)
+    except User.DoesNotExist:
         return Response({'error': 'Parent user not found'}, status=status.HTTP_404_NOT_FOUND)
 
     serializer = UserSerializer(parent_user)
@@ -4603,7 +4166,7 @@ def get_list(request):
     """
     Get a list of users.
     """
-    users = UserModel.objects.all()
+    users = User.objects.all()
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data ,status=status.HTTP_200_OK)
 
@@ -4615,23 +4178,14 @@ def get_details(request, user_id):
     Get details of a specific user.
     """
     try:
-        user = UserModel.objects.get(id=user_id)
-    except UserModel.DoesNotExist:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
     serializer = UserSerializer(user)
     return Response(serializer.data)
 
-
-
-
-from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from .models import Manufacturer, Retailer, Device, DeviceModel,Vehicle
-from .serializers import ManufacturerSerializer, RetailerSerializer, DeviceSerializer, DeviceModelSerializer,VehicleSerializer
-
+  
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

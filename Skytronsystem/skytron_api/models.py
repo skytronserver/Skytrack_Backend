@@ -29,30 +29,17 @@ from django.utils import timezone
 
 import random
 
-class MathCaptcha(models.Model):
-    question = models.CharField(max_length=255)
+import uuid
+from django.utils import timezone
+from datetime import timedelta
+
+class Captcha(models.Model):
+    key = models.CharField(max_length=32, unique=True, default=uuid.uuid4().hex)
     answer = models.IntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
 
-    @classmethod
-    def generate_question(cls):
-        num1 = random.randint(1, 10)
-        num2 = random.randint(1, 10)
-        operation = random.choice(['+', '-'])
-        if operation == '+':
-            question = f"{num1} + {num2}"
-            answer = num1 + num2
-        else:
-            question = f"{num1} - {num2}"
-            answer = num1 - num2
-        return question, answer
-
-    def is_expired(self):
-        return (timezone.now() - self.created_at).total_seconds() > 180  # 3 minute
-
-
-
-
+    def is_valid(self):
+        return timezone.now() < self.created_at + timedelta(minutes=3)
 
 class Help(models.Model):
     TYPE_CHOICES = [
@@ -110,12 +97,12 @@ class CustomUserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    name = models.CharField(max_length=255, verbose_name="Name") 
+    name = models.CharField(max_length=255, verbose_name="Name",null=False,blank=False) 
     #companyName=models.CharField(max_length=255, default='',verbose_name="companyName") 
     #username = models.EmailField(unique=True, verbose_name="Username")
-    email = models.EmailField(unique=True, verbose_name="Email")
-    mobile = models.CharField(max_length=15, unique=True, verbose_name="Mobile")
-    role = models.CharField(max_length=20, choices=[("superadmin", "Super Admin"), ("stateadmin", "State Admin"), ("devicemanufacture", "Device Manufacture"), ("dealer", "Dealer"), ("owner", "Owner"), ("esimprovider", "eSimProvider"), ("filment", "Filment"), ("sosadmin", "SOS Admin"), ("teamleader", "Team Leader"), ("sosexecutive", "SOS Executive")], verbose_name="Role")
+    email = models.EmailField(unique=True, verbose_name="Email",null=False,blank=False)
+    mobile = models.CharField(max_length=15, unique=True, verbose_name="Mobile",null=False,blank=False)
+    role = models.CharField(max_length=20,null=False,blank=False, choices=[("superadmin", "Super Admin"), ("stateadmin", "State Admin"), ("devicemanufacture", "Device Manufacture"), ("dealer", "Dealer"), ("owner", "Owner"), ("esimprovider", "eSimProvider"), ("filment", "Filment"), ("sosadmin", "SOS Admin"), ("teamleader", "Team Leader"), ("sosexecutive", "SOS Executive")], verbose_name="Role")
     usertype = models.CharField(max_length=10, default='main', verbose_name="User Type")
     createdby = models.CharField(max_length=255, verbose_name="Created By")
     date_joined = models.DateTimeField(default=timezone.now)
@@ -127,7 +114,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     address = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address")
     address_pin = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address Pin")
     address_State = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address State")
-    dob = models.CharField(max_length=255, blank=True, null=True, verbose_name="Date of Birth")
+    dob = models.CharField(max_length=255,  verbose_name="Date of Birth",null=False,blank=False)
     status = models.CharField(max_length=10, choices=[("active", "Active"), ("deactive", "Deactive")], verbose_name="Status")
 
     objects = CustomUserManager()
