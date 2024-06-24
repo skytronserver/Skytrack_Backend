@@ -221,6 +221,7 @@ urlpatterns = [
     path('tag/upload_receiptPDF/', upload_receiptPDF, name='upload_receiptPDF'),
    
 
+    path('download/', downloadfile, name='download'),
     path('sms/rcv', sms_received, name='sms_received'),
     path('sms/que', sms_queue, name='sms_queue'),
     path('sms/send', sms_send, name='sms_send'),

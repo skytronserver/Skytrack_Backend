@@ -370,15 +370,26 @@ def map2(request,emergency_call_id):
     #return render(request, 'bhooban.html', {'live_data': []})
 
 
+
+
 #@login_required
-@csrf_exempt
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])  
 def emergency_call_listener_admin(request):
     #return JsonResponse({"ok":"ok"})
+    headers = {key: value for key, value in request.headers.items()}
+    print(headers)
+    user=request.user
+    print(user) 
+    #return Response({"user": str(user)})
     if request.method == 'POST':
         # Handle the 'Accept' button press
         data = json.loads(request.body)
+        
+        
         call_id = data.get('call_id')
-        desk_executive_id = 'DeskEx1'  # Set the desk_executive_id
+        desk_executive_id = user.id# 'DeskEx1'  # Set the desk_executive_id
 
         # Update the EmergencyCall entry with the desk_executive_id
         emergency_call = EmergencyCall.objects.get(call_id=call_id)
@@ -388,26 +399,92 @@ def emergency_call_listener_admin(request):
 
     # Fetch live data updates every 5 seconds
     live_data = get_live_call_init()
+    context = {
+        'live_data': live_data,
+        'user': user,
+        'username': user.name,
+        'email': user.email,
+        'user_id': user.id,
+        'authorization': headers.get('Authorization'),
+    } 
 
-    return render(request, 'emergency_call_listener_admin.html', {'live_data': live_data})
+    return render(request, 'emergency_call_listener_admin.html', context)
+
+
+
+import os
+import glob
+def save_file(request,tag,path):
+    uploaded_file = request.FILES.get(tag)
+    if uploaded_file:
+        file_path = path+'/' + uploaded_file.name
+        with open(file_path, 'wb') as file:
+            for chunk in uploaded_file.chunks():
+                file.write(chunk)
+        return file_path
+    return False
+
+
+def find_file_in_folders(filename, folders):
+    for folder in folders: 
+        pattern = folder+filename
+        print("pattern",pattern,folder)
+        for file_path in glob.iglob(pattern, recursive=True):
+            print("filepath",file_path)
+            if os.path.isfile(file_path):
+                return file_path
+    return None
+folders = [
+    './',
+    'tac_docs/',
+    'Receipt_files/',
+    'kyc_files/',
+    'cop_files/',
+    'file_bin/',
+    'man/',
+    # Add more folders as needed
+]
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def downloadfile(request):
+    if request.method == 'POST': 
+        file_path =   request.data.get('file_path') 
+        print(request.content_type )
+        print(request.data)
+        print(request.user )
+
+        if not file_path:
+            return JsonResponse({'error': 'file_path is required'}, status=400) 
+        try: 
+            file_path=find_file_in_folders(file_path, folders) 
+            if not file_path:
+                return JsonResponse({'error': 'file not found'}, status=400) 
+            try:
+                file_path=file_path.split('/')[-1]
+                
+                with open(file_path,'rb') as file:
+                    response = HttpResponse(file.read(), content_type='application/octet-stream')
+                    response['Content-Disposition'] = f'attachment; filename="{file_path}"'
+                    return response
+            except FileNotFoundError:
+                return HttpResponse("File not found.", status=404) 
+        except DeviceTag.DoesNotExist:
+            return JsonResponse({'error': 'Error in reading file.'}, status=404)
+    return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
+
 
 
 #@login_required
 @csrf_exempt
 def emergency_call_listener(request):
     if request.method == 'POST':
-        # Handle the 'Accept' button press
         data = json.loads(request.body)
         call_id = data.get('call_id')
-        desk_executive_id = 'DeskEx1'  # Set the desk_executive_id
-
-        # Update the EmergencyCall entry with the desk_executive_id
+        desk_executive_id = 'DeskEx1' 
         emergency_call = EmergencyCall.objects.get(call_id=call_id)
         emergency_call.desk_executive_id = desk_executive_id
         emergency_call.status = 'Accepted'
         emergency_call.save()
-
-    # Fetch live data updates every 5 seconds
     live_data = get_live_call_init()
 
     return render(request, 'emergency_call_listener.html', {'live_data': live_data})
@@ -429,9 +506,17 @@ def get_live_call_init():
 
     return JsonResponse(live_data)
 
-#@login_required
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])  
 def get_live_call(request):
+    user=request.user.name 
+    user.last_activity=timezone.now() 
+    user.save()
+    print(user)
     # Implement the logic to fetch live data updates (replace with your actual implementation)
+    
+    live_executiveList = User.objects.filter(login=True ,role='sosadmin', last_activity__gte=timezone.now() - timezone.timedelta(seconds=30) ).all()
     existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
     live_data1=""
     for call in existing_emergency_call:
@@ -444,6 +529,11 @@ def get_live_call(request):
             Q(status='Pending')# Exclude entries with Status 'Complete'
         ).order_by('-start_time').last()
     if existing_emergency_call:
+        EmergencyCall_assignment.objects.filter( 
+             EmergencyCall_id=existing_emergency_call # Exclude entries with Status 'Complete'
+        ).last()
+
+
         live_data = {
             'vehicle_no': existing_emergency_call.vehicle_no,
             'device_imei': existing_emergency_call.device_imei,
@@ -1212,6 +1302,10 @@ def create_VehicleOwner(request):
             company_name=""
         if user: 
             try:
+                 
+                file_idProof = save_file(request,'file_idProof','man')
+
+
                 retailer = VehicleOwner.objects.create(
                     company_name=company_name, 
                     created=created,
@@ -1377,6 +1471,13 @@ def create_eSimProvider(request):
         if user:  
          
             try:
+                
+                file_authLetter=save_file(request,'file_authLetter','man') 
+                file_companRegCertificate=save_file(request,'file_companRegCertificate','man')
+                file_GSTCertificate=save_file(request,'file_GSTCertificate','man')
+                file_idProof = save_file(request,'file_idProof','man')
+
+
                 retailer = eSimProvider.objects.create(
                     company_name=company_name,
                     gstnnumber=gstnnumber,
@@ -1465,6 +1566,13 @@ def create_dealer(request):
         user,error,new_password=create_user('dealer',request)
         if user:         
             try:
+                
+                file_authLetter=save_file(request,'file_authLetter','man') 
+                file_companRegCertificate=save_file(request,'file_companRegCertificate','man')
+                file_GSTCertificate=save_file(request,'file_GSTCertificate','man')
+                file_idProof = save_file(request,'file_idProof','man')
+
+
                 retailer = Retailer.objects.create(
                     company_name=company_name,
                     gstnnumber=gstnnumber,
@@ -1556,6 +1664,13 @@ def create_manufacturer(request):
         user,error,new_password=create_user('devicemanufacture',request)
         if user:  
             try:
+                file_authLetter=save_file(request,'file_authLetter','man') 
+                file_companRegCertificate=save_file(request,'file_companRegCertificate','man')
+                file_GSTCertificate=save_file(request,'file_GSTCertificate','man')
+                file_idProof = save_file(request,'file_idProof','man')
+
+
+
                 manufacturer = Manufacturer.objects.create(
                     company_name=company_name,
                     gstnnumber=gstnnumber,
@@ -1696,7 +1811,10 @@ def create_StateAdmin(request):
          
         user,error,new_password=create_user('stateadmin',request)
         if user:         
-            try:
+            try: 
+                file_idProof = save_file(request,'file_idProof','man')
+
+
                 retailer = StateAdmin.objects.create( 
                     created=created,
                     state_id=state,
@@ -1805,7 +1923,10 @@ def create_DTO_RTO(request):
         file_idProof = request.data.get('file_idProof') 
         user,error,new_password=create_user('dtorto',request)
         if user:         
-            try:
+            try: 
+                file_idProof = save_file(request,'file_idProof','man')
+
+
                 retailer = dto_rto.objects.create( 
                     created=created,
                     state_id=state,
@@ -1921,7 +2042,10 @@ def create_SOS_user(request):
         file_idProof = request.data.get('file_idProof') 
         user,error,new_password=create_user('sosuser',request)
         if user:  
-            try:
+            try: 
+                file_idProof = save_file(request,'file_idProof','man')
+
+
                 retailer = SOS_ex.objects.create( 
                     created=created,
                     state_id=state, 
@@ -2049,6 +2173,10 @@ def create_SOS_admin(request):
         if user:
             
             try:
+                 
+                file_idProof = save_file(request,'file_idProof','man')
+
+
                 retailer = SOS_admin.objects.create( 
                     created=created,
                     state_id=state, 
@@ -2792,7 +2920,7 @@ def COPManufacturerOtpVerify(request  ):
 @permission_classes([IsAuthenticated])
 def list_devicemodel(request): 
     device_models = DeviceModel.objects.all() 
-    serializer = DeviceModelSerializer(device_models, many=True) 
+    serializer = DeviceModelSerializer_disp(device_models, many=True) 
     return Response(serializer.data)
 
 @api_view(['POST'])
@@ -2806,7 +2934,7 @@ def filter_devicemodel(request):
     device_models = DeviceModel.objects.filter(**serializer.validated_data)
 
     # Serialize the data
-    serializer = DeviceModelSerializer(device_models, many=True)
+    serializer = DeviceModelSerializer_disp(device_models, many=True)
 
     return Response(serializer.data)
 
@@ -2818,7 +2946,7 @@ def details_devicemodel(request ):
     device_model_id = request.data.get('device_model_id')
     device_model = get_object_or_404(DeviceModel, id=device_model_id)
  
-    serializer = DeviceModelSerializer(device_model)
+    serializer = DeviceModelSerializer_disp(device_model)
 
     return Response(serializer.data)
 @api_view(['GET'])
@@ -2831,7 +2959,7 @@ def DeviceModelAwaitingStateApproval(request):
     device_models = DeviceModel.objects.filter(status='Manufacturer_OTP_Verified')#created_by=user_id, 
     
     # Serialize the data
-    serializer = DeviceModelSerializer(device_models, many=True)
+    serializer = DeviceModelSerializer_disp(device_models, many=True)
     return Response(serializer.data)
 
 
@@ -4102,10 +4230,13 @@ def validate_otp(request):
         # Validate the OTP
         #print(otp,session.otp)
         if str(otp) == str(session.otp):
-            # OTP is valid, change session status to 'login'
             session.status = 'login'
             session.save()
-
+            timenow= timezone.now()
+            session.user.last_login =   timenow
+            session.user.last_activity =  timenow
+            session.user.login=True
+            session.user.save()
             return Response({'status':'Login Successful','token': session.token,'user':UserSerializer2(session.user).data}, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)

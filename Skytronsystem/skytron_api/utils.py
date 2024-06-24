@@ -10,10 +10,12 @@ def generate_captcha():
     result = num1 + num2
 
     # Create an image with the expression
-    image = Image.new('RGB', (100, 40), color=(255, 255, 255))
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default()
-    draw.text((10, 10), expression, font=font, fill=(0, 0, 0))
+    image = Image.new('RGB', (200, 80), color=(205, 205, 205))
+    draw = ImageDraw.Draw(image) 
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_size = 50  # Change this value to the desired font size
+    font = ImageFont.truetype(font_path, font_size)
+    draw.text((25, 12), expression, font=font, fill=(0, 0, 0))
 
     # Convert image to blob
     byte_io = io.BytesIO()

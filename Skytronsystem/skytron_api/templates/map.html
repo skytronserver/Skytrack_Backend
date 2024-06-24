@@ -14,8 +14,47 @@
     -->
     <style>
         #map {
-            height: 500px;
-            width: 100%;
+
+            position: relative;
+            width: 98vw;
+            height: 98vh;
+        }
+
+        .logo {
+            position: absolute;
+            /* Maintains aspect ratio */
+        }
+
+        .top-left {
+            bottom: 0%;
+            left: 0;
+            margin: 1px;
+            z-index: 999;
+
+            height: 5%;
+            width: auto;
+            /* Optional margin */
+        }
+
+        .top-right {
+            top: 0;
+            right: 0;
+            margin: 1px;
+            z-index: 999;
+
+            height: 10%;
+            width: auto;
+            /* Optional margin */
+        }
+
+        .bottom-right {
+            bottom: 0%;
+            right: 0;
+            margin: 1px;
+            z-index: 999;
+            height: 5%;
+            width: auto;
+            /* Optional margin */
         }
     </style>
 
@@ -323,11 +362,6 @@
     </script>
 
     <style>
-        .map {
-            position: relative;
-
-        }
-
         .dynamic-overlay {
             position: absolute;
             background-color: white;
@@ -353,10 +387,15 @@
         </div>
 
 
-        <div id="loading" style="width: 100%; height: 500px; visibility:visible;">
+        <div id="loading" style="width: 100%; height: 50vh; visibility:visible;">
             <img src="https://skytrack.tech:2000/static/loading.gif" alt="Loading...">
         </div>
-        <div id="map" style="width: 100%; height: 500px;visibility: hidden; "></div>
+        <div id="map" style="width: 98vw; height: 98vh;visibility: hidden; ">
+            <img src="https://skytrack.tech:2000/static/logo/inspace.png" class="logo top-left" alt="Top Left Logo">
+            <img src="https://skytrack.tech:2000/static/logo/isro.png" class="logo top-right" alt="Top Right Logo">
+            <img src="https://skytrack.tech:2000/static/logo/skytron.png" class="logo bottom-right"
+                alt="Bottom Right Logo">
+        </div>
         <div id="dynamic-overlay" class="dynamic-overlay">
             <p id="overlay-content"> </p>
         </div>

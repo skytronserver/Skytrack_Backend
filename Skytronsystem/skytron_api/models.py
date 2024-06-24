@@ -58,6 +58,18 @@ class Help(models.Model):
         return self.field_ex
 
  
+class EmergencyCall_assignment(models.Model):
+    
+    EmergencyCall_id = models.ForeignKey('EmergencyCall', on_delete=models.CASCADE)    
+    user = models.ForeignKey('User', on_delete=models.CASCADE) 
+    assign_time = models.DateTimeField()
+    accept_time = models.DateTimeField(blank=True, null=True)
+    complete_time = models.DateTimeField(blank=True, null=True)
+    status = models.CharField(max_length=20)
+    def __str__(self):
+        return f"EmergencyCall_assignment {self.id}"
+
+
 
 class EmergencyCall(models.Model):
     call_id = models.AutoField(primary_key=True)
@@ -116,7 +128,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     address_State = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address State")
     dob = models.CharField(max_length=255,  verbose_name="Date of Birth",null=False,blank=False)
     status = models.CharField(max_length=10, choices=[("active", "Active"), ("deactive", "Deactive")], verbose_name="Status")
-
+    last_login =  models.DateTimeField(blank=True, null=True)
+    last_activity =  models.DateTimeField(blank=True, null=True)
+    login=models.BooleanField(default=False)
     objects = CustomUserManager()
 
     USERNAME_FIELD = 'email'

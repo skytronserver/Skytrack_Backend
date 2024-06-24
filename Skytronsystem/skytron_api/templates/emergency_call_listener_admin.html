@@ -33,6 +33,9 @@
                 type: 'POST',
                 url: 'https://skytrack.tech:2000/api/emergency-call-listener-admin/',
                 data: JSON.stringify({ 'call_id': call_id }),
+                headers: {
+                    'Authorization': '{{ authorization }}'
+                },
                 contentType: 'application/json',
                 success: function (response) {
                     console.log('Data:', response);
@@ -75,6 +78,9 @@
             setInterval(function () {
                 $.ajax({
                     type: 'GET',
+                    headers: {
+                        'Authorization': '{{ authorization }}'
+                    },
                     url: 'https://skytrack.tech:2000/api/get-live-call/',  // Create a URL for live data updates
                     success: function (response) {
                         // Update the UI with live data (replace or append as needed)

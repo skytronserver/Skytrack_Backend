@@ -11,10 +11,8 @@ import XYZ from './XYZ.js';
  * @type {string}
  * @api
  */
-export const ATTRIBUTION =
-  '&#169; ' +
-  '<a href="#" target="_blank">Skytron</a> ' +
-  ' ';
+export const ATTRIBUTION = '';
+// '&#169; ' +  '<a href="#" target="_blank">Skytron</a> ' +  ' ';
 
 /**
  * @typedef {Object} Options

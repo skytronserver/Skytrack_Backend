@@ -40,14 +40,14 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',    
-    'rest_framework', 
-     
+    'rest_framework',      
     'bootstrap4',
     'bootstrap_datepicker_plus',  
-    'rest_framework.authtoken',
     'drf_spectacular', 
     'corsheaders',
-    'skytron_api',"django_extensions",
+    'skytron_api',
+    "django_extensions",
+    'rest_framework.authtoken',
 ]
 
 FORM_RENDERER = 'django.forms.renderers.DjangoTemplates'
@@ -60,6 +60,9 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+
+
+      
 ]
 
 ROOT_URLCONF = 'Skytronsystem.urls'
@@ -154,6 +157,10 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.TokenAuthentication',
         # ... other authentication classes
+    ],
+     
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
     ],
 }
 
