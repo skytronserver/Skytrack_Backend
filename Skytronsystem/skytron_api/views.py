@@ -456,15 +456,16 @@ def downloadfile(request):
         if not file_path:
             return JsonResponse({'error': 'file_path is required'}, status=400) 
         try: 
+            file_path=file_path.split('/')[-1]
+            name=file_path
             file_path=find_file_in_folders(file_path, folders) 
             if not file_path:
                 return JsonResponse({'error': 'file not found'}, status=400) 
-            try:
-                file_path=file_path.split('/')[-1]
-                
+            try:                
                 with open(file_path,'rb') as file:
                     response = HttpResponse(file.read(), content_type='application/octet-stream')
-                    response['Content-Disposition'] = f'attachment; filename="{file_path}"'
+                    response['Content-Disposition'] = f'attachment; filename="{name}"'
+                    #response['Content-Type'] = f'attachment; extension="{file_path.split('.')[-1]}"'
                     return response
             except FileNotFoundError:
                 return HttpResponse("File not found.", status=404) 
@@ -1748,6 +1749,7 @@ def create_user(role,req):
         email = req.data.get('email', '')
         mobile = req.data.get('mobile', '')
         name = req.data.get('name', '')
+        dob = req.data.get('dob', '')
         createdby = req.user 
         date_joined = timezone.now()
         created = timezone.now() 
@@ -1761,6 +1763,7 @@ def create_user(role,req):
                 email=email,
                 mobile=mobile,
                 role=role,
+                dob=dob,
                 createdby=createdby.id,
                 date_joined=date_joined,
                 created=created, 
@@ -4130,26 +4133,28 @@ def user_login(request):
     if request.method == 'POST':
         username = request.data.get('username', None)
         password = request.data.get('password', None)
-        key = request.POST.get('captcha_key', None)
-        user_input = request.POST.get('captcha_reply', None)
+        key = request.data.get('captcha_key', None)
+        user_input = request.data.get('captcha_reply', None) 
         captchaSuccess=False
 
         try:
-            captcha = Captcha.objects.get(key=key)
+            captcha = Captcha.objects.filter(key=key).last() 
             if not captcha.is_valid():
                 captcha.delete()  # Optionally, delete the expired captcha
-                return JsonResponse({'success': False, 'error': 'Captcha expired'})
-
+                return JsonResponse({'success': False, 'error': 'Captcha expired'}) 
             if int(user_input) == captcha.answer:
                 captcha.delete()  # Optionally, delete the captcha after successful verification
                 captchaSuccess=True
             else:
                 return JsonResponse({'success': False, 'error': 'Invalid captcha'})
-        except Captcha.DoesNotExist:
-            # JsonResponse({'success': False, 'error': 'Captcha not found'})
-            pass
+        except Captcha.DoesNotExist: 
+            return JsonResponse({'success': False, 'error': 'Captcha not found'})
+        except Exception as e: #Captcha.DoesNotExist: 
+            print('error',e)
+            return JsonResponse({'success': False, 'error': str(e)})
+         
     
- 
+        
         if not username or not password:
             return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
         user = User.objects.filter(mobile=username).last() #or User.objects.filter(mobile=username).first()

@@ -7,6 +7,7 @@ from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 
  
+from django.db.models import Count, Q
 
 
 
@@ -57,6 +58,27 @@ class Help(models.Model):
     def __str__(self):
         return self.field_ex
 
+
+    
+def get_logged_in_users_with_min_assignments(): 
+    eight_hours_ago = timezone.now() - timezone.timedelta(hours=8) 
+    #role='sosadmin',
+    logged_in_users =  User.objects.filter(login=True , last_activity__gte=timezone.now() - timezone.timedelta(seconds=30) ).all()
+    user_assignments = (
+        logged_in_users
+        .annotate(assignment_count=Count(
+            'emergencycall_assignment', 
+            filter=Q(emergencycall_assignment__assign_time__gte=eight_hours_ago)
+        ))
+        .order_by('assignment_count')  # Order by assignment count in increasing order
+    ).first()
+    
+    
+    # Print the results (or process as needed)
+    #for user in user_assignments:
+    #    print(f"User: {user.username}, Assignments in last 8 hours: {user.assignment_count}")
+    
+    return user_assignments
  
 class EmergencyCall_assignment(models.Model):
     
@@ -65,7 +87,7 @@ class EmergencyCall_assignment(models.Model):
     assign_time = models.DateTimeField()
     accept_time = models.DateTimeField(blank=True, null=True)
     complete_time = models.DateTimeField(blank=True, null=True)
-    status = models.CharField(max_length=20)
+    status = models.CharField(max_length=20)#Assigned,Acccepted, Rejected,Timeout,Closed
     def __str__(self):
         return f"EmergencyCall_assignment {self.id}"
 
@@ -655,6 +677,12 @@ class GPSLocation(models.Model):
         data_list[3]=adjusted_datetime.strftime("%Y-%m-%d") 
         data_list[4]=adjusted_datetime.strftime("%H:%M:%S") 
         device_tag=DeviceTag.objects.filter(vehicle_reg_no=data_list[14],status='Device_Active').last()
+        #live_executiveList = User.objects.filter(login=True ,role='sosadmin', last_activity__gte=timezone.now() - timezone.timedelta(seconds=30) ).all()
+        existing_emergency_call = EmergencyCall.objects.filter(status = 'Closed').order_by('-start_time').all()
+        user_to_assign=get_logged_in_users_with_min_assignments()
+        #EmergencyCall_assignment.objects.filter( EmergencyCall_id=existing_emergency_call    ).last()
+
+
         if device_tag:
             return cls(
                 message_type=data_list[0],

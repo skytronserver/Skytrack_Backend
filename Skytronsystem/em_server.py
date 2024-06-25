@@ -8,7 +8,7 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "Skytronsystem.settings")
 django.setup()
 
-from skytron_api.models import GPSLocation,EmergencyCall,GPSemDataLog
+from skytron_api.models import User,GPSLocation,EmergencyCall,GPSemDataLog
 from django.core.management import call_command
 import socket
 import threading
@@ -84,6 +84,7 @@ def handle_client(client_socket, client_address):
                 except Exception as e :
                     print(e)
         if len(RegNo)>2:
+            
             existing_emergency_call = EmergencyCall.objects.filter(Q(vehicle_no=RegNo)).order_by('-start_time').last()
             if existing_emergency_call:
                 if existing_emergency_call.status=='Closed':
