@@ -9,6 +9,7 @@
     <title>Emergency Call Listener</title>
     <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
     <script>
+        var i = 1;
         function showPopup(ret) {
             // Display popup with details and 'Accept' button
             // Add your custom styling and behavior for the popup
@@ -18,21 +19,25 @@
             );
 
             // If the user clicks "OK" in the confirmation dialog
+            console.log("confirmation", confirmation);
             if (confirmation) {
                 // Call the function to handle the "Accept" action
                 acceptCall(ret['call_id']);
 
                 stopBuzzer();
             }
+            else {
+                rejectCall(ret['call_id']);
+
+                stopBuzzer();
+            }
         }
 
-        // Function to handle the "Accept" action
         function acceptCall(call_id) {
-            // Send a POST request to the server to update the desk_executive_id
             $.ajax({
                 type: 'POST',
                 url: 'https://skytrack.tech:2000/api/emergency-call-listener-admin/',
-                data: JSON.stringify({ 'call_id': call_id }),
+                data: JSON.stringify({ 'call_id': call_id, 'accept': true }),
                 headers: {
                     'Authorization': '{{ authorization }}'
                 },
@@ -53,7 +58,29 @@
                     }*/
 
 
-                    window.open('https://skytrack.tech:2000/api/emergency-call-details/' + call_id);
+                    // window.open('https://skytrack.tech:2000/api/emergency-call-details/' + call_id);
+                    window.open('https://www.skytrack.tech/mis/sos-call-details/' + call_id);
+
+                    /*
+                    const url = `https://www.skytrack.tech/mis/sos-call-details/` + call_id;
+
+                    fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': '{{ authorization }}'
+                        },
+                    })
+                        .then(response => response.text())  // Use response.text() to get HTML content
+                        .then(data => {
+                            // const newWindow = window.open('', '_blank');
+                            // newWindow.document.open();
+                            // newWindow.document.write(data);  // Write the fetched HTML into the new window
+                            // newWindow.document.close();
+                        })
+                        .catch(error => {
+                            console.error('Error fetching data:', error);
+                        });
+                    */
 
 
                 },
@@ -65,6 +92,44 @@
 
         }
 
+        function rejectCall(call_id) {
+            $.ajax({
+                type: 'POST',
+                url: 'https://skytrack.tech:2000/api/emergency-call-listener-admin/',
+                data: JSON.stringify({ 'call_id': call_id, 'accept': false }),
+                headers: {
+                    'Authorization': '{{ authorization }}'
+                },
+                contentType: 'application/json',
+                success: function (response) {
+                    console.log('Data:', response);
+                    //window.location.href = 'https://skytrack.tech:2000/api/emergency-call-details/' + call_id;
+                    //var parentDoc = window.parent.document;
+
+                    // Find the iframe in the parent document. This assumes there's a unique iframe or you know its specific characteristics.
+                    /*var iframe = parentDoc.querySelector('iframe');
+                    if (iframe) {
+                        //iframe.src = newUrl;
+                        iframe.src = ;
+
+                    } else {
+                        console.error('Iframe not found in parent document');
+                    }*/
+
+
+                    //window.open('https://skytrack.tech:2000/api/emergency-call-details/' + call_id);
+
+
+                },
+                error: function (error) {
+                    console.error('Error rejecting call:', error);
+                }
+            });
+
+
+        }
+
+
         function loadCallDetails(callId) {
             var url = 'https://skytrack.tech:2000/api/emergency-call-details/' + callId;
             // Assuming the iframe is directly in the parent document 
@@ -73,37 +138,6 @@
             window.open(url);
 
         }
-        // Periodically fetch live data updates every 5 seconds
-        function fetchLiveCall() {
-            setInterval(function () {
-                $.ajax({
-                    type: 'GET',
-                    headers: {
-                        'Authorization': '{{ authorization }}'
-                    },
-                    url: 'https://skytrack.tech:2000/api/get-live-call/',  // Create a URL for live data updates
-                    success: function (response) {
-                        // Update the UI with live data (replace or append as needed)
-                        console.log('Live Data:', response);
-                        if ('call_id' in response) {
-                            // Call the function to show the popup
-                            audio.play();
-                            showPopup(response);
-                        }
-                        if ('table_data' in response) {
-                            $('#Running_Calls').html(response['table_data']);
-                        }
-
-                    },
-                    error: function (error) {
-                        console.error('Error fetching live data:', error);
-                    }
-                });
-            }, 5000);
-        }
-
-        // Start fetching live data
-        fetchLiveCall();
     </script>
 </head>
 
@@ -135,6 +169,58 @@
             audio.currentTime = 0;
         }
         // document.getElementById('pl').onclick(playBuzzer());
+
+        // Periodically fetch live data updates every 5 seconds
+        function fetchLiveCall() {
+            console.log('collecting livecall:');
+
+            console.log('url:', 'https://skytrack.tech:2000/api/get-live-call/');
+            console.log('url:', '{{ authorization }}');
+
+            const authorization = '{{ authorization }}';
+
+
+
+
+
+
+
+
+
+            const a = setInterval(function () {
+                $.ajax({
+                    url: 'https://skytrack.tech:2000/api/get-live-call/',
+                    type: 'GET',
+
+                    headers: {
+                        'Authorization': authorization,
+                    },
+                    success: function (response) {
+                        if ('call_id' in response) {
+                            // Call the function to show the popup
+                            audio.play();
+                            showPopup(response);
+                        }
+                        if ('table_data' in response) {
+                            $('#Running_Calls').html(response['table_data']);
+                        }
+                    },
+                    error: function (error) {
+                        console.error('Error fetching live data:', error);
+
+
+                        console.log('url:', 'https://skytrack.tech:2000/api/get-live-call/');
+                        console.log('url:', '{{ authorization }}');
+                    }
+                });
+            }, 1000);
+            //fetchLiveData();
+
+            //setInterval(fetchLiveData, 10000);
+        }
+
+        // Start fetching live data
+        fetchLiveCall();
 
     </script>
 </body>

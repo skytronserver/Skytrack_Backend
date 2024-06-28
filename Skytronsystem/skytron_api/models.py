@@ -50,7 +50,7 @@ class Help(models.Model):
     ]
 
     type = models.CharField(max_length=20, choices=TYPE_CHOICES)
-    field_ex = models.CharField(max_length=50, unique=True)
+    field_ex = models.ForeignKey('User', null=True,on_delete=models.CASCADE,related_name='help_field_executive_id')# models.CharField(max_length=50, unique=True)
     loc_lat = models.CharField(max_length=20, blank=True, null=True)
     loc_lon = models.CharField(max_length=20, blank=True, null=True)
     status = models.CharField(max_length=20, blank=True, null=True)
@@ -63,7 +63,7 @@ class Help(models.Model):
 def get_logged_in_users_with_min_assignments(): 
     eight_hours_ago = timezone.now() - timezone.timedelta(hours=8) 
     #role='sosadmin',
-    logged_in_users =  User.objects.filter(login=True , last_activity__gte=timezone.now() - timezone.timedelta(seconds=30) ).all()
+    logged_in_users =  User.objects.filter(login=True, last_activity__gte=timezone.now() - timezone.timedelta(seconds=30) ).all()
     user_assignments = (
         logged_in_users
         .annotate(assignment_count=Count(
@@ -80,18 +80,6 @@ def get_logged_in_users_with_min_assignments():
     
     return user_assignments
  
-class EmergencyCall_assignment(models.Model):
-    
-    EmergencyCall_id = models.ForeignKey('EmergencyCall', on_delete=models.CASCADE)    
-    user = models.ForeignKey('User', on_delete=models.CASCADE) 
-    assign_time = models.DateTimeField()
-    accept_time = models.DateTimeField(blank=True, null=True)
-    complete_time = models.DateTimeField(blank=True, null=True)
-    status = models.CharField(max_length=20)#Assigned,Acccepted, Rejected,Timeout,Closed
-    def __str__(self):
-        return f"EmergencyCall_assignment {self.id}"
-
-
 
 class EmergencyCall(models.Model):
     call_id = models.AutoField(primary_key=True)
@@ -99,13 +87,25 @@ class EmergencyCall(models.Model):
     vehicle_no = models.CharField(max_length=20)
     start_time = models.DateTimeField()
     status = models.CharField(max_length=20)
-    desk_executive_id = models.CharField(max_length=50)
-    field_executive_id = models.CharField(max_length=50)
+    desk_executive_id = models.ForeignKey('User', null=True,on_delete=models.CASCADE,related_name='desk_executive_id')
+    field_executive_id = models.ForeignKey('User',null=True, on_delete=models.CASCADE,related_name='field_executive_id')
     final_comment = models.TextField()
 
     def __str__(self):
-        return f"EmergencyCall {self.call_id}"
+        return f"EmergencyCall {self.id}"
 
+
+
+class EmergencyCall_assignment(models.Model):
+    
+    emergencyCall_id = models.ForeignKey(EmergencyCall, on_delete=models.CASCADE)    
+    user = models.ForeignKey('User', on_delete=models.CASCADE) 
+    assign_time = models.DateTimeField()
+    accept_time = models.DateTimeField(blank=True, null=True)
+    complete_time = models.DateTimeField(blank=True, null=True)
+    status = models.CharField(max_length=20)#Assigned,Acccepted, Rejected,Timeout,Closed
+    def __str__(self):
+        return f"EmergencyCall_assignment {self.id}"
 
 
 
@@ -211,6 +211,8 @@ class Manufacturer(models.Model):
     file_idProof = models.CharField(max_length=255, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
+    esim_provider = models.ManyToManyField("eSimProvider", related_name='eSimProvider_Manufacturer',  blank=True)
+    
     status_choices = [
             ('Created', 'Created'),
             ('UserVerified', 'UserVerified'),
@@ -551,7 +553,9 @@ class DeviceStock(models.Model):
     imsi1 = models.CharField(max_length=255)
     imsi2 = models.CharField(max_length=255, blank=True, null=True)
     esim_validity = models.DateTimeField()
-    esim_provider = models.CharField(max_length=255)
+    esim_provider = models.ManyToManyField(eSimProvider, related_name='eSimProvider_devicestock',  blank=True)
+    
+    #esim_provider = models.CharField(max_length=255)
     remarks = models.TextField(blank=True, null=True)
     created = models.DateTimeField()
     created_by = models.ForeignKey('User', on_delete=models.CASCADE)
@@ -678,9 +682,11 @@ class GPSLocation(models.Model):
         data_list[4]=adjusted_datetime.strftime("%H:%M:%S") 
         device_tag=DeviceTag.objects.filter(vehicle_reg_no=data_list[14],status='Device_Active').last()
         #live_executiveList = User.objects.filter(login=True ,role='sosadmin', last_activity__gte=timezone.now() - timezone.timedelta(seconds=30) ).all()
-        existing_emergency_call = EmergencyCall.objects.filter(status = 'Closed').order_by('-start_time').all()
-        user_to_assign=get_logged_in_users_with_min_assignments()
+        #existing_emergency_call = EmergencyCall.objects.filter(status = 'Closed').order_by('-start_time').all()
+        #user_to_assign=get_logged_in_users_with_min_assignments()
         #EmergencyCall_assignment.objects.filter( EmergencyCall_id=existing_emergency_call    ).last()
+
+        print("received new call ")
 
 
         if device_tag:
@@ -735,29 +741,84 @@ def create_emergency_call(sender, instance, created, **kwargs):
             device_imei=instance.device_imei,
             vehicle_no=instance.vehicle_reg_no
         ).last()
+        
+        if existing_emergency_call:
+            timeouts=EmergencyCall_assignment.objects.filter(
+                        emergencyCall_id=existing_emergency_call, 
+                        assign_time__gte=timezone.now() - timezone.timedelta(seconds=20),
+                        status = 'Assigned')
+            for timeout in timeouts:
+                timeout.status = 'Timeout'
+                timeout.save()
+                '''user_to_assign=get_logged_in_users_with_min_assignments()
+                print(user_to_assign) 
+                EmergencyCall_assignment.objects.create(
+                            emergencyCall_id=existing_emergency_call,
+                            user=user_to_assign,
+                            assign_time = timezone.now(), 
+                            status = 'Assigned',#Assigned,Acccepted, Rejected,Timeout,Closed
+                        )
+                ''' 
+            assigned=EmergencyCall_assignment.objects.filter(
+                        emergencyCall_id=existing_emergency_call,  
+                        status__in=['Assigned','Acccepted','Closed']).last()
+            if not assigned:
+                user_to_assign=get_logged_in_users_with_min_assignments()  
+                if  user_to_assign:              
+                    EmergencyCall_assignment.objects.create(
+                            emergencyCall_id=existing_emergency_call,
+                            user=user_to_assign,
+                            assign_time = timezone.now(), 
+                            status = 'Assigned',#Assigned,Acccepted, Rejected,Timeout,Closed
+                        ) 
+
+        
 
         if not existing_emergency_call:
             # Create a new EmergencyCall entry
-            EmergencyCall.objects.create(
+            em=EmergencyCall.objects.create(
                 device_imei=instance.device_imei,
                 vehicle_no=instance.vehicle_reg_no,
                 start_time=timezone.now(),
                 status='Pending',  # Set the initial status as 'Pending'
-                desk_executive_id='',
-                field_executive_id='',
+                #desk_executive_id='',
+                #field_executive_id='',
                 final_comment='',
             )
+            user_to_assign=get_logged_in_users_with_min_assignments()
+            if  user_to_assign:              
+                print(user_to_assign) 
+                EmergencyCall_assignment.objects.create(
+                        emergencyCall_id=em,
+                        user=user_to_assign,
+                        assign_time = timezone.now(),
+                        #accept_time = '',
+                        #complete_time = '',
+                        status = 'Assigned',#Assigned,Acccepted, Rejected,Timeout,Closed
+                    ) 
         elif existing_emergency_call.status=="Closed":
             # Create a new EmergencyCall entry
-            EmergencyCall.objects.create(
+            em=EmergencyCall.objects.create(
                 device_imei=instance.device_imei,
                 vehicle_no=instance.vehicle_reg_no,
                 start_time=timezone.now(),
                 status='Pending',  # Set the initial status as 'Pending'
-                desk_executive_id='',
-                field_executive_id='',
+                #desk_executive_id='',
+                #field_executive_id='',
                 final_comment='',
             )
+            
+            user_to_assign=get_logged_in_users_with_min_assignments()
+
+            if  user_to_assign:              
+                    EmergencyCall_assignment.objects.create(
+                        emergencyCall_id=em,
+                        user=user_to_assign,
+                        assign_time = timezone.now(),
+                        #accept_time = '',
+                        #complete_time = '',
+                        status = 'Assigned',#Assigned,Acccepted, Rejected,Timeout,Closed
+                    ) 
 
 
 

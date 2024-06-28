@@ -32,6 +32,9 @@
             $.ajax({
                 type: 'POST',
                 url: 'https://skytrack.tech:2000/api/emergency-call-listener-field/',
+                headers: {
+                    'Authorization': '{{ authorization }}'
+                },
                 data: JSON.stringify({ 'call_id': call_id }),
                 contentType: 'application/json',
                 success: function (response) {
@@ -53,6 +56,9 @@
             setInterval(function () {
                 $.ajax({
                     type: 'GET',
+                    headers: {
+                        'Authorization': '{{ authorization }}'
+                    },
                     url: 'https://skytrack.tech:2000/api/get-live-call-field/',  // Create a URL for live data updates
                     success: function (response) {
                         // Update the UI with live data (replace or append as needed)

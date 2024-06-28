@@ -31,6 +31,9 @@
         function updateLatestGpsLocation() {
             $.ajax({
                 type: 'GET',
+                headers: {
+                    'Authorization': '{{ auth }}'
+                },
                 url: 'https://skytrack.tech:2000/api/get-latest-gps-location/' + '{{ emergency_call.call_id }}',  // Create a URL for fetching the latest GPS location data
                 success: function (response) {
                     response = JSON.parse(response);
@@ -41,8 +44,7 @@
                     $('#field_executive_id').html('FieldExecutive: ' + response['field_executive_id']);
                     $('#final_comment').html('FinalComment: ' + response['final_comment']);
                     $('#comment').val(response['final_comment']);
-                    $('#date').html('Date: ' + response['date']);
-                    $('#time').html('Time: ' + response['time']);
+                    $('#date').html(response['date'] + ' ' + response['time']);
                     $('#latitude').html('Latitude: ' + response['latitude']);
                     $('#longitude').html('Longitude: ' + response['longitude']);
                     //console.log('Data:', response['route']);
@@ -249,6 +251,9 @@
             $.ajax({
                 type: 'POST',
                 url: 'https://skytrack.tech:2000/api/submit_status/',
+                headers: {
+                    'Authorization': '{{ auth }}'
+                },
                 data: { 'call_id': '{{ emergency_call.call_id }}', 'status': status, "comment": comment },  // Include any necessary data
                 success: function (response) {
                     console.log('success:', response);
@@ -264,6 +269,9 @@
             // Make an AJAX request to the AssignHelp API
             $.ajax({
                 type: 'POST',
+                headers: {
+                    'Authorization': '{{ auth }}'
+                },
                 url: 'https://skytrack.tech:2000/api/broadcast-help/',
                 data: { 'call_id': '{{ emergency_call.call_id }}' },  // Include any necessary data
                 success: function (response) {
@@ -302,93 +310,63 @@
 
 
 
+        #map {
+
+            position: relative;
+            width: 98vw;
+            height: 98vh;
+        }
+
         .logo {
             position: absolute;
-            height: 5%;
-            width: auto;
             /* Maintains aspect ratio */
         }
 
         .top-left {
-            top: 0;
+            bottom: 0%;
             left: 0;
-            margin: 10px;
+            margin: 1px;
             z-index: 999;
+
+            height: 5%;
+            width: auto;
             /* Optional margin */
         }
 
         .top-right {
             top: 0;
             right: 0;
-            margin: 10px;
+            margin: 1px;
             z-index: 999;
+
+            height: 10%;
+            width: auto;
             /* Optional margin */
         }
 
         .bottom-right {
-            bottom: 0;
+            bottom: 0%;
             right: 0;
-            margin: 10px;
+            margin: 1px;
             z-index: 999;
+            height: 5%;
+            width: auto;
             /* Optional margin */
         }
     </style>
 </head>
 
 <body>
+    <!--
+    
     {% if user.is_authenticated %}
     <p>{{ user.username }}! <a href="{% url 'logout' %}">Logout</a></p>
     {% else %}
     <p><a href="{% url 'login' %}">Login</a></p>
     {% endif %}
-    <div>
+    <button id="back" onclick="back()">Back</button>
 
-
-
-        <div><button id="back" onclick="back()">Back</button>
-            <h2>Emergency Call Detailse [Call ID: {{ emergency_call.call_id }}]</h2>
-            <table>
-                <tbody>
-                    <tr>
-                        <td>Device IMEI: </td>
-                        <td> {{ emergency_call.device_imei }}</td>
-                        <td>Vehicle No: </td>
-                        <td> {{ emergency_call.vehicle_no }}</td>
-                    </tr>
-                </tbody>
-            </table>
-            <h2>Location Information</h2>
-            <table>
-                <tbody>
-                    <tr>
-                        <td>
-                            <p id="status">Status: </p>
-                        </td>
-                        <td>
-                            <p id="desk_executive_id">DeskExecutive: </p>
-                        </td>
-                        <td>
-                            <p id="field_executive_id">FieldExecutive: </p>
-                        </td>
-                        <td>
-                            <p id="final_comment">FinalComment: </p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>
-                            <p id="date">Date: </p>
-                        </td>
-                        <td>
-                            <p id="time">Time: </p>
-                        </td>
-                        <td>
-                            <p id="latitude">Latitude: </p>
-                        </td>
-                        <td>
-                            <p id="longitude">Longitude: </p>
-                        </td>
-                    </tr>
-                    <tr>
+    <tr>
                         <td><button id="broadcastHelpButton" onclick="broadcastHelp()">Broadcast</button></td>
                         <td> </td>
                         <td> </td>
@@ -405,13 +383,61 @@
                         <td> <button id="broadcastHelpButton2" onclick="broadcastHelp2()">Submit Final Report</button>
                         </td>
                     </tr>
+                    
+                    <tr>
+                        <td>
+                            
+                        </td>
+                        <td>
+                            <p id="latitude">Latitude: </p>
+                        </td>
+                        <td>
+                            <p id="longitude">Longitude: </p>
+                        </td>
+                    </tr>
+    -->
+    <div>
+
+
+
+        <div>
+
+
+            <table>
+                <tbody>
+                    <tr>
+                        <td>
+                            <h2>Emergency Call Detailse [Call ID: {{ emergency_call.call_id }}]</h2>
+                        </td>
+                        <td>IMEI: </td>
+                        <td> {{ emergency_call.device_imei }}</td>
+                        <td>Vehicle No: </td>
+                        <td> {{ emergency_call.vehicle_no }}</td>
+                        <td>Date: </td>
+                        <td>
+                            <p id="date"></p>
+                        </td>
+                        <td>
+                            <p id="status">Status: </p>
+                        </td>
+                        <td>
+                            <p id="desk_executive_id">DeskExecutive: </p>
+                        </td>
+                        <td>
+                            <p id="field_executive_id">FieldExecutive: </p>
+                        </td>
+                        <td>
+                            <p id="final_comment">FinalComment: </p>
+                        </td>
+                    </tr>
+
                 </tbody>
             </table>
 
 
         </div>
 
-        <div id="map" style="width: 100%; height: 500px;">
+        <div id="map" style="width: 98vw; height: 78vh;  ">
 
             <img src="https://skytrack.tech:2000/static/logo/inspace.png" class="logo top-left" alt="Top Left Logo">
             <img src="https://skytrack.tech:2000/static/logo/isro.jpg" class="logo top-right" alt="Top Right Logo">

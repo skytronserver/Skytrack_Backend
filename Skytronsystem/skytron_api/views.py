@@ -130,21 +130,24 @@ def Login2(request):
  
 #@login_required
 @csrf_exempt
+@api_view(['POST','GET'])
+@permission_classes([IsAuthenticated]) 
 def update_location(request):
     live_data={}
     if request.method == 'POST':
         loc_lat = request.POST.get('latitude')
         loc_lon = request.POST.get('longitude')
-        field_ex = request.POST.get('uername')
+        field_ex = request.user#POST.get('uername')
  
 
         # Update the Help object with the provided FieldEx
         try:
-            help_obj = Help.objects.get(field_ex=field_ex)
-            help_obj.loc_lat = loc_lat
-            help_obj.loc_lon = loc_lon
-            print(help_obj)
-            help_obj.save()
+            help_obj = Help.objects.filter(field_ex=field_ex).last()
+            if help_obj:
+                help_obj.loc_lat = loc_lat
+                help_obj.loc_lon = loc_lon
+                print(help_obj)
+                help_obj.save()
 
             existing_emergency_call = EmergencyCall.objects.filter( 
                 Q(status='Broadcast')# Exclude entries with Status 'Complete'
@@ -195,7 +198,13 @@ def update_status(request, field_ex):
     
 
 #@login_required
+
+@api_view(['POST','GET'])
+@permission_classes([IsAuthenticated])  
 def get_latest_gps_location(request, emergency_call_id):
+    headers = {key: value for key, value in request.headers.items()}
+    auth=headers.get('Authorization')
+    print("*(*(*(*(*(*)))))",auth)
     # Get the EmergencyCall object based on the provided emergency_call_id
     emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
 
@@ -225,11 +234,21 @@ def get_latest_gps_location(request, emergency_call_id):
      
     # Parse message as json
     #route = json.loads(route['Message'])
+    DeskE="None"
+    FieldE="None"
+    if emergency_call.desk_executive_id:
+        DeskE=emergency_call.desk_executive_id.name+"("+str(emergency_call.desk_executive_id.id)+")" 
+    if emergency_call.field_executive_id  :
+        FieldE=emergency_call.field_executive_id.name+"("+str(emergency_call.field_executive_id.id)+")" 
+    
+        
+
+
 
     context1 = {
         'status':emergency_call.status,
-        'desk_executive_id':emergency_call.desk_executive_id,
-        'field_executive_id':emergency_call.field_executive_id,
+        'desk_executive_id':DeskE,
+        'field_executive_id':FieldE,
         'final_comment':emergency_call.final_comment,
         'date':latest_gps_location.date.strftime("%Y-%m-%d"),
         'time':latest_gps_location.time.strftime("%H:%M:%S"), 
@@ -254,29 +273,39 @@ def get_latest_gps_location(request, emergency_call_id):
     return   HttpResponse(data)
 
 #@login_required
-@csrf_exempt
+@api_view(['POST' ])
+@permission_classes([IsAuthenticated]) 
 def Broadcast_help(request):
     if request.method == 'POST':
         call_id = request.POST.get('call_id')
         ecall=EmergencyCall.objects.get(call_id=call_id)
         ecall.status="Broadcast"
-        ecall.field_executive_id=""
+        #ecall.field_executive_id=""
         ecall.save()
         return JsonResponse({'status': 'success'})
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
-#@login_required
+
+@api_view(['POST' ])
+@permission_classes([IsAuthenticated]) 
 @csrf_exempt
 def SubmitStatus(request):
     if request.method == 'POST':
-        call_id = request.POST.get('call_id') 
+        call_id = request.data.get('call_id') 
         print(request.POST.get('status'))
         print(request.POST.get('comment'))
         ecall=EmergencyCall.objects.get(call_id=call_id)
-        ecall.status=request.POST.get('status')
-        ecall.final_comment=request.POST.get('comment')
-        if request.POST.get('status')=="Closed":
-            ecall.field_executive_id=""
+        ecall.status=request.data.get('status')
+        ecall.final_comment=request.data.get('comment')
+        if request.data.get('status')=="Closed"  or request.data.get('status')=="closed":
+            ecall.field_executive_id=None
+            em=EmergencyCall_assignment.objects.filter(emergencyCall_id=call_id, status='Assigned').last()
+            ecall.status="Closed"
+            if em:
+                em.status="Closed"
+                em.save()
+
+
         #ecall.field_executive_id=""
         ecall.save()
         return JsonResponse({'status': 'success'})
@@ -284,6 +313,9 @@ def SubmitStatus(request):
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
     
 #@login_required
+
+@api_view(['POST','GET' ])
+@permission_classes([IsAuthenticated]) 
 def emergency_call_details_field(request, emergency_call_id):
     # Get the EmergencyCall object based on the provided emergency_call_id
     emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
@@ -293,7 +325,7 @@ def emergency_call_details_field(request, emergency_call_id):
         device_imei=emergency_call.device_imei,
         vehicle_reg_no=emergency_call.vehicle_no
     ).order_by('-date', '-time').first()
-    help_obj = Help.objects.filter(field_ex=request.user.username ).first()
+    help_obj = Help.objects.filter(field_ex=request.user ).first()
      
     context = {
         'emergency_call': emergency_call,
@@ -347,8 +379,14 @@ def latest_gps(request):
 
 
 @csrf_exempt
+@api_view(['POST','GET'])
+@permission_classes([IsAuthenticated])  
 def map2(request,emergency_call_id):
     # Get the EmergencyCall object based on the provided emergency_call_id
+    user=request.user
+    headers = {key: value for key, value in request.headers.items()}
+    auth=headers.get('Authorization') 
+    print("Auth((((((((((((((((()))))))))))))))))",auth)
     emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
 
     # Get the latest GPSLocation for the same IMEI and vehicle number
@@ -359,6 +397,8 @@ def map2(request,emergency_call_id):
     help_obj = Help.objects.filter(status=1 ) 
      
     context = {
+        'user':user,
+        'auth':auth,
         'emergency_call': emergency_call,
         'latest_gps_location': latest_gps_location,
         'fieldexs': help_obj,
@@ -374,7 +414,7 @@ def map2(request,emergency_call_id):
 
 #@login_required
 
-@api_view(['GET'])
+@api_view(['POST','GET'])
 @permission_classes([IsAuthenticated])  
 def emergency_call_listener_admin(request):
     #return JsonResponse({"ok":"ok"})
@@ -389,16 +429,34 @@ def emergency_call_listener_admin(request):
         
         
         call_id = data.get('call_id')
-        desk_executive_id = user.id# 'DeskEx1'  # Set the desk_executive_id
+        accept = data.get('accept')
+        
+        desk_executive_id = user
+        try:
+            if accept:
+                emergency_call = EmergencyCall.objects.get(call_id=call_id)
+                assign=EmergencyCall_assignment.objects.filter(emergencyCall_id=call_id,user=user,status='Assigned').last()
+                if assign:
+                    emergency_call.desk_executive_id = desk_executive_id
+                    emergency_call.status = 'Accepted'
+                    emergency_call.save()                
+                    assign.accept_time =   timezone.now()
+                    assign.status = 'Acccepted' 
+                    assign.save()
 
-        # Update the EmergencyCall entry with the desk_executive_id
-        emergency_call = EmergencyCall.objects.get(call_id=call_id)
-        emergency_call.desk_executive_id = desk_executive_id
-        emergency_call.status = 'Accepted'
-        emergency_call.save()
+            else:
+                assign=EmergencyCall_assignment.objects.filter(emergencyCall_id=call_id,user=user,status='Assigned').last()
+                #assign.accept_time =   timezone.now()
+                if assign:
+                    assign.status = 'Rejected' 
+                    assign.save()
+        except Exception as e:
+            print("accept reeject error ",e)
+        
+ 
 
     # Fetch live data updates every 5 seconds
-    live_data = get_live_call_init()
+    live_data ={}# get_live_call_init()
     context = {
         'live_data': live_data,
         'user': user,
@@ -481,7 +539,7 @@ def emergency_call_listener(request):
     if request.method == 'POST':
         data = json.loads(request.body)
         call_id = data.get('call_id')
-        desk_executive_id = 'DeskEx1' 
+        desk_executive_id = ' ' 
         emergency_call = EmergencyCall.objects.get(call_id=call_id)
         emergency_call.desk_executive_id = desk_executive_id
         emergency_call.status = 'Accepted'
@@ -511,43 +569,47 @@ def get_live_call_init():
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])  
 def get_live_call(request):
-    user=request.user.name 
+    user=request.user  
     user.last_activity=timezone.now() 
     user.save()
     print(user)
+    emcall= EmergencyCall_assignment.objects.filter(user=user,status ="Assigned").last()
+    
+     
     # Implement the logic to fetch live data updates (replace with your actual implementation)
     
-    live_executiveList = User.objects.filter(login=True ,role='sosadmin', last_activity__gte=timezone.now() - timezone.timedelta(seconds=30) ).all()
-    existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
-    live_data1=""
-    for call in existing_emergency_call:
-        live_data1 = live_data1+"<button onclick=\"loadCallDetails('"+str(call.call_id)+"')\">Call ID: "+str(call.call_id)+" ("+str(call.status)+"); Vehicle: "+str(call.vehicle_no)+";</button><br>"
+    #existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
+    #live_data1=""
+    #for call in existing_emergency_call:
+    #    live_data1 = live_data1+"<button onclick=\"loadCallDetails('"+str(call.call_id)+"')\">Call ID: "+str(call.call_id)+" ("+str(call.status)+"); Vehicle: "+str(call.vehicle_no)+";</button><br>"
 
         #'<a href="https://skytrack.tech:2000/api/emergency-call-details/'+str( call.call_id )+'"  target="_self">Call ID:'+ str( call.call_id )+"("+  str(call.status)+");  Vehicle:"+  str( call.vehicle_no)+"; </a><br>"
       
     #print(live_data1)
-    existing_emergency_call = EmergencyCall.objects.filter( 
-            Q(status='Pending')# Exclude entries with Status 'Complete'
-        ).order_by('-start_time').last()
-    if existing_emergency_call:
-        EmergencyCall_assignment.objects.filter( 
-             EmergencyCall_id=existing_emergency_call # Exclude entries with Status 'Complete'
-        ).last()
+    #existing_emergency_call = EmergencyCall.objects.filter( 
+    #        Q(status='Pending')# Exclude entries with Status 'Complete'
+    #    ).order_by('-start_time').last()
+    if emcall:
+        #EmergencyCall_assignment.objects.filter( 
+        #     EmergencyCall_id=existing_emergency_call # Exclude entries with Status 'Complete'
+        #).last()
 
 
         live_data = {
-            'vehicle_no': existing_emergency_call.vehicle_no,
-            'device_imei': existing_emergency_call.device_imei,
-            'call_id': existing_emergency_call.call_id, 
+            'vehicle_no': emcall.emergencyCall_id.vehicle_no,
+            'device_imei': emcall.emergencyCall_id.device_imei,
+            'call_id': emcall.emergencyCall_id.call_id, 
         }
     else :
         live_data = {}
-    if live_data1!="":
-        live_data["table_data"]=live_data1
+    #if live_data1!="":
+    #    live_data["table_data"]=live_data1
 
     return JsonResponse(live_data)
 
 
+@api_view(['POST','GET'])
+@permission_classes([IsAuthenticated])  
 def get_all_call(request):
     # Implement the logic to fetch live data updates (replace with your actual implementation)
     existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
@@ -580,22 +642,56 @@ def get_all_call(request):
 
 #@login_required
 @csrf_exempt
+@api_view(['POST','GET'])
+@permission_classes([IsAuthenticated])  
 def emergency_call_listener_field(request):
+    
+    #return JsonResponse({"ok":"ok"})
+    headers = {key: value for key, value in request.headers.items()}
+    print(headers)
+    #return render(request, 'emergency_call_listener_field.html', {})
+
+    user=request.user
+    print(user) 
+    #return Response({"user": str(user)})
     if request.method == 'POST':
         # Handle the 'Accept' button press
         data = json.loads(request.body)
-        call_id = data.get('call_id')  # Set the desk_executive_id
+        
+        
+        call_id = data.get('call_id')
+        accept = data.get('accept') 
+        try:
+            if accept:
+                emergency_call = EmergencyCall.objects.get(call_id=call_id) 
+                emergency_call.field_executive_id = request.user 
+                emergency_call.status = 'FieldAccepted'
+                emergency_call.save()
 
-        # Update the EmergencyCall entry with the desk_executive_id
-        emergency_call = EmergencyCall.objects.get(call_id=call_id)
-        emergency_call.field_executive_id = request.user.username
-        emergency_call.status = 'FieldAccepted'
-        emergency_call.save()
+
+            
+        except Exception as e:
+            print("accept reeject error ",e)
+        
+ 
 
     # Fetch live data updates every 5 seconds
-    live_data = get_live_call_field_init()
+    live_data ={}# get_live_call_init()
+    context = {
+        'live_data': live_data,
+        'user': user,
+        'username': user.name,
+        'email': user.email,
+        'user_id': user.id,
+        'authorization': headers.get('Authorization'),
+    } 
 
-    return render(request, 'emergency_call_listener_field.html', {'live_data': live_data})
+
+
+
+ 
+
+    return render(request, 'emergency_call_listener_field.html', context)
 
 
 def get_live_call_field_init():
@@ -618,6 +714,9 @@ def get_live_call_field_init():
     return JsonResponse(live_data)
 
 #@login_required
+
+@api_view(['POST','GET'])
+@permission_classes([IsAuthenticated])  
 def get_live_call_field(request ):
     # Implement the logic to fetch live data updates (replace with your actual implementation)
     live_data={}
@@ -1662,6 +1761,7 @@ def create_manufacturer(request):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
+        esim_provider = request.data.get('esim_provider','')
         user,error,new_password=create_user('devicemanufacture',request)
         if user:  
             try:
@@ -1685,6 +1785,7 @@ def create_manufacturer(request):
                     file_idProof=file_idProof,
                     state_id=state,
                     createdby=createdby,
+                    esim_provider=esim_provider,
                     status="Created",
                 )
             except Exception as e:

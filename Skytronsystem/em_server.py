@@ -20,10 +20,12 @@ port = 5001      # Use a port number of your choicecd ..
 
 # Create a TCP socket
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 # Bind the socket to the host and port
 server_socket.bind((host, port))
 # Start listening for incoming connections
-server_socket.listen(5)  # Listen for up to 5 incoming connections
+server_socket.listen(1000)  # Listen for up to 5 incoming connections
 
 print(f"Listening on {host}:{port}...")
 def handle_gps_data(data_string):
@@ -36,8 +38,11 @@ def start_socket_server():
     port = 5001  # Change to your desired port
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+        #server_socket.bind((host, port))
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_socket.bind((host, port))
-        server_socket.listen()
+        server_socket.listen(1000)
+        
 
         print(f"Socket server listening on {host}:{port}")
 
@@ -64,8 +69,9 @@ def handle_client(client_socket, client_address):
         if not data:
             break  # No more data to receive
         str_data=data.decode('utf-8')
-        #print(f"Received data from {client_address}: {str_data}:::: ")
+        print(f"Received data from {client_address}: {str_data}:::: ")
         RegNo=""
+
         try:
             GPSemDataLog.objects.create(raw_data=str_data)
         except Exception as e:
@@ -82,7 +88,8 @@ def handle_client(client_socket, client_address):
                         location.save()
                         RegNo=data_list[14]
                 except Exception as e :
-                    print(e)
+                    print("error1 ",e)
+                    raise e
         if len(RegNo)>2:
             
             existing_emergency_call = EmergencyCall.objects.filter(Q(vehicle_no=RegNo)).order_by('-start_time').last()
@@ -101,3 +108,4 @@ if __name__ == "__main__":
         client_socket, client_address = server_socket.accept()
         client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
         client_thread.start()
+ 
