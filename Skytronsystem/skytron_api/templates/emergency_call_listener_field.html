@@ -35,7 +35,7 @@
                 headers: {
                     'Authorization': '{{ authorization }}'
                 },
-                data: JSON.stringify({ 'call_id': call_id }),
+                data: JSON.stringify({ 'call_id': call_id, 'accept': true }),
                 contentType: 'application/json',
                 success: function (response) {
                     console.log('Data:', response);
@@ -84,6 +84,8 @@
 
 <body>
     <h1>Waiting for Call....</h1>
+    {{ authorization }}
+
     <!--
 
     {% if user.is_authenticated %}

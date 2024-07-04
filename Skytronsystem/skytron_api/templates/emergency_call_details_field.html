@@ -20,7 +20,11 @@
         function updateLatestGpsLocation() {
             $.ajax({
                 type: 'GET',
-                url: 'https://skytrack.tech:2000/api/get-latest-gps-location/' + '{{ emergency_call.call_id }}',  // Create a URL for fetching the latest GPS location data
+
+                headers: {
+                    'Authorization': '{{ auth }}'
+                },
+                url: 'https://skytrack.tech:2000/api/get-latest-gps-location/' + '{{ emergency_call.call_id }}/',  // Create a URL for fetching the latest GPS location data
                 success: function (response) {
                     response = JSON.parse(response);
                     // Update the content of the 'latestGpsLocation' div with the fetched data
@@ -236,6 +240,10 @@
             var comment = document.getElementById('comment').value;
             $.ajax({
                 type: 'POST',
+
+                headers: {
+                    'Authorization': '{{ auth }}'
+                },
                 url: 'https://skytrack.tech:2000/api/submit_status/',
                 data: { 'call_id': '{{ emergency_call.call_id }}', 'status': status, "comment": comment },  // Include any necessary data
                 success: function (response) {
@@ -269,6 +277,7 @@
 
     <div><button id="back" onclick="back()">Back</button>
         <h2>Emergency Call Detailse [Call ID: {{ emergency_call.call_id }}]</h2>
+        {{ auth }}
         <table>
             <tbody>
                 <tr>

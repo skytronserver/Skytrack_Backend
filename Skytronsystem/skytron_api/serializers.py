@@ -119,9 +119,16 @@ class VehicleSerializer(serializers.ModelSerializer):
         model = Vehicle
         fields = '__all__'
 
+class eSimProviderSerializer(serializers.ModelSerializer):
+    users = UserSerializer(many=True, read_only=True)
+    class Meta:
+        model = eSimProvider
+        fields = '__all__'
 class ManufacturerSerializer(serializers.ModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     state = Settings_StateSerializer(many=False, read_only=True)
+    esim_provider = eSimProviderSerializer( many=True, read_only=True)
+    #eSimProviders = serializers.PrimaryKeyRelatedField(many=True, queryset=eSimProvider.objects.all())
     class Meta:
         model = Manufacturer
         fields = '__all__'
@@ -132,11 +139,6 @@ class RetailerSerializer(serializers.ModelSerializer):
         model = Retailer
         fields = '__all__'
 
-class eSimProviderSerializer(serializers.ModelSerializer):
-    users = UserSerializer(many=True, read_only=True)
-    class Meta:
-        model = eSimProvider
-        fields = '__all__'
 class VehicleOwnerSerializer(serializers.ModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     class Meta:

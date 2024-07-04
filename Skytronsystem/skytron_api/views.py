@@ -93,9 +93,9 @@ def LoginAndroid(request):
     if request.method == 'POST':
         return HttpResponse("LoginDone")
         user=authenticate(request,username=request.POST.get('username'),password=request.POST.get('password'))
-        print(user)
+        #print(user)
         if user is not None:
-            print("LoginDone")
+            #print("LoginDone")
             login(request,user)
             return HttpResponse("LoginDone")
         else:
@@ -111,13 +111,13 @@ def Login2(request):
         username=request.GET.get('username')
         password=request.GET.get('password')
         user=authenticate(request,username=username,password=password)
-        print("login2",user,username,password)
+        #print("login2",user,username,password)
         if user is not None:
-            print("LoginDone")
+            #print("LoginDone")
             login(request,user)
 
             if "FieldEx" in username:
-                print("Loginvalid")
+                #print("Loginvalid")
                 #return HttpResponse("This account is not authorized to use this app.")
                 return redirect('/api/emergency-call-listener-field/') 
             else:
@@ -146,12 +146,18 @@ def update_location(request):
             if help_obj:
                 help_obj.loc_lat = loc_lat
                 help_obj.loc_lon = loc_lon
-                print(help_obj)
+                #print("help ",help_obj)
                 help_obj.save()
-
+            else:
+                Help.objects.create(
+                    type='Emergency',
+                    field_ex=field_ex,loc_lat = loc_lat,loc_lon = loc_lon
+                )
+            #print("test1")
             existing_emergency_call = EmergencyCall.objects.filter( 
                 Q(status='Broadcast')# Exclude entries with Status 'Complete'
             ).order_by('-start_time').last()
+            #print(existing_emergency_call)
 
         
             running_call = EmergencyCall.objects.filter( 
@@ -174,6 +180,7 @@ def update_location(request):
 
             return JsonResponse(live_data)
         except Help.DoesNotExist:
+            print("Help not avialable")
             return JsonResponse({'status': 'error', 'message': 'Help object not found'})
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
@@ -204,7 +211,7 @@ def update_status(request, field_ex):
 def get_latest_gps_location(request, emergency_call_id):
     headers = {key: value for key, value in request.headers.items()}
     auth=headers.get('Authorization')
-    print("*(*(*(*(*(*)))))",auth)
+    #print("*(*(*(*(*(*)))))",auth)
     # Get the EmergencyCall object based on the provided emergency_call_id
     emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
 
@@ -277,7 +284,8 @@ def get_latest_gps_location(request, emergency_call_id):
 @permission_classes([IsAuthenticated]) 
 def Broadcast_help(request):
     if request.method == 'POST':
-        call_id = request.POST.get('call_id')
+        call_id = request.data.get('call_id')
+        #print("call_id",call_id)
         ecall=EmergencyCall.objects.get(call_id=call_id)
         ecall.status="Broadcast"
         #ecall.field_executive_id=""
@@ -292,8 +300,8 @@ def Broadcast_help(request):
 def SubmitStatus(request):
     if request.method == 'POST':
         call_id = request.data.get('call_id') 
-        print(request.POST.get('status'))
-        print(request.POST.get('comment'))
+        #print(request.POST.get('status'))
+        #print(request.POST.get('comment'))
         ecall=EmergencyCall.objects.get(call_id=call_id)
         ecall.status=request.data.get('status')
         ecall.final_comment=request.data.get('comment')
@@ -318,6 +326,11 @@ def SubmitStatus(request):
 @permission_classes([IsAuthenticated]) 
 def emergency_call_details_field(request, emergency_call_id):
     # Get the EmergencyCall object based on the provided emergency_call_id
+    user=request.user #User.objects.filter(id=8).last() #
+    headers = {key: value for key, value in request.headers.items()}
+    auth= headers.get('Authorization') 
+    #print("Auth((((((((((((((((()))))))))))))))))",auth)
+
     emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
 
     # Get the latest GPSLocation for the same IMEI and vehicle number
@@ -325,13 +338,18 @@ def emergency_call_details_field(request, emergency_call_id):
         device_imei=emergency_call.device_imei,
         vehicle_reg_no=emergency_call.vehicle_no
     ).order_by('-date', '-time').first()
-    help_obj = Help.objects.filter(field_ex=request.user ).first()
+    help_obj = Help.objects.filter(field_ex= user ).last()
      
+     
+    
     context = {
+        'user':user,
+        'auth':auth,
         'emergency_call': emergency_call,
         'latest_gps_location': latest_gps_location,
-        'fieldex': help_obj,
-    }
+        'fieldexs': help_obj,
+    } 
+
 
     return render(request, 'emergency_call_details_field.html', context)
 #@login_required
@@ -386,7 +404,7 @@ def map2(request,emergency_call_id):
     user=request.user
     headers = {key: value for key, value in request.headers.items()}
     auth=headers.get('Authorization') 
-    print("Auth((((((((((((((((()))))))))))))))))",auth)
+    #print("Auth((((((((((((((((()))))))))))))))))",auth)
     emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
 
     # Get the latest GPSLocation for the same IMEI and vehicle number
@@ -419,9 +437,9 @@ def map2(request,emergency_call_id):
 def emergency_call_listener_admin(request):
     #return JsonResponse({"ok":"ok"})
     headers = {key: value for key, value in request.headers.items()}
-    print(headers)
+    #print(headers)
     user=request.user
-    print(user) 
+    #print(user) 
     #return Response({"user": str(user)})
     if request.method == 'POST':
         # Handle the 'Accept' button press
@@ -486,9 +504,9 @@ def save_file(request,tag,path):
 def find_file_in_folders(filename, folders):
     for folder in folders: 
         pattern = folder+filename
-        print("pattern",pattern,folder)
+        #print("pattern",pattern,folder)
         for file_path in glob.iglob(pattern, recursive=True):
-            print("filepath",file_path)
+            #print("filepath",file_path)
             if os.path.isfile(file_path):
                 return file_path
     return None
@@ -507,9 +525,9 @@ folders = [
 def downloadfile(request):
     if request.method == 'POST': 
         file_path =   request.data.get('file_path') 
-        print(request.content_type )
-        print(request.data)
-        print(request.user )
+        #print(request.content_type )
+        #print(request.data)
+        #print(request.user )
 
         if not file_path:
             return JsonResponse({'error': 'file_path is required'}, status=400) 
@@ -572,7 +590,7 @@ def get_live_call(request):
     user=request.user  
     user.last_activity=timezone.now() 
     user.save()
-    print(user)
+    #print(user)
     emcall= EmergencyCall_assignment.objects.filter(user=user,status ="Assigned").last()
     
      
@@ -648,11 +666,11 @@ def emergency_call_listener_field(request):
     
     #return JsonResponse({"ok":"ok"})
     headers = {key: value for key, value in request.headers.items()}
-    print(headers)
+    #print(headers)
     #return render(request, 'emergency_call_listener_field.html', {})
 
     user=request.user
-    print(user) 
+    #print(user) 
     #return Response({"user": str(user)})
     if request.method == 'POST':
         # Handle the 'Accept' button press
@@ -719,12 +737,17 @@ def get_live_call_field_init():
 @permission_classes([IsAuthenticated])  
 def get_live_call_field(request ):
     # Implement the logic to fetch live data updates (replace with your actual implementation)
+    user=request.user
     live_data={}
     if 1:
         # Handle the 'Accept' button press  
         existing_emergency_call = EmergencyCall.objects.filter( 
-                Q(status='Broadcast')# Exclude entries with Status 'Complete'
+                Q(status='FieldAccepted'),field_executive_id=user# Exclude entries with Status 'Complete'
             ).order_by('-start_time').last()
+        if not existing_emergency_call:
+            existing_emergency_call = EmergencyCall.objects.filter( 
+                    Q(status='Broadcast')# Exclude entries with Status 'Complete'
+                ).order_by('-start_time').last()
 
         
          
@@ -861,8 +884,8 @@ def gps_data_table(request):
 
 def gps_data_table1(request):
     data = GPSData.objects.all().order_by('-entry_time')[:200]
-    print("data", flush=True)
-    print(data, flush=True)
+    #print("data", flush=True)
+    #print(data, flush=True)
     return render(request, 'gps_data_table.html', {'data': data})
 
 
@@ -944,7 +967,7 @@ def get_size(obj, seen=None):
 #@csrf_exempt
 def gps_history_map(request): 
     t = time.time()
-    print("Timer init",time.time() - t )   
+    #print("Timer init",time.time() - t )   
 
     mapdata=[]
     data=[]     
@@ -978,23 +1001,23 @@ def gps_history_map(request):
             if vehicle_registration_number: 
                 return render(request, 'map_history.html',{'start_datetime':start_datetime,"end_datetime":end_datetime,"vehicle_registration_number":vehicle_registration_number})
                
-                print("Timer input",time.time() - t ) 
+                #print("Timer input",time.time() - t ) 
                 data = GPSData.objects.all().filter(gps_status=1).filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).filter(vehicle_registration_number__icontains=vehicle_registration_number)
                  
-                print("Data select done")
-                print("filter1 ",time.time() - t ) 
+                #print("Data select done")
+                #print("filter1 ",time.time() - t ) 
                 if start_datetime and end_datetime:
                         data = data.filter(entry_time__range=(start_datetime, end_datetime))   
                          
-                        print("Date fileter done")  
-                        print("filter2 ",time.time() - t )                    
+                        #print("Date fileter done")  
+                        #print("filter2 ",time.time() - t )                    
                         data=data.filter(gps_status=1).order_by('entry_time')#[:17280]  
-                        print("sorting done")  
-                        print("sort ",time.time() - t ) 
+                        #print("sorting done")  
+                        #print("sort ",time.time() - t ) 
                         mapdata=apply_low_pass_filter(data, ['longitude', 'latitude'])#[3:]  
-                        print("lpf done done")  
-                        print("lpf ",time.time() - t ) 
-                        print("total dataSize ",get_size(data))
+                        #print("lpf done done")  
+                        #print("lpf ",time.time() - t ) 
+                        #print("total dataSize ",get_size(data))
                 try:    #return JsonResponse({"eg":vehicle_registration_number})     
                     return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
                 except:
@@ -1012,7 +1035,7 @@ def gps_history_map(request):
 #@csrf_exempt
 def gps_history_map_data(request): 
     t = time.time()
-    print("Timer init",time.time() - t )   
+    #print("Timer init",time.time() - t )   
 
     mapdata=[]
     data=[]     
@@ -1044,24 +1067,24 @@ def gps_history_map_data(request):
         
         if vehicle_registration_number!="":
             if vehicle_registration_number:
-                print("Timer input",time.time() - t ) 
+                #print("Timer input",time.time() - t ) 
                 data = GPSData.objects.all().filter(gps_status=1).filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).filter(vehicle_registration_number__icontains=vehicle_registration_number)
                  
-                print("Data select done")
-                print("filter1 ",time.time() - t ) 
+                #print("Data select done")
+                #print("filter1 ",time.time() - t ) 
                 if start_datetime and end_datetime:
                         data = data.filter(entry_time__range=(start_datetime, end_datetime))   
                          
-                        print("Date fileter done")  
-                        print("filter2 ",time.time() - t )                    
+                        #print("Date fileter done")  
+                        #print("filter2 ",time.time() - t )                    
                         data=data.filter(gps_status=1).order_by('entry_time')#[:17280]  
                         datalen=len(data)-1
-                        print("sorting done")  
-                        print("sort ",time.time() - t ) 
+                        #print("sorting done")  
+                        #print("sort ",time.time() - t ) 
                         #mapdata=apply_low_pass_filter(data, ['longitude', 'latitude'])#[3:]  
-                        print("lpf done done")  
-                        print("lpf ",time.time() - t ) 
-                        print("total dataSize ",get_size(data))
+                        #print("lpf done done")  
+                        #print("lpf ",time.time() - t ) 
+                        #print("total dataSize ",get_size(data))
                         data=GPSData_modSerializer(data, many=True).data
                         #mapdata=GPSData_modSerializer(mapdata, many=True).data
                 try:    #return JsonResponse({"eg":vehicle_registration_number})     
@@ -1125,7 +1148,7 @@ def delRout(request):
 @csrf_exempt
 def saveRout(request):
     if request.method == 'POST':
-        print(request.body)
+        #print(request.body)
         data =json.loads( request.body )
         id =None
         try:
@@ -1280,7 +1303,7 @@ def send_SMS(no,text,tpid):
     try:
         response = requests.get(url, params=params)
         response.raise_for_status()  # Raise error for bad responses (non-200)
-        print("Message Sent Successfully")
+        #print("Message Sent Successfully")
     except requests.exceptions.HTTPError as errh:
         print("Loginotpsend HTTP Error:", errh)
     except requests.exceptions.RequestException as err:
@@ -1356,8 +1379,11 @@ def sms_queue(request):
     
 @api_view(['get'])  
 def esim_provider_list(request):
-    try: 
-        return Response({'airtel':"active",'jio':'not active'})
+    try:
+        esimprovider= eSimProvider.objects.all()         
+        esimprovider_serializer = eSimProviderSerializer(esimprovider, many=True)
+        # Return the serialized data as JSON response
+        return Response(esimprovider_serializer.data)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
@@ -1743,6 +1769,7 @@ def filter_dealer(request):
 
 
 
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @transaction.atomic
@@ -1753,7 +1780,7 @@ def create_manufacturer(request):
         createdby = request.user 
         date_joined = timezone.now()
         created = timezone.now() 
-        state=request.data.get('state', '')
+        state = request.data.get('state', '')
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
@@ -1761,16 +1788,15 @@ def create_manufacturer(request):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
-        esim_provider = request.data.get('esim_provider','')
-        user,error,new_password=create_user('devicemanufacture',request)
+        esim_provider_ids = request.data.get('esim_provider', [])
+
+        user, error, new_password = create_user('devicemanufacture', request)
         if user:  
             try:
-                file_authLetter=save_file(request,'file_authLetter','man') 
-                file_companRegCertificate=save_file(request,'file_companRegCertificate','man')
-                file_GSTCertificate=save_file(request,'file_GSTCertificate','man')
-                file_idProof = save_file(request,'file_idProof','man')
-
-
+                file_authLetter = save_file(request, 'file_authLetter', 'man') 
+                file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'man')
+                file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'man')
+                file_idProof = save_file(request, 'file_idProof', 'man')
 
                 manufacturer = Manufacturer.objects.create(
                     company_name=company_name,
@@ -1785,14 +1811,19 @@ def create_manufacturer(request):
                     file_idProof=file_idProof,
                     state_id=state,
                     createdby=createdby,
-                    esim_provider=esim_provider,
                     status="Created",
                 )
+                
+                # Fetch the EsimProvider instances and set the many-to-many relationship
+                esim_providers = eSimProvider.objects.filter(id__in=esim_provider_ids)
+                manufacturer.esim_provider.set(esim_providers)
+
             except Exception as e:
                 user.delete()
                 return Response({'error': str(e)}, status=500)
+            
             manufacturer.users.add(user) 
-            send_usercreation_otp(user,new_password,'Device Manufacture ')
+            send_usercreation_otp(user, new_password, 'Device Manufacture ')
             return Response(ManufacturerSerializer(manufacturer).data)
         else:
             return Response(error, status=500)
@@ -2016,14 +2047,14 @@ def create_DTO_RTO(request):
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         state= request.data.get('state', '1')
         dto_rto1= request.data.get('dto_rto', '')
-        district = request.data.get('district_code', '')
+        districtC = request.data.get('district_code', '')
         state= request.data.get('State', '1')
         districts = Settings_District.objects.filter(state_id=state).order_by('district', 'id')
         Districtlist = {}
         for district in districts:
             Districtlist[district.district] = district.district_code
-        if district not in Districtlist.values():
-            return Response({'error': "Invalid Dtrict Code:"+district}, status=400)
+        if districtC not in Districtlist.values():
+            return Response({'error': "Invalid Dtrict Code:"+districtC}, status=400)
         file_idProof = request.data.get('file_idProof') 
         user,error,new_password=create_user('dtorto',request)
         if user:         
@@ -2035,7 +2066,7 @@ def create_DTO_RTO(request):
                     created=created,
                     state_id=state,
                     dto_rto=dto_rto1,
-                    district=district,
+                    district=districtC,
                     expirydate=expirydate, 
                     idProofno=idProofno, 
                     file_idProof=file_idProof,
@@ -2793,7 +2824,7 @@ def StockAssignToRetailer3333(request):
     stock_assignments = []
     for device_id in device_ids:
         data['device_id'] = int(device_id)
-        print(data)
+        #print(data)
         serializer = StockAssignmentSerializer2(data=data)
         if serializer.is_valid():
             serializer.save()
@@ -2836,6 +2867,13 @@ def deviceStockCreateBulk(request):
         return JsonResponse({'error': 'Please provide an Excel file and model_id.'}, status=400)
 
     model_id = request.data['model_id']
+    esim_provider = request.data['esim_provider']
+    if not isinstance(esim_provider, list)  : 
+        var_str = str(esim_provider) 
+        for ch in ['[', ']', '{', '}']:
+            var_str = var_str.replace(ch, '')
+        esim_provider = [item.strip() for item in var_str.split(',')]
+
 
     try:
         excel_data = pd.read_excel(request.FILES['excel_file'], engine='openpyxl')
@@ -2865,7 +2903,7 @@ def deviceStockCreateBulk(request):
             'imsi1': row.get('imsi1', ''),
             'imsi2': row.get('imsi2', ''),
             'esim_validity': row.get('esim_validity', ''),
-            'esim_provider': row.get('esim_provider', ''),
+            'esim_provider': esim_provider,
             'remarks': row.get('remarks', ''),
             'created_by': request.user.id,
             'created':timezone.now(),
@@ -3088,7 +3126,7 @@ def DeviceVerifyStateAdminOtp(request):
     user_id = request.user.id
 
     # Validate current status and update the status
-    device_model = get_object_or_404(DeviceModel, id=device_model_id, created_by=user_id, status='StateAdminOTPSend')
+    device_model = get_object_or_404(DeviceModel, id=device_model_id, status='StateAdminOTPSend')#created_by=user_id ,
 
     # Additional logic for OTP verification can be added here if needed
 
@@ -3109,7 +3147,7 @@ def DeviceCreateManufacturerOtpVerify(request  ):
     if not otp or not otp.isdigit() or len(otp) != 6:
         return HttpResponseBadRequest("Invalid OTP format")
 
-    device_model = get_object_or_404(DeviceModel, id=device_model_id, created_by=user_id, status='Manufacturer_OTP_Sent')
+    device_model = get_object_or_404(DeviceModel, id=device_model_id,status='Manufacturer_OTP_Sent')# created_by=user_id, 
 
     # Verify OTP and update status
     if otp == '123456':  # Replace with your actual OTP verification logic
@@ -3703,7 +3741,7 @@ def create_device_model(request):
     # Attach the file to the request data
     request_data = request.data.copy()
     request_data.update(data)
-    print("requestdata",request_data) 
+    #print("requestdata",request_data) 
     serializer = DeviceModelSerializer(data=request_data)
 
     # Validate and save the data along with the file
@@ -3772,11 +3810,11 @@ class FileUploadView(APIView):
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
         #user = get_object_or_404(User, email=email)
         if user:
-            print(email)
+            #print(email)
             if 'file' not in request.data:
                 return Response({'error': 'No file part'}, status=status.HTTP_400_BAD_REQUEST)
             
-            print(email)
+            #print(email)
             file = request.data['file']
             user.kycfile.save(file.name, file)
             user.save()

@@ -56,7 +56,7 @@ class Help(models.Model):
     status = models.CharField(max_length=20, blank=True, null=True)
 
     def __str__(self):
-        return self.field_ex
+        return self.field_ex.name
 
 
     
@@ -92,7 +92,7 @@ class EmergencyCall(models.Model):
     final_comment = models.TextField()
 
     def __str__(self):
-        return f"EmergencyCall {self.id}"
+        return f"EmergencyCall {self.call_id}"
 
 
 
