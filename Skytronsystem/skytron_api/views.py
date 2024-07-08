@@ -1689,6 +1689,7 @@ def create_dealer(request):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof') 
+        district = request.data.get('district') 
         user,error,new_password=create_user('dealer',request)
         if user:         
             try:
@@ -1711,6 +1712,7 @@ def create_dealer(request):
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
                     createdby=createdby,
+                    district=district,
                     status="Created",
                 )
             except Exception as e:
@@ -2302,7 +2304,7 @@ def create_SOS_admin(request):
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         state= request.data.get('state', '') 
-        district = request.data.get('district', '') 
+        #district = request.data.get('district', '') 
         file_idProof = request.data.get('file_idProof') 
         user,error,new_password=create_user('sosadmin',request)
         if user:
@@ -2315,7 +2317,7 @@ def create_SOS_admin(request):
                 retailer = SOS_admin.objects.create( 
                     created=created,
                     state_id=state, 
-                    district_id=district,
+                    #district_id=district,
                     expirydate=expirydate, 
                     idProofno=idProofno, 
                     file_idProof=file_idProof,

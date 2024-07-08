@@ -258,6 +258,7 @@ class Retailer(models.Model):
     file_GSTCertificate = models.CharField(max_length=255, blank=True, null=True)
     file_idProof = models.CharField(max_length=255, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    district = models.ForeignKey('Settings_District', on_delete=models.CASCADE,blank=True, null=True)
     status_choices = [
             ('Created', 'Created'),
             ('UserVerified', 'UserVerified'),
@@ -381,7 +382,8 @@ class SOS_user(models.Model):
 
 class SOS_admin(models.Model): 
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
-    district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
+    
+    #district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
     users = models.ManyToManyField('User', related_name='SOS_admin')
     created = models.DateField(auto_now_add=True)
     expirydate = models.DateField(auto_now_add=True)
