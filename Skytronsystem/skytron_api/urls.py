@@ -87,6 +87,7 @@ urlpatterns = [
     path('SOSAdmin/filter_SOSAdmin/', filter_SOS_admin, name='filter_SOSAdmin'),
       
 
+    path('homepageandstat/homepage_stateAdmin/', homepage_stateAdmin, name='homepage_stateAdmin'),
     path('homepageandstat/homepage/', homepage, name='homepage'),
     path('homepageandstat/homepage_user1/', homepage_user1, name='homepage_user1'),
     path('homepageandstat/homepage_user2/', homepage_user2, name='homepage_user2'),
@@ -106,7 +107,7 @@ urlpatterns = [
 
 
     path('list-alerts/', list_alert_logs, name='list_alert_logs'),
-    path('gps-data-table/', gps_data_table, name='gps_data_table'),
+    path('gps-data-table/', gps_data_table, name='gps-data-table'),
     path('gps_history_map/',gps_history_map , name='gps_history_map'),
     path('gps_history_map_data/',gps_history_map_data , name='gps_history_map_data'),
     

@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['216.10.244.243','skytrack.tech','admiring-solomon.216-10-244-243.plesk.page']
+ALLOWED_HOSTS = ['216.10.244.243','skytrack.tech','https://www.skytrack.tech','admiring-solomon.216-10-244-243.plesk.page']
 
 DATA_UPLOAD_MAX_NUMBER_FIELD = 71193766
 # Application definition
@@ -54,6 +54,7 @@ FORM_RENDERER = 'django.forms.renderers.DjangoTemplates'
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -129,7 +130,7 @@ USE_I18N = True
 
 USE_TZ = True
 
-CORS_ALLOWED_ORIGINS = [
+CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     "http://localhost:3000", 
     "https://localhost:3000", 
     "https://skytrack.tech:3000",  

@@ -3546,6 +3546,273 @@ def homepage_device2(request):
 
 
 
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_Manufacturer(request):
+    try:
+        user= request.user
+        if user.role!='devicemanufacturer':             
+            return Response({'error': "User is not devicemanufacturer"}, status=500)
+        profile=Manufacturer.objects.filter(users=user).last()
+        
+        
+        #print('profile',profile.state.state)
+   
+        
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if profile:
+            count_dict = {
+                 
+'Total_Model':0,
+'Total_M2M_linked':0,
+
+'Total_Dealer':0,
+'Total_Stock_Allocated':0,	
+'Total_Activation':0,
+
+'Total_esim_activation_request':0,
+'Total_1year_renewal_request':0,
+'Total_2year_renewal_request':0,
+
+
+'Total_Online_Device':0,
+'Total_Offline_Device_today':0,
+'Total_Offline_Device_7day':0,
+'Total_Offline_Device_30day':0,
+
+'Total_expired_device':0
+
+
+             
+            }
+            # Return the serialized data as JSON response
+            return Response(count_dict)
+        else:
+            return Response({'error': "Unauthorised user"}, status=500)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_DTO(request):
+    try:
+        user= request.user
+        if user.role!='dto_rto':             
+            return Response({'error': "User is not dto_rto"}, status=500)
+        profile=dto_rto.objects.filter(users=user).last()
+        
+        
+        #print('profile',profile.state.state)
+   
+        
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if profile:
+            count_dict = {
+                 
+
+
+'Total_Device_Activated':0,
+'Total_Vehicles':0,
+'Total_Online_Device':0,
+'Total_Offline_Device_today':0,
+'Total_Offline_Device_7day':0,
+'Total_Offline_Device_30day':0,
+
+  
+
+'Total_Alert':0,
+'Alert_month':0,
+'Alert_today':0,
+
+'Total_activations':0,
+'Activations_month':0,
+'Activations_today':0,
+ 
+'Total_SOS_calls':0,
+'Genuine_calls':0,
+'Fake_calls':0
+
+
+             
+            }
+            # Return the serialized data as JSON response
+            return Response(count_dict)
+        else:
+            return Response({'error': "Unauthorised user"}, status=500)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_VehicleOwner(request):
+    try:
+        user= request.user
+        if user.role!='owner':             
+            return Response({'error': "User is not owner"}, status=500)
+        profile=VehicleOwner.objects.filter(users=user).last()
+        
+        
+        #print('profile',profile.state.state)
+   
+        
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if profile:
+            count_dict = {
+                 
+
+
+'Total_Device_Activated':0,
+'Total_Vehicles':0,
+'Total_Online_Device':0,
+'Total_Offline_Device_today':0,
+'Total_Offline_Device_7day':0,
+'Total_Offline_Device_30day':0,
+
+
+'Total_Alert':0,
+'Alert_month':0,
+'Alert_today':0,
+
+'Total_Harshbraking':0,
+'Total_suddenturn':0,
+'Total_overspeeding':0,
+
+'Total_SOS_calls':0,
+'Genuine_calls':0,
+'Fake_calls':0
+
+
+             
+            }
+            # Return the serialized data as JSON response
+            return Response(count_dict)
+        else:
+            return Response({'error': "Unauthorised user"}, status=500)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_Dealer(request):
+    try:
+        user= request.user
+        if user.role!='dealer':             
+            return Response({'error': "User is not dealer"}, status=500)
+        profile=Retailer.objects.filter(users=user).last()
+        
+        
+        #print('profile',profile.state.state)
+   
+        
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if profile:
+            count_dict = {
+                 
+
+'Total_Fitment_done':0,
+'Fitment_month':0,
+'Fitment_today':0,
+
+'Total_Device_Assigned':0,
+'Total_Device_Returned':0,
+'Current_Device_stock':0,
+'Current_Device_faulty':0,
+'Available_Free_Device':0,
+'Total_esim_activation_request':0,
+'Total_1_year_renewal_request':0,
+'Total_2_year_renewal_request':0,
+
+'Total_Online_now':0,
+'Total_Online_today':0,
+'Total_Offline_7_days':0,
+'Total_Offline_30_days':0
+             
+            }
+            # Return the serialized data as JSON response
+            return Response(count_dict)
+        else:
+            return Response({'error': "Unauthorised user"}, status=500)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_stateAdmin(request):
+    try:
+        user= request.user
+        if user.role!='stateadmin':             
+            return Response({'error': "User is not stateadmin"}, status=500)
+        profile=StateAdmin.objects.filter(users=user).last()
+        
+        
+        #print('profile',profile.state.state)
+   
+        
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if profile:
+            count_dict = {
+
+                'Total_Dealer_available':Retailer.objects.count(),
+                'Total_Manufacture_available':Manufacturer.objects.filter(state=profile.state).count(),
+                'Total_DTO_available':dto_rto.objects.filter(state=profile.state).count(),
+                'Total_Vehicle_Owner_available':VehicleOwner.objects.count(),
+
+                'Total_Fit_Device' : DeviceTag.objects.filter(status='Device_Active').count(),
+                'Online_Devices':DeviceTag.objects.filter(status='Device_Active').count(),
+                'Offline_Devices':0,
+
+                'Total_Device_Activated':DeviceTag.objects.filter(status='Device_Active').count(),
+                'Active_Device_Today':0,
+                'Inactive_Device_7days' :0,
+                'Inactive_Device_30days':0,
+                
+                'Total_overspeeding_Alert':0,
+                'Monthly_overspeeding_Alert':0,
+                'Today_overspeeding_Alert':0,
+                
+                'Total_emergency_Alert':0,
+                'This_month_emergency_Alert':0,
+                'Today_emergency_Alert':0,
+                
+                'Total_harsh_brake_Alert':0,
+                'This_month_harsh_brake_Alert':0,
+                'Today_harsh_brake_Alert' :0 
+            
+             
+            }
+            # Return the serialized data as JSON response
+            return Response(count_dict)
+        else:
+            return Response({'error': "Unauthorised user"}, status=500)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def homepage_user1(request):
@@ -4220,7 +4487,8 @@ def send_sms_otp(request):
 
 
 
-@api_view(['POST']) 
+@api_view(['POST'])
+@permission_classes([AllowAny])
 @transaction.atomic
 def reset_password(request):
     try: 
@@ -4245,10 +4513,11 @@ def reset_password(request):
         token=Token.objects.create(user=user,key=new_password) 
 
         try:
-            tpid ="1007387007813205696" #1007274756418421381"
+            tpid ="1007214796274246200"#"1007387007813205696" #1007274756418421381"
             #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
             #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
-            text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
+            text='Dear User, To  reset your password for SkyTron platform, please click at the following link and validate the registration request- https://skytrack.tech/mis/reset-password/'+str(new_password)+' .The link will expire in 5 minutes.-SkyTron'
+
             
             send_SMS(user.mobile,text,tpid)             
             send_mail( 
@@ -4273,6 +4542,7 @@ def reset_password(request):
 def user_login(request):
     if request.method == 'POST':
         username = request.data.get('username', None)
+        
         password = request.data.get('password', None)
         key = request.data.get('captcha_key', None)
         user_input = request.data.get('captcha_reply', None) 

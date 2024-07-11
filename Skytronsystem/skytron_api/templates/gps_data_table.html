@@ -18,7 +18,7 @@
     <h2>GPS Data Table</h2>
 
     <div style="position: relative;">
-        <form method="get" action="{% url 'api/gps_data_table' %}">
+        <form method="get" action="{% url 'gps-data-table' %}">
             {% csrf_token %}
             {{ form.as_p }}
             <button type="submit">Filter</button>
