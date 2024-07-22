@@ -1341,8 +1341,18 @@ def sms_send(no,text,tpid):
 def add_sms_queue(msg,no):
      sms_entry = sms_out.objects.create( sms_text=msg,no=no, status='Queue'  )
 
+@csrf_exempt
+def sms_queue_add(request):
+    try:
+        no= request.GET.get('no')#request.data.get('no')
+        msg = request.GET.get('msg', '') 
+        add_sms_queue(msg,no)
+        return JsonResponse({'status':"Success  "+msg})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500) 
 
 @api_view(['POST'])  
+@permission_classes([AllowAny])
 def sms_received(request):
     try:
         # Extract necessary parameters from the request data
@@ -1355,6 +1365,7 @@ def sms_received(request):
         return Response({'error': str(e)}, status=500)
     
 @api_view(['get'])  
+@permission_classes([AllowAny])
 def sms_queue(request):
     try: 
         sms_entry = sms_out.objects.filter(status='Queue').first()
@@ -2601,7 +2612,8 @@ def TagVerifyOwnerOtp(request):
         if otp == '123456':  # Replace with your actual OTP verification logic
             device_tag.status = 'Owner_OTP_Verified'
             device_tag.save()
-            add_sms_queue("ACTV,21312sadwdaw_"+str(device_tag.id)+",+9194016334212",device_tag.device.msisdn1)
+            add_sms_queue("ACTV,123456,+9194016334212",device_tag.device.msisdn1)
+            add_sms_queue("CONF,"+device_tag.vehicle_reg_no+",216.10.244.243,6000,216.10.244.243,5001,216.10.244.243,5001,+919401633421,+919401633421",device_tag.device.msisdn1)
             return Response({"message": "Owner OTP verified successfully."}, status=200)
         else:
             return HttpResponseBadRequest("Invalid OTP")
@@ -3553,8 +3565,8 @@ def homepage_device2(request):
 def homepage_Manufacturer(request):
     try:
         user= request.user
-        if user.role!='devicemanufacturer':             
-            return Response({'error': "User is not devicemanufacturer"}, status=500)
+        if user.role!='devicemanufacture':             
+            return Response({'error': "User is not devicemanufacture"}, status=500)
         profile=Manufacturer.objects.filter(users=user).last()
         
         
@@ -3603,8 +3615,8 @@ def homepage_Manufacturer(request):
 def homepage_DTO(request):
     try:
         user= request.user
-        if user.role!='dto_rto':             
-            return Response({'error': "User is not dto_rto"}, status=500)
+        if user.role!='dtorto':             
+            return Response({'error': "User is not dtorto"}, status=500)
         profile=dto_rto.objects.filter(users=user).last()
         
         
@@ -4373,6 +4385,8 @@ def password_reset(request):
         ).last()
             valid=True
             if user.role == "superadmin":
+                pass   
+            elif user.role ==  "dtorto":
                 pass
             elif user.role ==  "stateadmin":
                 pass

@@ -53,3 +53,13 @@ hCAPTCHA
 sitekey :156ecd3a-9f4e-4549-a7d2-b8274bb9ed59
 
 sitekey  :ES_6fc59979a06246568e25f281986eb133
+
+
+
+pgsql   
+dbadmin
+lask1028zmnx
+createdb skytrondb;
+skytron_main_db
+GRANT ALL PRIVILEGES ON DATABASE skytrondb TO dbadmin;
+GRANT ALL PRIVILEGES ON DATABASE skytron_main_db TO dbadmin;

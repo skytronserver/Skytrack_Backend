@@ -63,17 +63,13 @@ urlpatterns = [
     path('Settings/filter_settings_State/', filter_Settings_State, name='filter_settings_state'),
 
     path('Settings/create_settings_District/', create_Settings_District, name='create_settings_District'),
-    path('Settings/filter_settings_District/', filter_Settings_District, name='filter_settings_District'),
-
+    path('Settings/filter_settings_District/', filter_Settings_District, name='filter_settings_District'), 
 
     path('Settings/create_settings_VehicleCategory/', create_Settings_VehicleCategory, name='create_settings_VehicleCategory'),
     path('Settings/filter_settings_VehicleCategory/', filter_Settings_VehicleCategory, name='filter_settings_VehicleCategory'),
 
     path('Settings/create_settings_firmware/', create_Settings_firmware, name='create_settings_firmware'),
-    path('Settings/filter_settings_firmware/', filter_Settings_firmware, name='filter_settings_firmware'),
-    
-    
-    
+    path('Settings/filter_settings_firmware/', filter_Settings_firmware, name='filter_settings_firmware'), 
 
     path('StateAdmin/create_StateAdmin/', create_StateAdmin, name='create_StateAdmin'),
     path('StateAdmin/filter_StateAdmin/', filter_StateAdmin, name='filter_StateAdmin'),
@@ -87,7 +83,13 @@ urlpatterns = [
     path('SOSAdmin/filter_SOSAdmin/', filter_SOS_admin, name='filter_SOSAdmin'),
       
 
+    #path('homepageandstat/homepage_DTO/', homepage_DTO, name='homepage_DTO'),
+    path('homepageandstat/homepage_Manufacturer/', homepage_Manufacturer, name='homepage_Manufacturer'),
+    path('homepageandstat/homepage_DTO/', homepage_DTO, name='homepage_DTO'),
+    path('homepageandstat/homepage_VehicleOwner/', homepage_VehicleOwner, name='homepage_VehicleOwner'),
+    path('homepageandstat/homepage_Dealer/', homepage_Dealer, name='homepage_Dealer'),
     path('homepageandstat/homepage_stateAdmin/', homepage_stateAdmin, name='homepage_stateAdmin'),
+    
     path('homepageandstat/homepage/', homepage, name='homepage'),
     path('homepageandstat/homepage_user1/', homepage_user1, name='homepage_user1'),
     path('homepageandstat/homepage_user2/', homepage_user2, name='homepage_user2'),
@@ -146,7 +148,7 @@ urlpatterns = [
     #path('login2/', Login2, name='login2'), 
     #path('loginAndroid/', LoginAndroid, name='loginandroid'),
     path('map2/<int:emergency_call_id>/',  map2, name='map2'),
-    path('', CustomLoginView.as_view(), name='login'),
+    #path('', CustomLoginView.as_view(), name='login'),
     path('logout/', CustomLogoutView.as_view(), name='logout'),
     
 
@@ -224,8 +226,10 @@ urlpatterns = [
 
     path('download/', downloadfile, name='download'),
     path('sms/rcv', sms_received, name='sms_received'),
-    path('sms/que', sms_queue, name='sms_queue'),
     path('sms/send', sms_send, name='sms_send'),
+    path('sms/que', sms_queue, name='sms_queue'),
+    path('sms/que_add', sms_queue_add, name='sms_queue_add'),
+    
 
 ]
 '''

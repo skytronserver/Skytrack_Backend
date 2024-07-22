@@ -1,0 +1,7 @@
+LOAD DATABASE
+     FROM sqlite:///var/www/html/skytron_backend/Skytronsystem/db_copy.sqlite3
+     INTO postgresql://dbadmin:lask1028zmnx@localhost/skytrondb
+
+ WITH include drop, create tables, create indexes, reset sequences
+
+ SET work_mem to '16MB', maintenance_work_mem to '512 MB';

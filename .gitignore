@@ -38,3 +38,5 @@ tcplogem.log
 Skytronsystem/man/*.png
 Skytronsystem/Skytronsystem/__pycache__/wsgi.cpython-38.pyc
 Skytronsystem/Skytronsystem/__pycache__/wsgi.cpython-38.pyc
+db.json
+Skytronsystem/man/*.*

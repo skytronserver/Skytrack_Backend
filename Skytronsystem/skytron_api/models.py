@@ -141,7 +141,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     createdby = models.CharField(max_length=255, verbose_name="Created By")
     date_joined = models.DateTimeField(default=timezone.now)
     created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
-    Access = models.JSONField(default=list, verbose_name="Access")
+    Access = models.JSONField(default=list,blank=True, null=True, verbose_name="Access")  
     password = models.CharField(max_length=100,default='12345678')  # Assuming 32 characters for MD5 hash
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
