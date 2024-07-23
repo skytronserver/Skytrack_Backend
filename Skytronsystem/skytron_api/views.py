@@ -56,6 +56,37 @@ import requests
 import base64
 import uuid   
 from .utils import generate_captcha
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+import base64
+import json
+import os
+
+
+
+
+ 
+
+def load_private_key():
+    private_key_path = '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
+    with open(private_key_path, 'rb') as key_file:
+        private_key = RSA.import_key(key_file.read()) 
+    with open(private_key_path, 'rb') as key_file: 
+        print(key_file.read())
+
+    #private_key-
+    return private_key
+
+def decrypt_field(encrypted_field, private_key):
+    cipher = PKCS1_OAEP.new(private_key)
+    if len(encrypted_field)<16:
+        return ""
+    decrypted_data = cipher.decrypt(base64.b64decode(encrypted_field))
+    return decrypted_data.decode('utf-8')
+PRIVATE_KEY=load_private_key() 
+print(PRIVATE_KEY)
+
+
 
 @csrf_exempt
 def generate_captcha_api(request):
@@ -87,7 +118,7 @@ def verify_captcha_api(request):
     except Captcha.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Captcha not found'})
   
-
+'''
 @csrf_exempt
 def LoginAndroid(request):
     if request.method == 'POST':
@@ -127,7 +158,8 @@ def Login2(request):
     else:
         return HttpResponse("error")
 
- 
+'''
+
 #@login_required
 @csrf_exempt
 @api_view(['POST','GET'])
@@ -4415,7 +4447,7 @@ def password_reset(request):
             return Response({'error': 'User not matched with details'}, status=status.HTTP_404_NOT_FOUND)
 
         # Generate a random password, set and hash it
-         
+        new_password = decrypt_field(new_password,PRIVATE_KEY)  
         hashed_password = make_password(new_password)
         user.password = hashed_password
         user.save()
@@ -4556,10 +4588,13 @@ def reset_password(request):
 def user_login(request):
     if request.method == 'POST':
         username = request.data.get('username', None)
-        
-        password = request.data.get('password', None)
+        password=request.data.get('password', None)
         key = request.data.get('captcha_key', None)
-        user_input = request.data.get('captcha_reply', None) 
+        user_input = request.data.get('captcha_reply', None)
+        if not username or not password or not key or not user_input:
+            return Response({'error': 'Incomplete credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
         captchaSuccess=False
 
         try:
@@ -4631,7 +4666,8 @@ def validate_otp(request):
 
         if not otp or not token:
             return Response({'error': 'OTP or session token not provided'}, status=status.HTTP_400_BAD_REQUEST)
-
+        
+        otp = decrypt_field(otp,PRIVATE_KEY)  
         # Find the session based on the provided token
         session = Session.objects.filter(token=token).last()
 

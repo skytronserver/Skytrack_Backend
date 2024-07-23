@@ -644,7 +644,7 @@ class DeviceTag(models.Model):
 
 
        
-class GPSLocation(models.Model):
+class GPSLocation(models.Model): #imergency tracking data
     message_type = models.CharField(max_length=3)  # EMR or SEM
     device_imei = models.CharField(max_length=15)
     packet_status = models.CharField(max_length=2)  # NM or SP
@@ -688,7 +688,7 @@ class GPSLocation(models.Model):
         #user_to_assign=get_logged_in_users_with_min_assignments()
         #EmergencyCall_assignment.objects.filter( EmergencyCall_id=existing_emergency_call    ).last()
 
-        print("received new call ")
+        #print("received new call ")
 
 
         if device_tag:
