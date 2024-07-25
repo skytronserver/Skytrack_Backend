@@ -182,13 +182,13 @@
                 "<tr><th>Key</th><th>Value</th></tr>" +
                 "<tr><td>id</td><td>" + entry.id + "</td></tr>" +
                 "<tr><td>DateTime</td><td>" + new Date(Date.parse(entry.entry_time)) + "</td></tr>" +
-                "<tr><td>Vendor ID</td><td>" + entry.vendor_id + "</td></tr>" +
-                "<tr><td>Firmware Version</td><td>" + entry.firmware_version + "</td></tr>" +
-                "<tr><td>Packet Type</td><td>" + entry.packet_type + "</td></tr>" +
+                //"<tr><td>Vendor ID</td><td>" + entry.vendor_id + "</td></tr>" +
+                //"<tr><td>Firmware Version</td><td>" + entry.firmware_version + "</td></tr>" +
+                // "<tr><td>Packet Type</td><td>" + entry.packet_type + "</td></tr>" +
                 "<tr><td>Alert ID</td><td>" + entry.alert_id + "</td></tr>" +
                 "<tr><td>Packet Status</td><td>" + entry.packet_status + "</td></tr>" +
-                "<tr><td>IMEI</td><td>" + entry.imei + "</td></tr>" +
-                "<tr><td>Vehicle Registration Number</td><td>" + entry.vehicle_registration_number + "</td></tr>" +
+                //"<tr><td>IMEI</td><td>" + entry.imei + "</td></tr>" +
+                //"<tr><td>Vehicle Registration Number</td><td>" + entry.vehicle_registration_number + "</td></tr>" +
                 "<tr><td>GPS Status</td><td>" + entry.gps_status + "</td></tr>" +
                 "<tr><td>Date</td><td>" + entry.date + "</td></tr>" +
                 "<tr><td>Time</td><td>" + entry.time + "</td></tr>" +
@@ -417,8 +417,8 @@
                         }),
                         new ol.layer.Tile({
                             source: new ol.source.TileWMS({
-                                url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',
-                                params: { 'LAYERS': 'lulc:BR_LULC50K_1112', 'TILED': true },
+                                url: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms',
+                                params: { 'LAYERS': 'india3', 'TILED': true },
                                 serverType: 'geoserver',
                                 transition: 0,
                             }),

@@ -112,12 +112,14 @@ def handle_client(conn, client_address):
                         dat = '$' + dat
                         if len(dat) > 4:
                             gps_data = process_gps_data(dat)
-                            
+                            #print(gps_data)
                             if gps_data:
                                 reg=gps_data['vehicle_registration_number']
                                 device_tag=DeviceTag.objects.filter(vehicle_reg_no=reg,status='Device_Active').last()
                                 if device_tag:
-                                    gps_data['device_tag']=device_tag.id
+                                    gps_data['device_tag']=device_tag.id 
+                                gps_data.pop('imei', None)
+                                gps_data.pop('vehicle_registration_number', None)
                                 g=GPSData.objects.create(**gps_data)
                                 g.save()
                                 #print(gps_data)
@@ -125,6 +127,7 @@ def handle_client(conn, client_address):
                                 print("Data format errot error:", dat, flush=True)
                     except Exception as e:
                         print("Data processing error main:", e, flush=True)
+                        #raise e
 
     except socket.timeout:
         print(f"Client {client_address} timed out. Closing the connection.", flush=True)
@@ -188,11 +191,11 @@ def process_gps_data(data_str):
  
 
                 gps_data = {
-                    'start_character': groups[0],
-                    'header': groups[1],
-                    'vendor_id': groups[2],
-                    'firmware_version': groups[3],
-                    'packet_type': groups[4],
+                    #'start_character': groups[0],
+                    #'header': groups[1],
+                    #'vendor_id': groups[2],
+                    #'firmware_version': groups[3],
+                    #'packet_type': groups[4],
                     'alert_id': groups[5],
                     'packet_status': groups[6],
                     'imei': groups[7],
@@ -238,8 +241,8 @@ def process_gps_data(data_str):
                     'digital_output_status': groups[47],
                     'frame_number': int(groups[48]),
                     'odometer': float(groups[49]),
-                    'checksum': groups[50],
-                    'end_char': groups[51],
+                    #'checksum': groups[50],
+                    #'end_char': groups[51],
                 }
 
                 return gps_data

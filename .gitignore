@@ -40,3 +40,8 @@ Skytronsystem/Skytronsystem/__pycache__/wsgi.cpython-38.pyc
 Skytronsystem/Skytronsystem/__pycache__/wsgi.cpython-38.pyc
 db.json
 Skytronsystem/man/*.*
+Skytronsystem/fileuploads/*/*.pdf
+Skytronsystem/fileuploads/*/*.png
+Skytronsystem/fileuploads/*/*.jpg 
+Skytronsystem/fileuploads/*/*.JPG
+Skytronsystem/fileuploads/*/*.gif

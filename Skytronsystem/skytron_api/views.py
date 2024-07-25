@@ -80,7 +80,7 @@ def load_private_key():
 def decrypt_field(encrypted_field, private_key):
     cipher = PKCS1_OAEP.new(private_key)
     if len(encrypted_field)<16:
-        return ""
+        return encrypted_field
     decrypted_data = cipher.decrypt(base64.b64decode(encrypted_field))
     return decrypted_data.decode('utf-8')
 PRIVATE_KEY=load_private_key() 
@@ -543,13 +543,13 @@ def find_file_in_folders(filename, folders):
                 return file_path
     return None
 folders = [
-    './',
-    'tac_docs/',
-    'Receipt_files/',
-    'kyc_files/',
-    'cop_files/',
-    'file_bin/',
-    'man/',
+    './fileuploads/',
+    'fileuploads/tac_docs/',
+    'fileuploads/Receipt_files/',
+    'fileuploads/kyc_files/',
+    'fileuploads/cop_files/',
+    'fileuploads/file_bin/',
+    'fileuploads/man/',
     # Add more folders as needed
 ]
 @api_view(['POST'])
@@ -907,7 +907,7 @@ def gps_data_table(request):
         end_datetime = form.cleaned_data.get('end_datetime')
 
         if vehicle_registration_number:
-            data = data.filter(vehicle_registration_number__icontains=vehicle_registration_number)
+            data = data.filter(device_tag__vehicle_reg_no__icontains=vehicle_registration_number)
 
         if start_datetime and end_datetime:
             data = data.filter(entry_time__range=(start_datetime, end_datetime))
@@ -953,18 +953,20 @@ def gps_track_data_api(request):
             regno = request.GET.get('regno')
         except:
             pass
-        distinct_registration_numbers = GPSData.objects.values('vehicle_registration_number').distinct()
+        distinct_registration_numbers = GPSData.objects.values('device_tag').distinct() #vehicle_registration_number
         data = []
 
         for x in distinct_registration_numbers:
-            latest_entry = GPSData.objects.filter(vehicle_registration_number=x['vehicle_registration_number']).filter(gps_status=1).order_by('-entry_time').first()
+            latest_entry = GPSData.objects.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time').first()
             
             if regno:
                 if regno!="None":
-                    latest_entry = GPSData.objects.filter(vehicle_registration_number=regno).filter(vehicle_registration_number=x['vehicle_registration_number']).filter(gps_status=1).order_by('-entry_time').first()
+                    #.filter(vehicle_registration_number=x['vehicle_registration_number'])
+                    latest_entry = GPSData.objects.filter(device_tag__vehicle_reg_no=regno).filter(gps_status=1).order_by('-entry_time').first()  
             elif imei:
                 if imei !="None":
-                    latest_entry = GPSData.objects.filter(imei=imei).filter(vehicle_registration_number=x['vehicle_registration_number']).filter(gps_status=1).order_by('-entry_time').first()
+                    #filter(device_tag__vehicle_reg_no=x['vehicle_registration_number']).
+                    latest_entry = GPSData.objects.filter(device_tag__device__imei=imei).filter(gps_status=1).order_by('-entry_time').first()
             excluded_fields = []  # Add any fields you want to exclude
             if latest_entry:
                 #data.append(latest_entry.values())
@@ -1100,7 +1102,7 @@ def gps_history_map_data(request):
         if vehicle_registration_number!="":
             if vehicle_registration_number:
                 #print("Timer input",time.time() - t ) 
-                data = GPSData.objects.all().filter(gps_status=1).filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).filter(vehicle_registration_number__icontains=vehicle_registration_number)
+                data = GPSData.objects.all().filter(gps_status=1).filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).filter(device_tag__vehicle_reg_no__icontains=vehicle_registration_number)
                  
                 #print("Data select done")
                 #print("filter1 ",time.time() - t ) 
@@ -1258,15 +1260,15 @@ def gps_data_allmap(request):
             pass
         # Get the latest entry for each unique vehicle_registration_number
         latest_data = GPSData.objects.filter(
-            vehicle_registration_number=OuterRef('vehicle_registration_number')
+            device_tag=OuterRef('device_tag')
         ).filter(gps_status=1).order_by('-entry_time').values('id')[:1]
         data=None
-        if imei:
-            data = GPSData.objects.filter(imei=imei,id__in=Subquery(latest_data))
-        elif regno:
-            data = GPSData.objects.filter(vehicle_registration_number=regno,id__in=Subquery(latest_data))
-        else:
-            data = GPSData.objects.filter(id__in=Subquery(latest_data))
+        #if imei:
+        #    data = GPSData.objects.filter(imei=imei,id__in=Subquery(latest_data))
+        #elif regno:
+        #    data = GPSData.objects.filter(vehicle_registration_number=regno,id__in=Subquery(latest_data))
+        #else:
+        data = GPSData.objects.filter(id__in=Subquery(latest_data))
 
     return render(request, 'map.html', {'data': data,'regno':regno,'imei':imei})
 def gps_data_log_table(request):
@@ -1442,7 +1444,7 @@ def get_live_vehicle_no(request):
     try:
         if request.method == 'POST':
             # Fetch distinct vehicle registration numbers
-            vehicles = GPSData.objects.all().values('vehicle_registration_number').distinct()
+            vehicles = GPSData.objects.all().values('device_tag').distinct()
             vehicle_list = [vehicle['vehicle_registration_number'] for vehicle in vehicles]
             return Response(vehicle_list)
         else:
@@ -1472,7 +1474,7 @@ def create_VehicleOwner(request):
         if user: 
             try:
                  
-                file_idProof = save_file(request,'file_idProof','man')
+                file_idProof = save_file(request,'file_idProof','fileuploads/man')
 
 
                 retailer = VehicleOwner.objects.create(
@@ -1641,10 +1643,10 @@ def create_eSimProvider(request):
          
             try:
                 
-                file_authLetter=save_file(request,'file_authLetter','man') 
-                file_companRegCertificate=save_file(request,'file_companRegCertificate','man')
-                file_GSTCertificate=save_file(request,'file_GSTCertificate','man')
-                file_idProof = save_file(request,'file_idProof','man')
+                file_authLetter=save_file(request,'file_authLetter','fileuploads/man') 
+                file_companRegCertificate=save_file(request,'file_companRegCertificate','fileuploads/man')
+                file_GSTCertificate=save_file(request,'file_GSTCertificate','fileuploads/man')
+                file_idProof = save_file(request,'file_idProof','fileuploads/man')
 
 
                 retailer = eSimProvider.objects.create(
@@ -1737,10 +1739,10 @@ def create_dealer(request):
         if user:         
             try:
                 
-                file_authLetter=save_file(request,'file_authLetter','man') 
-                file_companRegCertificate=save_file(request,'file_companRegCertificate','man')
-                file_GSTCertificate=save_file(request,'file_GSTCertificate','man')
-                file_idProof = save_file(request,'file_idProof','man')
+                file_authLetter=save_file(request,'file_authLetter','fileuploads/man') 
+                file_companRegCertificate=save_file(request,'file_companRegCertificate','fileuploads/man')
+                file_GSTCertificate=save_file(request,'file_GSTCertificate','fileuploads/man')
+                file_idProof = save_file(request,'file_idProof','fileuploads/man')
 
 
                 retailer = Retailer.objects.create(
@@ -1838,10 +1840,10 @@ def create_manufacturer(request):
         user, error, new_password = create_user('devicemanufacture', request)
         if user:  
             try:
-                file_authLetter = save_file(request, 'file_authLetter', 'man') 
-                file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'man')
-                file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'man')
-                file_idProof = save_file(request, 'file_idProof', 'man')
+                file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man') 
+                file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
+                file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
+                file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
 
                 manufacturer = Manufacturer.objects.create(
                     company_name=company_name,
@@ -1932,7 +1934,7 @@ def create_user(role,req):
         created = timezone.now() 
         is_active = True
         is_staff = False
-        status = 'active' 
+        status = 'pending' 
         new_password=''.join(random.choices('0123456789', k=30))
         hashed_password = make_password(new_password)
         user = User.objects.create(
@@ -1992,7 +1994,7 @@ def create_StateAdmin(request):
         user,error,new_password=create_user('stateadmin',request)
         if user:         
             try: 
-                file_idProof = save_file(request,'file_idProof','man')
+                file_idProof = save_file(request,'file_idProof','fileuploads/man')
 
 
                 retailer = StateAdmin.objects.create( 
@@ -2104,7 +2106,7 @@ def create_DTO_RTO(request):
         user,error,new_password=create_user('dtorto',request)
         if user:         
             try: 
-                file_idProof = save_file(request,'file_idProof','man')
+                file_idProof = save_file(request,'file_idProof','fileuploads/man')
 
 
                 retailer = dto_rto.objects.create( 
@@ -2223,7 +2225,7 @@ def create_SOS_user(request):
         user,error,new_password=create_user('sosuser',request)
         if user:  
             try: 
-                file_idProof = save_file(request,'file_idProof','man')
+                file_idProof = save_file(request,'file_idProof','fileuploads/man')
 
 
                 retailer = SOS_ex.objects.create( 
@@ -2354,7 +2356,7 @@ def create_SOS_admin(request):
             
             try:
                  
-                file_idProof = save_file(request,'file_idProof','man')
+                file_idProof = save_file(request,'file_idProof','fileuploads/man')
 
 
                 retailer = SOS_admin.objects.create( 
@@ -2498,7 +2500,7 @@ def TagDevice2Vehicle(request):
         current_datetime = timezone.now()
         uploaded_file = request.FILES.get('rcFile')
         if uploaded_file:
-            file_path = 'cop_files/' + str(device_id) + '_' + uploaded_file.name
+            file_path = 'fileuploads/cop_files/' + str(device_id) + '_' + uploaded_file.name
             with open(file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
@@ -2557,7 +2559,7 @@ def download_receiptPDF(request):
             return JsonResponse({'error': 'tag_id is required'}, status=400) 
         try: 
             device_tag = DeviceTag.objects.get(id=tag_id)
-            file_path = f"cop_files/aaa.pdf"
+            file_path = f"fileuploads/cop_files/aaa.pdf"
             try:
                 with open(file_path,'rb') as file:
                     response = HttpResponse(file.read(), content_type='application/octet-stream')
@@ -2585,7 +2587,7 @@ def upload_receiptPDF(request):
         try:
             uploaded_file = request.FILES.get('receiptFile')
             if uploaded_file:
-                file_path = 'Receipt_files/' + str(device_tag.id) + '_' + uploaded_file.name
+                file_path = 'fileuploads/Receipt_files/' + str(device_tag.id) + '_' + uploaded_file.name
                 with open(file_path, 'wb') as file:
                     for chunk in uploaded_file.chunks():
                         file.write(chunk)
@@ -3022,7 +3024,7 @@ def COPCreate(request):
         uploaded_file = request.FILES.get('cop_file')
         if uploaded_file:
             # Save the file to a specific location
-            file_path = 'cop_files/' + str(device_cop_instance.id) + '_' + uploaded_file.name
+            file_path = 'fileuploads/cop_files/' + str(device_cop_instance.id) + '_' + uploaded_file.name
             with open(file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
@@ -3396,7 +3398,7 @@ def create_Settings_firmware(request):
         uploaded_file = request.FILES.get('file_bin')
         if uploaded_file:
             # Save the file to a specific location
-            file_path = 'file_bin/' + str(instance.id) + '_' + uploaded_file.name
+            file_path = 'fileuploads/file_bin/' + str(instance.id) + '_' + uploaded_file.name
             with open(file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
@@ -4085,9 +4087,9 @@ class DeviceModelUpdateView(generics.UpdateAPIView):
     def perform_update(self, serializer):
         file = self.request.FILES.get('tac_doc_path', None)
         if file:
-            fs = FileSystemStorage(location=settings.MEDIA_ROOT + '/tac_docs/')
+            fs = FileSystemStorage(location=settings.MEDIA_ROOT + 'fileuploads/tac_docs/')
             filename = fs.save(file.name, file)
-            tac_doc_path = 'tac_docs/' + filename
+            tac_doc_path = 'fileuploads/tac_docs/' + filename
             serializer.validated_data['tac_doc_path'] = tac_doc_path
         serializer.save()
 
@@ -4393,16 +4395,14 @@ def password_reset(request):
     """
     if request.method == 'POST':
         mobile = request.data.get('mobile', None)
-        iddoc = request.data.get('id_no', None)
+        id_no = request.data.get('id_no', None)
         new_password = request.data.get('new_password', None)
         dob = request.data.get('dob', None)
 
-        if not iddoc:
-            pass
-            #return Response({'error': 'email no not provided'}, status=status.HTTP_400_BAD_REQUEST)
+        if not id_no:
+            return Response({'error': 'id_no not provided'}, status=status.HTTP_400_BAD_REQUEST)
         if not dob:
-            pass
-            #return Response({'error': 'dob no not provided'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'dob not provided'}, status=status.HTTP_400_BAD_REQUEST)
         if not mobile:
             return Response({'error': 'Mobile no not provided'}, status=status.HTTP_400_BAD_REQUEST)
         if not new_password:
@@ -4410,35 +4410,84 @@ def password_reset(request):
 
         try:
             user =  User.objects.filter( 
-            #dob=dob,
-            #email=email ,
-            #
-            mobile=mobile 
-        ).last()
+                dob=dob,
+                mobile=mobile 
+                ).last()
+            if user.id != request.user.id:
+                user=None
             valid=True
+            if not user:
+                return Response({'error': 'user information missmatch'}, status=status.HTTP_400_BAD_REQUEST)
+
             if user.role == "superadmin":
                 pass   
             elif user.role ==  "dtorto":
-                pass
+                prof=dto_rto.objects.filter( 
+                user=user, 
+                ).last()
+                if id_no != prof.idProofno[-4:]:
+                    user=None
+
+
             elif user.role ==  "stateadmin":
-                pass
+                prof=StateAdmin.objects.filter( 
+                user=user, 
+                ).last()
+                if id_no != prof.idProofno[-4:]:
+                    user=None
             elif user.role ==  "devicemanufacture":
-                pass
+                prof=Manufacturer.objects.filter( 
+                user=user, 
+                ).last()
+                if id_no != prof.idProofno[-4:]:
+                    user=None
             elif user.role ==  "dealer":
-                pass
+                prof=Retailer.objects.filter( 
+                user=user, 
+                ).last()
+                if id_no != prof.idProofno[-4:]:
+                    user=None
             elif user.role ==  "owner":
-                pass
+                prof=VehicleOwner.objects.filter( 
+                user=user, 
+                ).last()
+                if id_no != prof.idProofno[-4:]:
+                    user=None
             elif user.role ==  "esimprovider":
-                pass
+                prof=eSimProvider.objects.filter( 
+                user=user, 
+                ).last()
+                if id_no != prof.idProofno[-4:]:
+                    user=None
             elif user.role ==  "filment":
-                pass
+                prof=Retailer.objects.filter( 
+                user=user, 
+                ).last()
+                if id_no != prof.idProofno[-4:]:
+                    user=None
             elif user.role ==  "sosadmin":
-                pass
+                prof=SOS_admin.objects.filter( 
+                user=user, 
+                ).last()
+                if id_no != prof.idProofno[-4:]:
+                    user=None
             elif user.role ==  "teamleader":
-                pass
+                prof=SOS_team.objects.filter( 
+                user=user, 
+                ).last()
+                if id_no != prof.idProofno[-4:]:
+                    user=None
             elif user.role ==  "sosexecutive":
-                pass 
-    
+                prof=SOS_ex.objects.filter( 
+                user=user, 
+                ).last()
+                if id_no != prof.idProofno[-4:]:
+                    user=None
+            else:
+                user=None
+            if not user:
+                return Response({'error': 'user information missmatch'}, status=status.HTTP_400_BAD_REQUEST)
+
             
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -4450,6 +4499,7 @@ def password_reset(request):
         new_password = decrypt_field(new_password,PRIVATE_KEY)  
         hashed_password = make_password(new_password)
         user.password = hashed_password
+        user.status='active'
         user.save()
 
         return Response({'message': 'Password reset successfully'})
@@ -4551,6 +4601,7 @@ def reset_password(request):
         if not user:
             return Response({'error': "Invalid email and mobile no"}, status=400)
         user.password  = hashed_password
+        user.status='pwreset'
         user.save()
         
         # Save the User instance

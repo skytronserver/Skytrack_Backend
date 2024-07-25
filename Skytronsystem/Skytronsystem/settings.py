@@ -91,13 +91,14 @@ WSGI_APPLICATION = 'Skytronsystem.wsgi.application'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
 DATABASES = {
- 
      'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-        'OPTIONS': {
-            'timeout': 20,  # Timeout in seconds
-        },}
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'skytrondbnew',
+        'USER': 'dbadmin',
+        'PASSWORD': 'lask1028zmnx',
+        'HOST': 'localhost',
+        'PORT': '5432',
+    }
  
 }
 ''' 
