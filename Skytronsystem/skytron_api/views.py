@@ -535,7 +535,9 @@ def save_file(request,tag,path):
 
 def find_file_in_folders(filename, folders):
     for folder in folders: 
+        filename=filename.replace("%20", " ")
         pattern = folder+filename
+
         #print("pattern",pattern,folder)
         for file_path in glob.iglob(pattern, recursive=True):
             #print("filepath",file_path)
@@ -543,6 +545,7 @@ def find_file_in_folders(filename, folders):
                 return file_path
     return None
 folders = [
+    './',
     './fileuploads/',
     'fileuploads/tac_docs/',
     'fileuploads/Receipt_files/',
@@ -599,8 +602,7 @@ def emergency_call_listener(request):
     return render(request, 'emergency_call_listener.html', {'live_data': live_data})
 
 
-def get_live_call_init():
-    # Implement the logic to fetch live data updates (replace with your actual implementation)
+def get_live_call_init(): 
     existing_emergency_call = EmergencyCall.objects.filter( 
             Q(status='Pending') # Exclude entries with Status 'Complete'
         ).order_by('-start_time').last()
@@ -625,8 +627,7 @@ def get_live_call(request):
     #print(user)
     emcall= EmergencyCall_assignment.objects.filter(user=user,status ="Assigned").last()
     
-     
-    # Implement the logic to fetch live data updates (replace with your actual implementation)
+      
     
     #existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
     #live_data1=""
@@ -660,8 +661,7 @@ def get_live_call(request):
 
 @api_view(['POST','GET'])
 @permission_classes([IsAuthenticated])  
-def get_all_call(request):
-    # Implement the logic to fetch live data updates (replace with your actual implementation)
+def get_all_call(request): 
     existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
     live_data1=[]
     for call in existing_emergency_call:
@@ -744,8 +744,7 @@ def emergency_call_listener_field(request):
     return render(request, 'emergency_call_listener_field.html', context)
 
 
-def get_live_call_field_init():
-    # Implement the logic to fetch live data updates (replace with your actual implementation)
+def get_live_call_field_init(): 
     existing_emergency_call = EmergencyCall.objects.filter( 
             Q(status='Broadcast') # Exclude entries with Status 'Complete'
         ).order_by('-start_time').last()
@@ -767,8 +766,7 @@ def get_live_call_field_init():
 
 @api_view(['POST','GET'])
 @permission_classes([IsAuthenticated])  
-def get_live_call_field(request ):
-    # Implement the logic to fetch live data updates (replace with your actual implementation)
+def get_live_call_field(request ): 
     user=request.user
     live_data={}
     if 1:
@@ -801,19 +799,10 @@ from django.contrib.auth.views import LogoutView
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
 
-class CustomLogoutView(LogoutView):
-    # Customize the behavior after logging out
-    next_page = reverse_lazy('login')  # Replace with the URL where you want to redirect after logout
-
-    def dispatch(self, request, *args, **kwargs):
-        # You can add custom logic here before logging out
-        # For example, logging the user out of other systems or services
-
-        # Call the parent class method to perform the logout
-        response = super().dispatch(request, *args, **kwargs)
-
-        # You can add custom logic here after logging out
-        # For example, setting a custom message or performing additional actions
+class CustomLogoutView(LogoutView): 
+    next_page = reverse_lazy('login')   
+    def dispatch(self, request, *args, **kwargs): 
+        response = super().dispatch(request, *args, **kwargs) 
 
         return response
 
@@ -939,7 +928,7 @@ def model_to_dict(instance, fields=None, exclude=None):
 
 
 
-@csrf_exempt  # Disable CSRF protection for simplicity. Make sure to secure your API in production.
+@csrf_exempt   
 def gps_track_data_api(request):
     if request.method == 'GET':
         imei=False
@@ -967,7 +956,7 @@ def gps_track_data_api(request):
                 if imei !="None":
                     #filter(device_tag__vehicle_reg_no=x['vehicle_registration_number']).
                     latest_entry = GPSData.objects.filter(device_tag__device__imei=imei).filter(gps_status=1).order_by('-entry_time').first()
-            excluded_fields = []  # Add any fields you want to exclude
+            excluded_fields = []   
             if latest_entry:
                 #data.append(latest_entry.values())
                 data.append(model_to_dict(latest_entry, exclude=excluded_fields))
@@ -997,7 +986,7 @@ def get_size(obj, seen=None):
     elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
         size += sum([get_size(i, seen) for i in obj])
     return size
-#@csrf_exempt  # Disable CSRF protection for simplicity. Make sure to secure your API in production.
+#@csrf_exempt   
 #@csrf_exempt
 def gps_history_map(request): 
     t = time.time()
@@ -1445,6 +1434,8 @@ def get_live_vehicle_no(request):
         if request.method == 'POST':
             # Fetch distinct vehicle registration numbers
             vehicles = GPSData.objects.all().values('device_tag').distinct()
+            if not vehicles:
+                return Response([])
             vehicle_list = [vehicle['vehicle_registration_number'] for vehicle in vehicles]
             return Response(vehicle_list)
         else:
@@ -1453,6 +1444,59 @@ def get_live_vehicle_no(request):
         return Response({'error': str(e)}, status=500)
  
     
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def update_VehicleOwner(request):
+    try:
+        id = request.data.get('vehicleowner_id')
+        vehicle_owner = VehicleOwner.objects.filter(id=id).last()
+        if not vehicle_owner:
+            return Response({'error': "Invalid VehicleOwner id"}, status=500)
+        if vehicle_owner.createdby != request.user:
+            return Response({'error': "User can be edited by only the creator"}, status=500)
+        
+        date_joined = timezone.now()
+        created = timezone.now()
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        company_name = request.data.get('company_name')
+        idProofno = request.data.get('idProofno')
+        file_idProof = request.data.get('file_idProof')
+
+        email = request.data.get('email')
+        mobile = request.data.get('mobile')
+        name = request.data.get('name')
+        dob = request.data.get('dob')
+
+        if company_name:
+            vehicle_owner.company_name = company_name
+        if idProofno:
+            vehicle_owner.idProofno = idProofno
+        if file_idProof:
+            vehicle_owner.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+
+        if email:
+            vehicle_owner.user.email = email
+        if mobile:
+            vehicle_owner.user.mobile = mobile
+        if name:
+            vehicle_owner.user.name = name
+        if dob:
+            vehicle_owner.user.dob = dob
+
+        new_password = ''.join(random.choices('0123456789', k=30))
+        hashed_password = make_password(new_password)
+        vehicle_owner.user.password = hashed_password
+        vehicle_owner.date_joined = date_joined
+        vehicle_owner.created = created
+        vehicle_owner.expirydate = expirydate
+        vehicle_owner.user.save()
+        vehicle_owner.save()
+        send_usercreation_otp(vehicle_owner.user, new_password, 'Vehicle Owner')
+        return Response(VehicleOwnerSerializer(vehicle_owner).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
 
 
@@ -1589,12 +1633,8 @@ def filter_VehicleOwner(request):
         company_name = request.data.get('company_name', '')
         name = request.data.get('name', '')
         phone_no = request.data.get('phone_no', '')
-        address = request.data.get('address', '')
-
-        # Create a dictionary to hold the filter parameters
-        filters = {}
-
-        # Add ID filter if provided
+        address = request.data.get('address', '') 
+        filters = {} 
         if dealer_id :
             manufacturers = VehicleOwner.objects.filter(
                 id=dealer_id ,
@@ -1606,6 +1646,7 @@ def filter_VehicleOwner(request):
         else:
             manufacturers = VehicleOwner.objects.filter(
                 #id=manufacturer_id,
+                users__status='active',
                 users__email__icontains=email,
                 company_name__icontains=company_name,
                 users__name__icontains=name,
@@ -1620,6 +1661,162 @@ def filter_VehicleOwner(request):
 
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def update_manufacturer(request):
+    try:
+        
+        id = request.data.get('manufacturer_id')
+        man=Manufacturer.objects.filter(id=id).last()
+        if not man:
+            return Response({'error': "Invalid manufacturer id"}, status=500)
+        if man.createdby == request.user :
+            return Response({'error': "User can be edited by only the creator"}, status=500)
+        
+        date_joined = timezone.now()
+        created = timezone.now() 
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        company_name = request.data.get('company_name')
+        gstnnumber = request.data.get('gstnnumber')        
+        state = request.data.get('state')
+        gstno = request.data.get('gstno' )   
+        idProofno = request.data.get('idProofno' )  
+        file_authLetter = request.data.get('file_authLetter')
+        file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_GSTCertificate = request.data.get('file_GSTCertificate')
+        file_idProof = request.data.get('file_idProof')
+        esim_provider_ids = request.data.get('esim_provider', [])
+        
+        email = request.data.get('email' )
+        mobile = request.data.get('mobile' )
+        name = request.data.get('name' )
+        dob = request.data.get('dob' )
+        if company_name:
+            man.company_name=company_name
+        if gstnnumber :
+            man.gstnnumber=gstnnumber
+        if state:
+            man.state = state
+        if gstno:
+            man.gstno=gstno  
+        if  idProofno:
+            man.idProofno=idProofno
+        if file_authLetter:
+            man.file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man') 
+
+        if file_companRegCertificate :
+            man.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
+                
+
+        if file_GSTCertificate :
+            man.file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
+
+        if file_idProof:
+            man.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+        if esim_provider_ids !=[]:
+            man.esim_provider_ids=esim_provider_ids
+
+            
+        if email:
+            man.user.email  =email
+        if mobile:
+            man.user.mobile=mobile
+        if name:
+            man.user.name=name 
+        if dob:
+            man.user.dob
+        
+        new_password=''.join(random.choices('0123456789', k=30))
+        hashed_password = make_password(new_password)
+        man.user.password  = hashed_password
+        man.date_joined = date_joined
+        man.created = created
+        man.expirydate = expirydate
+        man.user.save()
+        man.save()
+        send_usercreation_otp(man.user, new_password, 'Device Manufacture ')
+        return Response(ManufacturerSerializer(man ).data)
+      
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def update_eSimProvider(request):
+    try:
+        id = request.data.get('esimprovider_id')
+        esimprovider = eSimProvider.objects.filter(id=id).last()
+        if not esimprovider:
+            return Response({'error': "Invalid eSimProvider id"}, status=500)
+        if esimprovider.createdby != request.user:
+            return Response({'error': "User can be edited by only the creator"}, status=500)
+        
+        date_joined = timezone.now()
+        created = timezone.now()
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        company_name = request.data.get('company_name')
+        gstnnumber = request.data.get('gstnnumber')
+        gstno = request.data.get('gstno')
+        idProofno = request.data.get('idProofno')
+        file_authLetter = request.data.get('file_authLetter')
+        file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_GSTCertificate = request.data.get('file_GSTCertificate')
+        file_idProof = request.data.get('file_idProof')
+
+        email = request.data.get('email')
+        mobile = request.data.get('mobile')
+        name = request.data.get('name')
+        dob = request.data.get('dob')
+
+        if company_name:
+            esimprovider.company_name = company_name
+        if gstnnumber:
+            esimprovider.gstnnumber = gstnnumber
+        if gstno:
+            esimprovider.gstno = gstno
+        if idProofno:
+            esimprovider.idProofno = idProofno
+        if file_authLetter:
+            esimprovider.file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man')
+        if file_companRegCertificate:
+            esimprovider.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
+        if file_GSTCertificate:
+            esimprovider.file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
+        if file_idProof:
+            esimprovider.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+
+        if email:
+            esimprovider.user.email = email
+        if mobile:
+            esimprovider.user.mobile = mobile
+        if name:
+            esimprovider.user.name = name
+        if dob:
+            esimprovider.user.dob = dob
+
+        new_password = ''.join(random.choices('0123456789', k=30))
+        hashed_password = make_password(new_password)
+        esimprovider.user.password = hashed_password
+        esimprovider.date_joined = date_joined
+        esimprovider.created = created
+        esimprovider.expirydate = expirydate
+        esimprovider.user.save()
+        esimprovider.save()
+        send_usercreation_otp(esimprovider.user, new_password, 'EsimProvider')
+        return Response(eSimProviderSerializer(esimprovider).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -1701,6 +1898,7 @@ def filter_eSimProvider(request):
         else:
             manufacturers = eSimProvider.objects.filter(
                 #id=manufacturer_id,
+                users__status='active',
                 users__email__icontains=email,
                 company_name__icontains=company_name,
                 users__name__icontains=name,
@@ -1716,6 +1914,77 @@ def filter_eSimProvider(request):
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def update_dealer(request):
+    try:
+        id = request.data.get('dealer_id')
+        dealer = Retailer.objects.filter(id=id).last()
+        if not dealer:
+            return Response({'error': "Invalid dealer id"}, status=500)
+        if dealer.createdby != request.user:
+            return Response({'error': "User can be edited by only the creator"}, status=500)
+        
+        date_joined = timezone.now()
+        created = timezone.now() 
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        company_name = request.data.get('company_name')
+        gstnnumber = request.data.get('gstnnumber')        
+        gstno = request.data.get('gstno')   
+        idProofno = request.data.get('idProofno')  
+        file_authLetter = request.data.get('file_authLetter')
+        file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_GSTCertificate = request.data.get('file_GSTCertificate')
+        file_idProof = request.data.get('file_idProof')
+        district = request.data.get('district')
+
+        email = request.data.get('email')
+        mobile = request.data.get('mobile')
+        name = request.data.get('name')
+        dob = request.data.get('dob')
+
+        if company_name:
+            dealer.company_name = company_name
+        if gstnnumber:
+            dealer.gstnnumber = gstnnumber
+        if gstno:
+            dealer.gstno = gstno  
+        if idProofno:
+            dealer.idProofno = idProofno
+        if file_authLetter:
+            dealer.file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man')
+        if file_companRegCertificate:
+            dealer.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
+        if file_GSTCertificate:
+            dealer.file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
+        if file_idProof:
+            dealer.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+        if district:
+            dealer.district = district
+
+        if email:
+            dealer.user.email = email
+        if mobile:
+            dealer.user.mobile = mobile
+        if name:
+            dealer.user.name = name 
+        if dob:
+            dealer.user.dob = dob
+
+        new_password = ''.join(random.choices('0123456789', k=30))
+        hashed_password = make_password(new_password)
+        dealer.user.password = hashed_password
+        dealer.date_joined = date_joined
+        dealer.created = created
+        dealer.expirydate = expirydate
+        dealer.user.save()
+        dealer.save()
+        send_usercreation_otp(dealer.user, new_password, 'Dealer')
+        return Response(RetailerSerializer(dealer).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -1799,6 +2068,7 @@ def filter_dealer(request):
         else:
             manufacturers = Retailer.objects.filter(
                 #id=manufacturer_id,
+                users__status='active',
                 users__email__icontains=email,
                 company_name__icontains=company_name,
                 users__name__icontains=name,
@@ -1815,6 +2085,86 @@ def filter_dealer(request):
         return Response({'error': str(e)}, status=500)
 
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def update_manufacturer(request):
+    try:
+        
+        id = request.data.get('manufacturer_id')
+        man=Manufacturer.objects.filter(id=id).last()
+        if not man:
+            return Response({'error': "Invalid manufacturer id"}, status=500)
+        if man.createdby == request.user :
+            return Response({'error': "User can be edited by only the creator"}, status=500)
+        
+        date_joined = timezone.now()
+        created = timezone.now() 
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        company_name = request.data.get('company_name')
+        gstnnumber = request.data.get('gstnnumber')        
+        state = request.data.get('state')
+        gstno = request.data.get('gstno' )   
+        idProofno = request.data.get('idProofno' )  
+        file_authLetter = request.data.get('file_authLetter')
+        file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_GSTCertificate = request.data.get('file_GSTCertificate')
+        file_idProof = request.data.get('file_idProof')
+        esim_provider_ids = request.data.get('esim_provider', [])
+        
+        email = request.data.get('email' )
+        mobile = request.data.get('mobile' )
+        name = request.data.get('name' )
+        dob = request.data.get('dob' )
+        if company_name:
+            man.company_name=company_name
+        if gstnnumber :
+            man.gstnnumber=gstnnumber
+        if state:
+            man.state = state
+        if gstno:
+            man.gstno=gstno  
+        if  idProofno:
+            man.idProofno=idProofno
+        if file_authLetter:
+            man.file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man') 
+
+        if file_companRegCertificate :
+            man.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
+                
+
+        if file_GSTCertificate :
+            man.file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
+
+        if file_idProof:
+            man.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+        if esim_provider_ids !=[]:
+            man.esim_provider_ids=esim_provider_ids
+
+            
+        if email:
+            man.user.email  =email
+        if mobile:
+            man.user.mobile=mobile
+        if name:
+            man.user.name=name 
+        if dob:
+            man.user.dob
+        
+        new_password=''.join(random.choices('0123456789', k=30))
+        hashed_password = make_password(new_password)
+        man.user.password  = hashed_password
+        man.date_joined = date_joined
+        man.created = created
+        man.expirydate = expirydate
+        man.user.save()
+        man.save()
+        send_usercreation_otp(man.user, new_password, 'Device Manufacture ')
+        return Response(ManufacturerSerializer(man ).data)
+      
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
 
 @api_view(['POST'])
@@ -1905,6 +2255,7 @@ def filter_manufacturers(request):
         else:
             manufacturers = Manufacturer.objects.filter(
                 #id=manufacturer_id,
+                users__status='active',
                 users__email__icontains=email,
                 company_name__icontains=company_name,
                 users__name__icontains=name,
@@ -2019,6 +2370,62 @@ def create_StateAdmin(request):
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def update_StateAdmin(request):
+    try:
+        id = request.data.get('stateadmin_id')
+        stateadmin = StateAdmin.objects.filter(id=id).last()
+        if not stateadmin:
+            return Response({'error': "Invalid StateAdmin id"}, status=500)
+        if stateadmin.createdby != request.user:
+            return Response({'error': "User can be edited by only the creator"}, status=500)
+        
+        date_joined = timezone.now()
+        created = timezone.now()
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        email = request.data.get('email')
+        idProofno = request.data.get('idProofno')
+        state = request.data.get('state')
+        file_idProof = request.data.get('file_idProof')
+
+        new_email = request.data.get('new_email')
+        mobile = request.data.get('mobile')
+        name = request.data.get('name')
+        dob = request.data.get('dob')
+
+        if email:
+            stateadmin.user.email = email
+        if idProofno:
+            stateadmin.idProofno = idProofno
+        if state:
+            stateadmin.state_id = state
+        if file_idProof:
+            stateadmin.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+
+        if new_email:
+            stateadmin.user.email = new_email
+        if mobile:
+            stateadmin.user.mobile = mobile
+        if name:
+            stateadmin.user.name = name
+        if dob:
+            stateadmin.user.dob = dob
+
+        new_password = ''.join(random.choices('0123456789', k=30))
+        hashed_password = make_password(new_password)
+        stateadmin.user.password = hashed_password
+        stateadmin.date_joined = date_joined
+        stateadmin.created = created
+        stateadmin.expirydate = expirydate
+        stateadmin.user.save()
+        stateadmin.save()
+        send_usercreation_otp(stateadmin.user, new_password, 'State Admin')
+        return Response(StateadminSerializer(stateadmin).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -2046,6 +2453,7 @@ def filter_StateAdmin(request):
         else:
             manufacturers = StateAdmin.objects.filter(
                 #id=manufacturer_id,
+                users__status='active',
                 users__email__icontains=email, 
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
@@ -2107,6 +2515,7 @@ def create_DTO_RTO(request):
         if user:         
             try: 
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                file_authorisation_letter = save_file(request,'file_authorisation_letter','fileuploads/man')
 
 
                 retailer = dto_rto.objects.create( 
@@ -2117,6 +2526,7 @@ def create_DTO_RTO(request):
                     expirydate=expirydate, 
                     idProofno=idProofno, 
                     file_idProof=file_idProof,
+                    file_authorisation_letter=file_authorisation_letter,
                     createdby=createdby,
                     status="Created",
                 ) 
@@ -2132,6 +2542,74 @@ def create_DTO_RTO(request):
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def update_DTO_RTO(request):
+    try:
+        id = request.data.get('dtorto_id')
+        dtorto = dto_rto.objects.filter(id=id).last()
+        if not dtorto:
+            return Response({'error': "Invalid DTO/RTO id"}, status=500)
+        if dtorto.createdby != request.user:
+            return Response({'error': "User can be edited by only the creator"}, status=500)
+        
+        date_joined = timezone.now()
+        created = timezone.now()
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        idProofno = request.data.get('idProofno')
+        state = request.data.get('state', '1')
+        dto_rto1 = request.data.get('dto_rto')
+        districtC = request.data.get('district_code')
+
+        districts = Settings_District.objects.filter(state_id=state).order_by('district', 'id')
+        Districtlist = {district.district: district.district_code for district in districts}
+        if districtC not in Districtlist.values():
+            return Response({'error': "Invalid District Code:" + districtC}, status=400)
+
+        file_idProof = request.data.get('file_idProof')
+        file_authorisation_letter= request.data.get('file_authorisation_letter')
+
+        email = request.data.get('email')
+        mobile = request.data.get('mobile')
+        name = request.data.get('name')
+        dob = request.data.get('dob')
+
+        if idProofno:
+            dtorto.idProofno = idProofno
+        if state:
+            dtorto.state_id = state
+        if dto_rto1:
+            dtorto.dto_rto = dto_rto1
+        if districtC:
+            dtorto.district = districtC
+        if file_idProof:
+            dtorto.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+        if file_authorisation_letter:
+            dtorto.file_idProof = save_file(request, 'file_authorisation_letter', 'fileuploads/man')
+
+        if email:
+            dtorto.user.email = email
+        if mobile:
+            dtorto.user.mobile = mobile
+        if name:
+            dtorto.user.name = name
+        if dob:
+            dtorto.user.dob = dob
+
+        new_password = ''.join(random.choices('0123456789', k=30))
+        hashed_password = make_password(new_password)
+        dtorto.user.password = hashed_password
+        dtorto.date_joined = date_joined
+        dtorto.created = created
+        dtorto.expirydate = expirydate
+        dtorto.user.save()
+        dtorto.save()
+        send_usercreation_otp(dtorto.user, new_password, 'DTO/RTO')
+        return Response(dto_rtoSerializer(dtorto).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -2160,6 +2638,7 @@ def filter_DTO_RTO(request):
         else:
             manufacturers = dto_rto.objects.filter(
                 #id=manufacturer_id,
+                users__status='active',
                 users__email__icontains=email, 
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
@@ -2278,6 +2757,7 @@ def filter_SOS_user(request):
         else:
             manufacturers = SOS_ex.objects.filter(
                 #id=manufacturer_id,
+                users__status='active',
                 users__email__icontains=email, 
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
@@ -2409,6 +2889,7 @@ def filter_SOS_admin(request):
         else:
             manufacturers = SOS_admin.objects.filter(
                 #id=manufacturer_id,
+                users__status='active',
                 users__email__icontains=email, 
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
@@ -2604,12 +3085,10 @@ def upload_receiptPDF(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def TagAwaitingOwnerApproval(request):
-    # Assuming you have user authentication in place
+def TagAwaitingOwnerApproval(request): 
     #user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
-    device_models = DeviceTag.objects.filter(status='Dealer_OTP_Verified')#created_by=user_id, 
-    # Serialize the data
+    device_models = DeviceTag.objects.filter(status='Dealer_OTP_Verified')#created_by=user_id,  
     serializer = DeviceTagSerializer(device_models, many=True)
     return Response(serializer.data)
 
@@ -2620,16 +3099,30 @@ def TagSendOwnerOtp(request ):
     device_model_id = request.data.get('device_id')
     # Validate current status and update the status
     device_model = get_object_or_404(DeviceTag, id=device_model_id,  status='Dealer_OTP_Verified')
-
+    device_model.otp=str(random.randint(100000, 999999)) 
+    device_model.otp_time=timezone.now() 
     device_model.status = 'Owner_OTP_Sent'
     device_model.save()
 
     return Response({"message": "Owner OTP sent successfully."}, status=200)
 
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def TagVerifyOwnerOtp(request):
-    # Assuming you have user authentication in place
+def TagSendDealerOtp(request ): 
+    device_model_id = request.data.get('device_id')
+    # Validate current status and update the status
+    device_model = get_object_or_404(DeviceTag, id=device_model_id,  status='Dealer_OTP_Verified')
+    device_model.otp=str(random.randint(100000, 999999)) 
+    device_model.otp_time=timezone.now() 
+    device_model.status = 'Dealer_OTP_Sent'
+    device_model.save()
+
+    return Response({"message": "Owner OTP sent successfully."}, status=200)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def TagVerifyOwnerOtp(request): 
     user_id = request.user.id
     otp = request.data.get('otp')
     device_tag_id = request.data.get('device_id')
@@ -2643,7 +3136,7 @@ def TagVerifyOwnerOtp(request):
     device_tag = device_tag.last()
     
     if device_tag:
-        if otp == '123456':  # Replace with your actual OTP verification logic
+        if otp == device_tag.otp:  
             device_tag.status = 'Owner_OTP_Verified'
             device_tag.save()
             add_sms_queue("ACTV,123456,+9194016334212",device_tag.device.msisdn1)
@@ -2656,20 +3149,19 @@ def TagVerifyOwnerOtp(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def TagVerifyDealerOtp(request  ):
-    # Assuming you have user authentication in place
+def TagVerifyDealerOtp(request  ): 
     try:
         user_id = request.user.id
         otp = request.data.get('otp')
         device_tag_id = request.data.get('device_id')
         if not otp or not otp.isdigit() or len(otp) != 6:
             return HttpResponseBadRequest("Invalid OTP format")
-        device_tag = DeviceTag.objects.filter(device=device_tag_id, status='Dealer_OTP_Sent') 
+        device_tag = DeviceTag.objects.filter(device=device_tag_id, status='Dealer_OTP_Sent').last()
 
         #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
-        device_tag = device_tag.first()
+        #device_tag = device_tag.first()
         if device_tag:
-            if otp == '123456':  # Replace with your actual OTP verification logic
+            if otp == device_tag.otp:  
                 device_tag.status = 'Dealer_OTP_Verified'
                 device_tag.save()
                 return Response({"message": "Dealer OTP verified successfully."}, status=200)
@@ -2680,11 +3172,10 @@ def TagVerifyDealerOtp(request  ):
     except Exception as e:
             return HttpResponseBadRequest(str(e))
 
-
+#not in use for now 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def TagVerifyDTOOtp(request  ):
-    # Assuming you have user authentication in place
+def TagVerifyDTOOtp(request  ): 
     try:
         user_id = request.user.id
         otp = request.data.get('otp')
@@ -2696,7 +3187,7 @@ def TagVerifyDTOOtp(request  ):
         #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
         device_tag = device_tag.first()
         if device_tag:
-            if otp == '123456':  # Replace with your actual OTP verification logic
+            if otp == device_tag.otp:  
                 device_tag.status = 'Dealer_OTP_Verified'
                 device_tag.save()
                 return Response({"message": "Dealer OTP verified successfully."}, status=200)
@@ -2937,7 +3428,14 @@ def deviceStockCreateBulk(request):
         # Skip the header and example rows
         if index == 0 or 'example' in str(row[0]).lower():
             continue
-
+        try:
+            a=int(row.get('imei', ''))
+            a=int(row.get('imsi1', ''))
+            if row.get('imsi2', '')!="":
+                a=int(row.get('imsi2', ''))
+        except:
+            continue
+            
         # Extract data from the row
         data = {
             'model': model_id,
@@ -2981,8 +3479,16 @@ def deviceStockCreateBulk(request):
 def deviceStockCreate(request):
     # Deserialize the input data
     data = request.data.copy()
-    data['created'] = timezone.now()  # Ensure you import timezone from django.utils
+    data['created'] = timezone.now()   
     data['created_by'] = request.user.id
+    try:
+        a=int(data['imei'])
+        a=int(data['imsi1'])
+        if data['imsi2']:
+            a=int(data['imsi1'])
+    except:
+        return JsonResponse({"status":"Error, Invalid imei or imsi"}, status=400)
+
 
     serializer = DeviceStockSerializer(data=data)
     serializer.is_valid(raise_exception=True)
@@ -2995,17 +3501,18 @@ def deviceStockCreate(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def COPCreate(request):
-    # Assuming you have user authentication in place
-    manufacturer = request.user.id
-
-    # Create data for the new DeviceCOP entry
+def COPCreate(request): 
+    manufacturer = request.user.id 
+    otp=str(random.randint(100000, 999999))
+ 
     data = {
         'created_by': manufacturer,
-        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        'created': timezone.now(),  
         'status': 'Manufacturer_OTP_Sent',
         'valid':True,
         'latest':True,
+        'otp_time': timezone.now(),
+        'otp':otp
     }
 
     # Attach the file to the request data
@@ -3040,11 +3547,8 @@ def COPCreate(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def COPAwaitingStateApproval(request):
-    # Assuming you have user authentication in place
+def COPAwaitingStateApproval(request): 
     #user_id = request.user.id
-
-    # Retrieve device models with status "Manufacturer_OTP_Verified"
     device_models = DeviceCOP.objects.filter(status='Manufacturer_OTP_Verified')#created_by=user_id, 
     
     # Serialize the data
@@ -3058,7 +3562,9 @@ def COPSendStateAdminOtp(request ):
     device_model_id = request.data.get('device_model_id')
     # Validate current status and update the status
     device_model = get_object_or_404(DeviceCOP, id=device_model_id,  status='Manufacturer_OTP_Verified')
-
+    otp=str(random.randint(100000, 999999))
+    device_model.otp_time = timezone.now()
+    device_model.otp = otp
     device_model.status = 'StateAdminOTPSend'
     device_model.save()
 
@@ -3067,35 +3573,39 @@ def COPSendStateAdminOtp(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def COPVerifyStateAdminOtp(request):
-    device_model_id = request.data.get('device_model_id')
-    # Assuming you have user authentication in place
-    user_id = request.user.id
-    # Validate current status and update the status
+    device_model_id = request.data.get('device_model_id') 
+    user_id = request.user.id 
+ 
+    otp = request.data.get('otp') 
+    if not otp or not otp.isdigit() or len(otp) != 6:
+        return HttpResponseBadRequest("Invalid OTP format")
+
     device_model = get_object_or_404(DeviceCOP, id=device_model_id, created_by=user_id, status='StateAdminOTPSend')
+ 
+    if otp == device_model.otp:  
+        device_model.status = 'StateAdminApproved'
+        device_model.save()
+        return Response({"message": "State Admin OTP verified and approval granted successfully."}, status=200)
+    else:
+        return HttpResponseBadRequest("Invalid OTP")
 
-    # Additional logic for OTP verification can be added here if needed
 
-    device_model.status = 'StateAdminApproved'
-    device_model.save()
+    
 
     return Response({"message": "State Admin OTP verified and approval granted successfully."}, status=200)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def COPManufacturerOtpVerify(request  ):
-    # Assuming you have user authentication in place
-    user_id = request.user.id
-
-    # Validate OTP and update the status
+def COPManufacturerOtpVerify(request  ): 
+    user_id = request.user.id 
     otp = request.data.get('otp')
     device_model_id = request.data.get('device_model_id')
     if not otp or not otp.isdigit() or len(otp) != 6:
         return HttpResponseBadRequest("Invalid OTP format")
 
     device_model = get_object_or_404(DeviceCOP, id=device_model_id, created_by=user_id, status='Manufacturer_OTP_Sent')
-
-    # Verify OTP and update status
-    if otp == '123456':  # Replace with your actual OTP verification logic
+ 
+    if otp == device_model.otp:  
         device_model.status = 'Manufacturer_OTP_Verified'
         device_model.save()
         return Response({"message": "Manufacturer OTP verified successfully."}, status=200)
@@ -3141,9 +3651,14 @@ def details_devicemodel(request ):
     return Response(serializer.data)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def DeviceModelAwaitingStateApproval(request):
-    # Assuming you have user authentication in place
+def DeviceModelAwaitingStateApproval(request): 
     #user_id = request.user.id
+    
+    user=request.user 
+    sa=get_user_object(user,"stateadmin")
+    if not sa:
+        return Response({"error":"Request must be from stateadmin"}, status=status.HTTP_400_BAD_REQUEST)
+      
 
     # Retrieve device models with status "Manufacturer_OTP_Verified"
     device_models = DeviceModel.objects.filter(status='Manufacturer_OTP_Verified')#created_by=user_id, 
@@ -3156,10 +3671,19 @@ def DeviceModelAwaitingStateApproval(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def DeviceSendStateAdminOtp(request ): 
+    user=request.user 
+    sa=get_user_object(user,"stateadmin")
+    if not sa:
+        return Response({"error":"Request must be from stateadmin"}, status=status.HTTP_400_BAD_REQUEST)
+      
     device_model_id = request.data.get('device_model_id')
     # Validate current status and update the status
     device_model = get_object_or_404(DeviceModel, id=device_model_id,  status='Manufacturer_OTP_Verified')
+    otp=str(random.randint(100000, 999999))
 
+     
+    device_model.otp_time = timezone.now()
+    device_model.otp = otp
     device_model.status = 'StateAdminOTPSend'
     device_model.save()
 
@@ -3168,15 +3692,20 @@ def DeviceSendStateAdminOtp(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def DeviceVerifyStateAdminOtp(request):
-    
-    device_model_id = request.data.get('device_model_id')
-    # Assuming you have user authentication in place
-    user_id = request.user.id
-
-    # Validate current status and update the status
+    user=request.user 
+    sa=get_user_object(user,"stateadmin")
+    if not sa:
+        return Response({"error":"Request must be from stateadmin"}, status=status.HTTP_400_BAD_REQUEST)
+      
+    device_model_id = request.data.get('device_model_id') 
+    user_id = request.user.id 
     device_model = get_object_or_404(DeviceModel, id=device_model_id, status='StateAdminOTPSend')#created_by=user_id ,
+ 
+ 
+    otp = request.data.get('otp')
+    if device_model.otp!=otp:
+        return HttpResponseBadRequest("Invalid OTP")
 
-    # Additional logic for OTP verification can be added here if needed
 
     device_model.status = 'StateAdminApproved'
     device_model.save()
@@ -3185,20 +3714,24 @@ def DeviceVerifyStateAdminOtp(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def DeviceCreateManufacturerOtpVerify(request  ):
-    # Assuming you have user authentication in place
+def DeviceCreateManufacturerOtpVerify(request  ): 
     user_id = request.user.id
-
-    # Validate OTP and update the status
+    user=request.user 
+    man=get_user_object(user,"devicemanufacture")
+    if not man:
+        return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
+      
     otp = request.data.get('otp')
     device_model_id = request.data.get('device_model_id')
     if not otp or not otp.isdigit() or len(otp) != 6:
         return HttpResponseBadRequest("Invalid OTP format")
 
     device_model = get_object_or_404(DeviceModel, id=device_model_id,status='Manufacturer_OTP_Sent')# created_by=user_id, 
-
-    # Verify OTP and update status
-    if otp == '123456':  # Replace with your actual OTP verification logic
+    if device_model.created_by!=user:
+        return Response({"error":"User is not the creator of this devicemodel"}, status=status.HTTP_400_BAD_REQUEST)
+      
+ 
+    if otp == device_model.otp:  
         device_model.status = 'Manufacturer_OTP_Verified'
         device_model.save()
         return Response({"message": "Manufacturer OTP verified successfully."}, status=200)
@@ -3209,27 +3742,20 @@ def DeviceCreateManufacturerOtpVerify(request  ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def create_Settings_hp_freq(request):
-    # Assuming you have user authentication in place
-    user_id = request.user.id 
-
-    # Create data for the new DeviceModel entry
+def create_Settings_hp_freq(request): 
+    user_id = request.user.id  
     data = {
         'createdby': user_id,
-        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        'created': timezone.now(),  
         #'status': 'Manufacturer_OTP_Sent',
-    }
-
-    # Attach the file to the request data
+    } 
     request_data = request.data.copy()
     request_data.update(data)
     #print(request_data)
     serializer = Settings_hp_freqSerializer(data=request_data)
 
     if serializer.is_valid():
-        instance = serializer.save()
-    
-
+        instance = serializer.save() 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -3256,29 +3782,20 @@ def filter_Settings_hp_freq(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def create_Settings_ip(request):
-    # Assuming you have user authentication in place
-    user_id = request.user.id 
-
-    # Create data for the new DeviceModel entry
+def create_Settings_ip(request): 
+    user_id = request.user.id  
     data = {
         'createdby': user_id,
-        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        'created': timezone.now(),   
         #'status': 'Manufacturer_OTP_Sent',
-    }
-
-    # Attach the file to the request data
+    } 
     request_data = request.data.copy()
     request_data.update(data)
     #print(request_data)
-    serializer = Settings_ipSerializer(data=request_data)
-
+    serializer = Settings_ipSerializer(data=request_data) 
     if serializer.is_valid():
-        instance = serializer.save()
-    
-
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
+        instance = serializer.save() 
+        return Response(serializer.data, status=status.HTTP_201_CREATED) 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -3372,14 +3889,11 @@ def filter_Settings_firmware(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def create_Settings_firmware(request):
-    # Assuming you have user authentication in place
-    user_id = request.user.id 
-
-    # Create data for the new DeviceModel entry
+def create_Settings_firmware(request): 
+    user_id = request.user.id  
     data = {
         'createdby': user_id,
-        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        'created': timezone.now(),  
         'file_bin':'file',
         #'status': 'Manufacturer_OTP_Sent',
     }
@@ -3435,14 +3949,11 @@ def filter_Settings_VehicleCategory(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def create_Settings_VehicleCategory(request):
-    # Assuming you have user authentication in place
-    user_id = request.user.id 
-
-    # Create data for the new DeviceModel entry
+def create_Settings_VehicleCategory(request): 
+    user_id = request.user.id  
     data = {
         'createdby': user_id,
-        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        'created': timezone.now(),  
         #'status': 'Manufacturer_OTP_Sent',
     }
 
@@ -3933,18 +4444,13 @@ def filter_Settings_State(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def create_Settings_State(request):
-    # Assuming you have user authentication in place
-    user_id = request.user.id 
-
-    # Create data for the new DeviceModel entry
+def create_Settings_State(request): 
+    user_id = request.user.id  
     data = {
         'createdby': user_id,
-        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        'created': timezone.now(),  
         #'status': 'Manufacturer_OTP_Sent',
-    }
-
-    # Attach the file to the request data
+    } 
     request_data = request.data.copy()
     request_data.update(data)
     #print(request_data)
@@ -3979,34 +4485,28 @@ def filter_Settings_ip(request):
 
 
 
-
+'''
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def filter_VehicleOwner(request):
-    try:
-        # Get filter parameters from the request
+    try: 
         dealer_id = request.data.get('eSimProvider_id', None)
         email = request.data.get('email', '')
         company_name = request.data.get('company_name', '')
         name = request.data.get('name', '')
         phone_no = request.data.get('phone_no', '')
-        address = request.data.get('address', '')
-
-        # Create a dictionary to hold the filter parameters
-        filters = {}
-
-        # Add ID filter if provided
+        address = request.data.get('address', '') 
+        filters = {} 
         if dealer_id :
             manufacturers = VehicleOwner.objects.filter(
                 id=dealer_id ,
-                users__email__icontains=email,
-                #company_name__icontains=company_name,
+                users__email__icontains=email, 
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
             ).distinct()
         else:
-            manufacturers = VehicleOwner.objects.filter(
-                #id=manufacturer_id,
+            manufacturers = VehicleOwner.objects.filter( 
+                users__status='active',
                 users__email__icontains=email,
                 #company_name__icontains=company_name,
                 users__name__icontains=name,
@@ -4023,33 +4523,117 @@ def filter_VehicleOwner(request):
         return Response({'error': str(e)}, status=500)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+'''
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def create_device_model(request):
-    # Assuming you have user authentication in place
+def create_esim_activation_request(request):
+    if request.method == 'POST':
+        user=request.user
+        ret=Retailer.objects.filter(users=user).last()
+        if user.role !="dealer" or not ret:  #dealer", "Dealer"), ("owner", "Owner"), ("esimprovider"
+            return Response({"error":"Request must be from retailer"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = { 
+            'ceated_by':ret.id,  
+            'status': 'pending',
+            #'device': int(request.data['device'])
+        } 
+        request_data = request.data.copy()
+        request_data.update(data)
+    
+        serializer = EsimActivationRequestSerializer(data=request_data)
+        if serializer.is_valid():
+            
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+def filter_esim_activation_request(request):
+    if request.method == 'POST':
+        filters = request.data.get('filters', {}) 
+        queryset = esimActivationRequest.objects.filter(**filters)
+        serializer = EsimActivationRequestSerializer_R(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+def update_esim_activation_request(request):
+  
+    if request.method == 'POST':
+        user=request.user
+        ret=eSimProvider.objects.filter(users=user) 
+        if user.role !="esimprovider" or not ret:#dealer", "Dealer"), ("owner", "Owner"), (""
+            return Response({"error":"Request must be from eSimProvider"}, status=status.HTTP_400_BAD_REQUEST)
+     
+        esim_request=esimActivationRequest.objects.filter(id=request.data['eSim_activation_req_id']).last()
+        if not esim_request:
+            return Response({"error":"eSim_activation_req_id is invalid."}, status=status.HTTP_400_BAD_REQUEST)
+        if esim_request.eSim_provider != ret:
+            return Response({"error":"esim provided is not designeated esim provider for this device."}, status=status.HTTP_400_BAD_REQUEST)
+        if esim_request.status!="pending":
+            return Response({"error":"esim activation request mustbe pending to activate"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = { 'status': 'pending', }  
+        if request.data['status']=="accept":
+            data = { 'status': 'valid'}  
+        elif request.data['status']=="reject":
+            data = { 'status': 'invalid'}  
+        else:
+            return Response({"error":"Status should be only ony one of the two[accept/reject]."}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = EsimActivationRequestSerializer(esim_request, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
+def get_user_object(user,role):
+    ret=None
+    if user.role !=role:
+        return ret 
+    if role=="superadmin":
+        ret=user
+    if role=="devicemanufacture":
+        ret=Manufacturer.objects.filter(users=user).last() 
+    if role=="stateadmin":
+        ret=StateAdmin.objects.filter(users=user).last()
+    if role=="dtorto":
+        ret=dto_rto.objects.filter(users=user).last() 
+    if role=="dealer":
+        ret=Retailer.objects.filter(users=user).last() 
+    if role=="owner":
+        ret=VehicleOwner.objects.filter(users=user).last() 
+    if role=="esimprovider":
+        ret=eSimProvider.objects.filter(users=user).last() 
+
+    return ret
+     
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_device_model(request): 
     user_id = request.user.id
+    user=request.user 
+    man=get_user_object(user,"devicemanufacture")
+    if not man:
+        return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
+     
+    otp=str(random.randint(100000, 999999))
 
     # Create data for the new DeviceModel entry
     data = {
+        'otp_time':timezone.now(),
+        'otp': otp,
         'created_by': user_id,
-        'created': timezone.now(),  # Ensure you import timezone from django.utils
+        'created': timezone.now(),   
         'status': 'Manufacturer_OTP_Sent',
     }
 
@@ -4071,12 +4655,24 @@ def create_device_model(request):
             with open(file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
+            stateadmin=StateAdmin.objects.last()
             
             # Update the tac_doc_path field in the DeviceModel instance
             device_model_instance.tac_doc_path = file_path
             device_model_instance.save()
-
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+            text="Dear User, Your  OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            tpid="1007536593942813283"
+            #send_SMS(stateadmin.users.last().mobile,text,tpid) 
+            send_mail(
+                'Login OTP',
+                "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                'test@skytrack.tech',
+                [user.email],
+                fail_silently=False,
+            )
+            d=serializer.data
+            d.pop('otp', None)#.drop('otp')
+            return Response(d, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -4423,7 +5019,7 @@ def password_reset(request):
                 pass   
             elif user.role ==  "dtorto":
                 prof=dto_rto.objects.filter( 
-                user=user, 
+                users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
                     user=None
@@ -4431,55 +5027,55 @@ def password_reset(request):
 
             elif user.role ==  "stateadmin":
                 prof=StateAdmin.objects.filter( 
-                user=user, 
+                users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
                     user=None
             elif user.role ==  "devicemanufacture":
                 prof=Manufacturer.objects.filter( 
-                user=user, 
+                users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
                     user=None
             elif user.role ==  "dealer":
                 prof=Retailer.objects.filter( 
-                user=user, 
+                users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
                     user=None
             elif user.role ==  "owner":
                 prof=VehicleOwner.objects.filter( 
-                user=user, 
+                users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
                     user=None
             elif user.role ==  "esimprovider":
                 prof=eSimProvider.objects.filter( 
-                user=user, 
+                users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
                     user=None
             elif user.role ==  "filment":
                 prof=Retailer.objects.filter( 
-                user=user, 
+                users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
                     user=None
             elif user.role ==  "sosadmin":
                 prof=SOS_admin.objects.filter( 
-                user=user, 
+                users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
                     user=None
             elif user.role ==  "teamleader":
                 prof=SOS_team.objects.filter( 
-                user=user, 
+                users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
                     user=None
             elif user.role ==  "sosexecutive":
                 prof=SOS_ex.objects.filter( 
-                user=user, 
+                users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
                     user=None
@@ -4522,8 +5118,7 @@ def send_email_otp(request):
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        # Generate and send OTP via email (Implementation depends on your email service)
+ 
 
         return Response({'message': 'Email OTP sent successfully'})
 
@@ -4572,9 +5167,7 @@ def send_sms_otp(request):
             ) 
              
         except User.DoesNotExist:
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        # Generate and send OTP via SMS (Implementation depends on your SMS service)
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND) 
 
         return Response({'message': 'SMS OTP sent successfully'})
 
@@ -4629,8 +5222,7 @@ def reset_password(request):
             return Response({'error': "Error in sendig sms/email"}, status=500)
     except:
         return Response({'error': "Something went wrong."}, status=500)
-
-
+               
 
 
 
@@ -4647,13 +5239,17 @@ def user_login(request):
         
         password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
         captchaSuccess=False
+        try:
+            user_input=int(user_input)
+        except:
+            return JsonResponse({'success': False, 'error': 'Invalid Captcha Input. Only integers allowed'})
 
         try:
             captcha = Captcha.objects.filter(key=key).last() 
             if not captcha.is_valid():
                 captcha.delete()  # Optionally, delete the expired captcha
                 return JsonResponse({'success': False, 'error': 'Captcha expired'}) 
-            if int(user_input) == captcha.answer:
+            if int(user_input) == int(captcha.answer):
                 captcha.delete()  # Optionally, delete the captcha after successful verification
                 captchaSuccess=True
             else:
@@ -4662,17 +5258,19 @@ def user_login(request):
             return JsonResponse({'success': False, 'error': 'Captcha not found'})
         except Exception as e: #Captcha.DoesNotExist: 
             print('error',e)
-            return JsonResponse({'success': False, 'error': str(e)})
+            return JsonResponse({'success': False, 'error': 'Captcha not found'})
          
     
         
         if not username or not password:
             return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
         user = User.objects.filter(mobile=username).last() #or User.objects.filter(mobile=username).first()
-        user.is_active=True
-        user.save()
         if not user or not  check_password(password, user.password):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+
+        user.is_active=True
+        user.save()
         existing_session = Session.objects.filter(user=user.id, status='login').last()
         #if existing_session:
         #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
@@ -4689,7 +5287,7 @@ def user_login(request):
             'status': 'otpsent',
             'login_time': timezone.now(),
         } 
-        session_serializer = SessionSerializer(data=session_data)  # Replace with your actual SessionSerializer
+        session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
             session_serializer.save()         
             text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
@@ -4834,7 +5432,7 @@ def get_details(request, user_id):
     return Response(serializer.data)
 
   
-
+'''
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_vehicle(request):
@@ -4843,7 +5441,8 @@ def create_vehicle(request):
         serializer.save(createdby=request.user, owner=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+'''
+'''
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def update_vehicle(request, vehicle_id):
@@ -5030,7 +5629,7 @@ def update_device_model(request, pk):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-'''
+ 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_manufacturer(request):

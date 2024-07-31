@@ -8,15 +8,10 @@ from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 
 urlpatterns = [
-    
     path('generate-captcha/', generate_captcha_api, name='generate_captcha'),
     path('verify-captcha/', verify_captcha_api, name='verify_captcha'),
 
     path('validate_otp/', validate_otp, name='validate_otp'),
-    #path('user_login/', user_login, name='user_login'),
-
-    #path('create_user/', create_user, name='create_user'),
-    #path('update_user/<int:user_id>/', update_user, name='update_user'),
     path('password_reset/', password_reset, name='password_reset'),
     path('send_email_otp/', send_email_otp, name='send_email_otp'),
     path('send_sms_otp/', send_sms_otp, name='send_sms_otp'),
@@ -42,13 +37,17 @@ urlpatterns = [
     path('VehicleOwner/delete_VehicleOwner/<int:vo_id>/', delete_VehicleOwner, name='delete_VehicleOwner'),
     
     path('manufacturer/create_manufacturer/', create_manufacturer, name='create_manufacturer'),
+    path('manufacturer/update_manufacturer/', update_manufacturer, name='update_manufacturer'),
     path('manufacturer/filter_manufacturers/', filter_manufacturers, name='filter_manufacturers'),
     path('manufacturer/delete_manufacturer/<int:manufacturer_id>/', delete_manufacturer, name='delete_manufacturer'),
-    path('dealer/create_dealer/', create_dealer, name='create_dealer'),
+    path('dealer/create_dealer/', create_dealer, name='create_dealer'),    
+    path('dealer/update_dealer/', update_dealer, name='update_dealer'),
     path('dealer/filter_dealer/', filter_dealer, name='filter_dealer'),
     path('eSimProvider/create_eSimProvider/', create_eSimProvider, name='create_eSimProvider'),
+    path('eSimProvider/update_eSimProvider/', update_eSimProvider, name='update_eSimProvider'),
     path('eSimProvider/filter_eSimProvider/', filter_eSimProvider, name='filter_eSimProvider'),
     path('VehicleOwner/create_VehicleOwner/', create_VehicleOwner, name='create_VehicleOwner'),
+    path('VehicleOwner/update_VehicleOwner/', update_VehicleOwner, name='update_VehicleOwner'),
     path('VehicleOwner/filter_VehicleOwner/', filter_VehicleOwner, name='filter_VehicleOwner'),
 
 
@@ -72,8 +71,10 @@ urlpatterns = [
     path('Settings/filter_settings_firmware/', filter_Settings_firmware, name='filter_settings_firmware'), 
 
     path('StateAdmin/create_StateAdmin/', create_StateAdmin, name='create_StateAdmin'),
+    path('StateAdmin/update_StateAdmin/', update_StateAdmin, name='update_StateAdmin'),
     path('StateAdmin/filter_StateAdmin/', filter_StateAdmin, name='filter_StateAdmin'),
     path('DTO_RTO/create_DTO_RTO/', create_DTO_RTO, name='create_DTO_RTO'),
+    path('DTO_RTO/update_DTO_RTO/', update_DTO_RTO, name='update_DTO_RTO'),
     path('DTO_RTO/filter_DTO_RTO/', filter_DTO_RTO, name='filter_DTO_RTO'),
     path('DTO_RTO/getDistrictList/', getDistrictList, name='getDistrictList'),
     path('DTO_RTO/transfer_DTO_RTO/', transfer_DTO_RTO, name='transfer_DTO_RTO'),
@@ -174,6 +175,12 @@ urlpatterns = [
     
     
 
+
+
+    #esimActivateReq
+    path('esimActivateReq/create/', create_esim_activation_request, name='esimActivateReq-create'),
+    path('esimActivateReq/filter/', filter_esim_activation_request, name='esimActivateReq-filter'),
+    path('esimActivateReq/update/', update_esim_activation_request, name='esimActivateReq-update'),
 
 
 

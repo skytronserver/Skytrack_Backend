@@ -34,6 +34,15 @@ import uuid
 from django.utils import timezone
 from datetime import timedelta
 
+
+from django.utils import timezone
+from rest_framework.authtoken.models import Token
+
+from django.conf import settings
+from django.db import models
+from django.utils import timezone
+from rest_framework.authtoken.models import Token
+
 class Captcha(models.Model):
     key = models.CharField(max_length=32, unique=True, default=uuid.uuid4().hex)
     answer = models.IntegerField()
@@ -327,6 +336,7 @@ class dto_rto(models.Model):
     gstno = models.CharField(max_length=255, blank=True, null=True)
     idProofno = models.CharField(max_length=255, blank=True, null=True)
     file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    file_authorisation_letter = models.CharField(max_length=255, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
     status_choices = [
             ('Created', 'Created'),
@@ -403,20 +413,20 @@ class SOS_admin(models.Model):
 
 
 class Settings_State(models.Model): 
-    state=models.CharField(max_length=50)
+    state=models.CharField(max_length=50,unique=True)
     status = models.CharField(max_length=20, choices=[('active','active'),('discontinued','discontinued')])
 
 
 class Settings_VehicleCategory(models.Model): 
-    category=models.CharField(max_length=50)
+    category=models.CharField(max_length=50,unique=True)
     maxSpeed=models.CharField(max_length=5)
     warnSpeed=models.CharField(max_length=5)
      
 
 class Settings_District(models.Model):  
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
-    district =models.CharField(max_length=50)  
-    district_code =models.CharField(max_length=50)    
+    district =models.CharField(max_length=50,unique=True)  
+    district_code =models.CharField(max_length=8,unique=True)    
     status = models.CharField(max_length=20, choices=[('active','active'),('discontinued','discontinued')])
 
 class SOS_team(models.Model):  
@@ -487,12 +497,13 @@ class DeviceModel(models.Model):
     tac_no = models.CharField(max_length=255)
     tac_validity = models.DateField()
     eSimProviders = models.ManyToManyField(eSimProvider, related_name='eSimProvider_devicemodle',  blank=True)
-    
+    otp_time=models.DateTimeField()
     hardware_version = models.CharField(max_length=255)
     created_by = models.ForeignKey('User', on_delete=models.CASCADE)
     created = models.DateTimeField()
     status = models.CharField(max_length=255, choices=STATUS_CHOICES)
     tac_doc_path = models.FileField(upload_to='tac_docs/', null=True, blank=True)
+    otp = models.CharField(max_length=6 )
 
 
 class Settings_firmware(models.Model): 
@@ -545,14 +556,14 @@ class Settings_ip(models.Model):
 
 class DeviceStock(models.Model):
     model = models.ForeignKey(DeviceModel, on_delete=models.CASCADE)
-    device_esn = models.CharField(max_length=255)
-    iccid = models.CharField(max_length=255)
-    imei = models.CharField(max_length=255)
-    telecom_provider1 = models.CharField(max_length=255)
-    telecom_provider2 = models.CharField(max_length=255, blank=True, null=True)
-    msisdn1 = models.CharField(max_length=255)
-    msisdn2 = models.CharField(max_length=255, blank=True, null=True)
-    imsi1 = models.CharField(max_length=255)
+    device_esn = models.CharField(max_length=55,unique=True)
+    iccid = models.CharField(max_length=55,unique=True)
+    imei = models.CharField(max_length=55,unique=True)
+    telecom_provider1 = models.CharField(max_length=25)
+    telecom_provider2 = models.CharField(max_length=25, blank=True, null=True)
+    msisdn1 = models.CharField(max_length=255,unique=True)
+    msisdn2 = models.CharField(max_length=255, unique=True,blank=True, null=True)
+    imsi1 = models.CharField(max_length=255,blank=True, null=True)
     imsi2 = models.CharField(max_length=255, blank=True, null=True)
     esim_validity = models.DateTimeField()
     esim_provider = models.ManyToManyField(eSimProvider, related_name='eSimProvider_devicestock',  blank=True)
@@ -582,6 +593,10 @@ class DeviceCOP(models.Model):
     valid = models.BooleanField(default=True)
     latest = models.BooleanField(default=True)
     status = models.CharField(max_length=255, choices=STATUS_CHOICES)
+      
+    otp = models.CharField(max_length= 6,null=True,blank=True)
+    otp_time = models.DateTimeField( null=True,blank=True)
+
 
     def __str__(self):
         return f"{self.device_model} - COP: {self.cop_no}"
@@ -625,20 +640,25 @@ class DeviceTag(models.Model):
     device = models.ForeignKey(DeviceStock, on_delete=models.CASCADE)
     vehicle_owner = models.ForeignKey(User, on_delete=models.CASCADE)
    
-    vehicle_reg_no = models.CharField(max_length=255)
-    engine_no = models.CharField(max_length=255)
-    chassis_no = models.CharField(max_length=255)
-    vehicle_make = models.CharField(max_length=255)
-    vehicle_model = models.CharField(max_length=255)
-    category = models.CharField(max_length=255)
+    vehicle_reg_no = models.CharField(max_length= 55,unique=True)
+    engine_no = models.CharField(max_length=55,unique=True)
+    chassis_no = models.CharField(max_length= 55,unique=True)
+    vehicle_make = models.CharField(max_length= 55)
+    vehicle_model = models.CharField(max_length= 55)
+    category = models.CharField(max_length= 55)
     rc_file = models.CharField(max_length=255)
     receipt_file_or = models.CharField(max_length=255)
     receipt_file_ul = models.CharField(max_length=255)
     status = models.CharField(max_length=255, choices=STATUS_CHOICES)
     tagged_by = models.IntegerField()
-    tagged = models.DateTimeField()
+    tagged = models.DateTimeField()    
+    otp = models.CharField(max_length= 6,null=True,blank=True)
+    otp_time = models.DateTimeField( null=True,blank=True)
+
     def __str__(self):
         return self.vehicle_reg_no
+
+
 ##unused
 
 
@@ -867,7 +887,7 @@ class FOTA(models.Model):
         return f"FOTA {self.id}"
 
 
-class Vehicle(models.Model):
+'''class Vehicle(models.Model):
     STATUS_CHOICES = [
         ('active', 'Active'),
         ('deactive', 'Deactive'),
@@ -875,21 +895,28 @@ class Vehicle(models.Model):
 
     status = models.CharField(max_length=10, choices=STATUS_CHOICES)
     access = models.ManyToManyField(User, related_name='accessible_vehicles', blank=True)
-    vregno = models.CharField(max_length=255)
-    engineno = models.CharField(max_length=255)
-    chessisno = models.CharField(max_length=255)
-    vehiclemake = models.CharField(max_length=255)
-    vehiclemodel = models.CharField(max_length=255)
-    vehiclecategory = models.CharField(max_length=255)
+    vregno = models.CharField(max_length=55,unique=True)
+    engineno = models.CharField(max_length=55,unique=True)
+    chessisno = models.CharField(max_length=55,unique=True)
+    vehiclemake = models.CharField(max_length=55)
+    vehiclemodel = models.CharField(max_length=55)
+    vehiclecategory = models.CharField(max_length=55)
     rcfilepath = models.CharField(max_length=255)
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
     createdby = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_vehicles')
     created = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return self.vregno
+        return self.vregno'''
 
- 
+class CustomToken(Token):
+    is_active = models.BooleanField(default=False)
+    last_activity = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        self.last_activity = timezone.now()
+        super().save(*args, **kwargs)
+
 class Session(models.Model):
     loginTime = models.DateTimeField(default=timezone.now, verbose_name="Login Time")
     user = models.ForeignKey(User, on_delete=models.CASCADE)# models.IntegerField(verbose_name="User")
@@ -910,6 +937,19 @@ class OTPRequest(models.Model):
 
     def __str__(self):
         return f"OTPRequest {self.id}"
+
+class esimActivationRequest(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="creates_at")
+    ceated_by=models.ForeignKey(Retailer, on_delete=models.CASCADE)
+    eSim_provider=models.ForeignKey(eSimProvider, on_delete=models.CASCADE)
+    valid_from = models.DateTimeField(null=True)
+    valid_upto = models.DateTimeField(null=True)
+    accepted_at = models.DateTimeField(null=True)
+    device=models.ForeignKey(DeviceStock, on_delete=models.CASCADE)    
+    status = models.CharField(max_length=20, choices=[("pending", "pending"), ("valid", "valid"), ("invalid", "invalid")], verbose_name="Status")
+
+    def __str__(self):
+        return f"esimActivationRequest {self.id}"
 
 class EditRequest(models.Model):
     time = models.DateTimeField(auto_now_add=True, verbose_name="Time")
@@ -1033,8 +1073,8 @@ class AlertsLog(models.Model):
     gps_ref=models.ForeignKey(GPSData, on_delete=models.CASCADE)
     route_ref=models.ForeignKey(Rout, on_delete=models.CASCADE,null=True, blank=True)
     em_ref=models.ForeignKey(EmergencyCall, on_delete=models.CASCADE,null=True, blank=True)
-    vehicle=models.ForeignKey(Vehicle, on_delete=models.CASCADE) 
+    #vehicle=models.ForeignKey(Vehicle, on_delete=models.CASCADE) 
     deviceTag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE) 
     district=models.ForeignKey(dto_rto, on_delete=models.CASCADE) 
-    state=models.ForeignKey( StateAdmin, on_delete=models.CASCADE) 
+    state=models.ForeignKey(Settings_State, on_delete=models.CASCADE) 
     

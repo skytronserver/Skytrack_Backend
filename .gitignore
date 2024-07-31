@@ -45,3 +45,10 @@ Skytronsystem/fileuploads/*/*.png
 Skytronsystem/fileuploads/*/*.jpg 
 Skytronsystem/fileuploads/*/*.JPG
 Skytronsystem/fileuploads/*/*.gif
+Skytronsystem/tac_docs/*.png
+Skytronsystem/tac_docs/*.pdf
+Skytronsystem/tac_docs/*.jpg 
+Skytronsystem/*.png
+Skytronsystem/*.pdf
+Skytronsystem/*.jpg
+Skytronsystem/fileuploads/man/*.PNG

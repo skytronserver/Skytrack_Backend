@@ -1,10 +1,10 @@
 # skytron_api/serializers.py
 from rest_framework import serializers
-from .models import User, Manufacturer, Retailer, Device, DeviceModel, FOTA, Vehicle, Session, OTPRequest, EditRequest, Settings
+from .models import User, Manufacturer, Retailer, Device, DeviceModel, FOTA,  Session, OTPRequest, EditRequest, Settings
 
 from .models import Manufacturer, Retailer, Device, DeviceModel
 from .models import Confirmation
-from .models import Vehicle
+#from .models import Vehicle
 from .models import DeviceStock,DeviceTag
 from .models import *
 
@@ -114,10 +114,7 @@ class UserSerializer2(serializers.ModelSerializer):
         model = User
         fields = ["id","last_login","is_superuser","name","email", "mobile","role", "usertype","date_joined", "created","Access","is_active",  "address",   "address_pin",  "address_State",  "dob",  "status", "groups",  "user_permissions"]#'__all__'    #, deleting, list view of all , detail view.
 
-class VehicleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Vehicle
-        fields = '__all__'
+
 
 class eSimProviderSerializer(serializers.ModelSerializer):
     users = UserSerializer(many=True, read_only=True)
@@ -177,12 +174,22 @@ class FOTASerializer(serializers.ModelSerializer):
         model = FOTA
         fields = '__all__'
 
-class VehicleSerializer(serializers.ModelSerializer):
+
+class EsimActivationRequestSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Vehicle
+        model = esimActivationRequest
         fields = '__all__'
  
  
+class EsimActivationRequestSerializer_R(serializers.ModelSerializer):
+    ceated_by = RetailerSerializer(read_only=True)
+    eSim_provider=eSimProviderSerializer(read_only=True)
+    device=DeviceStockSerializer(read_only=True)
+    class Meta:
+        model = esimActivationRequest
+        fields = '__all__'
+ 
+    
 
 class SessionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -227,6 +234,7 @@ class DeviceModelSerializer(serializers.ModelSerializer):
 class DeviceModelSerializer_disp(serializers.ModelSerializer):
     #eSimProviders = serializers.PrimaryKeyRelatedField(many=True, queryset=eSimProvider.objects.all())
     eSimProviders = eSimProviderSerializer( many=True, read_only=True)
+    created_by=UserSerializer( read_only=True)
 
     class Meta:
         model = DeviceModel
