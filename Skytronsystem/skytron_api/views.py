@@ -4651,7 +4651,7 @@ def create_device_model(request):
         uploaded_file = request.FILES.get('tac_doc_path')
         if uploaded_file:
             # Save the file to a specific location
-            file_path = '' + str(device_model_instance.id) + '_' + uploaded_file.name
+            file_path = 'fileuploads/tac_doc/' + str(device_model_instance.id) + '_' + uploaded_file.name
             with open(file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
