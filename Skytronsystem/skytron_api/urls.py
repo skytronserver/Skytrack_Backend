@@ -19,11 +19,11 @@ urlpatterns = [
     path('reset_password_request/', reset_password, name='reset_password'),
      
     path('user_logout/', user_logout, name='user_logout'),
-    path('user_get_parent/<int:user_id>/', user_get_parent, name='user_get_parent'),
+    #path('user_get_parent/<int:user_id>/', user_get_parent, name='user_get_parent'),
     path('get_list/', get_list, name='get_list'),
-    path('get_details/<int:user_id>/', get_details, name='get_details'),
+    #path('get_details/<int:user_id>/', get_details, name='get_details'),
     path('kyc_upload/', FileUploadView.as_view() , name='FileUploadView'),
-    path('delete_all_users/', DeleteAllUsersView.as_view(), name='delete_all_users'),
+    #path('delete_all_users/', DeleteAllUsersView.as_view(), name='delete_all_users'),
     
     
     path('validate_email_confirmation',  validate_email_confirmation, name='validate_email_confirmation'),
@@ -213,9 +213,9 @@ urlpatterns = [
     path('sell/SellListAvailableDeviceStock/', SellListAvailableDeviceStock, name='SellListAvailableDeviceStock'),
     path('sell/activate_esim_request/', ActivateESIMRequest, name='activate_esim_request'),
     path('sell/confirm_esim_activation/', ConfirmESIMActivation, name='confirm_esim_activation'),
-    path('sell/configure_ip_port/', ConfigureIPPort, name='configure_ip_port'),
-    path('sell/configure_sos_gateway/', ConfigureSOSGateway, name='configure_sos_gateway'),
-    path('sell/configure_sms_gateway/', ConfigureSMSGateway, name='configure_sms_gateway'),
+    #path('sell/configure_ip_port/', ConfigureIPPort, name='configure_ip_port'),
+    #path('sell/configure_sos_gateway/', ConfigureSOSGateway, name='configure_sos_gateway'),
+    #path('sell/configure_sms_gateway/', ConfigureSMSGateway, name='configure_sms_gateway'),
     path('sell/mark_device_defective/', MarkDeviceDefective, name='mark_device_defective'),
     path('sell/return_to_manufacturer/', ReturnToDeviceManufacturer, name='return_to_manufacturer'),
     
@@ -226,7 +226,7 @@ urlpatterns = [
     path('tag/TagSendOwnerOtp/', TagSendOwnerOtp, name='TagSendOwnerOtp'),
     path('tag/TagVerifyOwnerOtp/', TagVerifyOwnerOtp, name='TagVerifyOwnerOtpe'),
     path('tag/TagVerifyDealerOtp/', TagVerifyDealerOtp, name='TagVerifyDealerOtp'),
-    path('tag/TagVerifyDTOOtp/', TagVerifyDTOOtp, name='TagVerifyDTOOtp'),
+    #path('tag/TagVerifyDTOOtp/', TagVerifyDTOOtp, name='TagVerifyDTOOtp'),
     path('tag/download_receiptPDF/', download_receiptPDF, name='download_receiptPDF'),
     path('tag/upload_receiptPDF/', upload_receiptPDF, name='upload_receiptPDF'),
    

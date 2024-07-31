@@ -267,6 +267,7 @@ class Retailer(models.Model):
     file_GSTCertificate = models.CharField(max_length=255, blank=True, null=True)
     file_idProof = models.CharField(max_length=255, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    manufacturer = models.ForeignKey(Manufacturer, on_delete=models.CASCADE)
     district = models.ForeignKey('Settings_District', on_delete=models.CASCADE,blank=True, null=True)
     status_choices = [
             ('Created', 'Created'),

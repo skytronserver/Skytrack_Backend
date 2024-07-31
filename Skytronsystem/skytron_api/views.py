@@ -1448,6 +1448,14 @@ def get_live_vehicle_no(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def update_VehicleOwner(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         id = request.data.get('vehicleowner_id')
         vehicle_owner = VehicleOwner.objects.filter(id=id).last()
@@ -1504,6 +1512,14 @@ def update_VehicleOwner(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_VehicleOwner(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try: 
         company_name = request.data.get('company_name') 
         createdby = request.user 
@@ -1547,6 +1563,14 @@ def create_VehicleOwner(request):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_manufacturer(request, manufacturer_id):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         # Get the Manufacturer instance or return a 404 response
         manufacturer = get_object_or_404(Manufacturer, id=manufacturer_id)
@@ -1567,6 +1591,14 @@ def delete_manufacturer(request, manufacturer_id):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_dealer(request, dealer_id):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+     
     try:
         # Get the Manufacturer instance or return a 404 response
         dealer = get_object_or_404(Retailer, id=dealer_id)
@@ -1587,6 +1619,14 @@ def delete_dealer(request, dealer_id):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_eSimProvider(request, esimProvider_id):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from   "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+     
     try:
         # Get the Manufacturer instance or return a 404 response
         esimProvider = get_object_or_404(eSimProvider, id=esimProvider_id)
@@ -1606,6 +1646,14 @@ def delete_eSimProvider(request, esimProvider_id):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_VehicleOwner(request, vo_id):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+     
     try:
         # Get the Manufacturer instance or return a 404 response
         vo = get_object_or_404(VehicleOwner, id=vo_id)
@@ -1751,6 +1799,14 @@ def update_manufacturer(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def update_eSimProvider(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         id = request.data.get('esimprovider_id')
         esimprovider = eSimProvider.objects.filter(id=id).last()
@@ -1822,6 +1878,14 @@ def update_eSimProvider(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_eSimProvider(request):
+      
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try: 
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber') 
@@ -1918,6 +1982,14 @@ def filter_eSimProvider(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def update_dealer(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="devicemanufacture"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         id = request.data.get('dealer_id')
         dealer = Retailer.objects.filter(id=id).last()
@@ -1990,12 +2062,21 @@ def update_dealer(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_dealer(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="devicemanufacture"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try: 
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber') 
         createdby = request.user 
         date_joined = timezone.now()
         created = timezone.now()   
+         
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
@@ -2027,6 +2108,7 @@ def create_dealer(request):
                     file_idProof=file_idProof,
                     createdby=createdby,
                     district=district,
+                    manufacturer=uo,
                     status="Created",
                 )
             except Exception as e:
@@ -2171,13 +2253,21 @@ def update_manufacturer(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_manufacturer(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber')
         createdby = request.user 
         date_joined = timezone.now()
         created = timezone.now() 
-        state = request.data.get('state', '')
+        state = request.data.get('state')
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
@@ -2331,6 +2421,14 @@ def send_usercreation_otp(user,new_password,type):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_StateAdmin(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         email = request.data.get('email','') 
         idProofno = request.data.get('idProofno' )  # Placeholder for idProofno
@@ -2374,6 +2472,14 @@ def create_StateAdmin(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def update_StateAdmin(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         id = request.data.get('stateadmin_id')
         stateadmin = StateAdmin.objects.filter(id=id).last()
@@ -2494,6 +2600,14 @@ def getDistrictList(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_DTO_RTO(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="stateadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try: 
         createdby = request.user 
         date_joined = timezone.now()
@@ -2546,6 +2660,14 @@ def create_DTO_RTO(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def update_DTO_RTO(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="stateadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         id = request.data.get('dtorto_id')
         dtorto = dto_rto.objects.filter(id=id).last()
@@ -2657,6 +2779,14 @@ def filter_DTO_RTO(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def transfer_DTO_RTO(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="stateadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         # Get filter parameters from the request
         id = request.data.get('dto_rto_id', None) 
@@ -2691,6 +2821,14 @@ def transfer_DTO_RTO(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_SOS_user(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try: 
         createdby = request.user 
         date_joined = timezone.now()
@@ -2822,6 +2960,14 @@ def list_alert_logs(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_SOS_admin(request):
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try: 
         createdby = request.user 
         date_joined = timezone.now()
@@ -2913,6 +3059,14 @@ def filter_SOS_admin(request):
 @permission_classes([IsAuthenticated])
 @transaction.atomic
 def create_SOS_team(request):
+   
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:  
         createdby = request.user  
         created = timezone.now()  
@@ -2960,6 +3114,12 @@ def filter_SOS_team(request):
 
 
 def download_static_file(request):
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    man=get_user_object(user,"devicemanufacture")
+    if not man:
+        return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
+    
     file_path = f"skytron_api/static/StockUpload.xlsx"
     try:
         with open(file_path,'rb') as file:
@@ -2972,6 +3132,14 @@ def download_static_file(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def TagDevice2Vehicle(request):
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     # Extract data from the request or adjust as needed
     device_id = int(request.data['device'])
     stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status="Available_for_fitting") #'Fitted') 
@@ -3009,6 +3177,14 @@ def TagDevice2Vehicle(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def unTagDevice2Vehicle(request):
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     # Extract data from the request or adjust as needed
     if request.method == 'POST':
         # Get tag_id from POST data
@@ -3034,6 +3210,14 @@ def unTagDevice2Vehicle(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def download_receiptPDF(request): 
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     if request.method == 'POST': 
         tag_id = request.POST.get('tag_id') 
         if not tag_id:
@@ -3056,6 +3240,14 @@ def download_receiptPDF(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def upload_receiptPDF(request):
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     # Extract data from the request or adjust as needed
     if request.method == 'POST': 
         tag_id = request.POST.get('tag_id') 
@@ -3096,6 +3288,14 @@ def TagAwaitingOwnerApproval(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def TagSendOwnerOtp(request ): 
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="owner"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     device_model_id = request.data.get('device_id')
     # Validate current status and update the status
     device_model = get_object_or_404(DeviceTag, id=device_model_id,  status='Dealer_OTP_Verified')
@@ -3123,6 +3323,14 @@ def TagSendDealerOtp(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def TagVerifyOwnerOtp(request): 
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="owner"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     user_id = request.user.id
     otp = request.data.get('otp')
     device_tag_id = request.data.get('device_id')
@@ -3150,6 +3358,14 @@ def TagVerifyOwnerOtp(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def TagVerifyDealerOtp(request  ): 
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
         user_id = request.user.id
         otp = request.data.get('otp')
@@ -3207,6 +3423,14 @@ def TagVerifyDTOOtp(request  ):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def ActivateESIMRequest(request):
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='Fitted')
     stock_assignment.stock_status = 'ESIM_Active_Req_Sent'
@@ -3221,6 +3445,14 @@ def ActivateESIMRequest(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def ConfirmESIMActivation(request):
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='ESIM_Active_Req_Sent')
     stock_assignment.stock_status = 'ESIM_Active_Confirmed'
@@ -3278,6 +3510,14 @@ def ConfigureSMSGateway(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def MarkDeviceDefective(request):
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='SMS_GATEWAY_NO_Configured')
     stock_assignment.stock_status = 'Device_Defective'
@@ -3292,6 +3532,14 @@ def MarkDeviceDefective(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def ReturnToDeviceManufacturer(request):
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='Device_Defective')
     stock_assignment.stock_status = 'Returned_to_manufacturer'
@@ -3306,6 +3554,14 @@ def ReturnToDeviceManufacturer(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def SellListAvailableDeviceStock(request):
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     # Get DeviceStock instances with StockAssignment having stock_status "Available_for_fitting"
     device_stock = StockAssignment.objects.filter(stock_status='Available_for_fitting')
     # Serialize the data
@@ -3315,6 +3571,13 @@ def SellListAvailableDeviceStock(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def SellFitDevice(request):
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     device_id=int(request.data['device_id'])
     stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='Available_for_fitting')
     stock_assignment.stock_status = 'Fitted'
@@ -3326,6 +3589,12 @@ def SellFitDevice(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def StockAssignToRetailer(request):
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    man=get_user_object(user,"devicemanufacture")
+    if not man:
+        return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
+    
     data = request.data.copy()
     assigned_by_id = request.user.id
     assigned_at = timezone.now()
@@ -3402,6 +3671,12 @@ def deviceStockFilter(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def deviceStockCreateBulk(request):
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    man=get_user_object(user,"devicemanufacture")
+    if not man:
+        return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
+    
     if 'excel_file' not in request.FILES or 'model_id' not in request.data:
         return JsonResponse({'error': 'Please provide an Excel file and model_id.'}, status=400)
 
@@ -3477,6 +3752,12 @@ def deviceStockCreateBulk(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def deviceStockCreate(request):
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    man=get_user_object(user,"devicemanufacture")
+    if not man:
+        return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
+    
     # Deserialize the input data
     data = request.data.copy()
     data['created'] = timezone.now()   
@@ -3502,6 +3783,7 @@ def deviceStockCreate(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def COPCreate(request): 
+    user=request.user
     manufacturer = request.user.id 
     otp=str(random.randint(100000, 999999))
  
@@ -3539,6 +3821,17 @@ def COPCreate(request):
             # Update the cop_file field in the DeviceCOP instance
             device_cop_instance.cop_file = file_path
             device_cop_instance.save()
+                    
+            text="Dear User, Your  OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            tpid="1007536593942813283"
+            #send_SMS(stateadmin.users.last().mobile,text,tpid) 
+            send_mail(
+                'Login OTP',
+                "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                'test@skytrack.tech',
+                [user.email],
+                fail_silently=False,
+            )
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -3559,6 +3852,7 @@ def COPAwaitingStateApproval(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def COPSendStateAdminOtp(request ): 
+    user=request.user
     device_model_id = request.data.get('device_model_id')
     # Validate current status and update the status
     device_model = get_object_or_404(DeviceCOP, id=device_model_id,  status='Manufacturer_OTP_Verified')
@@ -3567,6 +3861,16 @@ def COPSendStateAdminOtp(request ):
     device_model.otp = otp
     device_model.status = 'StateAdminOTPSend'
     device_model.save()
+    text="Dear User, Your  OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+    tpid="1007536593942813283"
+    #send_SMS(stateadmin.users.last().mobile,text,tpid) 
+    send_mail(
+        'Login OTP',
+        "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+        'test@skytrack.tech',
+        [user.email],
+        fail_silently=False,
+    )
 
     return Response({"message": "State Admin OTP sent successfully."}, status=200)
 
@@ -3743,6 +4047,14 @@ def DeviceCreateManufacturerOtpVerify(request  ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_Settings_hp_freq(request): 
+     
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     user_id = request.user.id  
     data = {
         'createdby': user_id,
@@ -3782,7 +4094,14 @@ def filter_Settings_hp_freq(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def create_Settings_ip(request): 
+def create_Settings_ip(request):
+      #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+     
     user_id = request.user.id  
     data = {
         'createdby': user_id,
@@ -3830,6 +4149,13 @@ def filter_Settings_District(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_Settings_District(request): 
+      #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     user_id = request.user.id  
     data = {
         'createdby': user_id,
@@ -3890,6 +4216,13 @@ def filter_Settings_firmware(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_Settings_firmware(request): 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="devicemanufacture"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     user_id = request.user.id  
     data = {
         'createdby': user_id,
@@ -3950,6 +4283,13 @@ def filter_Settings_VehicleCategory(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_Settings_VehicleCategory(request): 
+      #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     user_id = request.user.id  
     data = {
         'createdby': user_id,
@@ -4109,11 +4449,14 @@ def homepage_device2(request):
 @permission_classes([IsAuthenticated])
 def homepage_Manufacturer(request):
     try:
-        user= request.user
-        if user.role!='devicemanufacture':             
-            return Response({'error': "User is not devicemanufacture"}, status=500)
-        profile=Manufacturer.objects.filter(users=user).last()
-        
+         
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        role="devicemanufacture"
+        user=request.user
+        profile=get_user_object(user,role)
+        if not profile:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
         
         #print('profile',profile.state.state)
    
@@ -4159,12 +4502,14 @@ def homepage_Manufacturer(request):
 @permission_classes([IsAuthenticated])
 def homepage_DTO(request):
     try:
-        user= request.user
-        if user.role!='dtorto':             
-            return Response({'error': "User is not dtorto"}, status=500)
-        profile=dto_rto.objects.filter(users=user).last()
         
-        
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        role="dtorto"
+        user=request.user
+        profile=get_user_object(user,role)
+        if not profile:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
         #print('profile',profile.state.state)
    
         
@@ -4213,12 +4558,15 @@ def homepage_DTO(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def homepage_VehicleOwner(request):
-    try:
-        user= request.user
-        if user.role!='owner':             
-            return Response({'error': "User is not owner"}, status=500)
-        profile=VehicleOwner.objects.filter(users=user).last()
-        
+    try: 
+
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        role="owner"
+        user=request.user
+        profile=get_user_object(user,role)
+        if not profile:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
         
         #print('profile',profile.state.state)
    
@@ -4267,11 +4615,14 @@ def homepage_VehicleOwner(request):
 @permission_classes([IsAuthenticated])
 def homepage_Dealer(request):
     try:
-        user= request.user
-        if user.role!='dealer':             
-            return Response({'error': "User is not dealer"}, status=500)
-        profile=Retailer.objects.filter(users=user).last()
-        
+         
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        role="dealer"
+        user=request.user
+        profile=get_user_object(user,role)
+        if not profile:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
         
         #print('profile',profile.state.state)
    
@@ -4316,13 +4667,14 @@ def homepage_Dealer(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def homepage_stateAdmin(request):
-    try:
-        user= request.user
-        if user.role!='stateadmin':             
-            return Response({'error': "User is not stateadmin"}, status=500)
-        profile=StateAdmin.objects.filter(users=user).last()
-        
-        
+    try: 
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        role="stateadmin"
+        user=request.user
+        profile=get_user_object(user,role)
+        if not profile:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
         #print('profile',profile.state.state)
    
         
@@ -4445,6 +4797,13 @@ def filter_Settings_State(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_Settings_State(request): 
+      #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     user_id = request.user.id  
     data = {
         'createdby': user_id,
@@ -4531,10 +4890,13 @@ def filter_VehicleOwner(request):
 @permission_classes([IsAuthenticated])
 def create_esim_activation_request(request):
     if request.method == 'POST':
+            
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        role="dealer"
         user=request.user
-        ret=Retailer.objects.filter(users=user).last()
-        if user.role !="dealer" or not ret:  #dealer", "Dealer"), ("owner", "Owner"), ("esimprovider"
-            return Response({"error":"Request must be from retailer"}, status=status.HTTP_400_BAD_REQUEST)
+        ret=get_user_object(user,role)
+        if not ret:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
         
         data = { 
             'ceated_by':ret.id,  
@@ -4553,7 +4915,14 @@ def create_esim_activation_request(request):
 
 
 @api_view(['POST'])
-def filter_esim_activation_request(request):
+def filter_esim_activation_request(request):       
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="esimprovider"
+    user=request.user
+    ret=get_user_object(user,role)
+    if not ret:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        
     if request.method == 'POST':
         filters = request.data.get('filters', {}) 
         queryset = esimActivationRequest.objects.filter(**filters)
@@ -4565,11 +4934,13 @@ def filter_esim_activation_request(request):
 def update_esim_activation_request(request):
   
     if request.method == 'POST':
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        role="esimprovider"
         user=request.user
-        ret=eSimProvider.objects.filter(users=user) 
-        if user.role !="esimprovider" or not ret:#dealer", "Dealer"), ("owner", "Owner"), (""
-            return Response({"error":"Request must be from eSimProvider"}, status=status.HTTP_400_BAD_REQUEST)
-     
+        ret=get_user_object(user,role)
+        if not ret:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        
         esim_request=esimActivationRequest.objects.filter(id=request.data['eSim_activation_req_id']).last()
         if not esim_request:
             return Response({"error":"eSim_activation_req_id is invalid."}, status=status.HTTP_400_BAD_REQUEST)
@@ -4622,10 +4993,15 @@ def get_user_object(user,role):
 def create_device_model(request): 
     user_id = request.user.id
     user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     man=get_user_object(user,"devicemanufacture")
     if not man:
         return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
      
+
+
+     
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     otp=str(random.randint(100000, 999999))
 
     # Create data for the new DeviceModel entry
@@ -4914,7 +5290,7 @@ def send_sms_confirmation(request):
 
 
 
-
+'''
 class DeleteAllUsersView(APIView):
     def delete(self, request, *args, **kwargs):
         try:
@@ -4928,7 +5304,7 @@ class DeleteAllUsersView(APIView):
             return Response({'message': 'All users deleted successfully.'}, status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-'''
+ 
 @csrf_exempt
 @api_view(['POST'])
 def create_user(request):
@@ -5380,7 +5756,7 @@ def user_logout(request):
 
 
         return Response({'status': 'Logout successful'})
-
+'''
 @csrf_exempt
 @api_view(['GET'])
 def user_get_parent(request, user_id):
@@ -5404,7 +5780,7 @@ def user_get_parent(request, user_id):
 
     serializer = UserSerializer(parent_user)
     return Response(serializer.data)
-
+'''
 @csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -5412,10 +5788,17 @@ def get_list(request):
     """
     Get a list of users.
     """
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+     
     users = User.objects.all()
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data ,status=status.HTTP_200_OK)
-
+'''
 @csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -5430,7 +5813,7 @@ def get_details(request, user_id):
 
     serializer = UserSerializer(user)
     return Response(serializer.data)
-
+'''
   
 '''
 @api_view(['POST'])
