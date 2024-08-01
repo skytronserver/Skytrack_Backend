@@ -3111,14 +3111,14 @@ def filter_SOS_team(request):
 
 
 
-
-
+#@api_view(['POST'])
+#@permission_classes([IsAuthenticated])
 def download_static_file(request):
-    user=request.user 
+    #user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    man=get_user_object(user,"devicemanufacture")
-    if not man:
-        return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
+    #man=get_user_object(user,"devicemanufacture")
+    #if not man:
+    #    return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
     
     file_path = f"skytron_api/static/StockUpload.xlsx"
     try:
@@ -3142,7 +3142,7 @@ def TagDevice2Vehicle(request):
     
     # Extract data from the request or adjust as needed
     device_id = int(request.data['device'])
-    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status="Available_for_fitting") #'Fitted') 
+    stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status="Available_for_fitting") #'Fitted') 
     if stock_assignment:
         stock_assignment=stock_assignment 
         user_id = request.user.id  # Assuming the user is authenticated
@@ -3432,12 +3432,12 @@ def ActivateESIMRequest(request):
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
     device_id = int(request.data['device_id'])
-    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='Fitted')
+    stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='Fitted')
     stock_assignment.stock_status = 'ESIM_Active_Req_Sent'
     stock_assignment.save()
 
     # Serialize the updated data
-    serializer = StockAssignmentSerializer(stock_assignment)
+    serializer = DeviceStockSerializer(stock_assignment)
 
     return JsonResponse({'data': serializer.data, 'message': 'ESIM Active Request Sent successfully.'}, status=200)
 
@@ -3454,13 +3454,13 @@ def ConfirmESIMActivation(request):
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
     device_id = int(request.data['device_id'])
-    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='ESIM_Active_Req_Sent')
+    stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='ESIM_Active_Req_Sent')
     stock_assignment.stock_status = 'ESIM_Active_Confirmed'
     stock_assignment.save()
-    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='ESIM_Active_Confirmed')
+    stock_assignment = get_object_or_404(DeviceStock,id=device_id, stock_status='ESIM_Active_Confirmed')
     
     # Serialize the updated data
-    serializer = StockAssignmentSerializer(stock_assignment)
+    serializer = DeviceStockSerializer(stock_assignment)
 
     return JsonResponse({'data': serializer.data, 'message': 'ESIM Active Confirmed successfully.'}, status=200)
 
@@ -3469,12 +3469,12 @@ def ConfirmESIMActivation(request):
 @permission_classes([IsAuthenticated])
 def ConfigureIPPort(request):
     device_id = int(request.data['device_id'])
-    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='ESIM_Active_Confirmed')
+    stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='ESIM_Active_Confirmed')
     stock_assignment.stock_status = 'IP_PORT_Configured'
     stock_assignment.save()
 
     # Serialize the updated data
-    serializer = StockAssignmentSerializer(stock_assignment)
+    serializer = DeviceStockSerializer(stock_assignment)
 
     return JsonResponse({'data': serializer.data, 'message': 'IP Port Configured successfully.'}, status=200)
 
@@ -3483,12 +3483,12 @@ def ConfigureIPPort(request):
 @permission_classes([IsAuthenticated])
 def ConfigureSOSGateway(request):
     device_id = int(request.data['device_id'])
-    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='IP_PORT_Configured')
+    stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='IP_PORT_Configured')
     stock_assignment.stock_status = 'SOS_GATEWAY_NO_Configured'
     stock_assignment.save()
 
     # Serialize the updated data
-    serializer = StockAssignmentSerializer(stock_assignment)
+    serializer = DeviceStockSerializer(stock_assignment)
 
     return JsonResponse({'data': serializer.data, 'message': 'SOS Gateway Configured successfully.'}, status=200)
 
@@ -3497,12 +3497,12 @@ def ConfigureSOSGateway(request):
 @permission_classes([IsAuthenticated])
 def ConfigureSMSGateway(request):
     device_id = int(request.data['device_id'])
-    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='SOS_GATEWAY_NO_Configured')
+    stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='SOS_GATEWAY_NO_Configured')
     stock_assignment.stock_status = 'SMS_GATEWAY_NO_Configured'
     stock_assignment.save()
 
     # Serialize the updated data
-    serializer = StockAssignmentSerializer(stock_assignment)
+    serializer = DeviceStockSerializer(stock_assignment)
 
     return JsonResponse({'data': serializer.data, 'message': 'SMS Gateway Configured successfully.'}, status=200)
 
@@ -3519,12 +3519,12 @@ def MarkDeviceDefective(request):
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
     device_id = int(request.data['device_id'])
-    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='SMS_GATEWAY_NO_Configured')
+    stock_assignment = get_object_or_404(DeviceStock, id=device_id)
     stock_assignment.stock_status = 'Device_Defective'
     stock_assignment.save()
 
     # Serialize the updated data
-    serializer = StockAssignmentSerializer(stock_assignment)
+    serializer = DeviceStockSerializer(stock_assignment)
 
     return JsonResponse({'data': serializer.data, 'message': 'Device Marked as Defective successfully.'}, status=200)
 
@@ -3541,12 +3541,12 @@ def ReturnToDeviceManufacturer(request):
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
     device_id = int(request.data['device_id'])
-    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='Device_Defective')
+    stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='Device_Defective')
     stock_assignment.stock_status = 'Returned_to_manufacturer'
     stock_assignment.save()
 
     # Serialize the updated data
-    serializer = StockAssignmentSerializer(stock_assignment)
+    serializer = DeviceStockSerializer(stock_assignment)
 
     return JsonResponse({'data': serializer.data, 'message': 'Device Returned to Manufacturer successfully.'}, status=200)
 
@@ -3562,10 +3562,11 @@ def SellListAvailableDeviceStock(request):
     if not man:
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
-    # Get DeviceStock instances with StockAssignment having stock_status "Available_for_fitting"
-    device_stock = StockAssignment.objects.filter(stock_status='Available_for_fitting')
-    # Serialize the data
-    serializer =StockAssignmentSerializer(device_stock, many=True)
+    device_stock =  DeviceStock.objects.filter(  dealer=man,stock_status='Available_for_fitting') 
+    if not device_stock:
+        return JsonResponse({'error': "no device found for this user avaialble for fitting "  }, status=400)
+
+    serializer =DeviceStockSerializer(device_stock, many=True)
     return JsonResponse({'data': serializer.data}, status=200)
 
 @api_view(['PATCH'])
@@ -3579,11 +3580,15 @@ def SellFitDevice(request):
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
     device_id=int(request.data['device_id'])
-    stock_assignment = get_object_or_404(StockAssignment, device=device_id, stock_status='Available_for_fitting')
+    stock_assignment =  DeviceStock.objects.filter(id=device_id, dealer=man,stock_status='Available_for_fitting').last()
+    if not stock_assignment:
+        return JsonResponse({'error': "device not found, error in dealer or status"  }, status=400)
+
     stock_assignment.stock_status = 'Fitted'
+    
     stock_assignment.save()
     # Serialize the updated data
-    serializer = StockAssignmentSerializer(stock_assignment)
+    serializer = DeviceStockSerializer(stock_assignment)
     return JsonResponse({'data': serializer.data, 'message': 'Device Fitted  successfully.'}, status=200)
 
 @api_view(['POST'])
@@ -3599,23 +3604,32 @@ def StockAssignToRetailer(request):
     assigned_by_id = request.user.id
     assigned_at = timezone.now()
     stock_status = "Available_for_fitting"
-    dealer_id = int(data.get('dealer'))
+    dealer_id =  data.get('dealer') 
     device_ids = ast.literal_eval(str(data.get('device')))
+    dealer = Retailer.objects.filter(id=dealer_id).last()
+    if not dealer:
+        return JsonResponse({'error':"tinvalid dealer" }, status=400)
+    
 
     stock_assignments = []
     for device_id in device_ids:
+        print(int(device_id),dealer_id, assigned_by_id, assigned_at, data.get('shipping_remark'), stock_status)
+       
         try:
-            assignment = StockAssignment.objects.create(
-                device_id=int(device_id),
-                dealer_id=dealer_id,
-                assigned_by_id=assigned_by_id,
-                assigned=assigned_at,
-                shipping_remark=data.get('shipping_remark'),
-                stock_status=stock_status
-            )
-            stock_assignments.append(StockAssignmentSerializer(assignment).data)
+
+            assignment = DeviceStock.objects.filter(id=int(device_id)).last() 
+            assignment.dealer=dealer
+            assignment.assigned_by =request.user
+            assignment.assigned=assigned_at
+            assignment.shipping_remark=data.get('shipping_remark')
+            assignment.stock_status=stock_status
+             
+            assignment.save()
+            
+            #stock_assignments.append( DeviceStockSerializer(assignment).data)
         except Exception as e:
-            return JsonResponse({'error': str(e)}, status=400)
+             
+            return JsonResponse({'error':"ttttt"+ str(e)}, status=400)
 
     return JsonResponse({'data': stock_assignments , 'message': 'Stock assigned successfully.'}, status=201)
 def StockAssignToRetailer3333(request):
@@ -3628,12 +3642,12 @@ def StockAssignToRetailer3333(request):
     device_ids = ast.literal_eval(str(data['device']))
      
 
-    # Create individual StockAssignment entries for each device
+    # Create individual DeviceStock entries for each device
     stock_assignments = []
     for device_id in device_ids:
         data['device_id'] = int(device_id)
         #print(data)
-        serializer = StockAssignmentSerializer2(data=data)
+        serializer = DeviceStockSerializer2(data=data)
         if serializer.is_valid():
             serializer.save()
             stock_assignments.append(serializer.data)
@@ -3705,9 +3719,9 @@ def deviceStockCreateBulk(request):
             continue
         try:
             a=int(row.get('imei', ''))
-            a=int(row.get('imsi1', ''))
-            if row.get('imsi2', '')!="":
-                a=int(row.get('imsi2', ''))
+            #a=int(row.get('imsi1', ''))
+            #if row.get('imsi2', '')!="":
+            #    a=int(row.get('imsi2', ''))
         except:
             continue
             
@@ -3721,12 +3735,13 @@ def deviceStockCreateBulk(request):
             'telecom_provider2': row.get('telecom_provider2', ''),
             'msisdn1': row.get('msisdn1', ''),
             'msisdn2': row.get('msisdn2', ''),
-            'imsi1': row.get('imsi1', ''),
-            'imsi2': row.get('imsi2', ''),
+            #'imsi1': row.get('imsi1', ''),
+            #'imsi2': row.get('imsi2', ''),
             'esim_validity': row.get('esim_validity', ''),
             'esim_provider': esim_provider,
             'remarks': row.get('remarks', ''),
             'created_by': request.user.id,
+            'stock_status': "NotAssigned",
             'created':timezone.now(),
         }
 
@@ -3757,18 +3772,19 @@ def deviceStockCreate(request):
     man=get_user_object(user,"devicemanufacture")
     if not man:
         return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
-    
+    mod=DeviceModel.objects.filter(id=request.data['model'],)
     # Deserialize the input data
     data = request.data.copy()
     data['created'] = timezone.now()   
     data['created_by'] = request.user.id
+    data['stock_status'] =  "NotAssigned"
     try:
         a=int(data['imei'])
-        a=int(data['imsi1'])
-        if data['imsi2']:
-            a=int(data['imsi1'])
+        #a=int(data['imsi1'])
+        #if data['imsi2']:
+        #    a=int(data['imsi1'])
     except:
-        return JsonResponse({"status":"Error, Invalid imei or imsi"}, status=400)
+        return JsonResponse({"status":"Error, Invalid imei  "}, status=400)
 
 
     serializer = DeviceStockSerializer(data=data)
@@ -3965,7 +3981,7 @@ def DeviceModelAwaitingStateApproval(request):
       
 
     # Retrieve device models with status "Manufacturer_OTP_Verified"
-    device_models = DeviceModel.objects.filter(status='Manufacturer_OTP_Verified')#created_by=user_id, 
+    device_models = DeviceModel.objects.filter(status__in=['Manufacturer_OTP_Verified',"StateAdminOTPSend"])#created_by=user_id, 
     
     # Serialize the data
     serializer = DeviceModelSerializer_disp(device_models, many=True)
@@ -3982,7 +3998,7 @@ def DeviceSendStateAdminOtp(request ):
       
     device_model_id = request.data.get('device_model_id')
     # Validate current status and update the status
-    device_model = get_object_or_404(DeviceModel, id=device_model_id,  status='Manufacturer_OTP_Verified')
+    device_model = get_object_or_404(DeviceModel, id=device_model_id,  status__in =['Manufacturer_OTP_Verified',"StateAdminOTPSend"])
     otp=str(random.randint(100000, 999999))
 
      
@@ -3990,6 +4006,17 @@ def DeviceSendStateAdminOtp(request ):
     device_model.otp = otp
     device_model.status = 'StateAdminOTPSend'
     device_model.save()
+    text="Dear User, Your  OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+    tpid="1007536593942813283"
+    #send_SMS(stateadmin.users.last().mobile,text,tpid) 
+    send_mail(
+                'Login OTP',
+                "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                'test@skytrack.tech',
+                [user.email],
+                fail_silently=False,
+    )
+    
 
     return Response({"message": "State Admin OTP sent successfully."}, status=200)
 
@@ -5027,7 +5054,7 @@ def create_device_model(request):
         uploaded_file = request.FILES.get('tac_doc_path')
         if uploaded_file:
             # Save the file to a specific location
-            file_path = 'fileuploads/tac_doc/' + str(device_model_instance.id) + '_' + uploaded_file.name
+            file_path = 'fileuploads/tac_docs/' + str(device_model_instance.id) + '_' + uploaded_file.name
             with open(file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)

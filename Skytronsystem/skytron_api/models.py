@@ -572,8 +572,27 @@ class DeviceStock(models.Model):
     #esim_provider = models.CharField(max_length=255)
     remarks = models.TextField(blank=True, null=True)
     created = models.DateTimeField()
-    created_by = models.ForeignKey('User', on_delete=models.CASCADE)
+    created_by = models.ForeignKey('User', on_delete=models.CASCADE,related_name="createby_USERdevicestock")
 
+    STATUS_CHOICES = [
+        ('NotAssigned', 'NotAssigned'),
+        ('In_transit_to_dealer', 'In Transit to Dealer'),
+        ('Available_for_fitting', 'Available for Fitting'),
+        ('Fitted', 'Fitted'),
+        ('ESIM_Active_Req_Sent', 'ESIM Active Request Sent'),
+        ('ESIM_Active_Confirmed', 'ESIM Active Confirmed'),
+        ('IP_PORT_Configured', 'IP Port Configured'),
+        ('SOS_GATEWAY_NO_Configured', 'SOS Gateway No Configured'),
+        ('SMS_GATEWAY_NO_Configured', 'SMS Gateway No Configured'),
+        ('Device_Defective', 'Device Defective'),
+        ('Returned_to_manufacturer', 'Returned to Manufacturer'),
+    ]
+ 
+    dealer =  models.ForeignKey(Retailer, on_delete=models.CASCADE,null=True,blank=True)
+    assigned_by = models.ForeignKey(User, on_delete=models.CASCADE,null=True,blank=True)   
+    assigned = models.DateTimeField(null=True,blank=True)
+    shipping_remark = models.TextField(null=True,blank=True)
+    stock_status = models.CharField(max_length=55, choices=STATUS_CHOICES)
     def __str__(self):
         return f"{self.model} - ESN: {self.device_esn}"
     
@@ -601,7 +620,7 @@ class DeviceCOP(models.Model):
 
     def __str__(self):
         return f"{self.device_model} - COP: {self.cop_no}"
- 
+"""
 class StockAssignment(models.Model):
     STATUS_CHOICES = [
         ('In_transit_to_dealer', 'In Transit to Dealer'),
@@ -622,7 +641,7 @@ class StockAssignment(models.Model):
     assigned = models.DateTimeField()
     shipping_remark = models.TextField()
     stock_status = models.CharField(max_length=255, choices=STATUS_CHOICES)
-
+"""
 class DeviceTag(models.Model):
     STATUS_CHOICES = [
         ('Dealer_OTP_Sent', 'Dealer OTP Sent'),

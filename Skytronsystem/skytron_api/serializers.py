@@ -8,7 +8,7 @@ from .models import Confirmation
 from .models import DeviceStock,DeviceTag
 from .models import *
 
-from .models import StockAssignment,VehicleOwner
+from .models import VehicleOwner
 
         
 class Settings_StateSerializer(serializers.ModelSerializer):
@@ -36,7 +36,7 @@ class DeviceTagSerializer(serializers.ModelSerializer):
         model =DeviceTag
         fields = '__all__'
 
-
+'''
 class StockAssignmentSerializer(serializers.ModelSerializer):
     device = DeviceStockSerializer()  # Nested serializer for 'device' field
     dealer = RetailerSerializer()  
@@ -50,7 +50,7 @@ class StockAssignmentSerializer2(serializers.ModelSerializer):
     class Meta:
         model = StockAssignment
         fields = ['device_id', 'dealer_id', 'assigned_by', 'assigned', 'shipping_remark', 'stock_status']
-
+'''
 class AlertsLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = AlertsLog
