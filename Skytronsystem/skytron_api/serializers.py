@@ -36,6 +36,41 @@ class DeviceTagSerializer(serializers.ModelSerializer):
         model =DeviceTag
         fields = '__all__'
 
+
+class UserSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+    class Meta:
+        model = User
+        fields = '__all__'    #, deleting, list view of all , detail view.
+    def get_created_by_name(self, obj):
+        if obj.createdby:
+            try: 
+                created_by_user = User.objects.get(id=obj.createdby)
+                return created_by_user.name
+            except User.DoesNotExist:
+                return ''
+            except ValueError:
+                return ''  
+        return ''
+
+class VehicleOwnerSerializer(serializers.ModelSerializer):
+    users = UserSerializer(many=True, read_only=True)
+    class Meta:
+        model = VehicleOwner 
+        fields = '__all__'
+
+
+
+class VahanSerializer(serializers.ModelSerializer):
+    device = DeviceStockSerializer(many=False, read_only=True) 
+    vehicle_owner =VehicleOwnerSerializer(many=False, read_only=True)
+   
+    class Meta:
+        model =DeviceTag
+        fields = '__all__'
+
+        
+
 '''
 class StockAssignmentSerializer(serializers.ModelSerializer):
     device = DeviceStockSerializer()  # Nested serializer for 'device' field
@@ -92,23 +127,6 @@ class DeviceStockSerializer(serializers.ModelSerializer):
 
  
 
-
-class UserSerializer(serializers.ModelSerializer):
-    created_by_name = serializers.SerializerMethodField()
-    class Meta:
-        model = User
-        fields = '__all__'    #, deleting, list view of all , detail view.
-    def get_created_by_name(self, obj):
-        if obj.createdby:
-            try: 
-                created_by_user = User.objects.get(id=obj.createdby)
-                return created_by_user.name
-            except User.DoesNotExist:
-                return ''
-            except ValueError:
-                return ''  
-        return ''
-
 class UserSerializer2(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -134,12 +152,6 @@ class RetailerSerializer(serializers.ModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     class Meta:
         model = Retailer
-        fields = '__all__'
-
-class VehicleOwnerSerializer(serializers.ModelSerializer):
-    users = UserSerializer(many=True, read_only=True)
-    class Meta:
-        model = VehicleOwner 
         fields = '__all__'
 
 

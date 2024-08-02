@@ -645,7 +645,8 @@ class StockAssignment(models.Model):
 class DeviceTag(models.Model):
     STATUS_CHOICES = [
         ('Dealer_OTP_Sent', 'Dealer OTP Sent'),
-        ('Dealer_OTP_Verified', 'Dealer OTP Verified'),
+        ('Dealer_OTP_Verified', 'Dealer_OTP_Verified'),
+        ('TempActive', 'TempActive'),
         ('Owner_OTP_Sent', 'Owner OTP Sent'),
         ('Owner_OTP_Verified', 'Owner OTP Verified'),
         ('RegNo_Configuration_SentToDevice', 'Reg No Configuration Sent to Device'),
@@ -658,7 +659,7 @@ class DeviceTag(models.Model):
     ]
 
     device = models.ForeignKey(DeviceStock, on_delete=models.CASCADE)
-    vehicle_owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    vehicle_owner = models.ForeignKey(VehicleOwner, on_delete=models.CASCADE)
    
     vehicle_reg_no = models.CharField(max_length= 55,unique=True)
     engine_no = models.CharField(max_length=55,unique=True)
@@ -670,7 +671,7 @@ class DeviceTag(models.Model):
     receipt_file_or = models.CharField(max_length=255)
     receipt_file_ul = models.CharField(max_length=255)
     status = models.CharField(max_length=255, choices=STATUS_CHOICES)
-    tagged_by = models.IntegerField()
+    tagged_by = models.ForeignKey(User, on_delete=models.CASCADE)
     tagged = models.DateTimeField()    
     otp = models.CharField(max_length= 6,null=True,blank=True)
     otp_time = models.DateTimeField( null=True,blank=True)

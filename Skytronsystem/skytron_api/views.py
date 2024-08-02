@@ -2064,11 +2064,14 @@ def update_dealer(request):
 def create_dealer(request):
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    role="devicemanufacture"
+    role="stateadmin"
     user=request.user
     uo=get_user_object(user,role)
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    man=Manufacturer.objects.filter(id=request.data.get('manufacturer')).last()
+    if not man:
+        return Response({"error":"Manufacturer not found."}, status=status.HTTP_400_BAD_REQUEST)
     
     try: 
         company_name = request.data.get('company_name')
@@ -2108,7 +2111,7 @@ def create_dealer(request):
                     file_idProof=file_idProof,
                     createdby=createdby,
                     district=district,
-                    manufacturer=uo,
+                    manufacturer=man,
                     status="Created",
                 )
             except Exception as e:
@@ -3139,10 +3142,13 @@ def TagDevice2Vehicle(request):
     man=get_user_object(user,role)
     if not man:
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    vehicle_owner=VehicleOwner.objects.filter(id=request.data['vehicle_owner'],users__status='active').last()
+    if not vehicle_owner:
+        return Response({"error":"Vehicle_owner not found."}, status=status.HTTP_400_BAD_REQUEST)
     
     # Extract data from the request or adjust as needed
     device_id = int(request.data['device'])
-    stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status="Available_for_fitting") #'Fitted') 
+    stock_assignment = get_object_or_404(DeviceStock, dealer=man,id=device_id, stock_status="Available_for_fitting") #'Fitted') 
     if stock_assignment:
         stock_assignment=stock_assignment 
         user_id = request.user.id  # Assuming the user is authenticated
@@ -3156,7 +3162,7 @@ def TagDevice2Vehicle(request):
                 
             device_tag = DeviceTag.objects.create(
             device_id=device_id,
-            vehicle_owner_id=request.data['vehicle_owner'],
+            vehicle_owner =vehicle_owner ,
             vehicle_reg_no=request.data['vehicle_reg_no'],
             engine_no=request.data['engine_no'],
             chassis_no=request.data['chassis_no'],
@@ -3165,10 +3171,22 @@ def TagDevice2Vehicle(request):
             category=request.data['category'],
             rc_file=file_path,
             status='Dealer_OTP_Sent',
-            tagged_by=user_id,
+            tagged_by=user,
             tagged=current_datetime,
+            otp=str(random.randint(100000, 999999)) ,
+            otp_time=timezone.now() 
             )
-        # Serialize the created data
+  
+            text="Dear VLTD Dealer/ Manufacturer,We have received request for tagging and activation of following device and vehicle-Vehicle Reg No: {}Device IMEI No: {}To confirm, please enter the OTP {}.- SkyTron".format(device_tag.vehicle_reg_no,device_tag.device.imei,device_tag.otp)
+            tpid="1007201930295888818"
+            send_SMS( user.mobile,text,tpid) 
+            send_mail(
+                'Login OTP',
+                text,
+                'test@skytrack.tech',
+                [user.email],
+                fail_silently=False,
+            )
         serializer = DeviceTagSerializer(device_tag)
         return JsonResponse({'data': serializer.data, 'message': 'Device taging successful.'}, status=201)
     else:
@@ -3186,24 +3204,17 @@ def unTagDevice2Vehicle(request):
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
     # Extract data from the request or adjust as needed
-    if request.method == 'POST':
-        # Get tag_id from POST data
-        tag_id = request.POST.get('tag_id')
-        # Check if tag_id is provided
+    if request.method == 'POST': 
+        tag_id = request.POST.get('tag_id') 
         if not tag_id:
             return JsonResponse({'error': 'tag_id is required'}, status=400)
-        try:
-            # Retrieve DeviceTag instance by tag_id
+        try: 
             device_tag = DeviceTag.objects.get(id=tag_id)
         except DeviceTag.DoesNotExist:
             return JsonResponse({'error': 'DeviceTag with the given tag_id does not exist'}, status=404)
-        # Update the status to Device_Untagged
         device_tag.status = 'Device_Untagged'
         device_tag.save()
-
-        return JsonResponse({'message': 'Device successfully untagged'})
-
-    # Handle GET requests or other HTTP methods
+        return JsonResponse({'message': 'Device successfully untagged'}) 
     return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
 
 
@@ -3278,17 +3289,27 @@ def upload_receiptPDF(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def TagAwaitingOwnerApproval(request): 
-    #user_id = request.user.id
+    # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
-    device_models = DeviceTag.objects.filter(status='Dealer_OTP_Verified')#created_by=user_id,  
+    
+    device_models = DeviceTag.objects.filter(status__in=[ 'Dealer_OTP_Verified','Owner_OTP_Sent'])#created_by=user_id,  
+    serializer = DeviceTagSerializer(device_models, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def TagAwaitingOwnerApprovalFinal(request): 
+    # user_id = request.user.id
+    # Retrieve device models with status "Manufacturer_OTP_Verified"
+    
+    device_models = DeviceTag.objects.filter(status__in=['TempActiveSent','TempIncomingLoc','Owner_Final_OTP_Sent'])#created_by=user_id,  
     serializer = DeviceTagSerializer(device_models, many=True)
     return Response(serializer.data)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def TagSendOwnerOtp(request ): 
-    
+def TagSendOwnerOtp(request ):  
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="owner"
@@ -3298,12 +3319,59 @@ def TagSendOwnerOtp(request ):
     
     device_model_id = request.data.get('device_id')
     # Validate current status and update the status
-    device_model = get_object_or_404(DeviceTag, id=device_model_id,  status='Dealer_OTP_Verified')
+    device_model = get_object_or_404(DeviceTag, id=device_model_id,vehicle_owner=man,  status='Dealer_OTP_Verified')
+ 
     device_model.otp=str(random.randint(100000, 999999)) 
     device_model.otp_time=timezone.now() 
     device_model.status = 'Owner_OTP_Sent'
     device_model.save()
 
+ 
+    text="Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {#var#} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_model.otp)
+    tpid="1007937055979875563"
+    send_SMS( user.mobile,text,tpid) 
+    send_mail(
+                'Login OTP',
+                text,
+                'test@skytrack.tech',
+                [user.email],
+                fail_silently=False,
+    )
+    return Response({"message": "Owner OTP sent successfully."}, status=200)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def TagSendOwnerOtpFinal(request ):  
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    device_model_id = request.data.get('device_id')
+    # Validate current status and update the status
+    device_model = get_object_or_404(DeviceTag, id=device_model_id,vehicle_owner=man,  status='TempActive')
+ 
+    device_model.otp=str(random.randint(100000, 999999)) 
+    device_model.otp_time=timezone.now() 
+    device_model.status = 'Owner_Final_OTP_Sent'
+    device_model.save()
+    user=device_model.vehicle_owner.users.last()
+
+ 
+    text="Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {#var#} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_model.otp)
+    tpid="1007937055979875563"
+    send_SMS( user.mobile,text,tpid) 
+    send_mail(
+                'Login OTP',
+                text,
+                'test@skytrack.tech',
+                [user.email],
+                fail_silently=False,
+    )
     return Response({"message": "Owner OTP sent successfully."}, status=200)
 
 
@@ -3320,6 +3388,56 @@ def TagSendDealerOtp(request ):
     device_model.save()
 
     return Response({"message": "Owner OTP sent successfully."}, status=200)
+
+
+  
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def GetVahanAPIInfo(request): 
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    user_id = request.user.id 
+    device_tag_id = request.data.get('device_id') 
+    device_tag = DeviceTag.objects.filter(device_id=device_tag_id,tagged_by=user, status='Owner_OTP_Verified').last()
+    
+    if device_tag:
+        serializer = VahanSerializer(device_tag)
+        return JsonResponse({'data': serializer.data}, status=201)
+    else:
+        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def ActivateTag(request): 
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    user_id = request.user.id 
+    device_tag_id = request.data.get('device_id') 
+    device_tag = DeviceTag.objects.filter(device_id=device_tag_id,tagged_by=user, status='Owner_OTP_Verified').last()
+    
+    if device_tag:
+        device_tag.status="TempActiveSent"
+        device_tag.save()
+        serializer = DeviceTagSerializer(device_tag)
+        add_sms_queue("ACTV,123456,+9194016334212",device_tag.device.msisdn1)
+        add_sms_queue("CONF,"+device_tag.vehicle_reg_no+",216.10.244.243,6000,216.10.244.243,5001,216.10.244.243,5001,+919401633421,+919401633421",device_tag.device.msisdn1)
+            
+        return JsonResponse({'data': serializer.data,"message":"Temporery activation request Sent.Please wait untile live data is visisble on map."}, status=201)
+    else:
+        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def TagVerifyOwnerOtp(request): 
@@ -3336,20 +3454,44 @@ def TagVerifyOwnerOtp(request):
     device_tag_id = request.data.get('device_id')
     if not otp or not otp.isdigit() or len(otp) != 6:
         return HttpResponseBadRequest("Invalid OTP format")
-    device_tag = DeviceTag.objects.filter(device_id=device_tag_id, status='Owner_OTP_Sent') 
+    device_tag = DeviceTag.objects.filter(device_id=device_tag_id,vehicle_owner_user=user, status='Owner_OTP_Sent').last()
     
-    #add_sms_queue("ACTV,21312sadwdaw,+9194016334212",no)
-
-    #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Owner_OTP_Verified')#'Owner_OTP_Sent')
-    device_tag = device_tag.last()
     
     if device_tag:
         if otp == device_tag.otp:  
             device_tag.status = 'Owner_OTP_Verified'
             device_tag.save()
-            add_sms_queue("ACTV,123456,+9194016334212",device_tag.device.msisdn1)
-            add_sms_queue("CONF,"+device_tag.vehicle_reg_no+",216.10.244.243,6000,216.10.244.243,5001,216.10.244.243,5001,+919401633421,+919401633421",device_tag.device.msisdn1)
+            #add_sms_queue("ACTV,123456,+9194016334212",device_tag.device.msisdn1)
+            #add_sms_queue("CONF,"+device_tag.vehicle_reg_no+",216.10.244.243,6000,216.10.244.243,5001,216.10.244.243,5001,+919401633421,+919401633421",device_tag.device.msisdn1)
             return Response({"message": "Owner OTP verified successfully."}, status=200)
+        else:
+            return HttpResponseBadRequest("Invalid OTP")
+    else:
+        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def TagVerifyOwnerOtpFinal(request):
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    user_id = request.user.id
+    otp = request.data.get('otp')
+    device_tag_id = request.data.get('device_id')
+    if not otp or not otp.isdigit() or len(otp) != 6:
+        return HttpResponseBadRequest("Invalid OTP format")
+    device_tag = DeviceTag.objects.filter(device_id=device_tag_id,vehicle_owner_user=user, status='Owner_Final_OTP_Sent').last()
+    if device_tag:
+        if otp == device_tag.otp:  
+            device_tag.status = 'Owner_Final_OTP_Verified'
+            device_tag.save()
+            #add_sms_queue("ACTV,123456,+9194016334212",device_tag.device.msisdn1)
+            #add_sms_queue("CONF,"+device_tag.vehicle_reg_no+",216.10.244.243,6000,216.10.244.243,5001,216.10.244.243,5001,+919401633421,+919401633421",device_tag.device.msisdn1)
+            return Response({"message": "Owner Fianl OTP verified successfully.Please wait till the final setitng complete."}, status=200)
         else:
             return HttpResponseBadRequest("Invalid OTP")
     else:
@@ -3378,8 +3520,28 @@ def TagVerifyDealerOtp(request  ):
         #device_tag = device_tag.first()
         if device_tag:
             if otp == device_tag.otp:  
+                
+                #data = { 
+                #    'ceated_by':man,  
+                #    'status': 'pending',
+                #    'eSim_provider':device_tag.device.esim_provider,
+                #    'valid_from':timezone.now(),
+                #    'valid_upto':timezone.now()+ timedelta(days=365*2),
+                #    'device':device_tag.device 
+                    #'device': int(request.data['device'])
+                #}  
+                #serializer = EsimActivationRequestSerializer(data=data)
+                #if serializer.is_valid():
+                    
+                #    serializer.save()
+                    #return Response(serializer.data, status=status.HTTP_201_CREATED)
+                #else:
+                #    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
                 device_tag.status = 'Dealer_OTP_Verified'
                 device_tag.save()
+
                 return Response({"message": "Dealer OTP verified successfully."}, status=200)
             else:
                 return HttpResponseBadRequest("Invalid OTP")
@@ -3433,6 +3595,9 @@ def ActivateESIMRequest(request):
     
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='Fitted')
+    if stock_assignment.dealer!= man:
+        return Response({"error":"Not in stock of this user."}, status=status.HTTP_400_BAD_REQUEST)
+    
     stock_assignment.stock_status = 'ESIM_Active_Req_Sent'
     stock_assignment.save()
 
@@ -3520,6 +3685,9 @@ def MarkDeviceDefective(request):
     
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(DeviceStock, id=device_id)
+    if stock_assignment.dealer!= man:
+        return Response({"error":"Not in stock of this user."}, status=status.HTTP_400_BAD_REQUEST)
+    
     stock_assignment.stock_status = 'Device_Defective'
     stock_assignment.save()
 
@@ -3542,7 +3710,11 @@ def ReturnToDeviceManufacturer(request):
     
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='Device_Defective')
+    if stock_assignment.dealer!= man:
+        return Response({"error":"Not in stock of this user."}, status=status.HTTP_400_BAD_REQUEST)
+    
     stock_assignment.stock_status = 'Returned_to_manufacturer'
+    stock_assignment.dealer=None
     stock_assignment.save()
 
     # Serialize the updated data
@@ -3606,33 +3778,38 @@ def StockAssignToRetailer(request):
     stock_status = "Available_for_fitting"
     dealer_id =  data.get('dealer') 
     device_ids = ast.literal_eval(str(data.get('device')))
-    dealer = Retailer.objects.filter(id=dealer_id).last()
+    dealer = Retailer.objects.filter(id=dealer_id).last()#,manufacturer=man
     if not dealer:
-        return JsonResponse({'error':"tinvalid dealer" }, status=400)
+        return JsonResponse({'error':"invalid dealer" }, status=400)
     
 
     stock_assignments = []
+    error=[]
     for device_id in device_ids:
-        print(int(device_id),dealer_id, assigned_by_id, assigned_at, data.get('shipping_remark'), stock_status)
+        #print(int(device_id),dealer_id, assigned_by_id, assigned_at, data.get('shipping_remark'), stock_status)
        
         try:
 
-            assignment = DeviceStock.objects.filter(id=int(device_id)).last() 
-            assignment.dealer=dealer
-            assignment.assigned_by =request.user
-            assignment.assigned=assigned_at
-            assignment.shipping_remark=data.get('shipping_remark')
-            assignment.stock_status=stock_status
-             
-            assignment.save()
-            
-            #stock_assignments.append( DeviceStockSerializer(assignment).data)
+            assignment = DeviceStock.objects.filter(id=int(device_id) ,created_by=user,stock_status='NotAssigned').last() 
+            if assignment:
+                assignment.dealer=dealer
+                assignment.assigned_by =request.user
+                assignment.assigned=assigned_at
+                assignment.shipping_remark=data.get('shipping_remark')
+                assignment.stock_status=stock_status                
+                assignment.save()                
+                stock_assignments.append( DeviceStockSerializer(assignment).data)
+            else:
+                error.append({'id':int(device_id),'error':"unavaialble non assigned devicewith given id under this manufature"})
+
         except Exception as e:
              
-            return JsonResponse({'error':"ttttt"+ str(e)}, status=400)
-
-    return JsonResponse({'data': stock_assignments , 'message': 'Stock assigned successfully.'}, status=201)
-def StockAssignToRetailer3333(request):
+            return JsonResponse({'error': str(e)}, status=400)
+    if len(error)==0:
+        return JsonResponse({'data': stock_assignments , 'message': 'Stock assigned successfully.'}, status=201)
+    else:
+        return JsonResponse({'data': stock_assignments,'error':error  , 'message': 'Stock Partially assigned.'}, status=201)
+'''def StockAssignToRetailer3333(request):
     # Deserialize the input data
     data = request.data.copy() 
     data['assigned_by'] = request.user.id
@@ -3655,6 +3832,8 @@ def StockAssignToRetailer3333(request):
             return JsonResponse({'error': serializer.errors}, status=400)
 
     return JsonResponse({'data': stock_assignments, 'message': 'Stock assigned successfully.'}, status=201)
+
+'''
 
 
 @api_view(['POST'])
@@ -3695,12 +3874,26 @@ def deviceStockCreateBulk(request):
         return JsonResponse({'error': 'Please provide an Excel file and model_id.'}, status=400)
 
     model_id = request.data['model_id']
+    mod=DeviceModel.objects.filter(id=model_id,created_by=user).last()
+    if not mod:
+        return JsonResponse({'error': 'invalid model_id or unauthorised user.'}, status=400)
+
     esim_provider = request.data['esim_provider']
     if not isinstance(esim_provider, list)  : 
         var_str = str(esim_provider) 
         for ch in ['[', ']', '{', '}']:
             var_str = var_str.replace(ch, '')
         esim_provider = [item.strip() for item in var_str.split(',')]
+    #for e in esim_provider:
+    #    st=False
+    #    for ee in mod.eSimProviders:
+    #        if ee==e.id:
+    #            True
+    #    if not st:
+    #        return JsonResponse({'error': 'Esim provider id='+str(e)+' is not in the devicemodel\'s esimprovider list.'}, status=400)
+
+
+
 
 
     try:
@@ -3800,6 +3993,14 @@ def deviceStockCreate(request):
 @permission_classes([IsAuthenticated])
 def COPCreate(request): 
     user=request.user
+        
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="devicemanufacture"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     manufacturer = request.user.id 
     otp=str(random.randint(100000, 999999))
  
@@ -3857,6 +4058,12 @@ def COPCreate(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def COPAwaitingStateApproval(request): 
+    role="stateadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     #user_id = request.user.id
     device_models = DeviceCOP.objects.filter(status='Manufacturer_OTP_Verified')#created_by=user_id, 
     
@@ -3868,6 +4075,13 @@ def COPAwaitingStateApproval(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def COPSendStateAdminOtp(request ): 
+       #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="stateadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     user=request.user
     device_model_id = request.data.get('device_model_id')
     # Validate current status and update the status
@@ -3893,6 +4107,12 @@ def COPSendStateAdminOtp(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def COPVerifyStateAdminOtp(request):
+    role="stateadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     device_model_id = request.data.get('device_model_id') 
     user_id = request.user.id 
  
@@ -3918,6 +4138,13 @@ def COPVerifyStateAdminOtp(request):
 @permission_classes([IsAuthenticated])
 def COPManufacturerOtpVerify(request  ): 
     user_id = request.user.id 
+       #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="devicemanufacture"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     otp = request.data.get('otp')
     device_model_id = request.data.get('device_model_id')
     if not otp or not otp.isdigit() or len(otp) != 6:
@@ -4946,9 +5173,9 @@ def filter_esim_activation_request(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="esimprovider"
     user=request.user
-    ret=get_user_object(user,role)
-    if not ret:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    #ret=get_user_object(user,role)
+    #if not ret:
+    #    return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
         
     if request.method == 'POST':
         filters = request.data.get('filters', {}) 

@@ -209,7 +209,7 @@ urlpatterns = [
     path('devicestock/StockAssignToRetailer/', StockAssignToRetailer, name='StockAssignToRetailer'),
     
     #sell
-    path('sell/SellFitDevice/', SellFitDevice, name='SellFitDevice'),
+    #path('sell/SellFitDevice/', SellFitDevice, name='SellFitDevice'),
     path('sell/SellListAvailableDeviceStock/', SellListAvailableDeviceStock, name='SellListAvailableDeviceStock'),
     path('sell/activate_esim_request/', ActivateESIMRequest, name='activate_esim_request'),
     path('sell/confirm_esim_activation/', ConfirmESIMActivation, name='confirm_esim_activation'),
@@ -225,6 +225,18 @@ urlpatterns = [
     path('tag/TagAwaitingOwnerApproval/', TagAwaitingOwnerApproval, name='TagAwaitingOwnerApproval'),
     path('tag/TagSendOwnerOtp/', TagSendOwnerOtp, name='TagSendOwnerOtp'),
     path('tag/TagVerifyOwnerOtp/', TagVerifyOwnerOtp, name='TagVerifyOwnerOtpe'),
+
+    path('tag/GetVahanAPIInfo/',GetVahanAPIInfo, name='GetVahanAPIInfo'),
+    path('tag/ActivateTag/',ActivateTag, name='ActivateTag'),
+    
+    path('tag/TagAwaitingOwnerApprovalFinal/', TagAwaitingOwnerApproval, name='TagAwaitingOwnerApprovalFinal'),
+    path('tag/TagSendOwnerOtpFinal/',  TagSendOwnerOtpFinal, name='TagSendOwnerOtpFinal'),
+    path('tag/TagVerifyOwnerOtpFinal/', TagVerifyOwnerOtpFinal, name='TagVerifyOwnerOtpFinal'),
+
+
+
+
+
     path('tag/TagVerifyDealerOtp/', TagVerifyDealerOtp, name='TagVerifyDealerOtp'),
     #path('tag/TagVerifyDTOOtp/', TagVerifyDTOOtp, name='TagVerifyDTOOtp'),
     path('tag/download_receiptPDF/', download_receiptPDF, name='download_receiptPDF'),
