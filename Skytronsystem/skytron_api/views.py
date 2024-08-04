@@ -2426,8 +2426,7 @@ def send_usercreation_otp(user,new_password,type):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @transaction.atomic
-def create_StateAdmin(request):
-    
+def create_StateAdmin(request):    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
     user=request.user
@@ -2445,11 +2444,14 @@ def create_StateAdmin(request):
         created = timezone.now()  
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         file_idProof = request.data.get('file_idProof')
+        file_authorisation_letter = request.data.get('file_authorisation_letter')
+        
          
         user,error,new_password=create_user('stateadmin',request)
         if user:         
             try: 
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                file_authorisation_letter=save_file(request,'file_authorisation_letter','fileuploads/man')
 
 
                 retailer = StateAdmin.objects.create( 
@@ -2458,6 +2460,7 @@ def create_StateAdmin(request):
                     expirydate=expirydate, 
                     idProofno=idProofno, 
                     file_idProof=file_idProof,
+                    file_authorisation_letter=file_authorisation_letter,
                     createdby=createdby,
                     status="Created",
                 ) 

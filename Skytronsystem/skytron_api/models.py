@@ -302,6 +302,7 @@ class StateAdmin(models.Model):
     expirydate = models.DateField(auto_now_add=True)
     idProofno = models.CharField(max_length=255, blank=True, null=True)
     file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    file_authorisation_letter = models.CharField(max_length=255, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
     status_choices = [
             ('Created', 'Created'),
