@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['216.10.244.243','skytrack.tech','https://www.skytrack.tech','admiring-solomon.216-10-244-243.plesk.page']
+ALLOWED_HOSTS = ['http://localhost:3000/','216.10.244.243','skytrack.tech','https://www.skytrack.tech','admiring-solomon.216-10-244-243.plesk.page']
 
 DATA_UPLOAD_MAX_NUMBER_FIELD = 71193766
 # Application definition
@@ -152,7 +152,7 @@ USE_I18N = True
 USE_TZ = True
 
 CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
-    "http://localhost:3000", 
+    "http://localhost:3000",  
     "https://localhost:3000", 
     "https://skytrack.tech:3000",  
     "https://skytrack.tech",  # Add your frontend domain(s) here

@@ -225,11 +225,12 @@ urlpatterns = [
     path('tag/TagAwaitingOwnerApproval/', TagAwaitingOwnerApproval, name='TagAwaitingOwnerApproval'),
     path('tag/TagSendOwnerOtp/', TagSendOwnerOtp, name='TagSendOwnerOtp'),
     path('tag/TagVerifyOwnerOtp/', TagVerifyOwnerOtp, name='TagVerifyOwnerOtpe'),
-
+    path('tag/TagAwaitingActivateTag/',TagAwaitingActivateTag, name='TagAwaitingOwnerApproval'),
+    
     path('tag/GetVahanAPIInfo/',GetVahanAPIInfo, name='GetVahanAPIInfo'),
     path('tag/ActivateTag/',ActivateTag, name='ActivateTag'),
     
-    path('tag/TagAwaitingOwnerApprovalFinal/', TagAwaitingOwnerApproval, name='TagAwaitingOwnerApprovalFinal'),
+    path('tag/TagAwaitingOwnerApprovalFinal/', TagAwaitingOwnerApprovalFinal, name='TagAwaitingOwnerApprovalFinal'),
     path('tag/TagSendOwnerOtpFinal/',  TagSendOwnerOtpFinal, name='TagSendOwnerOtpFinal'),
     path('tag/TagVerifyOwnerOtpFinal/', TagVerifyOwnerOtpFinal, name='TagVerifyOwnerOtpFinal'),
 

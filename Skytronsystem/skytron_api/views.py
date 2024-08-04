@@ -72,19 +72,22 @@ def load_private_key():
     with open(private_key_path, 'rb') as key_file:
         private_key = RSA.import_key(key_file.read()) 
     with open(private_key_path, 'rb') as key_file: 
-        print(key_file.read())
-
-    #private_key-
+        print(key_file.read()) 
     return private_key
 
 def decrypt_field(encrypted_field, private_key):
     cipher = PKCS1_OAEP.new(private_key)
     if len(encrypted_field)<16:
         return encrypted_field
-    decrypted_data = cipher.decrypt(base64.b64decode(encrypted_field))
+    enc=base64.b64decode(encrypted_field)
+    print(enc)
+    #try:
+    decrypted_data = cipher.decrypt(enc)
     return decrypted_data.decode('utf-8')
+    #except:
+    #    return ""
 PRIVATE_KEY=load_private_key() 
-print(PRIVATE_KEY)
+#print(PRIVATE_KEY)
 
 
 
@@ -3288,6 +3291,16 @@ def upload_receiptPDF(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def TagAwaitingActivateTag(request): 
+    # user_id = request.user.id
+    # Retrieve device models with status "Manufacturer_OTP_Verified"
+    
+    device_models = DeviceTag.objects.filter(status__in=[ 'Owner_OTP_Verified'])#created_by=user_id,  
+    serializer = DeviceTagSerializer(device_models, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def TagAwaitingOwnerApproval(request): 
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
@@ -3302,7 +3315,7 @@ def TagAwaitingOwnerApprovalFinal(request):
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
     
-    device_models = DeviceTag.objects.filter(status__in=['TempActiveSent','TempIncomingLoc','Owner_Final_OTP_Sent'])#created_by=user_id,  
+    device_models = DeviceTag.objects.filter(status__in=['Owner_OTP_Verified','TempActiveSent','TempIncomingLoc','Owner_Final_OTP_Sent'])#created_by=user_id,  
     serializer = DeviceTagSerializer(device_models, many=True)
     return Response(serializer.data)
 
@@ -3312,22 +3325,24 @@ def TagAwaitingOwnerApprovalFinal(request):
 def TagSendOwnerOtp(request ):  
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    role="owner"
+    role="dealer"
     man=get_user_object(user,role)
-    if not man:
-        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    #if not man:
+    #    return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
     device_model_id = request.data.get('device_id')
     # Validate current status and update the status
-    device_model = get_object_or_404(DeviceTag, id=device_model_id,vehicle_owner=man,  status='Dealer_OTP_Verified')
+
+    device_model = get_object_or_404(DeviceTag, device__id=device_model_id,  status__in=["Owner_OTP_Sent",'Dealer_OTP_Verified'])
  
     device_model.otp=str(random.randint(100000, 999999)) 
     device_model.otp_time=timezone.now() 
     device_model.status = 'Owner_OTP_Sent'
     device_model.save()
+    user=device_model.vehicle_owner.users.last()
 
  
-    text="Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {#var#} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_model.otp)
+    text="Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_model.otp)
     tpid="1007937055979875563"
     send_SMS( user.mobile,text,tpid) 
     send_mail(
@@ -3353,7 +3368,8 @@ def TagSendOwnerOtpFinal(request ):
     
     device_model_id = request.data.get('device_id')
     # Validate current status and update the status
-    device_model = get_object_or_404(DeviceTag, id=device_model_id,vehicle_owner=man,  status='TempActive')
+    #device_model = get_object_or_404(DeviceTag, id=device_model_id,   status='TempActive')
+    device_model = get_object_or_404(DeviceTag, device__id=device_model_id,  status__in=['Owner_OTP_Verified','TempActiveSent','TempActive',"Owner_Final_OTP_Sent"])
  
     device_model.otp=str(random.randint(100000, 999999)) 
     device_model.otp_time=timezone.now() 
@@ -3362,7 +3378,7 @@ def TagSendOwnerOtpFinal(request ):
     user=device_model.vehicle_owner.users.last()
 
  
-    text="Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {#var#} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_model.otp)
+    text="Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_model.otp)
     tpid="1007937055979875563"
     send_SMS( user.mobile,text,tpid) 
     send_mail(
@@ -3444,7 +3460,7 @@ def TagVerifyOwnerOtp(request):
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    role="owner"
+    role="dealer"
     man=get_user_object(user,role)
     if not man:
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
@@ -3454,7 +3470,7 @@ def TagVerifyOwnerOtp(request):
     device_tag_id = request.data.get('device_id')
     if not otp or not otp.isdigit() or len(otp) != 6:
         return HttpResponseBadRequest("Invalid OTP format")
-    device_tag = DeviceTag.objects.filter(device_id=device_tag_id,vehicle_owner_user=user, status='Owner_OTP_Sent').last()
+    device_tag = DeviceTag.objects.filter(device_id=device_tag_id,  status='Owner_OTP_Sent').last()
     
     
     if device_tag:
@@ -3484,7 +3500,7 @@ def TagVerifyOwnerOtpFinal(request):
     device_tag_id = request.data.get('device_id')
     if not otp or not otp.isdigit() or len(otp) != 6:
         return HttpResponseBadRequest("Invalid OTP format")
-    device_tag = DeviceTag.objects.filter(device_id=device_tag_id,vehicle_owner_user=user, status='Owner_Final_OTP_Sent').last()
+    device_tag = DeviceTag.objects.filter(device_id=device_tag_id,  status='Owner_Final_OTP_Sent').last()
     if device_tag:
         if otp == device_tag.otp:  
             device_tag.status = 'Owner_Final_OTP_Verified'
