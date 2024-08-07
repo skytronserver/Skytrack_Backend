@@ -242,6 +242,8 @@ urlpatterns = [
     #path('tag/TagVerifyDTOOtp/', TagVerifyDTOOtp, name='TagVerifyDTOOtp'),
     path('tag/download_receiptPDF/', download_receiptPDF, name='download_receiptPDF'),
     path('tag/upload_receiptPDF/', upload_receiptPDF, name='upload_receiptPDF'),
+    
+    path('tag/tag_status/', Tag_status, name='tag_status'),
    
 
     path('download/', downloadfile, name='download'),

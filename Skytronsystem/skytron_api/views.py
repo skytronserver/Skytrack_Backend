@@ -3236,11 +3236,11 @@ def download_receiptPDF(request):
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
     if request.method == 'POST': 
-        tag_id = request.POST.get('tag_id') 
+        tag_id = request.POST.get('device_id') 
         if not tag_id:
             return JsonResponse({'error': 'tag_id is required'}, status=400) 
         try: 
-            device_tag = DeviceTag.objects.get(id=tag_id)
+            device_tag = DeviceTag.objects.filter(device=tag_id).last()
             file_path = f"fileuploads/cop_files/aaa.pdf"
             try:
                 with open(file_path,'rb') as file:
@@ -3267,13 +3267,12 @@ def upload_receiptPDF(request):
     
     # Extract data from the request or adjust as needed
     if request.method == 'POST': 
-        tag_id = request.POST.get('tag_id') 
+        tag_id = request.POST.get('device_id') 
         if not tag_id:
-            return JsonResponse({'error': 'tag_id is required'}, status=400)
-        try: 
-            device_tag = DeviceTag.objects.get(id=tag_id)
-        except DeviceTag.DoesNotExist:
-            return JsonResponse({'error': 'DeviceTag with the given tag_id does not exist'}, status=404)
+            return JsonResponse({'error': 'device_id is required'}, status=400)
+        device_tag = DeviceTag.objects.filter(device_id=tag_id).last()
+        if not device_tag:
+            return JsonResponse({'error': 'DeviceTag with the given device_id does not exist'}, status=404)
         try:
             uploaded_file = request.FILES.get('receiptFile')
             if uploaded_file:
@@ -3297,16 +3296,64 @@ def upload_receiptPDF(request):
 def TagAwaitingActivateTag(request): 
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     
     device_models = DeviceTag.objects.filter(status__in=[ 'Owner_OTP_Verified'])#created_by=user_id,  
     serializer = DeviceTagSerializer(device_models, many=True)
     return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def Tag_status(request): 
+    # user_id = request.user.id
+    # Retrieve device models with status "Manufacturer_OTP_Verified"
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    user=request.user
+    uo=get_user_object(user,role)
+    #if not uo:
+    #    return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    if request.method == 'POST': 
+        devices = DeviceTag.objects.filter(tagged_by=user.id)#created_by=user_id,  
+         
+        device_id = request.POST.get('device_id') 
+        if device_id:
+            devices = devices.filter(device=device_id)
+        tag_status = request.POST.get('tag_status') 
+        if tag_status:
+            devices = devices.filter(status=tag_status)
+        stock_status = request.POST.get('stock_status') 
+        if stock_status:
+            devices = devices.filter(device__stock_status=stock_status)
+        esim_status = request.POST.get('esim_status') 
+        if esim_status:
+            devices = devices.filter(device__esim_status=esim_status)
+    
+        serializer = DeviceTagSerializer2(devices, many=True)
+        return Response(serializer.data)
+    return Response({"error":"Something went wrong."}, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def TagAwaitingOwnerApproval(request): 
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     
     device_models = DeviceTag.objects.filter(status__in=[ 'Dealer_OTP_Verified','Owner_OTP_Sent'])#created_by=user_id,  
     serializer = DeviceTagSerializer(device_models, many=True)
@@ -3317,6 +3364,13 @@ def TagAwaitingOwnerApproval(request):
 def TagAwaitingOwnerApprovalFinal(request): 
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
     
     device_models = DeviceTag.objects.filter(status__in=['Owner_OTP_Verified','TempActiveSent','TempIncomingLoc','Owner_Final_OTP_Sent'])#created_by=user_id,  
     serializer = DeviceTagSerializer(device_models, many=True)
@@ -3330,8 +3384,8 @@ def TagSendOwnerOtp(request ):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="dealer"
     man=get_user_object(user,role)
-    #if not man:
-    #    return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
     device_model_id = request.data.get('device_id')
     # Validate current status and update the status
@@ -3617,7 +3671,7 @@ def ActivateESIMRequest(request):
     if stock_assignment.dealer!= man:
         return Response({"error":"Not in stock of this user."}, status=status.HTTP_400_BAD_REQUEST)
     
-    stock_assignment.stock_status = 'ESIM_Active_Req_Sent'
+    stock_assignment.esim_status = 'ESIM_Active_Req_Sent'
     stock_assignment.save()
 
     # Serialize the updated data
@@ -3638,10 +3692,10 @@ def ConfirmESIMActivation(request):
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
     device_id = int(request.data['device_id'])
-    stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='ESIM_Active_Req_Sent')
-    stock_assignment.stock_status = 'ESIM_Active_Confirmed'
+    stock_assignment = get_object_or_404(DeviceStock, id=device_id, esim_status='ESIM_Active_Req_Sent')
+    stock_assignment.esim_status = 'ESIM_Active_Confirmed'
     stock_assignment.save()
-    stock_assignment = get_object_or_404(DeviceStock,id=device_id, stock_status='ESIM_Active_Confirmed')
+    stock_assignment = get_object_or_404(DeviceStock,id=device_id, esim_status='ESIM_Active_Confirmed')
     
     # Serialize the updated data
     serializer = DeviceStockSerializer(stock_assignment)
@@ -3858,8 +3912,23 @@ def StockAssignToRetailer(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def deviceStockFilter(request):
+    user=request.user
+    man=None
+    data = request.data.copy()    
+    if user.role=="devicemanufacture":
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        man=get_user_object(user,"devicemanufacture")
+        data['created_by_id'] = request.user.id 
+    elif user.role=="dealer":
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        man=get_user_object(user,"dealer")
+        data['dealer_id'] = man.id 
+    
+    if not man:
+            return Response({"error":"Request must be from device manufacture or dealer"}, status=status.HTTP_400_BAD_REQUEST)
+    print(data)
     # Deserialize the input data
-    serializer = DeviceStockFilterSerializer(data=request.data)
+    serializer = DeviceStockFilterSerializer(data=data)
     serializer.is_valid(raise_exception=True)
 
     # Filter DeviceStock instances based on parameters
@@ -5178,10 +5247,16 @@ def create_esim_activation_request(request):
         } 
         request_data = request.data.copy()
         request_data.update(data)
-    
+        dev=DeviceStock.objects.filter(id=request_data['device']).last()
+        if not dev:
+            return Response("device not found", status=status.HTTP_400_BAD_REQUEST)
+        if dev.esim_status=="ESIM Active Request Sent":
+            return Response("AlreadyPendingRequest", status=status.HTTP_400_BAD_REQUEST)
+
         serializer = EsimActivationRequestSerializer(data=request_data)
         if serializer.is_valid():
-            
+            dev.esim_status='ESIM_Active_Req_Sent'
+            dev.save()
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -5203,9 +5278,9 @@ def filter_esim_activation_request(request):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+@permission_classes([AllowAny])
 @api_view(['POST'])
-def update_esim_activation_request(request):
-  
+def update_esim_activation_request(request):  
     if request.method == 'POST':
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         role="esimprovider"
@@ -5230,7 +5305,17 @@ def update_esim_activation_request(request):
         else:
             return Response({"error":"Status should be only ony one of the two[accept/reject]."}, status=status.HTTP_400_BAD_REQUEST)
         serializer = EsimActivationRequestSerializer(esim_request, data=data, partial=True)
+        dev=esim_request.device
+        #DeviceStock.objects.filter(id=data['device']).last()
+         
+
         if serializer.is_valid():
+            if data['status']=='valid':
+                dev.esim_status='ESIM_Active_Confirmed'
+            elif data['status']=='invalid':
+                dev.esim_status='ESIM_Active_Rejected'
+            
+            dev.save()
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

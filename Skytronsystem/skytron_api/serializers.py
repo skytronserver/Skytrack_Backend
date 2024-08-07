@@ -24,24 +24,26 @@ class Settings_StateSerializer(serializers.ModelSerializer):
 class DeviceStockSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeviceStock
-        fields = '__all__'  # Include all fields of DeviceStock model
+        fields = '__all__'   
 
 class RetailerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Retailer
-        fields = '__all__'  # Include all fields of Retailer model
+        fields = '__all__'  
 
 class DeviceTagSerializer(serializers.ModelSerializer):
     class Meta:
-        model =DeviceTag
-        fields = '__all__'
+        model =DeviceTag        
+        exclude = ['otp','otp_time'] 
+
 
 
 class UserSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = User
-        fields = '__all__'    #, deleting, list view of all , detail view.
+        exclude = ['password'] 
+        #fields = '__all__'    
     def get_created_by_name(self, obj):
         if obj.createdby:
             try: 
@@ -105,6 +107,9 @@ class DeviceStockFilterSerializer(serializers.Serializer):
     esim_provider = serializers.CharField(required=False)
     remarks = serializers.CharField(required=False)
     created_by_id = serializers.IntegerField(required=False)
+    dealer_id= serializers.IntegerField(required=False)
+    stock_status = serializers.CharField(required=False)
+    esim_status = serializers.CharField(required=False)
     #is_tagged=serializers.CharField(required=False)
 class DeviceModelFilterSerializer(serializers.Serializer):
     model_name = serializers.CharField(required=False)
@@ -119,11 +124,9 @@ class DeviceModelFilterSerializer(serializers.Serializer):
 class DeviceCOPSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeviceCOP
-        fields = '__all__'
-class DeviceStockSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = DeviceStock
-        fields = '__all__'
+        #exclude = ['otp','otp_time'] 
+        fields = '__all__' 
+        
 
  
 
@@ -170,6 +173,7 @@ class DeviceStockSerializer2(serializers.ModelSerializer):
     #created_by_name = serializers.SerializerMethodField()
     model = DeviceModelSerializer(many=False, read_only=True)
     created_by = UserSerializer(many=False, read_only=True)
+    esim_provider = eSimProviderSerializer(many=True, read_only=True)
     is_tagged=serializers.CharField( )
     class Meta:
         model = DeviceStock
@@ -434,4 +438,14 @@ class SOS_adminSerializer(serializers.ModelSerializer):
     class Meta:
         model = SOS_admin
         fields = '__all__'
+
+
+class DeviceTagSerializer2(serializers.ModelSerializer):
+    device = DeviceStockSerializer(many=False, read_only=True)
+    vehicle_owner = VehicleOwnerSerializer(many=False, read_only=True)
+
+    class Meta:
+        model = DeviceTag 
+        #fields = '__all__' #
+        exclude = ['otp', 'otp_time']
  

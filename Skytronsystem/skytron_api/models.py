@@ -66,7 +66,18 @@ class Help(models.Model):
 
     def __str__(self):
         return self.field_ex.name
-
+class RequestLog(models.Model):
+    timestamp = models.DateTimeField(auto_now_add=True)
+    ip_address = models.CharField(max_length=70)  # Supports IPv6
+    system_info = models.TextField()
+    request_url = models.URLField()
+    request_type = models.CharField(max_length=100)
+    headers = models.TextField()
+    incoming_data = models.TextField()
+    response_type = models.CharField(max_length=100)
+    error_code = models.IntegerField(null=True, blank=True)
+    def __str__(self):
+        return self.ip_address
 
     
 def get_logged_in_users_with_min_assignments(): 
@@ -582,6 +593,8 @@ class DeviceStock(models.Model):
         ('Fitted', 'Fitted'),
         ('ESIM_Active_Req_Sent', 'ESIM Active Request Sent'),
         ('ESIM_Active_Confirmed', 'ESIM Active Confirmed'),
+        ('ESIM_Active_Rejected', 'ESIM_Active_Rejected'),
+        
         ('IP_PORT_Configured', 'IP Port Configured'),
         ('SOS_GATEWAY_NO_Configured', 'SOS Gateway No Configured'),
         ('SMS_GATEWAY_NO_Configured', 'SMS Gateway No Configured'),
@@ -594,6 +607,7 @@ class DeviceStock(models.Model):
     assigned = models.DateTimeField(null=True,blank=True)
     shipping_remark = models.TextField(null=True,blank=True)
     stock_status = models.CharField(max_length=55, choices=STATUS_CHOICES)
+    esim_status = models.CharField(max_length=55, choices=STATUS_CHOICES)
     def __str__(self):
         return f"{self.model} - ESN: {self.device_esn}"
     
