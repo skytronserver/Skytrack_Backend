@@ -962,7 +962,17 @@ def gps_track_data_api(request):
             excluded_fields = []   
             if latest_entry:
                 #data.append(latest_entry.values())
-                data.append(model_to_dict(latest_entry, exclude=excluded_fields))
+                dd=model_to_dict(latest_entry, exclude=excluded_fields)
+                if latest_entry.device_tag:
+                    dd['vehicle_registration_number']=latest_entry.device_tag.vehicle_reg_no
+                    dd['imei']=latest_entry.device_tag.device.imei
+                else:
+                    dd['vehicle_registration_number']=""
+                    dd['imei']=""
+                data.append(dd)
+            
+          
+
 
         data_list = list(data)
         return JsonResponse({'data': data_list})
@@ -1001,18 +1011,18 @@ def gps_history_map(request):
     data=[]
     try:
         vehicle_registration_number ="L89_003-0000"
-        start_datetime = "2024-04-11"
-        end_datetime = "2024-04-12" 
+        start_datetime = "2024-07-11"
+        end_datetime = "2024-08-12" 
         
         
         try:
             vehicle_registration_number = request.GET.get('vehicle_registration_number', None)
-            start_datetime = request.GET.get('start_datetime', None)
-            end_datetime = request.GET.get('end_datetime', None)
+            #start_datetime = request.GET.get('start_datetime', None)
+            #end_datetime = request.GET.get('end_datetime', None)
         except:
             vehicle_registration_number ="L89_003-0000"
-            start_datetime = "2024-04-11"
-            end_datetime = "2024-04-12"
+            #start_datetime = "2024-04-11"
+            #end_datetime = "2024-04-12"
 
         #return JsonResponse({"eg":vehicle_registration_number})
         if vehicle_registration_number:
@@ -1047,7 +1057,7 @@ def gps_history_map(request):
                 try:    #return JsonResponse({"eg":vehicle_registration_number})     
                     return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
                 except:
-                    return JsonResponse({"error": "No Record Found: "+vehicle_registration_number}, status=403) 
+                    return JsonResponse({"error": "No Record Found: "+str(vehicle_registration_number)}, status=403) 
             else:
                 return JsonResponse({'error': "Invalid  Search "}, status=403) 
         return JsonResponse({'error': "Invalid Search"}, status=403) 
@@ -1124,7 +1134,7 @@ def gps_history_map_data(request):
         return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
         return Response({'error': "Invalid Search"}, status=403)
     except Exception as e: 
-        return JsonResponse({'error': e}) 
+        return JsonResponse({'error': str(e)}) 
         return Response({'error': "ww"}, status=400)
 
 
@@ -1436,10 +1446,16 @@ def get_live_vehicle_no(request):
     try:
         if request.method == 'POST':
             # Fetch distinct vehicle registration numbers
-            vehicles = GPSData.objects.all().values('device_tag').distinct()
+            #vehicles = GPSData.objects.all().values('device_tag').distinct()
+            vehicles = GPSData.objects.select_related('device_tag').distinct('device_tag')
+
             if not vehicles:
                 return Response([])
-            vehicle_list = [vehicle['vehicle_registration_number'] for vehicle in vehicles]
+            print(vehicles)
+            vehicle_list=[]
+            for vehicle in vehicles:
+                if vehicle.device_tag:
+                        vehicle_list = vehicle_list +[vehicle.device_tag.vehicle_reg_no]
             return Response(vehicle_list)
         else:
             return Response({'error': "POST request only"}, status=500)
@@ -4059,6 +4075,7 @@ def deviceStockCreate(request):
     data['created'] = timezone.now()   
     data['created_by'] = request.user.id
     data['stock_status'] =  "NotAssigned"
+    data['esim_status'] =  "NotAssigned"
     try:
         a=int(data['imei'])
         #a=int(data['imsi1'])

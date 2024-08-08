@@ -187,8 +187,8 @@
                 // "<tr><td>Packet Type</td><td>" + entry.packet_type + "</td></tr>" +
                 "<tr><td>Alert ID</td><td>" + entry.alert_id + "</td></tr>" +
                 "<tr><td>Packet Status</td><td>" + entry.packet_status + "</td></tr>" +
-                //"<tr><td>IMEI</td><td>" + entry.imei + "</td></tr>" +
-                //"<tr><td>Vehicle Registration Number</td><td>" + entry.vehicle_registration_number + "</td></tr>" +
+                "<tr><td>IMEI</td><td>" + entry.imei + "</td></tr>" +
+                "<tr><td>Vehicle Registration Number</td><td>" + entry.vehicle_registration_number + "</td></tr>" +
                 "<tr><td>GPS Status</td><td>" + entry.gps_status + "</td></tr>" +
                 "<tr><td>Date</td><td>" + entry.date + "</td></tr>" +
                 "<tr><td>Time</td><td>" + entry.time + "</td></tr>" +
@@ -419,14 +419,15 @@
 
 
                     layers: [
-                        /*new ol.layer.Tile({
-                            source: new ol.source.OSM()
-                        }),
-                         */
+
+
                         new ol.layer.Tile({
                             source: new ol.source.XYZ({
                                 url: 'https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py/1.0.0/bhuvan_imagery2/{z}/{x}/{y}.png'
                             })
+                        }),
+                        new ol.layer.Tile({
+                            source: new ol.source.OSM()
                         }),
                         /*
                         new ol.layer.Tile({
@@ -440,15 +441,15 @@
                                     'TILED': true
                                 }
                             })
-                        }),
+                        }),*/
                         new ol.layer.Tile({
                             source: new ol.source.TileWMS({
-                                url: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms',//https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms   https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms
-                                params: { 'LAYERS': 'india3', 'TILED': true },//lulc:BR_LULC50K_1112'
+                                url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',//https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms   https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms
+                                params: { 'LAYERS': 'lulc:BR_LULC50K_1112', 'TILED': true },//lulc:BR_LULC50K_1112'
                                 serverType: 'geoserver',
                                 transition: 0,
                             }),
-                        }),*/
+                        }),
                     ],
                     view: new ol.View({
                         center: ol.proj.fromLonLat([91.829437, 26.131644]),

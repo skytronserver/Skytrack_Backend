@@ -227,10 +227,32 @@
                             new ol.layer.Tile({
                                 source: new ol.source.OSM()
                             }),
+
+                            new ol.layer.Tile({
+                                source: new ol.source.XYZ({
+                                    url: 'https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py/1.0.0/bhuvan_imagery2/{z}/{x}/{y}.png'
+                                })
+                            }),
+                            new ol.layer.Tile({
+                                source: new ol.source.OSM()
+                            }),
+                            /*
+                            new ol.layer.Tile({
+                                //extent: [60, 0, 102, 40],
+                                source: new ol.source.TileWMS({
+                                    url: 'https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py?',
+                                    params: {
+                                        'VERSION': '1.1.1',
+                                        'LAYERS': 'bhuvan_imagery',
+                                        'FORMAT': 'image/jpeg',
+                                        'TILED': true
+                                    }
+                                })
+                            }),*/
                             new ol.layer.Tile({
                                 source: new ol.source.TileWMS({
-                                    url: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms',
-                                    params: { 'LAYERS': 'india3', 'TILED': true },
+                                    url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',//https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms   https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms
+                                    params: { 'LAYERS': 'lulc:BR_LULC50K_1112', 'TILED': true },//lulc:BR_LULC50K_1112'
                                     serverType: 'geoserver',
                                     transition: 0,
                                 }),

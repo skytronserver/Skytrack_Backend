@@ -318,8 +318,8 @@ class DeviceModelFileUploadSerializer(serializers.ModelSerializer):
 class GPSData_modSerializer(serializers.ModelSerializer):
     et = serializers.DateTimeField(source='entry_time')
     ps = serializers.CharField(source='packet_status')
-    imei = serializers.CharField()
-    rn = serializers.CharField(source='vehicle_registration_number')
+    #imei = serializers.CharField()
+    #rn = serializers.CharField(source='vehicle_registration_number')
     lat = serializers.CharField(source='latitude')
     #latitudeDir = serializers.CharField(source='latitude_dir')
     lon  = serializers.CharField(source='longitude')
@@ -362,7 +362,8 @@ class GPSData_modSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = GPSData
-        fields = [ 'et','ps','imei','rn','lat','lon','s','h','sat','gpsS','alt','no','igs',
+        fields = [ 'et','ps',#'imei',  'rn',
+                  'lat','lon','s','h','sat','gpsS','alt','no','igs',
                   'mps','miv','ibv','ems','bta','gss','dis','dos','fn','om']
         ''' entryTime', 'packetStatus', 'imei', 'vehicleRegistrationNumber',
                   'latitude',  'longitude',#'latitudeDir', 'longitudeDir',

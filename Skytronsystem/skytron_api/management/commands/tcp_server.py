@@ -112,12 +112,14 @@ def handle_client(conn, client_address):
                         dat = '$' + dat
                         if len(dat) > 4:
                             gps_data = process_gps_data(dat)
-                            #print(gps_data)
+                            
                             if gps_data:
+                                print(dat)
+                                print(gps_data)
                                 reg=gps_data['vehicle_registration_number']
-                                device_tag=DeviceTag.objects.filter(vehicle_reg_no=reg,status='Device_Active').last()
+                                device_tag=DeviceTag.objects.filter(vehicle_reg_no=reg).last()#,status='Device_Active'
                                 if device_tag:
-                                    gps_data['device_tag']=device_tag.id 
+                                    gps_data['device_tag']=device_tag
                                 gps_data.pop('imei', None)
                                 gps_data.pop('vehicle_registration_number', None)
                                 g=GPSData.objects.create(**gps_data)
@@ -189,7 +191,8 @@ def process_gps_data(data_str):
                 ist_time = ist_datetime.strftime('%H%M%S')
 
  
-
+                #if groups[8]!='GEM1205-04-00':#868960065504918, 
+                #    return None
                 gps_data = {
                     #'start_character': groups[0],
                     #'header': groups[1],
@@ -244,6 +247,8 @@ def process_gps_data(data_str):
                     #'checksum': groups[50],
                     #'end_char': groups[51],
                 }
+                #print(data_str)
+                #print(gps_data)
 
                 return gps_data
             else:
