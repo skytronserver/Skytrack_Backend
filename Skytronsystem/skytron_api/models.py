@@ -35,8 +35,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 
-from django.utils import timezone
-from rest_framework.authtoken.models import Token
+from django.utils import timezone 
 
 from django.conf import settings
 from django.db import models
@@ -944,6 +943,7 @@ class FOTA(models.Model):
 
     def __str__(self):
         return self.vregno'''
+'''
 
 class CustomToken(Token):
     is_active = models.BooleanField(default=False)
@@ -953,6 +953,7 @@ class CustomToken(Token):
         self.last_activity = timezone.now()
         super().save(*args, **kwargs)
 
+'''
 class Session(models.Model):
     loginTime = models.DateTimeField(default=timezone.now, verbose_name="Login Time")
     user = models.ForeignKey(User, on_delete=models.CASCADE)# models.IntegerField(verbose_name="User")

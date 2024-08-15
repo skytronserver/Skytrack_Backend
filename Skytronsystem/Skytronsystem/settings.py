@@ -47,7 +47,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'skytron_api',
     "django_extensions",
-    'rest_framework.authtoken',
+    'rest_framework.authtoken', 
 ]
 
 FORM_RENDERER = 'django.forms.renderers.DjangoTemplates'
@@ -91,7 +91,7 @@ WSGI_APPLICATION = 'Skytronsystem.wsgi.application'
 DATABASES = {
      'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'skytrondbnew',
+        'NAME': 'skytrondbnew2',
         'USER': 'dbadmin',
         'PASSWORD': 'lask1028zmnx',
         'HOST': 'localhost',

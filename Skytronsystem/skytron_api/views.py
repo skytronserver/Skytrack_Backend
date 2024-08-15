@@ -60,7 +60,74 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 import base64
 import json
-import os
+import os 
+
+#python3 -m pip install python-docx
+#python3 -m pip install pypandoc
+#python3 -m pip install docx2pdf
+ 
+#python3 -m pip install pdfkit
+#sudo apt-get install wkhtmltopdf
+#sudo apt-get update
+#sudo apt-get install libreoffice
+
+
+
+import io
+from docx import Document
+import pdfkit
+from tempfile import NamedTemporaryFile
+
+
+import io
+from docx import Document
+import subprocess
+from tempfile import NamedTemporaryFile
+
+def replace_text_in_docx_in_memory(template_path, replacements): 
+    doc = Document(template_path) 
+    for paragraph in doc.paragraphs:
+        for key, value in replacements.items():
+            if key in paragraph.text:
+                paragraph.text = paragraph.text.replace(key, value) 
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+def convert_docx_to_pdf_with_libreoffice(docx_buffer): 
+    with NamedTemporaryFile(suffix=".docx", delete=False) as temp_docx_file:
+        temp_docx_file.write(docx_buffer.getvalue())
+        temp_docx_path = temp_docx_file.name 
+    temp_pdf_path = temp_docx_path.replace('.docx', '.pdf') 
+    subprocess.run(['libreoffice', '--headless', '--convert-to', 'pdf', temp_docx_path, '--outdir', '/tmp'])
+
+    with open(temp_pdf_path, 'rb') as pdf_file:
+        pdf_buffer = io.BytesIO(pdf_file.read()) 
+    subprocess.run(['rm', temp_docx_path, temp_pdf_path]) 
+    return pdf_buffer
+
+
+ 
+template_path = '/var/www/html/skytron_backend/Skytronsystem/skytron_api/static/Cetificate_template.docx'
+ 
+def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,ActivationDate,Status,Date):
+    replacements = {
+        '{{IMEI}}':IMEI,
+        '{{Make}}':Make ,
+        '{{Model}}':Model,
+        '{{Validity}}':Validity,
+        '{{RegNo}}':RegNo,
+        '{{FitmentDate}}':FitmentDate,
+        '{{TaggingDate}}':TaggingDate,
+        '{{ActivationDate}}':ActivationDate,
+        '{{Status}}':Status,
+        '{{Date}}':Date     
+    }
+    docx_buffer = replace_text_in_docx_in_memory(template_path, replacements)
+    pdf_buffer = convert_docx_to_pdf_with_libreoffice(docx_buffer)
+    with open(savepath, 'wb') as f:
+        f.write(pdf_buffer.getvalue())
 
 
 
@@ -1485,7 +1552,7 @@ def update_VehicleOwner(request):
         
         date_joined = timezone.now()
         created = timezone.now()
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = request.data.get('expiryDate')#date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         company_name = request.data.get('company_name')
         idProofno = request.data.get('idProofno')
         file_idProof = request.data.get('file_idProof')
@@ -1501,25 +1568,25 @@ def update_VehicleOwner(request):
             vehicle_owner.idProofno = idProofno
         if file_idProof:
             vehicle_owner.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
-
+        vuser=vehicle_owner.users.last()
         if email:
-            vehicle_owner.user.email = email
+            vuser.email = email
         if mobile:
-            vehicle_owner.user.mobile = mobile
+            vuser.mobile = mobile
         if name:
-            vehicle_owner.user.name = name
+            vuser.name = name
         if dob:
-            vehicle_owner.user.dob = dob
+            vuser.dob = dob
 
         new_password = ''.join(random.choices('0123456789', k=30))
         hashed_password = make_password(new_password)
-        vehicle_owner.user.password = hashed_password
-        vehicle_owner.date_joined = date_joined
-        vehicle_owner.created = created
+        vuser.password = hashed_password
+        #vehicle_owner.date_joined = str(date_joined)
+        #vehicle_owner.created = str(created)
         vehicle_owner.expirydate = expirydate
-        vehicle_owner.user.save()
+        vuser.save()
         vehicle_owner.save()
-        send_usercreation_otp(vehicle_owner.user, new_password, 'Vehicle Owner')
+        #send_usercreation_otp(vehicle_owner.users, new_password, 'Vehicle Owner')
         return Response(VehicleOwnerSerializer(vehicle_owner).data)
 
     except Exception as e:
@@ -1695,7 +1762,7 @@ def delete_VehicleOwner(request, vo_id):
 def filter_VehicleOwner(request):
     try:
         # Get filter parameters from the request
-        dealer_id = request.data.get('eSimProvider_id', None)
+        dealer_id = request.data.get('VehicleOwner_id', None)
         email = request.data.get('email', '')
         company_name = request.data.get('company_name', '')
         name = request.data.get('name', '')
@@ -3248,20 +3315,24 @@ def download_receiptPDF(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="dealer"
     man=get_user_object(user,role)
-    if not man:
-        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
-    
+    #if not man:
+    #    return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    now = datetime.now() 
+    formatted_date = now.strftime("%d/%m/%Y")
     if request.method == 'POST': 
-        tag_id = request.POST.get('device_id') 
+        tag_id = request.data.get('device_id') 
         if not tag_id:
-            return JsonResponse({'error': 'tag_id is required'}, status=400) 
+            return JsonResponse({'error': 'device_id is required'}, status=400) 
         try: 
             device_tag = DeviceTag.objects.filter(device=tag_id).last()
-            file_path = f"fileuploads/cop_files/aaa.pdf"
+            if not device_tag:
+                return HttpResponse("Device tag not found.", status=404) 
+            file_path = f"fileuploads/cop_files/"+str(device_tag.id)+".pdf"
             try:
+                geneateCet(file_path,device_tag.device.imei,device_tag.device.model.model_name,device_tag.device.model.model_name,formatted_date ,device_tag.vehicle_reg_no,formatted_date ,formatted_date ,formatted_date ,device_tag.status,formatted_date )
                 with open(file_path,'rb') as file:
                     response = HttpResponse(file.read(), content_type='application/octet-stream')
-                    response['Content-Disposition'] = f'attachment; filename="aaa.pdf"'
+                    response['Content-Disposition'] = f'attachment; filename='+str(device_tag.id)+'.pdf'
                     return response
             except FileNotFoundError:
                 return HttpResponse("Receipt file not found.", status=404) 
@@ -4278,6 +4349,13 @@ def list_devicemodel(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def filter_devicemodel(request):
+    role="devicemanufacture"
+    user=request.user
+    if user.role==role:
+        uo=get_user_object(user,role)
+        if not uo:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
     # Deserialize the input parameters
     serializer = DeviceModelFilterSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -4293,19 +4371,16 @@ def filter_devicemodel(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def details_devicemodel(request ): 
-    
+def details_devicemodel(request ):     
     device_model_id = request.data.get('device_model_id')
-    device_model = get_object_or_404(DeviceModel, id=device_model_id)
- 
+    device_model = get_object_or_404(DeviceModel, id=device_model_id) 
     serializer = DeviceModelSerializer_disp(device_model)
-
     return Response(serializer.data)
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def DeviceModelAwaitingStateApproval(request): 
-    #user_id = request.user.id
-    
+    #user_id = request.user.id    
     user=request.user 
     sa=get_user_object(user,"stateadmin")
     if not sa:
