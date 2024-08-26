@@ -408,6 +408,30 @@
             var activePolicePoint = "";
             let dynamicOverlay;
             var markers = [];
+
+            function customTileUrlFunction(tileCoord, pixelRatio, projection) {
+                const z = tileCoord[0];
+                const x = tileCoord[1];
+                const y = tileCoord[2];
+
+                const url = 'https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py';
+                const params = {
+                    layers: 'bhuvan_img',
+                    tiled: true,
+                    version: '1.1.1',
+                    format: 'image/jpeg',
+                    transparent: false,
+                    srs: 'EPSG:4326',
+                    width: 256,
+                    height: 256
+                };
+
+                const queryString = Object.keys(params)
+                    .map(key => key + '=' + encodeURIComponent(params[key]))
+                    .join('&');
+
+                return `${url}?service=WMS&request=GetMap&${queryString}&bbox=${ol.extent.getForViewAndSize(projection, tileCoord, 256).join(',')}`;
+            }
             document.addEventListener('DOMContentLoaded', function () {
                 map = new ol.Map({
                     target: 'map',
@@ -421,15 +445,15 @@
                     layers: [
 
 
-                        //new ol.layer.Tile({
-                        //    source: new ol.source.XYZ({
-                        ///        url: 'https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py/1.0.0/bhuvan_imagery2/{z}/{x}/{y}.png'
-                        //    })
-                        //}),
+                        new ol.layer.Tile({
+                            source: new ol.source.XYZ({
+                                url: 'https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py/1.1.1/bhuvan_imagery2/{z}/{x}/{y}.png'
+                            })
+                        }),
+                        /*
                         new ol.layer.Tile({
                             source: new ol.source.OSM()
                         }),
-                        /*
                         new ol.layer.Tile({
                             //extent: [60, 0, 102, 40],
                             source: new ol.source.TileWMS({
@@ -441,7 +465,7 @@
                                     'TILED': true
                                 }
                             })
-                        }),*/
+                        }),
                         new ol.layer.Tile({
                             source: new ol.source.TileWMS({
                                 url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',//https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms   https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms
@@ -450,11 +474,123 @@
                                 transition: 0,
                             }),
                         }),
+                        */
+
+                        // https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms?service=WMS&request=GetMap&LAYERS=mmi%3Ammi_india&styles=&format=image%2Fpng&transparent=true&version=1.1.1&width=256&height=256&srs=EPSG%3A4326&bbox=91.69189453125,26.180419921875,91.6973876953125,26.1859130859375
+                        // https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms?service=WMS&request=GetMap&layers=mmi%3Ammi_india&styles=&format=image%2Fpng&transparent=true&version=1.1.1&width=256&height=256&srs=EPSG%3A4326&bbox=91.69189453125,26.180419921875,91.6973876953125,26.1859130859375
+                        /*new ol.layer.Tile({
+                            source: new ol.source.TileWMS({
+                                url: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms',//https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms   https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms
+                                params: {
+                                    'LAYERS': 'mmi:mmi_india', 'TILED': true, 'version': '1.1.1',
+                                    'transparent': true,
+                                    'service': 'WMS',
+                                    'request': 'GetMap',
+                                },//lulc:BR_LULC50K_1112'
+                                serverType: 'geoserver',
+                                transition: 0,
+
+                            }),
+                        }),
+                        */
+                        //https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms?service=WMS&request=GetMap&layers=basemap%3Aadmin_group&styles=&format=image%2Fpng&transparent=true&version=1.1.1&width=256&height=256&srs=EPSG%3A4326&bbox=78.75,22.5,90,33.75
+                        //https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py?service=WMS&request=GetMap&layers=bhuvan_img&styles=&format=image%2Fjpeg&transparent=false&version=1.1.1&width=256&height=256&srs=EPSG%3A4326&bbox=95.625,25.3125,98.4375,28.125
+
+
+
+                        //https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py?service=WMS&request=GetMap&layers=bhuvan_img&styles=&format=image%2Fjpeg&transparent=false&version=1.1.1&width=256&height=256&srs=EPSG%3A4326&bbox=95.625,25.3125,98.4375,28.125
+
+                        //https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py?service=WMS&request=GetMap&layers=bhuvan_img&styles=&format=image%2Fjpeg&transparent=false&version=1.1.1&width=256&height=256&srs=EPSG%3A4326&bbox=95.625,25.3125,98.4375,28.125
+                        //satelight image 
+
+                        /*
+                        new ol.layer.Tile({
+                            source: new ol.source.TileImage({
+                                tileUrlFunction: customTileUrlFunction,
+                                projection: 'EPSG:4326',
+                                tileGrid: ol.tilegrid.createXYZ({
+                                    tileSize: 256,
+                                    maxZoom: 19
+                                })
+                            })
+                        }),new ol.layer.Tile({
+                            source: new ol.source.TileWMS({
+                                url: 'https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py',
+                                params: {
+                                    'LAYERS': 'bhuvan_img',
+                                    'TILED': true,
+                                    'VERSION': '1.1.1',
+                                    'FORMAT': 'image%2Fjpeg',
+                                    'TRANSPARENT': 'false',
+                                    'SRS': 'EPSG:4326',
+                                    'WIDTH': 256,   // Set the tile width to 256 pixels
+                                    'HEIGHT': 256,   // Set the tile height to 256 pixels 
+
+                                },
+                                serverType: 'geoserver',
+                                projection: 'EPSG:4326', // Ensure the projection is set:' 
+
+
+
+                            })
+                        }),
+
+*/
+                        //indiabasemap 
+                        new ol.layer.Tile({
+                            source: new ol.source.TileWMS({
+                                url: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms',
+                                params: {
+                                    'LAYERS': 'basemap%3Aadmin_group',
+                                    'TILED': true,
+                                    'VERSION': '1.1.1',
+                                    'FORMAT': 'image/png',
+                                    'TRANSPARENT': 'true',
+                                    'SRS': 'EPSG:4326',
+                                    'WIDTH': 256,   // Set the tile width to 256 pixels
+                                    'HEIGHT': 256,   // Set the tile height to 256 pixels
+                                    'pixelRatio': 1,
+
+                                },
+                                serverType: 'geoserver',
+                                projection: 'EPSG:4326', // Ensure the projection is set:' 
+
+
+
+                            })
+                        }),
+                        //Road etc 
+                        new ol.layer.Tile({
+                            source: new ol.source.TileWMS({
+                                url: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms',
+                                params: {
+                                    'LAYERS': 'mmi:mmi_india',
+                                    'TILED': true,
+                                    'VERSION': '1.1.1',
+                                    'FORMAT': 'image/png',
+                                    'TRANSPARENT': 'true',
+                                    'SRS': 'EPSG:4326',
+                                    'WIDTH': 256,   // Set the tile width to 256 pixels
+                                    'HEIGHT': 256,   // Set the tile height to 256 pixels
+                                    'pixelRatio': 1,
+
+                                },
+                                serverType: 'geoserver',
+                                projection: 'EPSG:4326', // Ensure the projection is set:' 
+
+
+
+                            })
+                        })
+
+
                     ],
                     view: new ol.View({
                         center: ol.proj.fromLonLat([91.829437, 26.131644]),
                         zoom: 7,
-                    })
+                    }),
+
+                    pixelRatio: 1,
                 });
 
                 dynamicOverlay = new ol.Overlay({

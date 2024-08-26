@@ -60,6 +60,10 @@ class VehicleOwnerSerializer(serializers.ModelSerializer):
     class Meta:
         model = VehicleOwner 
         fields = '__all__'
+class DriverSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Driver 
+        fields = '__all__'
 
 
 
@@ -444,6 +448,7 @@ class SOS_adminSerializer(serializers.ModelSerializer):
 class DeviceTagSerializer2(serializers.ModelSerializer):
     device = DeviceStockSerializer(many=False, read_only=True)
     vehicle_owner = VehicleOwnerSerializer(many=False, read_only=True)
+    drivers = DriverSerializer(many=True, read_only=True)
 
     class Meta:
         model = DeviceTag 

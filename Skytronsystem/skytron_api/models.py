@@ -656,6 +656,21 @@ class StockAssignment(models.Model):
     shipping_remark = models.TextField()
     stock_status = models.CharField(max_length=255, choices=STATUS_CHOICES)
 """
+
+
+class Driver(models.Model): 
+
+    created = models.DateTimeField(auto_now_add=True,)
+    created_by = models.ForeignKey('User', on_delete=models.CASCADE,related_name="createby_USERdriver")
+   
+    name = models.CharField(max_length= 55 )
+    phone_no = models.CharField(max_length=55)
+    license_no = models.CharField(max_length=55)
+    photo = models.CharField(max_length= 555,null=True)
+
+    def __str__(self):
+        return self.name
+    
 class DeviceTag(models.Model):
     STATUS_CHOICES = [
         ('Dealer_OTP_Sent', 'Dealer OTP Sent'),
@@ -689,6 +704,7 @@ class DeviceTag(models.Model):
     tagged = models.DateTimeField()    
     otp = models.CharField(max_length= 6,null=True,blank=True)
     otp_time = models.DateTimeField( null=True,blank=True)
+    drivers= models.ManyToManyField(Driver, related_name='driver_vehicles',null=True, blank=True)
 
     def __str__(self):
         return self.vehicle_reg_no

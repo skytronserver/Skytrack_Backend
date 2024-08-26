@@ -16,6 +16,7 @@ urlpatterns = [
     path('send_email_otp/', send_email_otp, name='send_email_otp'),
     path('send_sms_otp/', send_sms_otp, name='send_sms_otp'),
     path('user_login/', user_login, name='user_login'),
+    path('user_login_app/', user_login_app, name='user_login_app'),
     path('reset_password_request/', reset_password, name='reset_password'),
      
     path('user_logout/', user_logout, name='user_logout'),
@@ -36,6 +37,10 @@ urlpatterns = [
     path('eSimProvider/delete_eSimProvider/<int:esimProvider_id>/', delete_eSimProvider, name='delete_eSimProvider'),
     path('VehicleOwner/delete_VehicleOwner/<int:vo_id>/', delete_VehicleOwner, name='delete_VehicleOwner'),
     
+
+    path('driver/add_driver/', driver_add, name='add_driver'),
+    path('driver/remove_driver/', driver_remove, name='remove_driver'),
+
     path('manufacturer/create_manufacturer/', create_manufacturer, name='create_manufacturer'),
     path('manufacturer/update_manufacturer/', update_manufacturer, name='update_manufacturer'),
     path('manufacturer/filter_manufacturers/', filter_manufacturers, name='filter_manufacturers'),
@@ -244,6 +249,7 @@ urlpatterns = [
     path('tag/upload_receiptPDF/', upload_receiptPDF, name='upload_receiptPDF'),
     
     path('tag/tag_status/', Tag_status, name='tag_status'),
+    path('tag/tag_ownerlist/', Tag_ownerlist, name='tag_ownerlist'),
    
 
     path('download/', downloadfile, name='download'),

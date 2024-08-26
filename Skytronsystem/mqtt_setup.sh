@@ -22,3 +22,7 @@ sudo nano /etc/mosquitto/mosquitto.conf
 
 sudo systemctl restart mosquitto
 python3 -m pip install paho-mqtt
+sudo apt-get install mosquitto-clients
+mosquitto_sub -h localhost -p 8883 --capath /var/www/html/skytron_backend/Skytronsystem/mqttKeys -t '#'
+
+mosquitto_sub -h '216.10.244.243' -p 8883 -t '#' --cafile /var/www/html/skytron_backend/Skytronsystem/mqttKeys/ca.crt --cert /var/www/html/skytron_backend/Skytronsystem/mqttKeys/client.crt --key /var/www/html/skytron_backend/Skytronsystem/mqttKeys/client.key

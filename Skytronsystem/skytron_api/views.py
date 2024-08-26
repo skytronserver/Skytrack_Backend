@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework import status 
 from .models import *
 from .serializers import *
+
 import random
 from itertools import islice 
 from django.utils import timezone     
@@ -3378,6 +3379,98 @@ def upload_receiptPDF(request):
 
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def driver_remove(request):
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="owner"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Extract data from the request or adjust as needed
+    if request.method == 'POST': 
+        tag_id = request.POST.get('device_id') 
+        driver_id = request.POST.get('driver_id')  
+        if not tag_id:
+            return JsonResponse({'error': 'device_id is required'}, status=400)
+        if not driver_id:
+            return JsonResponse({'error': 'driver_id is required'}, status=400)
+        device_tag = DeviceTag.objects.filter(device_id=tag_id).last()
+        if not device_tag:
+            return JsonResponse({'error': 'DeviceTag with the given device_id does not exist'}, status=404)
+        driver = Driver.objects.filter(id=driver_id).last()
+        if not driver:
+            return JsonResponse({'error': 'Driver with the given driver_id does not exist'}, status=404)
+        try:
+            if driver in device_tag.drivers.all():
+                device_tag.drivers.remove(driver)
+                device_tag.save()
+                return JsonResponse({'message': 'Driver removed successfully'})
+            else:
+                return JsonResponse({'message': 'given driver is not assigned to this vehicle'})
+        
+
+        except:
+            return JsonResponse({'message': 'Unable to remove error'})
+        
+
+ 
+    return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def driver_add(request):
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="owner"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Extract data from the request or adjust as needed
+    if request.method == 'POST': 
+        tag_id = request.POST.get('device_id') 
+        name = request.POST.get('name') 
+        phone_no= request.POST.get('phone_no') 
+        license_no = request.POST.get('licence_no') 
+
+        if not tag_id:
+            return JsonResponse({'error': 'device_id is required'}, status=400)
+        device_tag = DeviceTag.objects.filter(device_id=tag_id).last()
+        if not device_tag:
+            return JsonResponse({'error': 'DeviceTag with the given device_id does not exist'}, status=404)
+        driver= Driver.objects.create( name =  name,
+    phone_no = phone_no,
+    license_no = license_no ,
+    created_by=user
+                )
+                
+        try:
+            uploaded_file = request.FILES.get('photo')
+            if uploaded_file:
+                file_path = 'fileuploads/driver/' + str(device_tag.id) + '_' + uploaded_file.name
+                with open(file_path, 'wb') as file:
+                    for chunk in uploaded_file.chunks():
+                        file.write(chunk)
+                driver.photo= file_path
+                driver.save()
+                device_tag.drivers.add(driver)
+
+                return JsonResponse({'message': 'Driver added successfully'})
+            else:
+                driver.delete()
+                return JsonResponse({'error': 'Photo not found'}, status=405)
+        except:
+            return JsonResponse({'error': 'Unknown Error'}, status=405)
+    return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
+
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def TagAwaitingActivateTag(request): 
@@ -3413,6 +3506,46 @@ def Tag_status(request):
         device_id = request.POST.get('device_id') 
         if device_id:
             devices = devices.filter(device=device_id)
+        
+        reg_no = request.POST.get('reg_no') 
+        if reg_no:
+            devices = devices.filter(vehicle_reg_no=reg_no)
+            
+        tag_status = request.POST.get('tag_status') 
+        if tag_status:
+            devices = devices.filter(status=tag_status)
+        stock_status = request.POST.get('stock_status') 
+        if stock_status:
+            devices = devices.filter(device__stock_status=stock_status)
+        esim_status = request.POST.get('esim_status') 
+        if esim_status:
+            devices = devices.filter(device__esim_status=esim_status)
+    
+        serializer = DeviceTagSerializer2(devices, many=True)
+        return Response(serializer.data)
+    return Response({"error":"Something went wrong."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def Tag_ownerlist(request): 
+    # user_id = request.user.id
+    # Retrieve device models with status "Manufacturer_OTP_Verified"
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="owner"
+    user=request.user
+    uo=get_user_object(user,role)
+    #if not uo:
+    #    return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    if request.method == 'POST': 
+        devices = DeviceTag.objects.filter(vehicle_owner=uo)#created_by=user_id,  
+         
+        device_id = request.POST.get('device_id') 
+        if device_id:
+            devices = devices.filter(device=device_id)
+        reg_no = request.POST.get('reg_no') 
+        if reg_no:
+            devices = devices.filter(vehicle_reg_no=reg_no)
         tag_status = request.POST.get('tag_status') 
         if tag_status:
             devices = devices.filter(status=tag_status)
@@ -4002,6 +4135,8 @@ def deviceStockFilter(request):
     user=request.user
     man=None
     data = request.data.copy()    
+
+    is_tagged_filter = request.data.get('is_tagged')
     if user.role=="devicemanufacture":
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         man=get_user_object(user,"devicemanufacture")
@@ -4010,6 +4145,9 @@ def deviceStockFilter(request):
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         man=get_user_object(user,"dealer")
         data['dealer_id'] = man.id 
+        is_tagged_filter=True
+
+
     
     if not man:
             return Response({"error":"Request must be from device manufacture or dealer"}, status=status.HTTP_400_BAD_REQUEST)
@@ -4024,7 +4162,6 @@ def deviceStockFilter(request):
         item.is_tagged = DeviceTag.objects.filter(device=item).exists()
     # Serialize the data
     #is_tagged_filter = serializer.validated_data.get('is_tagged')
-    is_tagged_filter = request.data.get('is_tagged')
 
     # Filter based on 'is_tagged' value if provided
     if is_tagged_filter is not None:
@@ -4105,7 +4242,9 @@ def deviceStockCreateBulk(request):
             'msisdn2': row.get('msisdn2', ''),
             #'imsi1': row.get('imsi1', ''),
             #'imsi2': row.get('imsi2', ''),
-            'esim_validity': row.get('esim_validity', ''),
+            'esim_validity': row.get('esim_validity', ''), 
+            'stock_status': "NotAssigned",
+            'esim_status':"NotAssigned",
             'esim_provider': esim_provider,
             'remarks': row.get('remarks', ''),
             'created_by': request.user.id,
@@ -4357,11 +4496,13 @@ def filter_devicemodel(request):
             return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
     
     # Deserialize the input parameters
-    serializer = DeviceModelFilterSerializer(data=request.data)
+    data=request.data
+    #data['created_by__id']=user.id
+    serializer = DeviceModelFilterSerializer(data=data)
     serializer.is_valid(raise_exception=True)
 
     # Filter DeviceModel instances based on parameters
-    device_models = DeviceModel.objects.filter(**serializer.validated_data)
+    device_models = DeviceModel.objects.filter(**serializer.validated_data,created_by=user)
 
     # Serialize the data
     serializer = DeviceModelSerializer_disp(device_models, many=True)
@@ -4900,13 +5041,17 @@ def homepage_Manufacturer(request):
         filters = {}
         # Add ID filter if provided
         if profile:
+            mod=DeviceModel.objects.filter(created_by=profile.users.last())
+            deler=Retailer.objects.filter(manufacturer =profile)
+            stock=DeviceStock.objects.filter(created_by=profile.users.last()) 
             count_dict = {
                  
-'Total_Model':0,
-'Total_M2M_linked':0,
+'Total_Model':mod.count(),
+'Total_M2M_linked':profile.esim_provider.count() ,
 
-'Total_Dealer':0,
-'Total_Stock_Allocated':0,	
+'Total_Dealer':deler.count(),
+'Total_Stock_Created':stock.count(),	
+'Total_Stock_Allocated':stock.filter(assigned__isnull=False).count(),	
 'Total_Activation':0,
 
 'Total_esim_activation_request':0,
@@ -5950,6 +6095,8 @@ def send_email_otp(request):
 
 @csrf_exempt
 @api_view(['POST'])
+
+@permission_classes([AllowAny])
 def send_sms_otp(request):
     """
     Send OTP to the user's mobile.
@@ -6133,6 +6280,63 @@ def user_login(request):
 
 
 @api_view(['POST'])
+@permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
+def user_login_app(request):
+    if request.method == 'POST':
+        username = request.data.get('username', None)
+        password=request.data.get('password', None)  
+        if not username or not password :
+            return Response({'error': 'Incomplete credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
+        captchaSuccess=True
+         
+         
+        
+        if not username or not password:
+            return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
+        user = User.objects.filter(mobile=username).last() #or User.objects.filter(mobile=username).first()
+        if not user or not  check_password(password, user.password):
+            return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+
+        user.is_active=True
+        user.save()
+        existing_session = Session.objects.filter(user=user.id, status='login').last()
+        #if existing_session:
+        #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
+        otp = str(random.randint(100000, 999999))
+        #token = get_random_string(length=32)
+        Token.objects.filter(user=user).delete()
+
+        token  = Token.objects.create(user=user) 
+
+        session_data = {
+            'user': user.id,
+            'token': str(token.key),
+            'otp': otp,
+            'status': 'otpsent',
+            'login_time': timezone.now(),
+        } 
+        session_serializer = SessionSerializer(data=session_data)  
+        if session_serializer.is_valid():
+            session_serializer.save()         
+            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            tpid="1007536593942813283"
+            send_SMS(user.mobile,text,tpid) 
+            send_mail(
+                'Login OTP',
+                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                'test@skytrack.tech',
+                [user.email],
+                fail_silently=False,
+            )  
+            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token.key,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the OTP validation endpoint
 def validate_otp(request):
     if request.method == 'POST':
@@ -6146,11 +6350,16 @@ def validate_otp(request):
         # Find the session based on the provided token
         session = Session.objects.filter(token=token).last()
 
+
         if not session:
             return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
+        tok=Token.objects.filter(key=token,user_id=session.user.id)
+        if not tok:
+            return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
+        
         time_difference = timezone.now() - session.lastactivity
-        if time_difference.total_seconds() > 10 * 60:
-            return Response({'error':'Login expired'}, status=status.HTTP_200_OK)
+        #if time_difference.total_seconds() > 10 * 60:
+        #    return Response({'error':'Login expired'}, status=status.HTTP_200_OK)
 
 
 
