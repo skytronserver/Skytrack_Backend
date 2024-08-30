@@ -624,6 +624,7 @@ folders = [
     'fileuploads/cop_files/',
     'fileuploads/file_bin/',
     'fileuploads/man/',
+    'fileuploads/driver/',
     # Add more folders as needed
 ]
 @api_view(['POST'])
@@ -642,7 +643,7 @@ def downloadfile(request):
             name=file_path
             file_path=find_file_in_folders(file_path, folders) 
             if not file_path:
-                return JsonResponse({'error': 'file not found'}, status=400) 
+                return JsonResponse({'error': 'file not found'+name}, status=400) 
             try:                
                 with open(file_path,'rb') as file:
                     response = HttpResponse(file.read(), content_type='application/octet-stream')
