@@ -20,6 +20,15 @@ class Settings_StateSerializer(serializers.ModelSerializer):
         model = Settings_State
         fields = '__all__'
 
+class DriverSerializer(serializers.ModelSerializer):
+    #state_info = DeviceModelSerializer(source='devicemodel', read_only=True)
+    #devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
+    #createdby_info = UserSerializer(source='createdby', read_only=True)
+
+    class Meta:
+        model = Driver
+        fields = '__all__'
+
 
 class DeviceStockSerializer(serializers.ModelSerializer):
     class Meta:
@@ -395,10 +404,10 @@ class StateadminSerializer(serializers.ModelSerializer):
     class Meta:
         model = StateAdmin
         fields = '__all__'
-class routSerializer(serializers.ModelSerializer):
+class routeSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Rout
-        fields = ("id" ,"device_id","createdby_id","rout")
+        model = Route
+        fields = ("id" ,"device_id","createdby_id","route")
 
 class dto_rtoSerializer(serializers.ModelSerializer):
     

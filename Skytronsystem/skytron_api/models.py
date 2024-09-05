@@ -203,6 +203,32 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
    
     '''
+
+
+
+
+
+class TempUser(models.Model):
+    name = models.CharField(max_length=255, verbose_name="Name")  
+    #email = models.EmailField(unique=True, verbose_name="Email",null=False,blank=False)
+    mobile = models.CharField(max_length=15,   verbose_name="Mobile") 
+    ble_key = models.CharField(max_length=15, null=True,blank=True,unique=False, verbose_name="ble_key") 
+    session_key = models.CharField(max_length=100, unique=True, verbose_name="session_key") 
+    date_joined = models.DateTimeField(default=timezone.now)
+    created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
+    otp = models.CharField(max_length=100,default='123456')  # Assuming 32 characters for MD5 hash
+    otp_time= models.DateTimeField(default=timezone.now)
+    em_contact=models.CharField(max_length=15,null=False,blank=False,  verbose_name="em_contact") 
+    last_login =  models.DateTimeField(blank=True, null=True)
+    last_activity =  models.DateTimeField(blank=True, null=True)
+    online=models.BooleanField(default=False)
+    feedback = models.TextField(blank=True, null=True, verbose_name="feedback") 
+    em_lat = models.FloatField(blank=True, null=True, verbose_name="em_lat") 
+    em_lon = models.FloatField(blank=True, null=True, verbose_name="em_lon") 
+    em_msg=models.TextField(blank=True, null=True, verbose_name="em_msg") 
+    em_time= models.DateTimeField(blank=True, null=True)
+      
+
 class Confirmation(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     token = models.CharField(max_length=32, unique=True)
@@ -246,6 +272,8 @@ class eSimProvider(models.Model):
     company_name = models.CharField(max_length=255, verbose_name="Company Name")
     gstnnumber = models.CharField(max_length=20, blank=True, null=True)
     users = models.ManyToManyField('User', related_name='eSimProvider_User')
+    
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     created = models.DateField(auto_now_add=True)
     expirydate = models.DateField(auto_now_add=True)
     gstno = models.CharField(max_length=255, blank=True, null=True)
@@ -479,13 +507,13 @@ class Device(models.Model):
 
 
 
-class Rout(models.Model): 
+class Route(models.Model): 
     status_choices = [
         ('Active', 'Active'),
         ('Deleted', 'Deleted'), 
     ]
     status = models.CharField(max_length=20, choices=status_choices)
-    rout = models.TextField( ) 
+    route = models.TextField( ) 
     device = models.ForeignKey('DeviceStock', on_delete=models.CASCADE)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
     created = models.DateField(auto_now_add=True)
@@ -685,6 +713,7 @@ class DeviceTag(models.Model):
         ('Device_Active', 'Device Active'),
         ('Device_Not_Active', 'Device Not Active'),
         ('Device_Untagged', 'Device Untagged'),
+        ('TagDeleted', 'TagDeleted'),
     ]
 
     device = models.ForeignKey(DeviceStock, on_delete=models.CASCADE)
@@ -1124,7 +1153,7 @@ class AlertsLog(models.Model):
     status = models.CharField(max_length=50, choices=TYPE_CHOICES)
     timestamp = models.DateTimeField(auto_now_add=True)
     gps_ref=models.ForeignKey(GPSData, on_delete=models.CASCADE)
-    route_ref=models.ForeignKey(Rout, on_delete=models.CASCADE,null=True, blank=True)
+    route_ref=models.ForeignKey(Route, on_delete=models.CASCADE,null=True, blank=True)
     em_ref=models.ForeignKey(EmergencyCall, on_delete=models.CASCADE,null=True, blank=True)
     #vehicle=models.ForeignKey(Vehicle, on_delete=models.CASCADE) 
     deviceTag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE) 

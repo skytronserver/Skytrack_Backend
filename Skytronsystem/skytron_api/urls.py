@@ -126,12 +126,22 @@ urlpatterns = [
     path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),
     #emergency_call_listener_admin
     path('emergency-call-listener-admin/',emergency_call_listener_admin, name='emergency-call-listener-admin'), 
-    path('emergency-call-listener-deskexecutive/',setRout, name='emergency-call-listener-deskexecutive'), 
+    path('emergency-call-listener-deskexecutive/',setRoute, name='emergency-call-listener-deskexecutive'), 
     path('emergency-call-listener-team-lead/',emergency_call_listener_admin, name='emergency-call-listener-team-lead'), 
-    path('setRout/',setRout, name='setRout'), 
-    path('saveRout/',saveRout, name='saveRout'), 
-    path('delRout/',delRout, name='delRout'), 
-    path('getRout/',getRout, name='getRout'), 
+    path('setRoute/',setRoute, name='setRout'), 
+    path('saveRoute/',saveRoute, name='saveRout'), 
+    path('delRoute/',delRoute, name='delRout'), 
+    path('getRoute/',getRoute, name='getRout'), 
+    path('get_routePath/',get_routePath, name='get_routePath'), 
+    path('temp_user_login/',temp_user_login, name='temp_user_login'),
+    path('temp_user_resendOTP/',temp_user_resendOTP, name='temp_user_resendOTP'),
+    path('temp_user_OTPValidate/',temp_user_OTPValidate, name='temp_user_OTPValidate'),
+    path('temp_user_BLEValidate/',temp_user_BLEValidate, name='temp_user_BLEValidate'), 
+    path('temp_user_logout/',temp_user_logout, name='temp_user_logout'), 
+    path('temp_user_emcall/',temp_user_emcall, name='temp_user_emcall'), 
+    path('temp_user_Feedback/',temp_user_Feedback, name='temp_user_Feedback'), 
+    
+    
     #path('emergency-call-listener-admin/',emergency_call_listener_admin, name='emergency-call-listener-admin'), 
 
 

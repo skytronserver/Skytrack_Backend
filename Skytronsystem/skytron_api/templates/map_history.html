@@ -217,125 +217,205 @@
                 success: function (response) {
 
                     console.log('success:', response);
-                    mapdata = response.data;
-                    var timeSlider = document.getElementById('time-slider');
-                    timeSlider.max = response.mapdata_length;
+                    if (response.mapdata_length < 1) {
 
-                    map = new ol.Map({
-                        target: 'map',
-                        layers: [
-                            new ol.layer.Tile({
-                                source: new ol.source.OSM()
-                            }),
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('map').style.visibility = 'visible';
+                        document.getElementById('map').innerHTML = "<H3>No data found. Please try changing Vehicle or Date Time.</H3>";
+                    }
+                    else {
+                        mapdata = response.data;
+                        var timeSlider = document.getElementById('time-slider');
+                        timeSlider.max = response.mapdata_length;
 
-                            new ol.layer.Tile({
-                                source: new ol.source.XYZ({
-                                    url: 'https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py/1.0.0/bhuvan_imagery2/{z}/{x}/{y}.png'
-                                })
-                            }),
-                            new ol.layer.Tile({
-                                source: new ol.source.OSM()
-                            }),
-                            /*
-                            new ol.layer.Tile({
-                                //extent: [60, 0, 102, 40],
-                                source: new ol.source.TileWMS({
-                                    url: 'https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py?',
-                                    params: {
-                                        'VERSION': '1.1.1',
-                                        'LAYERS': 'bhuvan_imagery',
-                                        'FORMAT': 'image/jpeg',
-                                        'TILED': true
-                                    }
-                                })
-                            }),*/
-                            new ol.layer.Tile({
-                                source: new ol.source.TileWMS({
-                                    url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',//https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms   https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms
-                                    params: { 'LAYERS': 'lulc:BR_LULC50K_1112', 'TILED': true },//lulc:BR_LULC50K_1112'
-                                    serverType: 'geoserver',
-                                    transition: 0,
+                        map = new ol.Map({
+                            target: 'map',
+                            layers: [
+
+                                new ol.layer.Tile({
+                                    source: new ol.source.OSM()
                                 }),
-                            }),
-                        ],
-                        view: new ol.View({
-                            center: ol.proj.fromLonLat([91.829437, 26.131644]),
-                            zoom: 11,
-                        })
-                    });
+                                /*
+                                                            new ol.layer.Tile({
+                                                                source: new ol.source.XYZ({
+                                                                    url: 'https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py/1.0.0/bhuvan_imagery2/{z}/{x}/{y}.png'
+                                                                })
+                                                            }),
+                                                            new ol.layer.Tile({
+                                                                source: new ol.source.OSM()
+                                                            }),
+                                                            
+                                                            new ol.layer.Tile({
+                                                                //extent: [60, 0, 102, 40],
+                                                                source: new ol.source.TileWMS({
+                                                                    url: 'https://bhuvan-ras2.nrsc.gov.in/tilecache/tilecache.py?',
+                                                                    params: {
+                                                                        'VERSION': '1.1.1',
+                                                                        'LAYERS': 'bhuvan_imagery',
+                                                                        'FORMAT': 'image/jpeg',
+                                                                        'TILED': true
+                                                                    }
+                                                                })
+                                                            }),
+                                                            new ol.layer.Tile({
+                                                                source: new ol.source.TileWMS({
+                                                                    url: 'https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms',//https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms   https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms
+                                                                    params: { 'LAYERS': 'lulc:BR_LULC50K_1112', 'TILED': true },//lulc:BR_LULC50K_1112'
+                                                                    serverType: 'geoserver',
+                                                                    transition: 0,
+                                                                }),
+                                                            }),*/
 
-                    //map.addLayer(activePoliceLayer);
+                                /*
+                                new ol.layer.Tile({
+                                    source: new ol.source.TileWMS({
+                                        url: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms',
+                                        params: {
+                                            'LAYERS': 'india3',
+                                            'TILED': true,
+                                            'VERSION': '1.1.1',
+                                            'FORMAT': 'image/png',
+                                            'TRANSPARENT': 'true',
+                                            'SRS': 'EPSG:4326',
+                                            'WIDTH': 256,   // Set the tile width to 256 pixels
+                                            'HEIGHT': 256,   // Set the tile height to 256 pixels
+                                            'pixelRatio': 1,
+    
+                                        },
+                                        serverType: 'geoserver',
+                                        projection: 'EPSG:4326', // Ensure the projection is set:' 
+    
+    
+    
+                                    })
+                                }),
+                                //indiabasemap 
+                                new ol.layer.Tile({
+                                    source: new ol.source.TileWMS({
+                                        url: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms',
+                                        params: {
+                                            'LAYERS': 'basemap%3Aadmin_group',
+                                            'TILED': true,
+                                            'VERSION': '1.1.1',
+                                            'FORMAT': 'image/png',
+                                            'TRANSPARENT': 'true',
+                                            'SRS': 'EPSG:4326',
+                                            'WIDTH': 256,   // Set the tile width to 256 pixels
+                                            'HEIGHT': 256,   // Set the tile height to 256 pixels
+                                            'pixelRatio': 1,
+    
+                                        },
+                                        serverType: 'geoserver',
+                                        projection: 'EPSG:4326', // Ensure the projection is set:' 
+    
+    
+    
+                                    })
+                                }),
+                                //Road etc 
+                                new ol.layer.Tile({
+                                    source: new ol.source.TileWMS({
+                                        url: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms',
+                                        params: {
+                                            'LAYERS': 'mmi:mmi_india',
+                                            'TILED': true,
+                                            'VERSION': '1.1.1',
+                                            'FORMAT': 'image/png',
+                                            'TRANSPARENT': 'true',
+                                            'SRS': 'EPSG:4326',
+                                            'WIDTH': 256,   // Set the tile width to 256 pixels
+                                            'HEIGHT': 256,   // Set the tile height to 256 pixels
+                                            'pixelRatio': 1,
+    
+                                        },
+                                        serverType: 'geoserver',
+                                        projection: 'EPSG:4326', // Ensure the projection is set:' 
+    
+    
+    
+                                    })
+                                }),*/
 
-                    dynamicOverlay = new ol.Overlay({
-                        element: document.getElementById('dynamic-overlay'),
-                    });
-                    map.addOverlay(dynamicOverlay);
-                    if (mapdata.length > 0) {
-
-
-
-                        var lastEntryTime = new Date(mapdata[0].et);
-                        for (var i = 1; i < mapdata.length; i++) {
-                            var entry = mapdata[i];
-                            if (entry.gpsS == 1) {
-                                var currentEntryTime = new Date(entry.et);
-                                var timeDifferenceInMilliseconds = currentEntryTime - lastEntryTime;
-                                astEntryTime = currentEntryTime;
-                                var timeDifference = timeDifferenceInMilliseconds / 1000;
-                                updateEmergencyPointer(entry.lon, entry.lat, i, entry.vehicle_registration_number, timeDifference);
-                            }
-
-                        }
-
-                        map.addLayer(markerLayer);
-
-                        var tileLoadStart = 0;
-                        var tileLoadEnd = 0;
-                        map.getLayers().forEach(function (layer) {
-                            if (layer instanceof ol.layer.Tile) {
-                                layer.getSource().on('tileloadstart', function () {
-                                    tileLoadStart++;
-                                });
-
-                                layer.getSource().on('tileloadend', function () {
-                                    tileLoadEnd++;
-                                    checkTilesLoaded();
-                                });
-
-                                layer.getSource().on('tileloaderror', function () {
-                                    tileLoadEnd++;
-                                    checkTilesLoaded();
-                                });
-                            }
+                            ],
+                            view: new ol.View({
+                                center: ol.proj.fromLonLat([91.829437, 26.131644]),
+                                zoom: 11,
+                            })
                         });
-                        function checkTilesLoaded() {
-                            if (tileLoadEnd === tileLoadStart) {
-                                document.getElementById('loading').style.visibility = 'hidden';
-                                document.getElementById('loading').style.display = 'none';
-                                document.getElementById('map').style.visibility = 'visible';
-                                document.getElementById('controls-container').style.visibility = 'visible';
-                            }
-                        }
 
+                        //map.addLayer(activePoliceLayer);
 
-                        map.on('click', function (event) {
-                            var clickedFeatures = map.getFeaturesAtPixel(event.pixel);
-
-                            // Check if globalMarker is among the clicked features
-                            var isGlobalMarkerClicked = clickedFeatures && clickedFeatures.includes(globalMarker);
-
-                            var element = dynamicOverlay.getElement();
-                            var isVisible = element.style.display === 'block';
-
-                            // Toggle visibility if globalMarker is clicked
-                            if (isGlobalMarkerClicked) {
-                                dynamicOverlay.setPosition(isVisible ? undefined : currentCoordinates1);
-                                element.style.display = isVisible ? 'none' : 'block';
-                            } else {
-                                // Hide the overlay if clicked outside globalMarker
-                                hideOverlay();
-                            }
+                        dynamicOverlay = new ol.Overlay({
+                            element: document.getElementById('dynamic-overlay'),
                         });
+                        map.addOverlay(dynamicOverlay);
+                        if (mapdata.length > 0) {
+
+
+
+                            var lastEntryTime = new Date(mapdata[0].et);
+                            for (var i = 1; i < mapdata.length; i++) {
+                                var entry = mapdata[i];
+                                if (entry.gpsS == 1) {
+                                    var currentEntryTime = new Date(entry.et);
+                                    var timeDifferenceInMilliseconds = currentEntryTime - lastEntryTime;
+                                    astEntryTime = currentEntryTime;
+                                    var timeDifference = timeDifferenceInMilliseconds / 1000;
+                                    updateEmergencyPointer(entry.lon, entry.lat, i, entry.vehicle_registration_number, timeDifference);
+                                }
+
+                            }
+
+                            map.addLayer(markerLayer);
+
+                            var tileLoadStart = 0;
+                            var tileLoadEnd = 0;
+                            map.getLayers().forEach(function (layer) {
+                                if (layer instanceof ol.layer.Tile) {
+                                    layer.getSource().on('tileloadstart', function () {
+                                        tileLoadStart++;
+                                    });
+
+                                    layer.getSource().on('tileloadend', function () {
+                                        tileLoadEnd++;
+                                        checkTilesLoaded();
+                                    });
+
+                                    layer.getSource().on('tileloaderror', function () {
+                                        tileLoadEnd++;
+                                        checkTilesLoaded();
+                                    });
+                                }
+                            });
+                            function checkTilesLoaded() {
+                                if (tileLoadEnd === tileLoadStart) {
+                                    document.getElementById('loading').style.visibility = 'hidden';
+                                    document.getElementById('loading').style.display = 'none';
+                                    document.getElementById('map').style.visibility = 'visible';
+                                    document.getElementById('controls-container').style.visibility = 'visible';
+                                }
+                            }
+
+
+                            map.on('click', function (event) {
+                                var clickedFeatures = map.getFeaturesAtPixel(event.pixel);
+
+                                // Check if globalMarker is among the clicked features
+                                var isGlobalMarkerClicked = clickedFeatures && clickedFeatures.includes(globalMarker);
+
+                                var element = dynamicOverlay.getElement();
+                                var isVisible = element.style.display === 'block';
+
+                                // Toggle visibility if globalMarker is clicked
+                                if (isGlobalMarkerClicked) {
+                                    dynamicOverlay.setPosition(isVisible ? undefined : currentCoordinates1);
+                                    element.style.display = isVisible ? 'none' : 'block';
+                                } else {
+                                    // Hide the overlay if clicked outside globalMarker
+                                    hideOverlay();
+                                }
+                            });
+                        }
                     }
 
                 },

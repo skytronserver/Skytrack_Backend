@@ -336,7 +336,7 @@ def get_latest_gps_location(request, emergency_call_id):
     try:
         route = requests.post('https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_state.php?lat1='+str(latest_gps_location.latitude)+'&lon1='+str(latest_gps_location.longitude)+'&lat2='+str(loc_lat)+'&lon2='+str(loc_lon)+'&token=fb46cfb86bea498dce694350fb6dd16d161ff8eb', headers=headers ).json()
     except Exception as e:
-        print("no rout",e)
+        print("no route",e)
         route=json.dumps({"err":"err"}, indent = 4) 
     
     #print(route)
@@ -1208,7 +1208,7 @@ def gps_history_map_data(request):
 
 
 
-def setRout(request):
+def setRoute(request):
     # Get the latest entry for each unique vehicle_registration_number
     #latest_data = GPSData.objects.filter(
     #    vehicle_registration_number=OuterRef('vehicle_registration_number')
@@ -1220,27 +1220,38 @@ def setRout(request):
     if request.method == 'GET':
         device_id = 1 #request.GET.get('device_id')
         device = DeviceStock.objects.get(id=device_id)   
-        rout = Rout.objects.filter(device=device ) 
-        return render(request, 'map_rout.html',{"routs": rout } )
+        route = Route.objects.filter(device=device,status="Active" ) 
+        return render(request, 'map_rout.html',{"routs": route } )
     
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
-
  
+
 @csrf_exempt
-def delRout(request):
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])  
+def delRoute(request):
     if request.method == 'POST':
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        user=request.user
+        role="owner"
+        man=get_user_object(user,role)
+        if not man:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+
         data =json.loads( request.body )
         try:
             id=data['id']  
             device =  DeviceStock.objects.get(id=data['device_id'])
-
             if id:
-                route = Rout.objects.get(id=id)
-                route.delete()
-                rout = Rout.objects.filter(device=device ).all()
-                return JsonResponse({"message": "Route deleted successfully!",'new':[],"data": routSerializer(rout, many=True).data }, status=201)
+                route = Route.objects.filter(id=int(id),device=device,status="Active", createdby=user.id).last()
+                if not route: 
+                    return JsonResponse({"error": "Route not found"}, status=400)
+                route.status="Deleted"
+                route.save()
+                route = Route.objects.filter(device=device,status="Active" , createdby=user).all()
+                return JsonResponse({"message": "Route deleted successfully!",'new':[],"data": routeSerializer(route, many=True).data }, status=201)
         
         except Exception as e:
             print(e)
@@ -1249,39 +1260,81 @@ def delRout(request):
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])  
+def get_routePath(request):
+    # The target external API URL
+    url = 'https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_new_v2.php?token=fb46cfb86bea498dce694350fb6dd16d161ff8eb' 
+    points_data = request.data.get("points", [])
+    
+    if not points_data:
+        return Response({"error": "Points data is required"}, status=status.HTTP_400_BAD_REQUEST) 
+    try:
+        response = requests.post(
+            url,
+            json={"points": points_data},  # Send points data in the correct format
+            headers={"Content-Type": "application/json"}
+        )
+        response.raise_for_status()   
+        return Response(response.json(), status=response.status_code)
+    
+    except requests.exceptions.RequestException as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @csrf_exempt
-def saveRout(request):
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])  
+def saveRoute(request):
     if request.method == 'POST':
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        user=request.user
+        role="owner"
+        man=get_user_object(user,role)
+        if not man:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+
         #print(request.body)
         data =json.loads( request.body )
         id =None
+        createdby=user #data['createdby_id'
         try:
             id=data['id']
         except Exception as e:
             print(e)
+
         try:
-            createdby =  User.objects.get(id=data['createdby_id'])
+            #createdby =  User.objects.get(id=createdby)
             device =  DeviceStock.objects.get(id=data['device_id'])
+            if not device:
+                    return JsonResponse({"error": "Device not found"}, status=405)
+            tag=DeviceTag.objects.filter(
+            device_id=device,
+            vehicle_owner =man)
+            if not tag:
+                    return JsonResponse({"error": "Unauthorised owner "}, status=405)
 
             if id:
-                route = Rout.objects.get(id=id)
-                route.rout = data['rout']
-                route.createdby = User.objects.get(id=data['createdby_id']) 
+                route = Route.objects.get(id=id,device=device,status='Active', createdby=user)
+                if not route:
+                    return JsonResponse({"error": "existing route not fond for given id "}, status=405)
+                route.route = data['route']
+                
+                route.createdby = createdby #User.objects.get(id=data['createdby_id']) 
                 route.save()
-                rout = Rout.objects.filter(device=device ).all()
-                return JsonResponse({"message": "Route saved successfully!",'new':routSerializer(route).data,"data": routSerializer(rout, many=True).data }, status=201)
+                routes = Route.objects.filter(device=device ,status='Active', createdby=user).all()
+                return JsonResponse({"message": "Route saved successfully!",'update':routeSerializer(route).data,"data": routeSerializer(routes, many=True).data }, status=201)
         
             else:
-                route = Rout(
-                    rout=data['rout'],
+                route = Route(
+                    route=data['route'],
                     status='Active',  # Assuming status is 'Active' when created
                     device=device,
                     createdby=createdby
                 )
                 route.save()
-                rout = Rout.objects.filter(device=device ).all()
-                return JsonResponse({"message": "New Route saved successfully!",'new':routSerializer(route).data,"data": routSerializer(rout, many=True).data }, status=201)
+                routes = Route.objects.filter(device=device , status='Active',createdby=user).all()
+                return JsonResponse({"message": "New Route saved successfully!",'new':routeSerializer(route).data,"data": routeSerializer(routes, many=True).data }, status=201)
         except Exception as e:
             print(e)
             return JsonResponse({"error": str(e)}, status=400)
@@ -1289,27 +1342,63 @@ def saveRout(request):
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
-def getRout(request):
-    if request.method == 'GET':
-        device_id = 1 #request.GET.get('device_id')
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])  
+def getRoute(request):
+    if request.method == 'POST':
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        user=request.user
+        role="owner"
+        man=get_user_object(user,role)
+        if not man:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        data =json.loads( request.body )
+        device_id =  data['device_id']
+        
         try:
-            device = DeviceStock.objects.get(id=device_id)
-            rout = Rout.objects.filter(device=device ) 
-            return JsonResponse({"rout": rout }, status=200)
-        except Rout.DoesNotExist:
+
+            device =  DeviceStock.objects.get(id=data['device_id'])
+            if not device:
+                    return JsonResponse({"error": "Device not found"}, status=405)
+            tag=DeviceTag.objects.filter(
+            device_id=device,
+            vehicle_owner =man)
+            if not tag:
+                    return JsonResponse({"error": "Unauthorised owner "}, status=405) 
+             
+            route = Route.objects.filter(device=device ,status="Active", createdby=user).all()#.latest('id')
+            return JsonResponse({"route": routeSerializer(route, many=True).data  }, status=200)
+        except Route.DoesNotExist:
             return JsonResponse({"error": "No active route found for this device"}, status=404)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=400)
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
-def getRoutlist(request):
+
+
+@csrf_exempt
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])  
+def getRoutelist(request):
     if request.method == 'GET':
-        device_id = 1 #request.GET.get('device_id')
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        user=request.user
+        role="owner"
+        man=get_user_object(user,role)
+        if not man:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        device_id =request.GET.get('device_id')
         try:
             device = DeviceStock.objects.get(id=device_id)
-            rout = Rout.objects.filter(device=device, status='Active').latest('id')
-            return JsonResponse({"rout": rout.rout}, status=200)
-        except Rout.DoesNotExist:
+            route = Route.objects.filter(device=device, status='Active', createdby=user).all()#.latest('id')
+            if not route:
+                return JsonResponse({"error": "No active route found for this device"}, status=404)
+            return JsonResponse({"route": route}, status=200)
+        except Route.DoesNotExist:
             return JsonResponse({"error": "No active route found for this device"}, status=404)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=400)
@@ -1607,7 +1696,6 @@ def create_VehicleOwner(request):
     uo=get_user_object(user,role)
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
-    
     try: 
         company_name = request.data.get('company_name') 
         createdby = request.user 
@@ -1621,10 +1709,7 @@ def create_VehicleOwner(request):
             company_name=""
         if user: 
             try:
-                 
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
-
-
                 retailer = VehicleOwner.objects.create(
                     company_name=company_name, 
                     created=created,
@@ -1987,6 +2072,7 @@ def create_eSimProvider(request):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof') 
+        state = request.data.get('stateId') 
         user,error,new_password=create_user('esimprovider',request)
         if user:  
          
@@ -2004,6 +2090,7 @@ def create_eSimProvider(request):
                     created=created,
                     expirydate=expirydate,
                     gstno=gstno,
+                    state_id=state,
                     idProofno=idProofno,
                     file_authLetter=file_authLetter,
                     file_companRegCertificate=file_companRegCertificate,
@@ -2030,6 +2117,12 @@ def create_eSimProvider(request):
 @permission_classes([IsAuthenticated])
 def filter_eSimProvider(request):
     try:
+
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        role="stateadmin"
+        user=request.user
+        uo=get_user_object(user,role)
+        
         # Get filter parameters from the request
         dealer_id = request.data.get('eSimProvider_id', None)
         email = request.data.get('email', '')
@@ -2037,6 +2130,7 @@ def filter_eSimProvider(request):
         name = request.data.get('name', '')
         phone_no = request.data.get('phone_no', '')
         address = request.data.get('address', '')
+        state = request.data.get('state', '')
 
      
         if dealer_id :
@@ -2046,6 +2140,7 @@ def filter_eSimProvider(request):
                 company_name__icontains=company_name,
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
+                state=state, 
             ).distinct()
         else:
             manufacturers = eSimProvider.objects.filter(
@@ -2055,7 +2150,15 @@ def filter_eSimProvider(request):
                 company_name__icontains=company_name,
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
+                state=state, 
             ).distinct()
+        
+        if not uo:
+            pass
+            #return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            state=uo
+            manufacturers=manufacturers.filter(state=uo.state)
 
         # Serialize the queryset
         retailer_serializer = eSimProviderSerializer(manufacturers, many=True)
@@ -2394,7 +2497,16 @@ def create_manufacturer(request):
                 
                 # Fetch the EsimProvider instances and set the many-to-many relationship
                 esim_providers = eSimProvider.objects.filter(id__in=esim_provider_ids)
-                manufacturer.esim_provider.set(esim_providers)
+                
+                if esim_provider_ids.state.id==state:
+                    manufacturer.esim_provider.set(esim_providers)
+                else:
+                    user.delete()
+                    manufacturer.delete()
+                    return Response({'error': "State missmatch with M2M Provider"}, status=500)
+                
+
+
 
             except Exception as e:
                 user.delete()
@@ -2683,12 +2795,16 @@ Districtlist={'Kamrup':'AS01','Kamrup Rural':'AS25','Nagaon':'AS02','Jorhat':'AS
 @csrf_exempt
 @api_view(['POST'])
 def getDistrictList(request):
-    state= request.data.get('State', '1')
-    districts = Settings_District.objects.filter(state_id=state).order_by('district', 'id')
-    Districtlist = {}
-    for district in districts:
-        Districtlist[district.district] = district.district_code
-    return JsonResponse(Districtlist)
+    try:
+        state= request.data.get('State')
+        districts = Settings_District.objects.filter(state_id=state).order_by('district', 'id')
+        Districtlist = {}
+        for district in districts:
+            Districtlist[district.district] = district.district_code
+        return JsonResponse(Districtlist)
+    except:
+        return Response({"error":"Unable to find District"}, status=status.HTTP_400_BAD_REQUEST)
+    
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -2708,12 +2824,15 @@ def create_DTO_RTO(request):
         created = timezone.now()  
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
-        state= request.data.get('state', '1')
+        state= request.data.get('state', '')
         dto_rto1= request.data.get('dto_rto', '')
         districtC = request.data.get('district_code', '')
         state= request.data.get('State', '1')
         districts = Settings_District.objects.filter(state_id=state).order_by('district', 'id')
         Districtlist = {}
+        if uo.state.id !=state:
+            return Response({"error":"Unauthorised state "+'.'}, status=status.HTTP_400_BAD_REQUEST)
+
         for district in districts:
             Districtlist[district.district] = district.district_code
         if districtC not in Districtlist.values():
@@ -3240,6 +3359,7 @@ def TagDevice2Vehicle(request):
     # Extract data from the request or adjust as needed
     device_id = int(request.data['device'])
     stock_assignment = get_object_or_404(DeviceStock, dealer=man,id=device_id, stock_status="Available_for_fitting") #'Fitted') 
+
     if stock_assignment:
         stock_assignment=stock_assignment 
         user_id = request.user.id  # Assuming the user is authenticated
@@ -3250,7 +3370,7 @@ def TagDevice2Vehicle(request):
             with open(file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
-                
+            
             device_tag = DeviceTag.objects.create(
             device_id=device_id,
             vehicle_owner =vehicle_owner ,
@@ -3267,6 +3387,10 @@ def TagDevice2Vehicle(request):
             otp=str(random.randint(100000, 999999)) ,
             otp_time=timezone.now() 
             )
+            stock_assignment.stock_status= 'Fitted'
+            stock_assignment.save()
+
+
   
             text="Dear VLTD Dealer/ Manufacturer,We have received request for tagging and activation of following device and vehicle-Vehicle Reg No: {}Device IMEI No: {}To confirm, please enter the OTP {}.- SkyTron".format(device_tag.vehicle_reg_no,device_tag.device.imei,device_tag.otp)
             tpid="1007201930295888818"
@@ -3281,7 +3405,7 @@ def TagDevice2Vehicle(request):
         serializer = DeviceTagSerializer(device_tag)
         return JsonResponse({'data': serializer.data, 'message': 'Device taging successful.'}, status=201)
     else:
-        return JsonResponse({  'message': 'Device is not Fitted'}, status=201)
+        return JsonResponse({  'message': 'Device not avaialble for Tagging'}, status=201)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -3308,6 +3432,34 @@ def unTagDevice2Vehicle(request):
         return JsonResponse({'message': 'Device successfully untagged'}) 
     return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
 
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def deleteTagDevice2Vehicle(request):
+    
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dealer"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Extract data from the request or adjust as needed
+    if request.method == 'POST': 
+        tag_id = request.POST.get('tag_id') 
+        if not tag_id:
+            return JsonResponse({'error': 'tag_id is required'}, status=400)
+        try: 
+            device_tag = DeviceTag.objects.filter(id=tag_id,tagged_by=user).exclude(status="Device_Active") #,status="Device_Active")
+        except DeviceTag.DoesNotExist:
+            return JsonResponse({'error': 'DeviceTag with the given tag_id or delete access does not exist'}, status=404)
+        device_tag.status = 'TagDeleted'
+        device_tag.save()
+        device_tag.device.stock_status= 'Available_for_fitting'
+        device_tag.device.save()
+        return JsonResponse({'message': 'Device tag successfully deleted'}) 
+    return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -4706,13 +4858,21 @@ def create_Settings_ip(request):
 @permission_classes([IsAuthenticated])
 def filter_Settings_District(request):
     try:
+        #"superadmin","devicemanufacture","","dtorto","dealer","owner","esimprovider"
+        role="stateadmin"
+        user=request.user
+        uo=get_user_object(user,role)
+        if  uo:
+            state=uo.state
+            manufacturers = Settings_District.objects.filter(state=state ).distinct()
+        else:
+            manufacturers = Settings_District.objects.all()
+    
         # Create a dictionary to hold the filter parameters
         filters = {}
         # Add ID filter if provided
-        if True:
-            manufacturers = Settings_District.objects.filter(
-                 
-            ).distinct()
+        
+            
         # Serialize the queryset
         retailer_serializer = Settings_DistrictSerializer(manufacturers, many=True)
         # Return the serialized data as JSON response
@@ -4725,7 +4885,7 @@ def filter_Settings_District(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_Settings_District(request): 
-      #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
     user=request.user
     uo=get_user_object(user,role)
@@ -4924,9 +5084,21 @@ def homepage(request):
             'TotalOfflineDevice':0,
             'TotalDeviceModel': DeviceModel.objects.count(),
             
-            'Active_States':0,
-            'Inactive_States':0,
-            'Total_States':0,
+          
+
+                'Total_device_stock':DeviceStock.objects.count(),
+                'unassigned_device_stock':DeviceStock.objects.filter(stock_status='NotAssigned').count(),
+                'Waiting_device_stock':DeviceStock.objects.filter(stock_status='Available_for_fitting').count(),
+                'Fitted_device_stock':DeviceStock.objects.filter(stock_status='Fitted').count(),
+                
+                'Total_States':Settings_State.objects.all().count(),
+                'Active_States':Settings_State.objects.filter(status='active').count(),
+                'Inactive_States':Settings_State.objects.filter(status='discontinued').count(),
+             
+
+                'Total_district':Settings_District.objects.all().count(),
+                'Active_district':Settings_District.objects.filter(status='active').count(),
+                'Active_district':Settings_District.objects.filter(status='discontinued').count(),
 
         }
         # Return the serialized data as JSON response
@@ -5139,6 +5311,66 @@ def homepage_DTO(request):
 @permission_classes([IsAuthenticated])
 def homepage_VehicleOwner(request):
     try: 
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        role="owner"
+        user=request.user
+        profile=get_user_object(user,role)
+        if not profile:
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        #print('profile',profile.state.state)
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+        if profile:
+            count_dict = {
+                 
+
+
+'Total_Vehicles':1,
+'Total_Device_Activated':1,
+'Total_Moving_Vehicles':1,
+'Total_Stopped_Vehicles':0,
+'Total_Idle_Vehicles':0,
+
+'Total_Online_Device':1,
+'Total_Offline_Device_today':0,
+'Total_Offline_Device_7day':0,
+'Total_Offline_Device_30day':0,
+
+'Total_Travel_Distance_km':0,
+
+
+
+'Total_Alert':1,
+'Alert_month':1,
+'Alert_today':1,
+
+'Total_Harshbraking':0,
+'Total_suddenturn':0,
+'Total_overspeeding':0,
+
+'Total_SOS_calls':0,
+'Genuine_calls':0,
+'Fake_calls':0,
+'Alert_list':[{'type':'Box Tampering','id':1,'TriggerTime':"2024-08-26T05:37:20.752645Z",'Status':'Active','TriggerLocation':{'latitude':26.117945,'latitude_dir':"N",'longitude':91.614571,'longitude_dir':"E"}}]
+
+
+             
+            }
+            # Return the serialized data as JSON response
+            return Response(count_dict)
+        else:
+            return Response({'error': "Unauthorised user"}, status=500)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def homepage_VehicleOwnerold(request):
+    try: 
 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         role="owner"
@@ -5160,12 +5392,19 @@ def homepage_VehicleOwner(request):
                  
 
 
-'Total_Device_Activated':0,
 'Total_Vehicles':0,
+'Total_Device_Activated':0,
+'Total_Moving_Vehicles':0,
+'Total_Stopped_Vehicles':0,
+'Total_Idle_Vehicles':0,
+
 'Total_Online_Device':0,
 'Total_Offline_Device_today':0,
 'Total_Offline_Device_7day':0,
 'Total_Offline_Device_30day':0,
+
+'Total_Travel_Distance_km':0,
+
 
 
 'Total_Alert':0,
@@ -5262,6 +5501,8 @@ def homepage_stateAdmin(request):
         # Create a dictionary to hold the filter parameters
         filters = {}
         # Add ID filter if provided
+
+
         if profile:
             count_dict = {
 
@@ -5269,6 +5510,7 @@ def homepage_stateAdmin(request):
                 'Total_Manufacture_available':Manufacturer.objects.filter(state=profile.state).count(),
                 'Total_DTO_available':dto_rto.objects.filter(state=profile.state).count(),
                 'Total_Vehicle_Owner_available':VehicleOwner.objects.count(),
+
 
                 'Total_Fit_Device' : DeviceTag.objects.filter(status='Device_Active').count(),
                 'Online_Devices':DeviceTag.objects.filter(status='Device_Active').count(),
@@ -5289,8 +5531,21 @@ def homepage_stateAdmin(request):
                 
                 'Total_harsh_brake_Alert':0,
                 'This_month_harsh_brake_Alert':0,
-                'Today_harsh_brake_Alert' :0 
-            
+                'Today_harsh_brake_Alert' :0 ,
+
+                'Total_device_stock':DeviceStock.objects.count(),
+                'unassigned_device_stock':DeviceStock.objects.filter(stock_status='NotAssigned').count(),
+                'waiting_device_stock':DeviceStock.objects.filter(stock_status='Available_for_fitting').count(),
+                
+                'Total_state':Settings_State.objects.all().count(),
+                'Active_state':Settings_State.objects.filter(status='active').count(),
+                'Active_state':Settings_State.objects.filter(status='discontinued').count(),
+             
+
+                'Total_district':Settings_District.objects.all().count(),
+                'Active_district':Settings_District.objects.filter(status='active').count(),
+                'Active_district':Settings_District.objects.filter(status='discontinued').count(),
+             
              
             }
             # Return the serialized data as JSON response
@@ -5361,10 +5616,18 @@ def filter_Settings_State(request):
         # Create a dictionary to hold the filter parameters
         filters = {}
         # Add ID filter if provided
-        if True:
-            manufacturers = Settings_State.objects.filter(
-                 
-            ).distinct()
+
+        #"superadmin","devicemanufacture","","dtorto","dealer","owner","esimprovider"
+        role="stateadmin"
+        user=request.user
+        uo=get_user_object(user,role)
+        if  uo:
+            state=uo.state
+            manufacturers = Settings_State.objects.filter(id=state.id ).distinct()
+        else:
+            manufacturers = Settings_State.objects.all()
+
+ 
         # Serialize the queryset
         retailer_serializer = Settings_StateSerializer(manufacturers, many=True)
         # Return the serialized data as JSON response
@@ -5387,10 +5650,12 @@ def create_Settings_State(request):
     user_id = request.user.id  
     data = {
         'createdby': user_id,
-        'created': timezone.now(),  
-        #'status': 'Manufacturer_OTP_Sent',
+        'created': timezone.now(),   
     } 
     request_data = request.data.copy()
+
+    if 'state' in request_data:
+        request_data['state'] = request_data['state'].capitalize()
     request_data.update(data)
     #print(request_data)
     serializer = Settings_StateSerializer(data=request_data)
@@ -5954,7 +6219,24 @@ def update_user(request, user_id):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+import re
 
+def is_valid_string(s):
+    # Check the length
+    if len(s) < 9 or len(s) > 25:
+        return False
+    
+    # Define regular expressions for the criteria
+    has_uppercase = re.search(r'[A-Z]', s)
+    has_lowercase = re.search(r'[a-z]', s)
+    has_digit = re.search(r'[0-9]', s)
+    has_special = re.search(r'[!@#$%^&*(),.?":{}|<>]', s)
+    
+    # Check if all conditions are met
+    if has_uppercase and has_lowercase and has_digit and has_special:
+        return True
+    else:
+        return False
 @csrf_exempt
 @api_view(['POST'])
 def password_reset(request):
@@ -5975,6 +6257,8 @@ def password_reset(request):
             return Response({'error': 'Mobile no not provided'}, status=status.HTTP_400_BAD_REQUEST)
         if not new_password:
             return Response({'error': 'Password not provided'}, status=status.HTTP_400_BAD_REQUEST)
+        if not is_valid_string(new_password):
+            return Response({'error': 'Password must contain at least one Capital, Small, Numaric, and Special Charecter'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user =  User.objects.filter( 
@@ -6279,6 +6563,275 @@ def user_login(request):
             return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
+def temp_user_login(request):
+    if request.method == 'POST':
+        mobile = request.data.get('mobile', None)
+        name=request.data.get('name', None) 
+        em_contact=request.data.get('em_contact', None)  
+        ble_key=request.data.get('ble_key', "") 
+        otp = str(random.randint(100000, 999999))
+        otp_time=timezone.now()
+        session_key=str(random.randint(1000000000000000, 99999999999999999))
+        tempu=TempUser.objects.create(mobile=mobile,name=name,em_contact=em_contact,ble_key=ble_key,otp=otp,otp_time=otp_time,session_key=session_key) 
+        
+        
+        text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+        tpid="1007536593942813283"
+        if tempu:
+
+            send_SMS(tempu.mobile,text,tpid) 
+            send_mail(
+                'Login OTP',
+                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                'test@skytrack.tech',
+                ["kishalaychakraborty1@gmail.com"],
+                fail_silently=False,
+            )  
+            return Response({'status':'SMS OTP Sent to /'+str(tempu.mobile)+'.','session_key': session_key}, status=status.HTTP_200_OK)
+       
+    
+    return JsonResponse({'success': False, 'error': 'Invalid input'})
+ 
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
+def temp_user_resendOTP(request):
+    if request.method == 'POST':
+        mobile = request.data.get('mobile', None) 
+        ble_key=request.data.get('ble_key', "") 
+        otp = str(random.randint(100000, 999999))
+        otp_time=timezone.now()
+        session_key=request.data.get('session_key', None) 
+        tempu=TempUser.objects.filter(mobile=mobile,  session_key=session_key).last()
+        if not tempu:
+            return JsonResponse({'success': False, 'error': 'User not found'}) 
+        
+        tempu.otp=otp
+        tempu.otp_time=otp_time
+        tempu.save()
+        text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+        tpid="1007536593942813283"
+        if tempu:
+            send_SMS(tempu.mobile,text,tpid) 
+            send_mail(
+                'Login OTP',
+                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                'test@skytrack.tech',
+                ["kishalaychakraborty1@gmail.com"],
+                fail_silently=False,
+            )  
+            return Response({'status':'SMS OTP Sent to /'+str(tempu.mobile)+'.','session_key': session_key}, status=status.HTTP_200_OK)
+       
+    
+    return JsonResponse({'success': False, 'error': 'Invalid input'}) 
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
+def temp_user_OTPValidate(request):
+    if request.method == 'POST':
+        mobile = request.data.get('mobile', None) 
+        ble_key=request.data.get('ble_key', None) 
+        session_key=request.data.get('session_key', None) 
+        otp=request.data.get('otp', None) 
+         
+        tempu=TempUser.objects.filter(mobile=mobile,  session_key=session_key).last()
+        if not tempu:
+            return JsonResponse({'success': False, 'error': 'User not found'}) 
+        if str(otp)==str(tempu.otp):
+
+            session_key=str(random.randint(100000000000000000000, 99999999999999999999999))
+            tempu.last_login=timezone.now()
+            tempu.last_activity = timezone.now()
+            tempu.online=True 
+            tempu.session_key=session_key
+            tempu.save() 
+            return Response({'success': True,'session_key': session_key}, status=status.HTTP_200_OK)
+        else:
+            return JsonResponse({'success': False, 'error': 'Incorrect OTP.'}) 
+    
+    return JsonResponse({'success': False, 'error': 'Invalid input'}) 
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
+def temp_user_BLEValidate(request):
+    if request.method == 'POST': 
+        ble_key=request.data.get('ble_key', "") 
+        session_key=request.data.get('session_key', None)  
+
+        if len(ble_key)<10:
+            return JsonResponse({'success': False, 'error': 'Invalid ble_key'}) 
+
+        tempu=TempUser.objects.filter(online=True,  session_key=session_key).last()
+        if not tempu:
+            return JsonResponse({'success': False, 'error': 'Online User not found'})
+         
+        tempu.last_activity = timezone.now() 
+        tempu.ble_key = ble_key
+
+        tempu.save() 
+        return Response({'success': True,'session_key': session_key}, status=status.HTTP_200_OK) 
+    
+    return JsonResponse({'success': False, 'error': 'Invalid input'}) 
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
+def temp_user_Feedback(request):
+    if request.method == 'POST': 
+        feedback=request.data.get('feedback', "") 
+        session_key=request.data.get('session_key', None)  
+
+        if len(feedback)<5:
+            return JsonResponse({'success': False, 'error': 'Invalid feedback string'}) 
+
+        tempu=TempUser.objects.filter(online=True,  session_key=session_key).last()
+        if not tempu:
+            return JsonResponse({'success': False, 'error': 'Online User not found'})
+         
+        tempu.last_activity = timezone.now() 
+        tempu.feedback = feedback
+
+        tempu.save() 
+        return Response({'success': True,'session_key': session_key}, status=status.HTTP_200_OK) 
+    
+    return JsonResponse({'success': False, 'error': 'Invalid input'}) 
+
+ 
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
+def temp_user_emcall(request):
+    if request.method == 'POST': 
+        em_lat=float(request.data.get('em_lat', 0.0)) 
+        em_lon=float(request.data.get('em_lon', 0.0) )
+        em_msg=request.data.get('em_msg', "") 
+        session_key=request.data.get('session_key', None)  
+ 
+
+        if len(em_msg)<1:
+            return JsonResponse({'success': False, 'error': 'Invalid em_msg string'}) 
+        if em_lat<5 or em_lon<5:
+            return JsonResponse({'success': False, 'error': 'Invalid lat lon'}) 
+
+        tempu=TempUser.objects.filter(online=True,  session_key=session_key).last()
+        if not tempu:
+            return JsonResponse({'success': False, 'error': 'Online User not found'})
+         
+        tempu.last_activity = timezone.now() 
+        tempu.em_time = timezone.now() 
+        tempu.em_msg = em_msg
+        tempu.em_lat = em_lat
+        tempu.em_lon = em_lon
+
+        tempu.save() 
+        return Response({'success': True,'session_key': session_key}, status=status.HTTP_200_OK) 
+    
+    return JsonResponse({'success': False, 'error': 'Invalid input'}) 
+
+    
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
+def temp_user_logout(request):
+    if request.method == 'POST':  
+        session_key=request.data.get('session_key', None)  
+        tempu=TempUser.objects.filter(online=True,  session_key=session_key).last()
+        if not tempu:
+            return JsonResponse({'success': False, 'error': 'Online User not found'})
+        tempu.last_activity = timezone.now() 
+        tempu.online = False 
+        tempu.save() 
+        return Response({'success': True}, status=status.HTTP_200_OK) 
+    return JsonResponse({'success': False, 'error': 'Invalid input'}) 
+
+    
+       
+    
+
+
+    """
+
+    name = models.CharField(max_length=255, verbose_name="Name")  
+    #email = models.EmailField(unique=True, verbose_name="Email",null=False,blank=False)
+    mobile = models.CharField(max_length=15,   verbose_name="Mobile") 
+    ble_key = models.CharField(max_length=15, unique=True, verbose_name="ble_key") 
+    session_key = models.CharField(max_length=100, unique=True, verbose_name="session_key") 
+    date_joined = models.DateTimeField(default=timezone.now)
+    created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
+    otp = models.CharField(max_length=100,default='123456')  # Assuming 32 characters for MD5 hash
+    otp_time= models.DateTimeField(default=timezone.now)
+    em_contact=models.CharField(max_length=15,null=False,blank=False,  verbose_name="em_contact") 
+    last_login =  models.DateTimeField(blank=True, null=True)
+    last_activity =  models.DateTimeField(blank=True, null=True)
+    online=models.BooleanField(default=False)
+        
+        password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
+        captchaSuccess=False
+        try:
+            user_input=int(user_input)
+        except:
+            return JsonResponse({'success': False, 'error': 'Invalid Captcha Input. Only integers allowed'})
+
+        try:
+            captcha = Captcha.objects.filter(key=key).last() 
+            if not captcha.is_valid():
+                captcha.delete()  # Optionally, delete the expired captcha
+                return JsonResponse({'success': False, 'error': 'Captcha expired'}) 
+            if int(user_input) == int(captcha.answer):
+                captcha.delete()  # Optionally, delete the captcha after successful verification
+                captchaSuccess=True
+            else:
+                return JsonResponse({'success': False, 'error': 'Invalid captcha'})
+        except Captcha.DoesNotExist: 
+            return JsonResponse({'success': False, 'error': 'Captcha not found'})
+        except Exception as e: #Captcha.DoesNotExist: 
+            print('error',e)
+            return JsonResponse({'success': False, 'error': 'Captcha not found'})
+         
+    
+        
+        if not username or not password:
+            return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
+        user = User.objects.filter(mobile=username).last() #or User.objects.filter(mobile=username).first()
+        if not user or not  check_password(password, user.password):
+            return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+
+        user.is_active=True
+        user.save()
+        existing_session = Session.objects.filter(user=user.id, status='login').last()
+        #if existing_session:
+        #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
+        otp = str(random.randint(100000, 999999))
+        #token = get_random_string(length=32)
+        Token.objects.filter(user=user).delete()
+
+        token  = Token.objects.create(user=user) 
+
+        session_data = {
+            'user': user.id,
+            'token': str(token.key),
+            'otp': otp,
+            'status': 'otpsent',
+            'login_time': timezone.now(),
+        } 
+        session_serializer = SessionSerializer(data=session_data)  
+        if session_serializer.is_valid():
+            session_serializer.save()         
+            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            tpid="1007536593942813283"
+            send_SMS(user.mobile,text,tpid) 
+            send_mail(
+                'Login OTP',
+                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                'test@skytrack.tech',
+                [user.email],
+                fail_silently=False,
+            )  
+            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token.key,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    """
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
