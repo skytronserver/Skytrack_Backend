@@ -1147,33 +1147,24 @@ def gps_history_map_data(request):
     mapdata=[]
     data=[]
     try:
-        vehicle_registration_number ="L89_003-0000"
-        start_datetime = "2024-04-11"
-        end_datetime = "2024-04-12" 
-        
+       
         
         try:
             vehicle_registration_number = request.GET.get('vehicle_registration_number', None)
             start_datetime = request.GET.get('start_datetime', None)
             end_datetime = request.GET.get('end_datetime', None)
         except:
-            vehicle_registration_number ="L89_003-0000"
-            start_datetime = "2024-04-11"
-            end_datetime = "2024-04-12"
+             pass
 
         #return JsonResponse({"eg":vehicle_registration_number})
-        if vehicle_registration_number:
-            pass
-        else:
-            vehicle_registration_number ="L89_003-0000"
-            start_datetime = "2024-04-11"
-            end_datetime = "2024-04-12"
+     
         
         
         if vehicle_registration_number!="":
             if vehicle_registration_number:
                 #print("Timer input",time.time() - t ) 
-                data = GPSData.objects.all().filter(gps_status=1).filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).filter(device_tag__vehicle_reg_no__icontains=vehicle_registration_number)
+                #filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).
+                data = GPSData.objects.all().filter(gps_status=1).filter(device_tag__vehicle_reg_no__icontains=vehicle_registration_number)
                  
                 #print("Data select done")
                 #print("filter1 ",time.time() - t ) 
@@ -2122,6 +2113,12 @@ def filter_eSimProvider(request):
         role="stateadmin"
         user=request.user
         uo=get_user_object(user,role)
+        role="devicemanufacture" 
+        um=get_user_object(user,role)
+        if um:
+            
+            retailer_serializer = eSimProviderSerializer(um.esim_provider, many=True)
+            return Response(retailer_serializer.data)
         
         # Get filter parameters from the request
         dealer_id = request.data.get('eSimProvider_id', None)
@@ -2140,7 +2137,7 @@ def filter_eSimProvider(request):
                 company_name__icontains=company_name,
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
-                state=state, 
+                #state__id=state, 
             ).distinct()
         else:
             manufacturers = eSimProvider.objects.filter(
@@ -2150,9 +2147,12 @@ def filter_eSimProvider(request):
                 company_name__icontains=company_name,
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
-                state=state, 
+                #state__id=state, 
             ).distinct()
-        
+        manufacturers = eSimProvider.objects.filter(
+                #id=manufacturer_id,
+                users__status='active', 
+            ).all()
         if not uo:
             pass
             #return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -2167,6 +2167,7 @@ def filter_eSimProvider(request):
         return Response(retailer_serializer.data)
 
     except Exception as e:
+        raise e
         return Response({'error': str(e)}, status=500)
 
 @api_view(['POST'])
@@ -2321,6 +2322,11 @@ def create_dealer(request):
 @permission_classes([IsAuthenticated])
 def filter_dealer(request):
     try:
+
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        role="devicemanufacture"
+        user=request.user
+        uo=get_user_object(user,role)
         # Get filter parameters from the request
         dealer_id = request.data.get('dealer_id', None)
         email = request.data.get('email', '')
@@ -2331,25 +2337,45 @@ def filter_dealer(request):
 
         # Create a dictionary to hold the filter parameters
         filters = {}
-
-        # Add ID filter if provided
-        if dealer_id :
-            manufacturers = Retailer.objects.filter(
-                id=dealer_id ,
-                users__email__icontains=email,
-                company_name__icontains=company_name,
-                users__name__icontains=name,
-                users__mobile__icontains=phone_no, 
-            ).distinct()
+        if  uo:
+                
+            if dealer_id :
+                manufacturers = Retailer.objects.filter(
+                    id=dealer_id ,
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no, 
+                    createdby=user,
+                ).distinct()
+            else:
+                manufacturers = Retailer.objects.filter(
+                    #id=manufacturer_id,
+                    users__status='active',
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no, 
+                    createdby=user,
+                ).distinct()
         else:
-            manufacturers = Retailer.objects.filter(
-                #id=manufacturer_id,
-                users__status='active',
-                users__email__icontains=email,
-                company_name__icontains=company_name,
-                users__name__icontains=name,
-                users__mobile__icontains=phone_no, 
-            ).distinct()
+            if dealer_id :
+                manufacturers = Retailer.objects.filter(
+                    id=dealer_id ,
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no,  
+                ).distinct()
+            else:
+                manufacturers = Retailer.objects.filter(
+                    #id=manufacturer_id,
+                    users__status='active',
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no,  
+                ).distinct()
 
         # Serialize the queryset
         retailer_serializer = RetailerSerializer(manufacturers, many=True)
@@ -2469,7 +2495,8 @@ def create_manufacturer(request):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
-        esim_provider_ids = request.data.get('esim_provider', [])
+        esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
+        print(esim_provider_ids)
 
         user, error, new_password = create_user('devicemanufacture', request)
         if user:  
@@ -2497,13 +2524,22 @@ def create_manufacturer(request):
                 
                 # Fetch the EsimProvider instances and set the many-to-many relationship
                 esim_providers = eSimProvider.objects.filter(id__in=esim_provider_ids)
-                
-                if esim_provider_ids.state.id==state:
-                    manufacturer.esim_provider.set(esim_providers)
-                else:
+                a=0
+
+                for esim_provider in esim_providers:
+                    print(esim_provider.state.id)
+                    if str(esim_provider.state.id)==str(state):
+                        manufacturer.esim_provider.set(esim_providers)
+                        a=a+1
+                    else:
+                        user.delete()
+                        manufacturer.delete()
+                        return Response({'error': "State missmatch with M2M Provider"}, status=500)
+                if a==0:
+
                     user.delete()
                     manufacturer.delete()
-                    return Response({'error': "State missmatch with M2M Provider"}, status=500)
+                    return Response({'error': "No valid M2M Provider"}, status=500)
                 
 
 
@@ -2827,10 +2863,10 @@ def create_DTO_RTO(request):
         state= request.data.get('state', '')
         dto_rto1= request.data.get('dto_rto', '')
         districtC = request.data.get('district_code', '')
-        state= request.data.get('State', '1')
+        #state= request.data.get('State', '1')
         districts = Settings_District.objects.filter(state_id=state).order_by('district', 'id')
         Districtlist = {}
-        if uo.state.id !=state:
+        if str(uo.state_id) !=str(state):
             return Response({"error":"Unauthorised state "+'.'}, status=status.HTTP_400_BAD_REQUEST)
 
         for district in districts:
@@ -3052,7 +3088,8 @@ def create_SOS_user(request):
         district = request.data.get('district', '')
         user_type = request.data.get('user_type', '') 
         file_idProof = request.data.get('file_idProof') 
-        user,error,new_password=create_user('sosuser',request)
+        user,error,new_password=create_user('sosexecutive',request)
+ 
         if user:  
             try: 
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
@@ -3061,7 +3098,7 @@ def create_SOS_user(request):
                 retailer = SOS_ex.objects.create( 
                     created=created,
                     state_id=state, 
-                    district_id=district,
+                    #district_id=district,
                     expirydate=expirydate, 
                     idProofno=idProofno, 
                     file_idProof=file_idProof,
@@ -3352,7 +3389,11 @@ def TagDevice2Vehicle(request):
     man=get_user_object(user,role)
     if not man:
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
-    vehicle_owner=VehicleOwner.objects.filter(id=request.data['vehicle_owner'],users__status='active').last()
+    o=request.data['vehicle_owner']
+    if len(str(o))==10:
+        vehicle_owner=VehicleOwner.objects.filter(user__mobile=o,users__status='active').last()
+    else:
+        vehicle_owner=VehicleOwner.objects.filter(id=o,users__status='active').last()
     if not vehicle_owner:
         return Response({"error":"Vehicle_owner not found."}, status=status.HTTP_400_BAD_REQUEST)
     
@@ -5845,6 +5886,8 @@ def get_user_object(user,role):
         ret=VehicleOwner.objects.filter(users=user).last() 
     if role=="esimprovider":
         ret=eSimProvider.objects.filter(users=user).last() 
+    if role=="sosadmin":
+        ret=SOS_admin.objects.filter(users=user).last() 
 
     return ret
      

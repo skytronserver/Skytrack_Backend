@@ -318,7 +318,7 @@ class Retailer(models.Model):
     
 class VehicleOwner(models.Model):
     company_name = models.CharField(max_length=255, blank=True, null=True,verbose_name="Company Name")
-    users = models.ManyToManyField('User', related_name='manufacturers')
+    users = models.ManyToManyField(User, related_name='manufacturers')
     created = models.DateField(auto_now_add=True)
     expirydate = models.DateField(auto_now_add=True)
     idProofno = models.CharField(max_length=255, blank=True, null=True)

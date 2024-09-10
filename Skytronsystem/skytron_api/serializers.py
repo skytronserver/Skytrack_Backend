@@ -185,6 +185,7 @@ class DeviceModelSerializer(serializers.ModelSerializer):
 class DeviceStockSerializer2(serializers.ModelSerializer):
     #created_by_name = serializers.SerializerMethodField()
     model = DeviceModelSerializer(many=False, read_only=True)
+    dealer  = RetailerSerializer(many=False, read_only=True)
     created_by = UserSerializer(many=False, read_only=True)
     esim_provider = eSimProviderSerializer(many=True, read_only=True)
     is_tagged=serializers.CharField( )

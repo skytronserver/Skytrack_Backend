@@ -88,6 +88,9 @@ urlpatterns = [
     path('SOSAdmin/create_SOSAdmin/', create_SOS_admin, name='create_SOSAdmin'),
     path('SOSAdmin/filter_SOSAdmin/', filter_SOS_admin, name='filter_SOSAdmin'),
       
+    path('SOSuser/create_SOSuser/', create_SOS_user, name='create_SOSuser'),
+    path('SOSuser/filter_SOSuser/', filter_SOS_user, name='filter_SOSuser'),
+
 
     #path('homepageandstat/homepage_DTO/', homepage_DTO, name='homepage_DTO'),
     path('homepageandstat/homepage_Manufacturer/', homepage_Manufacturer, name='homepage_Manufacturer'),
@@ -105,9 +108,6 @@ urlpatterns = [
     path('homepageandstat/homepage_alart/', homepage_alart, name='homepage_alart'),
     path('homepageandstat/homepage_state/', homepage_state, name='homepage_state'),
 
-
-    path('SOSuser/create_SOSuser/', create_SOS_user, name='create_SOSuser'),
-    path('SOSuser/filter_SOSuser/', filter_SOS_user, name='filter_SOSuser'),
 
 
     path('SOS/create_SOSteam/', create_SOS_team, name='create_SOSteam'),
