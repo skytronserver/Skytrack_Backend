@@ -163,6 +163,10 @@ class ManufacturerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Manufacturer
         fields = '__all__'
+class NoticeSerializer(serializers.ModelSerializer): 
+    class Meta:
+        model = Notice
+        fields = '__all__'
 
 class RetailerSerializer(serializers.ModelSerializer):
     users = UserSerializer(many=True, read_only=True)

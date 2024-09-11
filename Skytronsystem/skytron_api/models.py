@@ -1160,3 +1160,11 @@ class AlertsLog(models.Model):
     district=models.ForeignKey(dto_rto, on_delete=models.CASCADE) 
     state=models.ForeignKey(Settings_State, on_delete=models.CASCADE) 
     
+
+class Notice(models.Model): 
+    created = models.DateField(auto_now_add=True)  
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE)
+    file = models.CharField(max_length=255, blank=True, null=True)
+    title = models.CharField(max_length=255, blank=True, null=True)
+    detail = models.CharField(max_length=255, blank=True, null=True)     
+    status = models.CharField(max_length=25, blank=True, null=True)      

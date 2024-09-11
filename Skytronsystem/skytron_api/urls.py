@@ -267,6 +267,14 @@ urlpatterns = [
     path('sms/send', sms_send, name='sms_send'),
     path('sms/que', sms_queue, name='sms_queue'),
     path('sms/que_add', sms_queue_add, name='sms_queue_add'),
+
+
+    path('notice/create/', create_notice, name='create_notice'),
+    path('notice/update/', update_notice, name='update_notice'),
+    path('notice/filter/', filter_notice, name='filter_notice'),
+    path('notice/delete/', delete_notice, name='delete_notice'),
+    
+    path('notice/list/', list_notice, name='list_notice'),
     
 
 ]

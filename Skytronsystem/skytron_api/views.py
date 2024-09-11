@@ -7299,3 +7299,154 @@ def create_device(request):
  
 
 '''
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def create_notice(request):
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        title = request.data.get('title')
+        detail = request.data.get('detail')
+        status = request.data.get('status')
+        createdby = request.user    
+        file = request.data.get('file') 
+        try:
+            file  = save_file(request, 'file', 'fileuploads/man')  
+            notice = Notice.objects.create(
+                    title=title,
+                    detail=detail,
+                    file=file,
+                    createdby=createdby,
+                    status=status,
+            )
+            serializer = NoticeSerializer(notice)
+            return Response(serializer.data)
+        except Exception as e: 
+                return Response({'error': str(e)}, status=500)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def filter_notice(request):
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        id = request.data.get('notice_id', None)
+        title = request.data.get('title',"")
+        detail = request.data.get('detail',"") 
+        status = request.data.get('status',"")
+        filters = {}
+        if id :
+            notice = Notice.objects.filter(
+                id=id,
+                title__icontains = title , 
+                status__icontains = status ,
+                detail__icontains = detail,  
+            ).distinct()
+        else:
+            notice = Notice.objects.filter(
+                title__icontains = title ,  
+                status__icontains = status ,
+                detail__icontains = detail,  
+            ).distinct()
+        serializer = NoticeSerializer(notice, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny]) 
+def list_notice(request):
+
+    try:
+        id = request.data.get('notice_id', None)
+        title = request.data.get('title',"") 
+        detail = request.data.get('detail',"") 
+        filters = {}
+        if id :
+            notice = Notice.objects.filter(
+                id=id,
+                title__icontains = title , 
+                detail__icontains = detail,  
+                status = "Live",
+            ).distinct()
+        else:
+            notice = Notice.objects.filter(
+                title__icontains = title ,  
+                detail__icontains = detail,  
+                status = "Live",
+            ).distinct()
+        serializer = NoticeSerializer(notice, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def update_notice(request):
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        id = request.data.get('id')
+        man=Notice.objects.filter(id=id).last()
+        if not man:
+            return Response({'error': "Invalid Notice id"}, status=500) 
+        title = request.data.get('title')
+        detail = request.data.get('detail')
+        status = request.data.get('status')
+        createdby = request.user    
+        file = request.data.get('file') 
+        if title:
+            man.title=title
+        if detail:
+            man.detail=detail 
+        if status:
+            man.status=status
+        if file:
+            man.file = save_file(request, 'file', 'fileuploads/man') 
+        man.createdby = createdby
+        man.save() 
+        return Response(NoticeSerializer(man ).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def delete_notice(request):
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        id = request.data.get('id')
+        man=Notice.objects.filter(id=id).last()
+        if not man:
+            return Response({'error': "Invalid Notice id"}, status=500)  
+        man.status="Deleted" 
+        man.createdby = user
+        man.save() 
+        return Response(NoticeSerializer(man ).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
