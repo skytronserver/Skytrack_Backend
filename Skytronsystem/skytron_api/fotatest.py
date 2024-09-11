@@ -130,8 +130,8 @@ FTP_SERVER = '216.10.244.243'
 FTP_PORT = 2121
 FTP_USER = 'username1'
 FTP_PASS = 'a12345678a'
-FTP_REMOTE_PATH = 'V1.1.3.bin'  # Example file
-LOCAL_FILE_PATH = './V1.1.3.bin'  # Local storage path
+FTP_REMOTE_PATH = 'V1.1.4N.bin'  # Example file
+LOCAL_FILE_PATH = './V1.1.4N.bin'  # Local storage path
 BUFFER_SIZE = 1024 * 1024  # 1MB buffer size
 
 # Global variables

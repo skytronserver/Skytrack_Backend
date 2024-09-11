@@ -5662,8 +5662,13 @@ def filter_Settings_State(request):
         role="stateadmin"
         user=request.user
         uo=get_user_object(user,role)
+        role="sosadmin" 
+        uosos=get_user_object(user,role)
         if  uo:
             state=uo.state
+            manufacturers = Settings_State.objects.filter(id=state.id ).distinct()
+        if  uosos:
+            state=uosos.state
             manufacturers = Settings_State.objects.filter(id=state.id ).distinct()
         else:
             manufacturers = Settings_State.objects.all()

@@ -1064,7 +1064,7 @@ class GPSData(models.Model):
     #header = models.CharField(max_length=1)
     #vendor_id = models.CharField(max_length=4)
     #firmware_version = models.CharField(max_length=5)
-    #packet_type = models.CharField(max_length=2)
+    packet_type = models.CharField(max_length=2)
     alert_id = models.CharField(max_length=4)
     packet_status = models.CharField(max_length=4)
     #imei = models.CharField(max_length=15)

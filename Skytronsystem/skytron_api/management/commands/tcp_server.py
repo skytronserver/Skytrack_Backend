@@ -193,12 +193,14 @@ def process_gps_data(data_str):
  
                 #if groups[8]!='GEM1205-04-00':#868960065504918, 
                 #    return None
+                if float(groups[12])<5 and float(groups[14])<5 :
+                    return None
                 gps_data = {
                     #'start_character': groups[0],
                     #'header': groups[1],
                     #'vendor_id': groups[2],
                     #'firmware_version': groups[3],
-                    #'packet_type': groups[4],
+                    'packet_type': groups[4],
                     'alert_id': groups[5],
                     'packet_status': groups[6],
                     'imei': groups[7],
