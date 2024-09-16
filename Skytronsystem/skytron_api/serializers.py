@@ -377,12 +377,14 @@ class GPSData_modSerializer(serializers.ModelSerializer):
     dos = serializers.CharField(source='digital_output_status')
     fn = serializers.CharField(source='frame_number')
     om = serializers.CharField(source='odometer')
+    ps= serializers.CharField(source='packet_type')
+    
 
     class Meta:
         model = GPSData
         fields = [ 'et','ps',#'imei',  'rn',
                   'lat','lon','s','h','sat','gpsS','alt','no','igs',
-                  'mps','miv','ibv','ems','bta','gss','dis','dos','fn','om']
+                  'mps','miv','ibv','ems','bta','gss','dis','dos','fn','om','ps']
         ''' entryTime', 'packetStatus', 'imei', 'vehicleRegistrationNumber',
                   'latitude',  'longitude',#'latitudeDir', 'longitudeDir',
                   'speed', 'heading', 'satellites', 'gpsStatus', 'altitude',

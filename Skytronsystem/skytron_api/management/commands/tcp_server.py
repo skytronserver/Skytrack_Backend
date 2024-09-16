@@ -193,7 +193,14 @@ def process_gps_data(data_str):
  
                 #if groups[8]!='GEM1205-04-00':#868960065504918, 
                 #    return None
-                if float(groups[12])<5 and float(groups[14])<5 :
+                try:
+                    if float(groups[12])<5 or float(groups[14])<5 :
+                        return None
+                    if float(groups[12])>180 or float(groups[14])>180 :
+                        return None
+                    if str(groups[13])!="N" or str(groups[15])!="E" :
+                        return None
+                except:
                     return None
                 gps_data = {
                     #'start_character': groups[0],

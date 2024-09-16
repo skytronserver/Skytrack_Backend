@@ -1014,7 +1014,7 @@ def gps_track_data_api(request):
             regno = request.GET.get('regno')
         except:
             pass
-        distinct_registration_numbers = GPSData.objects.values('device_tag').distinct() #vehicle_registration_number
+        distinct_registration_numbers = GPSData.objects.exclude(device_tag=None).values('device_tag').distinct() #vehicle_registration_number
         data = []
 
         for x in distinct_registration_numbers:
@@ -1086,8 +1086,8 @@ def gps_history_map(request):
         
         try:
             vehicle_registration_number = request.GET.get('vehicle_registration_number', None)
-            #start_datetime = request.GET.get('start_datetime', None)
-            #end_datetime = request.GET.get('end_datetime', None)
+            start_datetime = request.GET.get('start_datetime', None)
+            end_datetime = request.GET.get('end_datetime', None)
         except:
             vehicle_registration_number ="L89_003-0000"
             #start_datetime = "2024-04-11"
@@ -1209,7 +1209,7 @@ def setRoute(request):
     # Retrieve the complete GPSData objects using the latest entry IDs
     #data = GPSData.objects.filter(id__in=Subquery(latest_data))
     if request.method == 'GET':
-        device_id = 1 #request.GET.get('device_id')
+        device_id =  request.GET.get('device_id')
         device = DeviceStock.objects.get(id=device_id)   
         route = Route.objects.filter(device=device,status="Active" ) 
         return render(request, 'map_rout.html',{"routs": route } )
@@ -1228,8 +1228,10 @@ def delRoute(request):
         user=request.user
         role="owner"
         man=get_user_object(user,role)
-        if not man:
-            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        role1="superadmin"
+        sa=get_user_object(user,role1)
+        if not man and not sa:
+            return Response({"error":"Request must be from  "+role+' or '+role1+'.'}, status=status.HTTP_400_BAD_REQUEST)
 
         data =json.loads( request.body )
         try:
@@ -1282,8 +1284,10 @@ def saveRoute(request):
         user=request.user
         role="owner"
         man=get_user_object(user,role)
-        if not man:
-            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        role1="superadmin"
+        sa=get_user_object(user,role1)
+        if not man and not sa:
+            return Response({"error":"Request must be from  "+role+' or '+role1+'.'}, status=status.HTTP_400_BAD_REQUEST)
 
         #print(request.body)
         data =json.loads( request.body )
@@ -1299,9 +1303,11 @@ def saveRoute(request):
             device =  DeviceStock.objects.get(id=data['device_id'])
             if not device:
                     return JsonResponse({"error": "Device not found"}, status=405)
-            tag=DeviceTag.objects.filter(
-            device_id=device,
-            vehicle_owner =man)
+            tag=None
+            if man :
+                tag=DeviceTag.objects.filter(  device_id=device,   vehicle_owner =man)
+            elif sa:
+                tag=DeviceTag.objects.filter( device_id=device)
             if not tag:
                     return JsonResponse({"error": "Unauthorised owner "}, status=405)
 
@@ -1325,10 +1331,10 @@ def saveRoute(request):
                 )
                 route.save()
                 routes = Route.objects.filter(device=device , status='Active',createdby=user).all()
-                return JsonResponse({"message": "New Route saved successfully!",'new':routeSerializer(route).data,"data": routeSerializer(routes, many=True).data }, status=201)
+                return JsonResponse({"message": "New Route saved successfully!",'new':routeSerializer(route).data,"route": routeSerializer(routes, many=True).data }, status=201)
         except Exception as e:
             print(e)
-            return JsonResponse({"error": str(e)}, status=400)
+            return JsonResponse({"erroreee": str(e)}, status=400)
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -1343,8 +1349,10 @@ def getRoute(request):
         user=request.user
         role="owner"
         man=get_user_object(user,role)
-        if not man:
-            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        role1="superadmin"
+        sa=get_user_object(user,role1)
+        if not man and not sa:
+            return Response({"error":"Request must be from  "+role+' or '+role1+'.'}, status=status.HTTP_400_BAD_REQUEST)
 
         data =json.loads( request.body )
         device_id =  data['device_id']
@@ -1354,11 +1362,12 @@ def getRoute(request):
             device =  DeviceStock.objects.get(id=data['device_id'])
             if not device:
                     return JsonResponse({"error": "Device not found"}, status=405)
-            tag=DeviceTag.objects.filter(
-            device_id=device,
-            vehicle_owner =man)
+            if man:
+                tag=DeviceTag.objects.filter(   device_id=device,   vehicle_owner =man)
+            elif sa:
+                tag=DeviceTag.objects.filter(   device_id=device )
             if not tag:
-                    return JsonResponse({"error": "Unauthorised owner "}, status=405) 
+                    return JsonResponse({"error": "Unauthorised Access "}, status=405) 
              
             route = Route.objects.filter(device=device ,status="Active", createdby=user).all()#.latest('id')
             return JsonResponse({"route": routeSerializer(route, many=True).data  }, status=200)
@@ -3729,10 +3738,16 @@ def Tag_ownerlist(request):
     role="owner"
     user=request.user
     uo=get_user_object(user,role)
+    role="superadmin" 
+    sa=get_user_object(user,role)
     #if not uo:
     #    return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
     if request.method == 'POST': 
-        devices = DeviceTag.objects.filter(vehicle_owner=uo)#created_by=user_id,  
+        if uo:
+            devices = DeviceTag.objects.filter(vehicle_owner=uo, status="Owner_Final_OTP_Verified")#created_by=user_id,  
+        elif sa:
+            devices = DeviceTag.objects.filter( status="Owner_Final_OTP_Verified")
+
          
         device_id = request.POST.get('device_id') 
         if device_id:
