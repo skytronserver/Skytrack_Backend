@@ -49,7 +49,8 @@ class Captcha(models.Model):
 
     def is_valid(self):
         return timezone.now() < self.created_at + timedelta(minutes=3)
-
+    
+"""
 class Help(models.Model):
     TYPE_CHOICES = [
         ('Emergency', 'Emergency'),
@@ -65,6 +66,8 @@ class Help(models.Model):
 
     def __str__(self):
         return self.field_ex.name
+
+"""
 class RequestLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     ip_address = models.CharField(max_length=70)  # Supports IPv6
@@ -81,6 +84,9 @@ class RequestLog(models.Model):
     
 def get_logged_in_users_with_min_assignments(): 
     eight_hours_ago = timezone.now() - timezone.timedelta(hours=8) 
+    return 0
+"""
+    #
     #role='sosadmin',
     logged_in_users =  User.objects.filter(login=True, last_activity__gte=timezone.now() - timezone.timedelta(seconds=30) ).all()
     user_assignments = (
@@ -96,9 +102,19 @@ def get_logged_in_users_with_min_assignments():
     # Print the results (or process as needed)
     #for user in user_assignments:
     #    print(f"User: {user.username}, Assignments in last 8 hours: {user.assignment_count}")
-    
-    return user_assignments
+    # return user_assignments
+    """
+   
  
+
+
+
+
+
+
+
+"""
+
 
 class EmergencyCall(models.Model):
     call_id = models.AutoField(primary_key=True)
@@ -112,11 +128,10 @@ class EmergencyCall(models.Model):
 
     def __str__(self):
         return f"EmergencyCall {self.call_id}"
-
-
+"""
+"""
 
 class EmergencyCall_assignment(models.Model):
-    
     emergencyCall_id = models.ForeignKey(EmergencyCall, on_delete=models.CASCADE)    
     user = models.ForeignKey('User', on_delete=models.CASCADE) 
     assign_time = models.DateTimeField()
@@ -125,6 +140,7 @@ class EmergencyCall_assignment(models.Model):
     status = models.CharField(max_length=20)#Assigned,Acccepted, Rejected,Timeout,Closed
     def __str__(self):
         return f"EmergencyCall_assignment {self.id}"
+    """
 
 
 
@@ -386,18 +402,20 @@ class dto_rto(models.Model):
             ('Discontinued', 'Discontinued'),
         ]
     status = models.CharField(max_length=20, choices=status_choices)
-         
-
-class SOS_ex(models.Model): 
+          
+class EM_ex(models.Model): 
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     district =models.CharField(max_length=255, blank=True, null=True)#models.ForeignKey('Settings_District', on_delete=models.CASCADE)
     users = models.ManyToManyField('User', related_name='SOS_ex_user')
     created = models.DateField(auto_now_add=True)
     expirydate = models.DateField(auto_now_add=True)
     user_type=models.CharField(max_length=20, choices=[
-            ('Team_lead', 'Team_lead'),
-            ('Desk_executive', 'Desk_executive'),
-            ('Field_executive', 'Field_executive'),  
+            ('teamlead', 'teamlead'),
+            ('desk_ex', 'desk_ex'),
+            ('police_ex', 'police_ex'),
+            ('ambulance_ex', 'ambulance_ex'),  
+            ('PCR', 'PCR'),  #police control room
+            ('ACR', 'ACR'),  #ambulance control room 
         ])
     idProofno = models.CharField(max_length=255, blank=True, null=True)
     file_idProof = models.CharField(max_length=255, blank=True, null=True)
@@ -411,7 +429,7 @@ class SOS_ex(models.Model):
         ]
     status = models.CharField(max_length=20, choices=status_choices)
 
-
+"""
 class SOS_user(models.Model): 
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     district =models.CharField(max_length=255, blank=True, null=True)#models.ForeignKey('Settings_District', on_delete=models.CASCADE)
@@ -429,12 +447,13 @@ class SOS_user(models.Model):
             ('Discontinued', 'Discontinued'),
         ]
     status = models.CharField(max_length=20, choices=status_choices)
+"""
 
-class SOS_admin(models.Model): 
+class EM_admin(models.Model): 
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     
     #district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
-    users = models.ManyToManyField('User', related_name='SOS_admin')
+    users = models.ManyToManyField('User', related_name='EM_admin')
     created = models.DateField(auto_now_add=True)
     expirydate = models.DateField(auto_now_add=True)
     idProofno = models.CharField(max_length=255, blank=True, null=True)
@@ -469,20 +488,21 @@ class Settings_District(models.Model):
     district_code =models.CharField(max_length=8,unique=True)    
     status = models.CharField(max_length=20, choices=[('active','active'),('discontinued','discontinued')])
 
+"""
 class SOS_team(models.Model):  
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
-    admin =models.ForeignKey('SOS_admin', on_delete=models.CASCADE)
-    teamlead =models.ForeignKey('SOS_ex', on_delete=models.CASCADE)
-    desk_team = models.ManyToManyField('SOS_ex', related_name='SOS_Executive_desk_team')
-    field_team = models.ManyToManyField('SOS_ex', related_name='SOS_Executive_field_team')   
+    admin =models.ForeignKey('EM_admin', on_delete=models.CASCADE)
+    teamlead =models.ForeignKey('EM_ex', on_delete=models.CASCADE)
+    desk_team = models.ManyToManyField('EM_ex', related_name='SOS_Executive_desk_team')
+    field_team = models.ManyToManyField('EM_ex', related_name='SOS_Executive_field_team')   
     status = models.CharField(max_length=20, choices=[('active','active'),('discontinued','discontinued')])
     queue_length = models.CharField(max_length=20)
     created = models.DateField(auto_now_add=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE,related_name='userc')
     updated = models.DateField(auto_now_add=True)
     updatedby = models.ForeignKey('User', on_delete=models.CASCADE,related_name='useru')
-   
+   """
  
 
 
@@ -744,7 +764,7 @@ class DeviceTag(models.Model):
 
 
        
-class GPSLocation(models.Model): #imergency tracking data
+class EMGPSLocation(models.Model): #imergency tracking data
     message_type = models.CharField(max_length=3)  # EMR or SEM
     device_imei = models.CharField(max_length=15)
     packet_status = models.CharField(max_length=2)  # NM or SP
@@ -835,9 +855,11 @@ class GPSLocation(models.Model): #imergency tracking data
         )
 
 
-@receiver(post_save, sender=GPSLocation)
+@receiver(post_save, sender=EMGPSLocation)
 def create_emergency_call(sender, instance, created, **kwargs):
     if created :#and instance.status == 'Complete':
+        pass
+    """
         # Check if an EmergencyCall entry already exists for the given vehicle and IMEI
         existing_emergency_call = EmergencyCall.objects.filter(
             device_imei=instance.device_imei,
@@ -888,8 +910,7 @@ def create_emergency_call(sender, instance, created, **kwargs):
                 final_comment='',
             )
             user_to_assign=get_logged_in_users_with_min_assignments()
-            if  user_to_assign:              
-                print(user_to_assign) 
+            if  user_to_assign:         
                 EmergencyCall_assignment.objects.create(
                         emergencyCall_id=em,
                         user=user_to_assign,
@@ -923,7 +944,7 @@ def create_emergency_call(sender, instance, created, **kwargs):
                     ) 
 
 
-
+"""
 
 
 
@@ -1154,7 +1175,7 @@ class AlertsLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     gps_ref=models.ForeignKey(GPSData, on_delete=models.CASCADE)
     route_ref=models.ForeignKey(Route, on_delete=models.CASCADE,null=True, blank=True)
-    em_ref=models.ForeignKey(EmergencyCall, on_delete=models.CASCADE,null=True, blank=True)
+    em_ref=models.ForeignKey("EMCall", on_delete=models.CASCADE,null=True, blank=True)
     #vehicle=models.ForeignKey(Vehicle, on_delete=models.CASCADE) 
     deviceTag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE) 
     district=models.ForeignKey(dto_rto, on_delete=models.CASCADE) 
@@ -1168,3 +1189,119 @@ class Notice(models.Model):
     title = models.CharField(max_length=255, blank=True, null=True)
     detail = models.CharField(max_length=255, blank=True, null=True)     
     status = models.CharField(max_length=25, blank=True, null=True)      
+
+
+
+
+class EMTeams(models.Model): 
+    choices=[("NotActive", "NotActive"), ("Active", "Active"), ("Removed", "Removed")] 
+    state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
+    teamlead =models.ForeignKey(EM_ex, on_delete=models.CASCADE)
+    members = models.ManyToManyField(EM_ex,  null=True,  related_name='SOS_Executive_member_team') 
+    created_by = models.ForeignKey(EM_admin, on_delete=models.CASCADE, related_name='SOS_admin_createdby_team') 
+    created_at =   models.DateTimeField(auto_now_add=True, verbose_name="created_at")
+    activated_at =   models.DateTimeField(blank=True, null=True)
+    removed_at =   models.DateTimeField(blank=True, null=True)
+    status = models.CharField(max_length=20,choices=choices)
+    name = models.TextField()
+    detail = models.TextField()
+    def __str__(self):
+        return f"EMCall {self.id}"
+
+
+class EMCall(models.Model): 
+    choices=[("pending", "pending"), ("desk_ex_assigned", "desk_ex_assigned"), ("broadcast_pending", "broadcast_pending"), ("field_ex_aproaching", "field_ex_aproaching"), ("field_ex_arrived", "field_ex_arrived"), ("closed_false_allert", "closed_false_allert"), ("closed", "closed")]
+    team  = models.ForeignKey(EMTeams, null=True,  on_delete=models.CASCADE,related_name='EMTeams_id')
+    device = models.ForeignKey(DeviceTag,  on_delete=models.CASCADE,related_name='DeviceTag_id')
+    start_time =   models.DateTimeField(auto_now_add=True, verbose_name="start_time")
+    end_time =   models.DateTimeField(blank=True, null=True)
+    status = models.CharField(max_length=30,choices=choices)
+    closer_comment = models.TextField()
+    def __str__(self):
+        return f"EMCall {self.id}"
+
+class EMCallAssignment(models.Model): 
+    status=[("pending", "pending"), ("accepted", "accepted"), ("rejected", "rejected"), ("arriving", "arriving"), ("arrived", "arrived"), ("closed_false_allert", "closed_false_allert"), ("closed", "closed")]
+    types=[("teamlead", "teamlead"), ("desk_ex", "desk_ex"), ("police_ex", "police_ex"), ("ambulance_ex", "ambulance_ex") , ("pcr", "pcr") , ("acr", "acr") ]
+    admin = models.ForeignKey(EM_admin,  on_delete=models.CASCADE,related_name='emcalladmin')
+    ex = models.ForeignKey(EM_ex,  on_delete=models.CASCADE,related_name='exec_id')
+    call = models.ForeignKey(EMCall,  on_delete=models.CASCADE,related_name='EMCall_id')
+    start_time =   models.DateTimeField(auto_now_add=True, verbose_name="start_time")
+    accept_time = models.DateTimeField(blank=True, null=True)
+    arrived_time = models.DateTimeField(blank=True, null=True)
+    complete_time = models.DateTimeField(blank=True, null=True)
+    reject_time =   models.DateTimeField(blank=True, null=True)
+    status = models.CharField(max_length=30,choices=status)
+    type = models.CharField(max_length=30,choices=types)
+    closer_comment = models.TextField()
+    desk_ex_comment = models.TextField()
+    def __str__(self):
+        return f"EMCall {self.id}"
+
+
+class EMCallMessages(models.Model): 
+    call = models.ForeignKey(EMCall,  on_delete=models.CASCADE,related_name='EMCa111ll_id111')
+    assignment = models.ForeignKey(EMCallAssignment,  on_delete=models.CASCADE,related_name='EMCallAssignm11ent111_id')
+    time =   models.DateTimeField(auto_now_add=True, verbose_name="time")  
+    message = models.TextField()
+    def __str__(self):
+        return f"EMCall {self.id}"
+
+
+class EMCallBackupRequest(models.Model): 
+    types=[ ("police_ex", "police_ex"), ("ambulance_ex", "ambulance_ex") ]
+    call = models.ForeignKey(EMCall,  on_delete=models.CASCADE,related_name='EMCall_id111')
+    assignment = models.ForeignKey(EMCallAssignment,  on_delete=models.CASCADE,related_name='EMCallAssignment111_id')
+    time =   models.DateTimeField(auto_now_add=True, verbose_name="time")  
+    type = models.CharField(max_length=30,choices=types)
+    quantity = models.IntegerField( )
+    accepted = models.BooleanField( )
+    message = models.TextField()
+    def __str__(self):
+        return f"EMCall {self.id}"
+
+class EMUserLocation(models.Model): 
+    field_ex = models.ForeignKey(EM_ex,  null=True,on_delete=models.CASCADE,related_name='field_executive1_id_location')# models.CharField(max_length=50, unique=True)
+    em_lat = models.FloatField(blank=True, null=True, verbose_name="em_lat") 
+    em_lon = models.FloatField(blank=True, null=True, verbose_name="em_lon") 
+    speed = models.FloatField(blank=True, null=True, verbose_name="speed") 
+    time =   models.DateTimeField(auto_now_add=True, verbose_name="time")   
+    def __str__(self):
+        return f"EMCall {self.id}"
+
+
+
+
+"""
+
+
+class EMCall(models.Model): 
+    device 
+    start_time  
+    end_time  
+    status = [("pending", "pending"), ("desk_ex_assigned", "desk_ex_assigned"), ("broadcast_pending", "broadcast_pending"), ("field_ex_aproaching", "field_ex_aproaching"), ("field_ex_arrived", "field_ex_arrived"), ("closed_false_allert", "closed_false_allert"), ("closed", "closed")]
+    closer_comment  
+
+class EMCallAssignment(models.Model): 
+    status=[("pending", "pending"), ("accepted", "accepted"), ("rejected", "rejected"), ("arriving", "arriving"), ("arrived", "arrived"), ("closed_false_allert", "closed_false_allert"), ("closed", "closed")]
+    types=[("teamlead", "teamlead"), ("desk_ex", "desk_ex"), ("police_ex", "police_ex"), ("ambulance_ex", "ambulance_ex") ]
+    call 
+    start_time   
+    end_time  
+    closer_comment  
+
+class EMCallMessages(models.Model): 
+    call 
+    assignment  
+    time  
+    message  
+
+
+class EMUserLocation(models.Model): 
+    field_ex
+    em_lat  
+    em_lon  
+    speed  
+    time  
+    
+"""

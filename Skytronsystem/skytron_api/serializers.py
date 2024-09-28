@@ -427,29 +427,35 @@ class dto_rtoSerializer(serializers.ModelSerializer):
         model = dto_rto
         fields = '__all__'
 
+
+class EM_exSerializer(serializers.ModelSerializer):
+    
+    users = UserSerializer(many=True, read_only=True)
+    createdby_info = UserSerializer(source='createdby', read_only=True)
+    state_info = Settings_StateSerializer(source='state', read_only=True)
+    district_info = Settings_DistrictSerializer(source='district', read_only=True)
+
+    class Meta:
+        model = EM_ex
+        fields = '__all__'
+
+
  
-class SOS_teamSerializer(serializers.ModelSerializer):
+class EMTeamSerializer(serializers.ModelSerializer):
     
     #admin = SOS_AdminSerializer(many=True, read_only=True)
-    createdby_info = UserSerializer(source='createdby', read_only=True)
+    createdby_info = UserSerializer(source='created_by', read_only=True)
     state_info = Settings_StateSerializer(source='state', read_only=True)
     district_info = Settings_DistrictSerializer(source='district', read_only=True)
-
+    teamlead_info =EM_exSerializer(source='teamlead', read_only=True)
+    members_info =EM_exSerializer(source='members', read_only=True,many=True)  
     class Meta:
-        model = SOS_team
-        fields = '__all__'
-class SOS_userSerializer(serializers.ModelSerializer):
-    
-    users = UserSerializer(many=True, read_only=True)
-    createdby_info = UserSerializer(source='createdby', read_only=True)
-    state_info = Settings_StateSerializer(source='state', read_only=True)
-    district_info = Settings_DistrictSerializer(source='district', read_only=True)
+        model = EMTeams
+        fields = '__all__' 
+ 
 
-    class Meta:
-        model = SOS_ex
-        fields = '__all__'
         
-class SOS_adminSerializer(serializers.ModelSerializer):
+class EM_adminSerializer(serializers.ModelSerializer):
     
     users = UserSerializer(many=True, read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
@@ -457,8 +463,8 @@ class SOS_adminSerializer(serializers.ModelSerializer):
     district_info = Settings_DistrictSerializer(source='district', read_only=True)
 
     class Meta:
-        model = SOS_admin
-        fields = '__all__'
+        model = EM_admin
+        fields = '__all__' 
 
 
 class DeviceTagSerializer2(serializers.ModelSerializer):
@@ -471,3 +477,66 @@ class DeviceTagSerializer2(serializers.ModelSerializer):
         #fields = '__all__' #
         exclude = ['otp', 'otp_time']
  
+
+
+
+class EMTeamsSerializer(serializers.ModelSerializer):  
+    state = Settings_StateSerializer( read_only=True)
+    teamlead =EM_exSerializer(  read_only=True)
+    members=EM_exSerializer(  many=True,read_only=True)
+    created_by = EM_adminSerializer( read_only=True)
+ 
+    class Meta:
+        model = EMTeams 
+        fields = '__all__'  
+ 
+
+
+class EMCallSerializer(serializers.ModelSerializer):  
+    team  = EMTeamsSerializer(source='team', read_only=True)
+    device = DeviceTagSerializer2(source='device', read_only=True) 
+    class Meta:
+        model = EMCall 
+        fields = '__all__'  
+
+
+
+class EMCallAssignmentSerializer(serializers.ModelSerializer):  
+    admin = EM_adminSerializer(source='admin', read_only=True)
+    ex =EM_exSerializer(source='ex', read_only=True)
+    call=EMCallSerializer(source='call', read_only=True) 
+    class Meta:
+        model = EMCallAssignment 
+        fields = '__all__'  
+
+
+
+class EMCallMessagesSerializer(serializers.ModelSerializer):  
+    assignment =EMCallAssignmentSerializer(source='ex', read_only=True)
+    call=EMCallSerializer(source='call', read_only=True) 
+    class Meta:
+        model = EMCallMessages
+        fields = '__all__'  
+
+
+ 
+class EMCallBackupRequestSerializer(serializers.ModelSerializer):  
+    assignment =EMCallAssignmentSerializer(source='ex', read_only=True)
+    call=EMCallSerializer(source='call', read_only=True) 
+    class Meta:
+        model = EMCallBackupRequest
+        fields = '__all__'  
+
+
+ 
+class EMUserLocationSerializer(serializers.ModelSerializer):  
+    field_ex =EM_exSerializer(source='field_ex', read_only=True)
+    call=EMCallSerializer(source='call', read_only=True) 
+    class Meta:
+        model = EMUserLocation
+        fields = '__all__'  
+
+
+ 
+  
+

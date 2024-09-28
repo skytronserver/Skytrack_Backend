@@ -9,7 +9,9 @@ from rest_framework.response import Response
 from rest_framework import status 
 from .models import *
 from .serializers import *
-
+import xml.etree.ElementTree as ET
+import json
+import html
 import random
 from itertools import islice 
 from django.utils import timezone     
@@ -230,7 +232,7 @@ def Login2(request):
         return HttpResponse("error")
 
 '''
-
+"""
 #@login_required
 @csrf_exempt
 @api_view(['POST','GET'])
@@ -588,15 +590,17 @@ def emergency_call_listener_admin(request):
     } 
 
     return render(request, 'emergency_call_listener_admin.html', context)
-
+"""
 
 
 import os
 import glob
 def save_file(request,tag,path):
     uploaded_file = request.FILES.get(tag)
+    n=uploaded_file.name
+
     if uploaded_file:
-        file_path = path+'/' + uploaded_file.name
+        file_path = path+'/' + ''.join(random.choices('0123456789', k=40))+"."+n.split(".")[-1]
         with open(file_path, 'wb') as file:
             for chunk in uploaded_file.chunks():
                 file.write(chunk)
@@ -657,7 +661,7 @@ def downloadfile(request):
     return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
 
 
-
+"""
 #@login_required
 @csrf_exempt
 def emergency_call_listener(request):
@@ -862,8 +866,6 @@ def get_live_call_field(request ):
         else :
             live_data = {} 
 
-        
-    
     return JsonResponse(live_data)
 
 
@@ -891,7 +893,7 @@ class CustomLoginView(LoginView):
             return '/api/emergency-call-listener/' 
         
  
-
+"""
 
 def apply_low_pass_filter(queryset, columns):
     # Get the values of the specified columns from the queryset
@@ -1018,16 +1020,17 @@ def gps_track_data_api(request):
         data = []
 
         for x in distinct_registration_numbers:
-            latest_entry = GPSData.objects.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time').first()
+            latest_entry = GPSData.objects.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time') 
             
             if regno:
                 if regno!="None":
                     #.filter(vehicle_registration_number=x['vehicle_registration_number'])
-                    latest_entry = GPSData.objects.filter(device_tag__vehicle_reg_no=regno).filter(gps_status=1).order_by('-entry_time').first()  
+                    latest_entry = latest_entry.filter(device_tag__vehicle_reg_no__icontains=regno).filter(gps_status=1).order_by('-entry_time') 
             elif imei:
                 if imei !="None":
                     #filter(device_tag__vehicle_reg_no=x['vehicle_registration_number']).
-                    latest_entry = GPSData.objects.filter(device_tag__device__imei=imei).filter(gps_status=1).order_by('-entry_time').first()
+                    latest_entry = latest_entry.filter(device_tag__device__imei__icontains=imei).filter(gps_status=1).order_by('-entry_time')
+            latest_entry=latest_entry.first()
             excluded_fields = []   
             if latest_entry:
                 #data.append(latest_entry.values())
@@ -2355,7 +2358,7 @@ def filter_dealer(request):
                     company_name__icontains=company_name,
                     users__name__icontains=name,
                     users__mobile__icontains=phone_no, 
-                    createdby=user,
+                    manufacturer=uo,
                 ).distinct()
             else:
                 manufacturers = Retailer.objects.filter(
@@ -2365,7 +2368,7 @@ def filter_dealer(request):
                     company_name__icontains=company_name,
                     users__name__icontains=name,
                     users__mobile__icontains=phone_no, 
-                    createdby=user,
+                    manufacturer=uo,
                 ).distinct()
         else:
             if dealer_id :
@@ -3104,7 +3107,7 @@ def create_SOS_user(request):
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
 
 
-                retailer = SOS_ex.objects.create( 
+                retailer = EM_ex.objects.create( 
                     created=created,
                     state_id=state, 
                     #district_id=district,
@@ -3120,7 +3123,7 @@ def create_SOS_user(request):
                 return Response({'error': str(e)}, status=500)
             retailer.users.add(user) 
             send_usercreation_otp(user,new_password,'SOS user ')             
-            return Response(SOS_userSerializer(retailer).data)
+            return Response(EM_exSerializer(retailer).data)
         else:
             return Response(error, status=500)
     except Exception as e:
@@ -3145,14 +3148,14 @@ def filter_SOS_user(request):
 
         # Add ID filter if provided
         if manufacturer_id :
-            manufacturers = SOS_ex.objects.filter(
+            manufacturers = EM_ex.objects.filter(
                 id=manufacturer_id,
                 users__email__icontains=email, 
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
             ).distinct()
         else:
-            manufacturers = SOS_ex.objects.filter(
+            manufacturers = EM_ex.objects.filter(
                 #id=manufacturer_id,
                 users__status='active',
                 users__email__icontains=email, 
@@ -3161,7 +3164,7 @@ def filter_SOS_user(request):
             ).distinct()
 
         # Serialize the queryset
-        serializer = SOS_userSerializer(manufacturers, many=True)
+        serializer = EM_exSerializer(manufacturers, many=True)
 
         # Return the serialized data as JSON response
         return Response(serializer.data)
@@ -3244,7 +3247,7 @@ def create_SOS_admin(request):
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
 
 
-                retailer = SOS_admin.objects.create( 
+                retailer = EM_admin.objects.create( 
                     created=created,
                     state_id=state, 
                     #district_id=district,
@@ -3260,7 +3263,7 @@ def create_SOS_admin(request):
             retailer.users.add(user) 
             send_usercreation_otp(user,new_password,'State Admin ')
              
-            return Response(SOS_adminSerializer(retailer).data)
+            return Response(EM_adminSerializer(retailer).data)
         else:
             return Response(error, status=500)
     except Exception as e:
@@ -3285,14 +3288,14 @@ def filter_SOS_admin(request):
 
         # Add ID filter if provided
         if manufacturer_id :
-            manufacturers = SOS_admin.objects.filter(
+            manufacturers = EM_admin.objects.filter(
                 id=manufacturer_id,
                 users__email__icontains=email, 
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
             ).distinct()
         else:
-            manufacturers = SOS_admin.objects.filter(
+            manufacturers = EM_admin.objects.filter(
                 #id=manufacturer_id,
                 users__status='active',
                 users__email__icontains=email, 
@@ -3301,7 +3304,7 @@ def filter_SOS_admin(request):
             ).distinct()
 
         # Serialize the queryset
-        serializer = SOS_adminSerializer(manufacturers, many=True)
+        serializer = EM_adminSerializer(manufacturers, many=True)
 
         # Return the serialized data as JSON response
         return Response(serializer.data)
@@ -3312,61 +3315,484 @@ def filter_SOS_admin(request):
 
 
 
-  
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@transaction.atomic
-def create_SOS_team(request):
-   
+def list_desk_ex(request):
+
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:  
+        active_team_members = EMTeams.objects.filter(status="Active").values_list('members', flat=True)
+        emex = EM_ex.objects.filter(
+            state=uo.state,
+            status="UserVerified",
+            user_type='desk_ex',
+            users__status='active'
+        ).exclude(id__in=active_team_members).distinct()
+
+        # Serialize and return the data
+        serializer = EM_exSerializer(emex, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def list_team_lead(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role = "sosadmin"
+    user = request.user
+    uo = get_user_object(user, role)
+    if not uo:
+        return Response({"error": "Request must be from " + role + '.'}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        active_team_leads = EMTeams.objects.filter(status="Active").values_list('teamlead_id', flat=True)
+        emex = EM_ex.objects.filter(
+            state=uo.state,
+            status="UserVerified",
+            user_type='teamlead',
+            users__status='active'
+        ).exclude(id__in=active_team_leads).distinct()
+        serializer = EM_exSerializer(emex, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_EM_team(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'+str(user.role)}, status=400)
+    state = request.data.get('state') 
+    if uo.state.id!=state:
+        return Response({"error":"Unauthorised State" }, status=400)
+
+        
+    #teamlead = EM_ex.objects.filter(id=request.data.get('teamlead') ,state=state,status="UserVerified",user_type='teamlead').last()
+    #members = EM_ex.objects.filter(id=request.data.get('members',[]) ,state=state,status="UserVerified",user_type='desk_ex').all()
+
+
+
+    teamlead_id = request.data.get('teamlead')
+    member_ids = request.data.get('members', [])
+    
+    teamlead = EM_ex.objects.filter(id=teamlead_id, state=state,users__status='active', user_type='teamlead').last()
+    members = EM_ex.objects.filter(id__in=member_ids, state=state, users__status='active', user_type='desk_ex').all()
+    if not teamlead:
+        return Response({"error": "Team lead not found."}, status=400)
+    if not members:
+        return Response({"error": "Members not found."}, status=400)
+    if len(members)!=len(member_ids):
+        return Response({"error": "All Members not found."}, status=400)
+
+
+    # Check if the teamlead is part of any active team
+    if EMTeams.objects.filter(teamlead=teamlead, status="Active").exists():
+        return Response({"error": "The selected teamlead is already part of an active team."}, status=400)
+
+    # Check if any of the members are part of any active team
+    active_team_members = EMTeams.objects.filter(status="Active", members__in=members).distinct()
+    if active_team_members.exists():
+        return Response({"error": "One or more selected members are already part of an active team."}, status=400)
+
+    created_by = uo  
+    status = "NotActive"
+    name = request.data.get('name') 
+    detail = request.data.get('detail') 
+    try:  
+        if state and teamlead  and  members  and  created_by  and  status  and name and   detail:
+            if members!=[]:
+                   
+                ob=EMTeams.objects.create(state_id = state,
+                    teamlead =teamlead,
+                     
+                    created_by = created_by,
+                    status = status,
+                    name = name,
+                    detail = detail)
+                ob.members.set(members) 
+                ob.save()
+                return Response({'status': str('Team Created Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to create team. Incomplete data.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def activate_EM_team(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
     user=request.user
     uo=get_user_object(user,role)
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    try:  
-        createdby = request.user  
-        created = timezone.now()  
-        status = 'active'
-        state= request.data.get('state', '') 
-        district = request.data.get('district', '')
-         
-         
-         
-        return Response({'error': str('')}, status=500)#Response(SOS_userSerializer(retailer).data)
-
+    try:
+        id = request.data.get('team_id') 
+        ob=EMTeams.objects.filter(id = id,status = "NotActive" ,state=uo.state).last()
+        if ob:
+            ob.status="Active"
+            ob.activated_at= timezone.now()
+            ob.save()
+            return Response({'status': str('Team Activated Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to activate team.  Team not found.')}, status=500)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def filter_SOS_team(request):
+def remove_EM_team(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
     try:
-        
-        state = request.data.get('state', '')
-        district = request.data.get('district', '')
+        id = request.data.get('team_id') 
+        ob=EMTeams.objects.filter(id = id,status = "Active",state=uo.state).last()
+        if ob:
+            ob.status="Removed"
+            ob.activated_at= timezone.now()
+            ob.save()
+            return Response({'status': str('Team Removed Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to remove team. Team not found.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
-        # Create a dictionary to hold the filter parameters
-        filters = {}
-        manufacturers = SOS_team.objects.filter(
-                 
-            ).distinct()
 
-        # Serialize the queryset
-        serializer = SOS_teamSerializer(manufacturers, many=True)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_EM_team(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        id = request.data.get('team_id') 
+        ob=EMTeams.objects.filter(id = id ,state=uo.state).last()
+        if ob: 
+            return Response({"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Team not found')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
-        # Return the serialized data as JSON response
-        return Response(serializer.data)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def list_EM_team(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        ob=EMTeams.objects.filter( state=uo.state).all()
+        if ob: 
+            return Response({ "teams":EMTeamsSerializer(ob,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Team not found')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_EMfieldex_loc(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex' :
+        return Response({"error":"Request must be from   police_ex or  ambulance_ex ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        ob=EMUserLocation.objects.create( field_ex = uo , em_lat = float(request.data.get("em_lat") ), em_lon = float(request.data.get("em_lon") ), speed= float(request.data.get("speed") ) )
+        if ob:
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response({ "loc":list(ob.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Location not updated. value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+ 
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def send_EMBackupReq(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex' :
+        return Response({"error":"Request must be from   police_ex or  ambulance_ex ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("assignment_id") 
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo).exclude(status__in=[ "rejected", "closed_false_allert" , "closed"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        call=assignment.call
+        message=request.data.get("message") 
+        quantity=request.data.get("quantity") 
+        type=request.data.get("type") 
+        if type not in [ "police_ex","ambulance_ex"]:
+            return Response({"error":"type must be    police_ex or  ambulance_ex ."}, status=status.HTTP_400_BAD_REQUEST)
+
+        accepted=False
+
+        ob=EMCallBackupRequest.objects.create(assignment=assignment,call=call,message=message,type=type,quantity=quantity)
+        if ob:
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response({ "loc":list(ob.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to send. value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def accept_EMBackupReq(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+        return Response({"error":"Request must be from   desk_ex   ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("backup_id") 
+        backup =EMCallBackupRequest.objects.filter(id=assignment, accepted=False).last()
+        if not backup:
+            return Response({"error":"Backup not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        ac=EMCallAssignment.objects.filter(call=backup.call,ex=uo,types="desk_ex").exclude(status__in=["pending",  "rejected", "closed_false_allert","closed"])
+        if not ac:
+
+            return Response({"error":"Unauthorised access  " }, status=status.HTTP_400_BAD_REQUEST) 
+
+        if assignment:
+            backup.accepted=True#"rejected", "rejected") 
+            backup.save()
+
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response({ "loc":list(backup.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
 
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def send_EMCallMessages(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    try: 
+        assignment =request.data.get("assignment_id") 
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo).exclude(status__in=[ "rejected", "closed_false_allert" , "closed"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        call=assignment.call
+        message=request.data.get("message") 
+        ob=EMCallMessages.objects.create(assignment=assignment,call=call,message=message)
+        if ob:
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response({ "loc":list(ob.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to send message. value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def accept_EMassignment(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    #if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+    #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("assignment_id") 
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=[ "pending"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+   
+        if assignment:
+            assignment.status="accepted"#"rejected", "rejected")
+            assignment.accept_time =  timezone.now()
+            assignment.save()
+
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def reject_EMassignment(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    #if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+    #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("assignment_id") 
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=[ "pending"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        if assignment:
+            assignment.status= "rejected" 
+            assignment.reject_time  =  timezone.now()
+
+            assignment.save()
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def arriving_EMassignment(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    #if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+    #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("assignment_id") 
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=[ "pending"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        if assignment:
+            assignment.status= "arriving"  
+
+            assignment.save()
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+  
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def arrived_EMassignment(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    #if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+    #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("assignment_id") 
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=[ "pending"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        if assignment:
+            assignment.status= "arrived" 
+            assignment.arrived_time  =  timezone.now()
+
+            assignment.save()
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def close_EMassignment(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    #if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+    #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("assignment_id") 
+        is_false =request.data.get("is_false") 
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=[ "pending"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        if assignment:
+            if is_false:
+                assignment.status= "closed_false_allert" 
+            else:
+                assignment.status= "closed" 
+            assignment.complete_time  =  timezone.now()
+            assignment.closer_comment=request.data.get("closer_comment") 
+            assignment.save()
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500) 
 
 
 
@@ -3892,7 +4318,10 @@ def TagSendDealerOtp(request ):
     return Response({"message": "Owner OTP sent successfully."}, status=200)
 
 
-  
+def xml_to_dict(elem):
+    return {elem.tag: {child.tag: child.text for child in elem}}
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def GetVahanAPIInfo(request): 
@@ -3908,8 +4337,34 @@ def GetVahanAPIInfo(request):
     device_tag = DeviceTag.objects.filter(device_id=device_tag_id,tagged_by=user, status='Owner_OTP_Verified').last()
     
     if device_tag:
-        serializer = VahanSerializer(device_tag)
-        return JsonResponse({'data': serializer.data}, status=201)
+        url = "https://staging.parivahan.gov.in/vltdmakerws/dataportws?wsdl"
+
+        payload = "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ser=\"http://service.web.homologation.transport.nic/\">\n   <soapenv:Header/>\n   <soapenv:Body>\n      <ser:getVltdInfoByIMEI>          \n         <userId>asbackendtest</userId>\n         <transactionPass>Asbackend@123</transactionPass>       \n         <imeiNo>" + str(device_tag.device.imei) +"</imeiNo>\n      </ser:getVltdInfoByIMEI>\n   </soapenv:Body>\n</soapenv:Envelope>"
+        headers = {
+        'Cookie': 'SERVERID_vahan8082_152=vahan_8082',
+        'Content-Type': 'application/xml',
+        'Content-Type': 'text/xml; charset=utf-8'
+        }
+        try:
+
+            response = requests.request("POST", url, headers=headers, data=payload)
+            print(response.text)
+            root = ET.fromstring(response.text)
+            namespace = {'S': 'http://schemas.xmlsoap.org/soap/envelope/', 'ns2': 'http://service.web.homologation.transport.nic/'}
+
+            return_tag = root.find('.//ns2:getVltdInfoByIMEIResponse/return', namespace)
+
+            inner_xml = html.unescape(return_tag.text)
+            inner_root = ET.fromstring(inner_xml)
+
+
+            vltd_details = xml_to_dict(inner_root) 
+            json_output = json.dumps(vltd_details, indent=4)
+            serializer = VahanSerializer(device_tag)
+            return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data':json_output}, status=201)
+        except:
+
+            return JsonResponse({'error': "Unable to get VAHAN information. Please confirm the device IMEI."}, status=400)
     else:
         return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
 
@@ -4233,10 +4688,18 @@ def SellListAvailableDeviceStock(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="dealer"
     man=get_user_object(user,role)
-    if not man:
-        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
-    
-    device_stock =  DeviceStock.objects.filter(  dealer=man,stock_status='Available_for_fitting') 
+    role1="devicemanufacture"
+    man2=get_user_object(user,role1)
+    if not man and not man2:
+        return Response({"error":"Request must be from "+role+" or "+role1+"."}, status=status.HTTP_400_BAD_REQUEST)
+    if man2:
+        device_stock =  DeviceStock.objects.all() 
+        if not device_stock:
+            return JsonResponse({'error': "no device found "  }, status=400)
+
+    else:
+        device_stock =  DeviceStock.objects.filter(  dealer=man,stock_status='Available_for_fitting') 
+     
     if not device_stock:
         return JsonResponse({'error': "no device found for this user avaialble for fitting "  }, status=400)
 
@@ -4354,7 +4817,7 @@ def deviceStockFilter(request):
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         man=get_user_object(user,"dealer")
         data['dealer_id'] = man.id 
-        is_tagged_filter=True
+        #is_tagged_filter=True
 
 
     
@@ -5119,13 +5582,13 @@ def homepage(request):
             'Retailer': Retailer.objects.count(),
             'VehicleOwner': VehicleOwner.objects.count(),
             'dto_rto': dto_rto.objects.count(),
-            'SOS_ex': SOS_ex.objects.count(),
-            'SOS_user': SOS_user.objects.count(),
-            'SOS_admin': SOS_admin.objects.count(),
+            'SOS_ex': EM_ex.objects.count(),
+            'SOS_user': EM_ex.objects.count(),
+            'SOS_admin': EM_admin.objects.count(),
             
             'TotalVehicles':0,
             
-            'SOS_team': SOS_team.objects.count(),
+            'SOS_team': EMTeams.objects.count(),
             
             'TotalAlerts':0,
             'TotalAlerts_month':0,
@@ -5628,10 +6091,10 @@ def homepage_user1(request):
             'dtorto_admin': dto_rto.objects.count(),
             'eSimProvider': eSimProvider.objects.count(),
             'Retailer': Retailer.objects.count(),
-            'VehicleOwner': VehicleOwner.objects.count(), 
-            'SOS_ex': SOS_ex.objects.count(),
-            'SOS_user': SOS_user.objects.count(),
-            'SOS_admin': SOS_admin.objects.count(),
+            'VehicleOwner': VehicleOwner.objects.count(),  
+            'SOS_ex': EM_ex.objects.count(),
+            'SOS_user': EM_ex.objects.count(),
+            'SOS_admin': EM_admin.objects.count(),
              
         }
         # Return the serialized data as JSON response
@@ -5654,10 +6117,9 @@ def homepage_user2(request):
             'eSimProvider': eSimProvider.objects.count(),
             'Retailer': Retailer.objects.count(),
             'VehicleOwner': VehicleOwner.objects.count(), 
-            'SOS_ex': SOS_ex.objects.count(),
-            'SOS_user': SOS_user.objects.count(),
-            'SOS_admin': SOS_admin.objects.count(),
-             
+            'SOS_ex': EM_ex.objects.count(),
+            'SOS_user': EM_ex.objects.count(),
+            'SOS_admin': EM_admin.objects.count(),
         }
         # Return the serialized data as JSON response
         return Response(count_dict)
@@ -5907,7 +6369,11 @@ def get_user_object(user,role):
     if role=="esimprovider":
         ret=eSimProvider.objects.filter(users=user).last() 
     if role=="sosadmin":
-        ret=SOS_admin.objects.filter(users=user).last() 
+        ret=EM_admin.objects.filter(users=user).last() 
+    if role=="sosexecutive":
+        ret=EM_ex.objects.filter(users=user).last() 
+        
+        
 
     return ret
      
@@ -6381,19 +6847,20 @@ def password_reset(request):
                 if id_no != prof.idProofno[-4:]:
                     user=None
             elif user.role ==  "sosadmin":
-                prof=SOS_admin.objects.filter( 
+                prof=EM_admin.objects.filter( 
                 users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
                     user=None
-            elif user.role ==  "teamleader":
-                prof=SOS_team.objects.filter( 
-                users=user, 
-                ).last()
-                if id_no != prof.idProofno[-4:]:
-                    user=None
+                """elif user.role ==  "teamleader":
+                    prof=EMTeams.objects.filter( 
+                    users=user, 
+                    ).last()
+                    if id_no != prof.idProofno[-4:]:
+                        user=None
+                """
             elif user.role ==  "sosexecutive":
-                prof=SOS_ex.objects.filter( 
+                prof=EM_ex.objects.filter( 
                 users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
@@ -7338,11 +7805,11 @@ def create_notice(request):
         createdby = request.user    
         file = request.data.get('file') 
         try:
-            file  = save_file(request, 'file', 'fileuploads/man')  
+            file  = save_file(request, 'file', '/var/www/html/skytron_backend/Skytronsystem/skytron_api/static/notice')  
             notice = Notice.objects.create(
                     title=title,
                     detail=detail,
-                    file=file,
+                    file=":2000/static/notice/"+file.split("/")[-1],
                     createdby=createdby,
                     status=status,
             )
@@ -7442,7 +7909,9 @@ def update_notice(request):
         if status:
             man.status=status
         if file:
-            man.file = save_file(request, 'file', 'fileuploads/man') 
+            f=save_file(request, 'file', '/var/www/html/skytron_backend/Skytronsystem/skytron_api/static/notice') 
+    
+            man.file = ":2000/static/notice/"+f.split("/")[-1],
         man.createdby = createdby
         man.save() 
         return Response(NoticeSerializer(man ).data)

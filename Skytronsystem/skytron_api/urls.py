@@ -110,8 +110,14 @@ urlpatterns = [
 
 
 
-    path('SOS/create_SOSteam/', create_SOS_team, name='create_SOSteam'),
-    path('SOS/filter_SOSteam/', filter_SOS_team, name='filter_SOSteam'),
+    path('EM/create_EMteam/', create_EM_team, name='create_EMteam'),
+    path('EM/activate_EMteam/', activate_EM_team, name='activate_EM_team'),
+    path('EM/remove_EMteam/', remove_EM_team, name='remove_EM_team'),
+    path('EM/get_EMteam/', get_EM_team, name='get_EM_team'),
+    path('EM/list_EMteam/', list_EM_team, name='list_EM_team'),
+    
+    
+    #path('SOS/filter_SOSteam/', filter_SOS_team, name='filter_SOSteam'),
 
 
     path('list-alerts/', list_alert_logs, name='list_alert_logs'),
@@ -124,10 +130,6 @@ urlpatterns = [
     path('gps-data-log-table/', gps_data_log_table, name='gps_data_log_table'),
     path('gps-em-data-log-table/', gps_em_data_log_table, name='gps_em_data_log_table'),
     path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),
-    #emergency_call_listener_admin
-    path('emergency-call-listener-admin/',emergency_call_listener_admin, name='emergency-call-listener-admin'), 
-    path('emergency-call-listener-deskexecutive/',setRoute, name='emergency-call-listener-deskexecutive'), 
-    path('emergency-call-listener-team-lead/',emergency_call_listener_admin, name='emergency-call-listener-team-lead'), 
     path('setRoute/',setRoute, name='setRout'), 
     path('saveRoute/',saveRoute, name='saveRout'), 
     path('delRoute/',delRoute, name='delRout'), 
@@ -145,29 +147,7 @@ urlpatterns = [
     #path('emergency-call-listener-admin/',emergency_call_listener_admin, name='emergency-call-listener-admin'), 
 
 
-    
-    path('latest/', latest_gps, name='latest_gps'),
-    path('emergency-call-listener/', emergency_call_listener, name='emergency_call_listener'),
-    path('emergency-call-listener-field/', emergency_call_listener_field, name='emergency_call_listener_field'),
-    path('get-live-call/', get_live_call, name='get_live_call'),
-    path('get-all-call/', get_all_call, name='get_all_call'),
-    path('get-live-call-field/', get_live_call_field, name='get_live_call_field'),
-    path('emergency-call-details-google/<int:emergency_call_id>/', emergency_call_details, name='emergency_call_details'),
-    path('emergency-call-details/<int:emergency_call_id>/', map2, name='emergency_call_details'),
-    path('emergency-call-details-field/<int:emergency_call_id>/', emergency_call_details_field, name='emergency_call_details_field'),
-    path('get-latest-gps-location/<int:emergency_call_id>/', get_latest_gps_location, name='get_latest_gps_location'),
-    path('update-location/', update_location, name='update_location'),
-    path('update-field-status/<str:field_ex>/', update_status, name='update_field_status'),
-    path('broadcast-help/', Broadcast_help, name='assign_help'),
-    path('submit_status/', SubmitStatus, name='SubmitStatus'),
-    #path('login/', CustomLoginView.as_view(), name='login'),
-    #path('login2/', Login2, name='login2'), 
-    #path('loginAndroid/', LoginAndroid, name='loginandroid'),
-    path('map2/<int:emergency_call_id>/',  map2, name='map2'),
-    #path('', CustomLoginView.as_view(), name='login'),
-    path('logout/', CustomLogoutView.as_view(), name='logout'),
-    
-
+    path('emergency-call-listener-deskexecutive/',setRoute, name='emergency-call-listener-deskexecutive'), 
 
     #path('SOSTeamLead/create_SOSTeamLead/', create_SOSTeamLead, name='create_SOSTeamLead'),
     #path('SOSTeamLead/filter_SOSTeamLead/', filter_SOSTeamLead, name='filter_SOSTeamLead'),
@@ -310,6 +290,33 @@ urlpatterns = [
     path('create_device/', create_device, name='create_device'),
     path('create_device_model/', create_device_model, name='create_device_model'),
 '''
+"""
+    path('latest/', latest_gps, name='latest_gps'),
+
+    #emergency_call_listener_admin
+    path('emergency-call-listener-admin/',emergency_call_listener_admin, name='emergency-call-listener-admin'), 
+    path('emergency-call-listener-team-lead/',emergency_call_listener_admin, name='emergency-call-listener-team-lead'), 
+    path('emergency-call-listener/', emergency_call_listener, name='emergency_call_listener'),
+    path('emergency-call-listener-field/', emergency_call_listener_field, name='emergency_call_listener_field'),
+    path('emergency-call-details-google/<int:emergency_call_id>/', emergency_call_details, name='emergency_call_details'),
+    path('emergency-call-details/<int:emergency_call_id>/', map2, name='emergency_call_details'),
+    path('emergency-call-details-field/<int:emergency_call_id>/', emergency_call_details_field, name='emergency_call_details_field'),
+    path('get-latest-gps-location/<int:emergency_call_id>/', get_latest_gps_location, name='get_latest_gps_location'),
+    path('get-live-call/', get_live_call, name='get_live_call'),
+    path('get-all-call/', get_all_call, name='get_all_call'),
+    path('get-live-call-field/', get_live_call_field, name='get_live_call_field'),
+    path('update-location/', update_location, name='update_location'),
+    path('update-field-status/<str:field_ex>/', update_status, name='update_field_status'),
+    path('broadcast-help/', Broadcast_help, name='assign_help'),
+    path('submit_status/', SubmitStatus, name='SubmitStatus'),
+    #path('login/', CustomLoginView.as_view(), name='login'),
+    #path('login2/', Login2, name='login2'), 
+    #path('loginAndroid/', LoginAndroid, name='loginandroid'),
+    path('map2/<int:emergency_call_id>/',  map2, name='map2'),
+    #path('', CustomLoginView.as_view(), name='login'),
+    
+    path('logout/', CustomLogoutView.as_view(), name='logout'),
+    """
 
     # Add other paths for the remaining APIs
  
