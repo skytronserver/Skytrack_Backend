@@ -493,8 +493,8 @@ class EMTeamsSerializer(serializers.ModelSerializer):
 
 
 class EMCallSerializer(serializers.ModelSerializer):  
-    team  = EMTeamsSerializer(source='team', read_only=True)
-    device = DeviceTagSerializer2(source='device', read_only=True) 
+    team  = EMTeamsSerializer(  read_only=True)
+    device = DeviceTagSerializer2( read_only=True) 
     class Meta:
         model = EMCall 
         fields = '__all__'  
@@ -502,9 +502,9 @@ class EMCallSerializer(serializers.ModelSerializer):
 
 
 class EMCallAssignmentSerializer(serializers.ModelSerializer):  
-    admin = EM_adminSerializer(source='admin', read_only=True)
-    ex =EM_exSerializer(source='ex', read_only=True)
-    call=EMCallSerializer(source='call', read_only=True) 
+    admin = EM_adminSerializer(  read_only=True)
+    ex =EM_exSerializer(  read_only=True)
+    call=EMCallSerializer(  read_only=True) 
     class Meta:
         model = EMCallAssignment 
         fields = '__all__'  
@@ -512,8 +512,8 @@ class EMCallAssignmentSerializer(serializers.ModelSerializer):
 
 
 class EMCallMessagesSerializer(serializers.ModelSerializer):  
-    assignment =EMCallAssignmentSerializer(source='ex', read_only=True)
-    call=EMCallSerializer(source='call', read_only=True) 
+    assignment =EMCallAssignmentSerializer( read_only=True)
+    call=EMCallSerializer(  read_only=True) 
     class Meta:
         model = EMCallMessages
         fields = '__all__'  
@@ -522,16 +522,22 @@ class EMCallMessagesSerializer(serializers.ModelSerializer):
  
 class EMCallBackupRequestSerializer(serializers.ModelSerializer):  
     assignment =EMCallAssignmentSerializer(source='ex', read_only=True)
-    call=EMCallSerializer(source='call', read_only=True) 
+    call=EMCallSerializer( read_only=True) 
     class Meta:
         model = EMCallBackupRequest
+        fields = '__all__'  
+
+class EMCallBroadcastSerializer(serializers.ModelSerializer):   
+    call=EMCallSerializer(  read_only=True) 
+    class Meta:
+        model = EMCallBroadcast
         fields = '__all__'  
 
 
  
 class EMUserLocationSerializer(serializers.ModelSerializer):  
-    field_ex =EM_exSerializer(source='field_ex', read_only=True)
-    call=EMCallSerializer(source='call', read_only=True) 
+    field_ex =EM_exSerializer( read_only=True)
+    call=EMCallSerializer( read_only=True) 
     class Meta:
         model = EMUserLocation
         fields = '__all__'  

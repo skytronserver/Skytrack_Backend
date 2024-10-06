@@ -3518,9 +3518,455 @@ def list_EM_team(request):
         return Response({'error': str(e)}, status=500)
 
 
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def update_EMfieldex_loc(request):
+def TLEx_getPendingCallList(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        ee=EMCallAssignment.objects.filter( call__team__teamlead= uo  ).all()
+
+        if ee: 
+            return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'call': str('Not found')}, status=404)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def DEx_getPendingCallList(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        ee=EMCallAssignment.objects.filter( type = "desk_ex", status="pending", ex = uo  )  
+
+        if ee: 
+            return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'call': str('Not found')}, status=404)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def DEx_getLiveCallList(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        ee=EMCallAssignment.objects.filter( type = "desk_ex", status="accepted", ex = uo  )  
+
+        if ee: 
+            return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'call': str('Not found')}, status=404)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def DEx_replyCall(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    #if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+    #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("assignment_id") 
+        accept =request.data.get("accept") 
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=[ "pending"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+   
+        if assignment:
+            if accept:
+                assignment.status="accepted"#"rejected", "rejected")
+                assignment.accept_time =  timezone.now()
+            else:
+                assignment.status="rejected"
+                assignment.reject_time = timezone.now()
+
+
+            assignment.save()
+
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response( EMCallAssignmentSerializer(assignment,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def DEx_broadcast(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    #if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+    #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("assignment_id") 
+        radius =request.data.get("radius")  
+        radius =5
+        typ =request.data.get("type")  
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=["accepted"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        ee=EMCallBroadcast.objects.create( admin  =assignment.admin,
+            created_by= uo,
+            call = assignment.call,
+            radius= radius,
+            status = "pending",
+            type = typ)
+        
+        return Response( EMCallBroadcastSerializer(ee,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def DEx_broadcastlist(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    #if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+    #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("assignment_id")  
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=["accepted"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        ee=EMCallBroadcast.objects.filter(
+            call = assignment.call).all()
+        
+        return Response( EMCallBroadcastSerializer(ee,many=True).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def FEx_broadcastlist(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex'or uo.user_type=='PCR'or uo.user_type=='ACR' :
+ 
+        return Response({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
+    try:  
+        ee=EMCallBroadcast.objects.filter(  type=uo.user_type,status="pending").last()
+        
+        return Response( EMCallBroadcastSerializer(ee,many=True).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+ 
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def TLEx_reassign(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    if not uo.user_type=='teamlead' :
+ 
+        return Response({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+
+        id =request.data.get("assignemtn_id")  
+        ee=EMCallAssignment.objects.filter(  call__team__teamlead= uo,id = id).last()
+        if not ee :
+            return Response({"error":"Unauthorised assignemnt id ."}, status=status.HTTP_400_BAD_REQUEST)
+
+        id2 =request.data.get("DEx_id")  
+        ex=EM_ex.objects.filter(id=id2).last()
+        if not ex :
+            return Response({"error":"Invalid DeskExId."}, status=status.HTTP_400_BAD_REQUEST)
+
+        tt=EMTeams.objects.filter(status="Active",teamlead=uo).last()
+        
+        if not tt :
+            return Response({"error":"Invalid team."}, status=status.HTTP_400_BAD_REQUEST)
+        if ex in tt.members:
+            assignment =   EMCallAssignment.objects.create(
+                        admin =  EM_admin.objects.all().last(),#filter(users__login=True)
+                        call =ee.call ,
+                        status = "pending",
+                        type = ee.type,
+                        ex = ex 
+                        ) 
+            ee.status="reassigned"
+            ee.save()
+            return Response( EMCallAssignmentSerializer(assignment ,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        else:
+            return Response({"error":"Desk_ex is not a member of your team."}, status=status.HTTP_400_BAD_REQUEST)
+
+          
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def FEx_broadcastaccept(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex'or uo.user_type=='PCR'or uo.user_type=='ACR' :
+ 
+        return Response({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        id =request.data.get("broadcast_id")  
+        ee=EMCallBroadcast.objects.filter( id = id,type=uo.user_type,status="pending").last()
+        ee.status="accepted"
+        ee.save()
+        assignment =   EMCallAssignment.objects.create(
+                    admin =  EM_admin.objects.all().last(),#filter(users__login=True)
+                    call =ee.call ,
+                    status = "accepted",
+                    type = ee.type,
+                    ex = uo 
+                    )  
+        return Response( EMCallAssignmentSerializer(assignment ,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def  DEx_closeCase(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    #if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+    #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("assignment_id")  
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=["accepted"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        ee=EMCallBroadcast.objects.filter(
+            call = assignment.call,status="pending").all()
+        for e in ee:
+            e.status="canceled"
+            e.save()
+        assignments =EMCallAssignment.objects.filter(call=assignment.call,status="pending").all()
+        for a in assignments:
+            a.status="closed"
+            a.save()
+        assignment.call.status="closed"
+        assignment.call.save()
+        
+
+        
+        return Response( EMCallSerializer(assignment.call,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def DEx_sendMsg(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    try: 
+        assignment =request.data.get("assignment_id") 
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo).exclude(status__in=[ "rejected", "closed_false_allert" , "closed"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        call=assignment.call
+        message=request.data.get("message") 
+        ob=EMCallMessages.objects.create(assignment=assignment,call=call,message=message)
+        if ob:
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response(EMCallMessagesSerializer(ob,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to send message. value error.')}, status=200)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def DEx_rcvMsg(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    try: 
+        assignment =request.data.get("assignment_id") 
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo).exclude(status__in=[ "rejected", "closed_false_allert" , "closed"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        call=assignment.call 
+        ob=EMCallMessages.objects.filter(assignment=assignment,call=call).all()
+        if ob:
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response(EMCallMessagesSerializer(ob,many=True).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to read message. value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def DEx_commentFE(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    try: 
+        assignment =request.data.get("self_assignment_id") 
+        fe_assignment =request.data.get("self_assignment_id") 
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo).exclude(status__in=[ "rejected", "closed_false_allert" , "closed"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        call=assignment.call 
+        assignment2=EMCallAssignment.objects.filter(id=fe_assignment,call=call).exclude(status__in=[ "rejected", "closed_false_allert" , "closed"]).last()
+        
+        if not assignment2:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        assignment2.desk_ex_comment=request.data.get("comment") 
+        #assignment2.status="closed"
+        assignment2.save()
+        
+        if assignment:
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response(EMCallAssignmentSerializer(assignment2,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to read message. value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def  DEx_getloc(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)  
+    try: 
+        assignment =request.data.get("assignment_id")  
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=["accepted"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        #device loc histry
+       
+        deviceloc=list(EMGPSLocation.objects.filter(device_tag= assignment.call.device).order_by('-id')[:50].values())
+        fieldEx=[]
+         
+        assignments =EMCallAssignment.objects.filter(call=assignment.call ).all()
+        for a in assignments:
+            try:
+                fieldEx.append({"Assignment":EMCallAssignmentSerializer(a,many=False).data,"loc":EMUserLocation.objects.filter(field_ex = a.ex).order_by('-id')[:1].values()})
+            
+            except:
+                pass
+
+
+        
+
+        
+        return Response( {"target":deviceloc,"fieldEx":fieldEx}, status=200)#Response(SOS_userSerializer(retailer).data)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def  FEx_getloc(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)  
+    try: 
+        assignment =request.data.get("assignment_id")  
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=["accepted"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        #device loc histry
+       
+        deviceloc=list(EMGPSLocation.objects.filter(device_tag= assignment.call.device).order_by('-id')[:100].values())
+        
+        return Response( {"target":deviceloc}, status=200)#Response(SOS_userSerializer(retailer).data)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def FEx_updateLoc(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3536,7 +3982,7 @@ def update_EMfieldex_loc(request):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response({ "loc":list(ob.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "loc":list(ob.values())}, status=200)#Response(SOS_userSerializer(retailer).data)
         return Response({'error': str('Location not updated. value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
@@ -3546,7 +3992,39 @@ def update_EMfieldex_loc(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def send_EMBackupReq(request):
+def FEx_updateStatus(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    #if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+    #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
+    try: 
+        assignment =request.data.get("assignment_id") 
+        status =request.data.get("status") 
+        assignment =EMCallAssignment.objects.filter(id=assignment, ex=uo).exclude(status__in=[ "rejected", "closed_false_allert" , "closed"]).last()
+        if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        if assignment:
+            assignment.status= status 
+
+            assignment.save()
+            user.last_activity =  timezone.now()
+            user.login=True
+            user.save()
+            return Response({ EMCallAssignmentSerializer( assignment,many=False).data}, status=400)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+  
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def FEx_reqBackup(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3582,7 +4060,7 @@ def send_EMBackupReq(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def accept_EMBackupReq(request):
+def DEx_acceptBackup(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3616,31 +4094,49 @@ def accept_EMBackupReq(request):
 
 
 
+
+
+
+
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def send_EMCallMessages(request):
+def DEx_listBackup(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
     uo=get_user_object(user,role)
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
+        return Response({"error":"Request must be from   desk_ex   ."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
         assignment =request.data.get("assignment_id") 
-        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo).exclude(status__in=[ "rejected", "closed_false_allert" , "closed"]).last()
-        if not assignment:
-            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
-        call=assignment.call
-        message=request.data.get("message") 
-        ob=EMCallMessages.objects.create(assignment=assignment,call=call,message=message)
-        if ob:
+        ac=EMCallAssignment.objects.filter(id=assignment,ex=uo,types="desk_ex").exclude(status__in=["pending",  "rejected", "closed_false_allert","closed"]).last()
+        if not ac:
+            return Response({"error":"Unauthorised access  " }, status=status.HTTP_400_BAD_REQUEST) 
+
+        backup =EMCallBackupRequest.objects.filter(call=ac.call) 
+        if not backup:
+            return Response({"error":"Backup not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+         
+        if assignment: 
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response({ "loc":list(ob.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to send message. value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+            return Response(EMCallBackupRequestSerializer( backup,many=True).data, status=400)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+
+
+
+
+
+
+
+
 
 
 @api_view(['POST'])
@@ -3813,6 +4309,7 @@ def download_static_file(request):
             return response
     except FileNotFoundError:
         return HttpResponse("File not found.", status=404)
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

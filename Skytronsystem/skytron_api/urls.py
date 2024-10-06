@@ -115,6 +115,52 @@ urlpatterns = [
     path('EM/remove_EMteam/', remove_EM_team, name='remove_EM_team'),
     path('EM/get_EMteam/', get_EM_team, name='get_EM_team'),
     path('EM/list_EMteam/', list_EM_team, name='list_EM_team'),
+    path('EM/DEx/getPendingCallList/', DEx_getPendingCallList, name='DEx_getPendingCallList'),
+    path('EM/DEx/getLiveCallList/', DEx_getLiveCallList, name='DEx_getLiveCallList'),
+    path('EM/DEx/replyCall/', DEx_replyCall, name='DEx_replyCall'),
+
+    path('EM/DEx/broadcast/', DEx_broadcast, name='DEx_broadcast'),
+
+    path('EM/DEx/listBroadcast/', DEx_broadcastlist, name='DEx_broadcastlist'),
+    path('EM/DEx/closeCase/', DEx_closeCase, name='DEx_closeCase'),
+    path('EM/DEx/closeCase/', DEx_closeCase, name='DEx_closeCase'),
+    path('EM/DEx/sendMsg/', DEx_sendMsg, name='DEx_sendMsg'),
+    path('EM/DEx/rcvMsg/', DEx_rcvMsg, name='DEx_rcvMsg'),
+    path('EM/DEx/commentFE/', DEx_commentFE, name='DEx_commentFE'),
+    path('EM/DEx/getCallAllLoc/', DEx_getloc, name='DEx_getCallAllLoc'),
+
+
+    path('EM/FEx/listBroadcast/', FEx_broadcastlist, name='FEx_broadcastlist'),
+    path('EM/FEx/acceptBroadcast/', FEx_broadcastaccept, name='FEx_broadcastaccept'),
+    path('EM/FEx/sendMsg/', DEx_sendMsg, name='FEx_sendMsg'),
+    path('EM/FEx/rcvMsg/', DEx_rcvMsg, name='FEx_rcvMsg'),
+    path('EM/FEx/getCallLoc/', FEx_getloc, name='FEx_getCallLoc'),
+
+    path('EM/FEx/updateLoc/', FEx_updateLoc, name='FEx_updateLoc'),
+    path('EM/FEx/updateStatus/', FEx_updateStatus, name='FEx_updateStatus'),
+    path('EM/FEx/reqBackup/', FEx_reqBackup, name='FEx_reqBackup'),
+    #path('EM/FEx/reqBackup/', FEx_reqBackup, name='FEx_reqBackup'),
+    
+    path('EM/DEx/listBackup/', DEx_listBackup, name='DEx_listBackup'),
+    path('EM/DEx/acceptBackup/', DEx_acceptBackup, name='DEx_acceptBackup'), 
+
+
+
+    path('EM/TLEEx/getAllCallList/', TLEx_getPendingCallList, name='TLEx_getAllCallList'),
+    path('EM/TLEEx/getloc/', DEx_getloc, name='TLEx_getloc'),
+    path('EM/TLEEx/reassign/', TLEx_reassign, name='TLEx_reassign'),
+
+
+
+
+    
+    
+    
+
+  
+
+    
+    
     
     
     #path('SOS/filter_SOSteam/', filter_SOS_team, name='filter_SOSteam'),

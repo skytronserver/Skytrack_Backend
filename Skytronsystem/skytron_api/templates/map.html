@@ -537,7 +537,7 @@
 
 */
 
-                        new ol.layer.Tile({
+                        /*new ol.layer.Tile({
                             source: new ol.source.TileWMS({
                                 url: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms',
                                 params: {
@@ -558,6 +558,10 @@
 
 
                             })
+                        }),
+*/
+                        new ol.layer.Tile({
+                            source: new ol.source.OSM()
                         }),
                         //indiabasemap 
                         new ol.layer.Tile({
@@ -583,7 +587,7 @@
                             })
                         }),
                         //Road etc 
-                        new ol.layer.Tile({
+                        /*new ol.layer.Tile({
                             source: new ol.source.TileWMS({
                                 url: 'https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms',
                                 params: {
@@ -604,7 +608,8 @@
 
 
                             })
-                        })
+                        }),*/
+
 
 
                     ],

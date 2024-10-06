@@ -802,7 +802,12 @@ class EMGPSLocation(models.Model): #imergency tracking data
 
         data_list[3]=adjusted_datetime.strftime("%Y-%m-%d") 
         data_list[4]=adjusted_datetime.strftime("%H:%M:%S") 
-        device_tag=DeviceTag.objects.filter(vehicle_reg_no=data_list[14],status='Device_Active').last()
+        device_tag=DeviceTag.objects.filter(vehicle_reg_no=data_list[14],status='Owner_Final_OTP_Verified').last()
+        print(data_list[14])
+        print(data_list)
+        print(device_tag)
+        
+
         #live_executiveList = User.objects.filter(login=True ,role='sosadmin', last_activity__gte=timezone.now() - timezone.timedelta(seconds=30) ).all()
         #existing_emergency_call = EmergencyCall.objects.filter(status = 'Closed').order_by('-start_time').all()
         #user_to_assign=get_logged_in_users_with_min_assignments()
@@ -829,44 +834,26 @@ class EMGPSLocation(models.Model): #imergency tracking data
                 provider=data_list[13],
                 vehicle_reg_no=data_list[14],
                 reply_mob_no=data_list[15],
-                device_tag=device_tag.id,
+                device_tag=device_tag,
             )
 
 
 
-
-        return cls(
-            message_type=data_list[0],
-            device_imei=data_list[1],
-            packet_status=data_list[2],
-            date=data_list[3],
-            time=data_list[4],
-            gps_validity=data_list[5],
-            latitude=float(data_list[6]),
-            latitude_direction=data_list[7],
-            longitude=float(data_list[8]),
-            longitude_direction=data_list[9],
-            altitude=float(data_list[10]),
-            speed=float(data_list[11]),
-            distance=float(data_list[12]),
-            provider=data_list[13],
-            vehicle_reg_no=data_list[14],
-            reply_mob_no=data_list[15],
-        )
+ 
 
 
 @receiver(post_save, sender=EMGPSLocation)
 def create_emergency_call(sender, instance, created, **kwargs):
     if created :#and instance.status == 'Complete':
-        pass
-    """
+     
         # Check if an EmergencyCall entry already exists for the given vehicle and IMEI
-        existing_emergency_call = EmergencyCall.objects.filter(
-            device_imei=instance.device_imei,
-            vehicle_no=instance.vehicle_reg_no
-        ).last()
+        existing_emergency_call =EMCall.objects.filter(
+            device=instance.device_tag
+        ).exclude(status__in=["closed_false_allert",  "closed"]).last()
         
         if existing_emergency_call:
+            pass
+            """
             timeouts=EmergencyCall_assignment.objects.filter(
                         emergencyCall_id=existing_emergency_call, 
                         assign_time__gte=timezone.now() - timezone.timedelta(seconds=20),
@@ -883,6 +870,8 @@ def create_emergency_call(sender, instance, created, **kwargs):
                             status = 'Assigned',#Assigned,Acccepted, Rejected,Timeout,Closed
                         )
                 ''' 
+
+            
             assigned=EmergencyCall_assignment.objects.filter(
                         emergencyCall_id=existing_emergency_call,  
                         status__in=['Assigned','Acccepted','Closed']).last()
@@ -896,55 +885,36 @@ def create_emergency_call(sender, instance, created, **kwargs):
                             status = 'Assigned',#Assigned,Acccepted, Rejected,Timeout,Closed
                         ) 
 
-        
+        """
 
         if not existing_emergency_call:
             # Create a new EmergencyCall entry
-            em=EmergencyCall.objects.create(
-                device_imei=instance.device_imei,
-                vehicle_no=instance.vehicle_reg_no,
-                start_time=timezone.now(),
-                status='Pending',  # Set the initial status as 'Pending'
+            team  = EMTeams.objects.filter(status="Active").last()
+            em=EMCall.objects.create(
+                device=instance.device_tag, 
+                #start_time=timezone.now(),
+                team=team,
+                status='pending',  # Set the initial status as 'Pending'
                 #desk_executive_id='',
                 #field_executive_id='',
-                final_comment='',
+                #final_comment='',
             )
-            user_to_assign=get_logged_in_users_with_min_assignments()
-            if  user_to_assign:         
-                EmergencyCall_assignment.objects.create(
-                        emergencyCall_id=em,
-                        user=user_to_assign,
-                        assign_time = timezone.now(),
-                        #accept_time = '',
-                        #complete_time = '',
-                        status = 'Assigned',#Assigned,Acccepted, Rejected,Timeout,Closed
-                    ) 
-        elif existing_emergency_call.status=="Closed":
-            # Create a new EmergencyCall entry
-            em=EmergencyCall.objects.create(
-                device_imei=instance.device_imei,
-                vehicle_no=instance.vehicle_reg_no,
-                start_time=timezone.now(),
-                status='Pending',  # Set the initial status as 'Pending'
-                #desk_executive_id='',
-                #field_executive_id='',
-                final_comment='',
-            )
-            
-            user_to_assign=get_logged_in_users_with_min_assignments()
-
-            if  user_to_assign:              
-                    EmergencyCall_assignment.objects.create(
-                        emergencyCall_id=em,
-                        user=user_to_assign,
-                        assign_time = timezone.now(),
-                        #accept_time = '',
-                        #complete_time = '',
-                        status = 'Assigned',#Assigned,Acccepted, Rejected,Timeout,Closed
-                    ) 
-
-
-"""
+            #user_to_assign=get_logged_in_users_with_min_assignments()
+            #if  user_to_assign:   
+            EMCallAssignment.objects.create(
+                        admin =  EM_admin.objects.all().last(),#,filter(users__login=True)
+                        call =em,
+                        status = "pending",
+                        type = "teamlead",
+                        ex = team.teamlead
+                    )  
+            EMCallAssignment.objects.create(
+                    admin =  EM_admin.objects.all().last(),#filter(users__login=True)
+                    call =em ,
+                    status = "pending",
+                    type = "desk_ex",
+                    ex = team.members.last() 
+                    )  
 
 
 
@@ -1216,9 +1186,11 @@ class EMCall(models.Model):
     start_time =   models.DateTimeField(auto_now_add=True, verbose_name="start_time")
     end_time =   models.DateTimeField(blank=True, null=True)
     status = models.CharField(max_length=30,choices=choices)
-    closer_comment = models.TextField()
+    closer_comment = models.TextField(blank=True, null=True)
     def __str__(self):
         return f"EMCall {self.id}"
+
+
 
 class EMCallAssignment(models.Model): 
     status=[("pending", "pending"), ("accepted", "accepted"), ("rejected", "rejected"), ("arriving", "arriving"), ("arrived", "arrived"), ("closed_false_allert", "closed_false_allert"), ("closed", "closed")]
@@ -1233,10 +1205,27 @@ class EMCallAssignment(models.Model):
     reject_time =   models.DateTimeField(blank=True, null=True)
     status = models.CharField(max_length=30,choices=status)
     type = models.CharField(max_length=30,choices=types)
-    closer_comment = models.TextField()
-    desk_ex_comment = models.TextField()
+    closer_comment = models.TextField(blank=True,null=True)
+    desk_ex_comment = models.TextField(blank=True,null=True)
     def __str__(self):
         return f"EMCall {self.id}"
+
+class EMCallBroadcast(models.Model): 
+    status=[("pending", "pending"), ("accepted", "accepted"), ("timeout", "timeout"), ("canceled", "canceled")]
+    types=[("police_ex", "police_ex"), ("ambulance_ex", "ambulance_ex") , ("pcr", "pcr") , ("acr", "acr") ]
+    admin = models.ForeignKey(EM_admin,  on_delete=models.CASCADE,related_name='emcalladminb')
+    acceted_by= models.ForeignKey(EM_ex, blank=True, null=True, on_delete=models.CASCADE,related_name='accptedbyexec_id')
+    created_by= models.ForeignKey(EM_ex, blank=True, null=True, on_delete=models.CASCADE,related_name='createdbyexec_id')
+    call = models.ForeignKey(EMCall,  on_delete=models.CASCADE,related_name='EMCallb_id')
+    created_at =   models.DateTimeField(auto_now_add=True, verbose_name="start_time")
+    accept_at = models.DateTimeField(blank=True, null=True)
+    canceled_time = models.DateTimeField(blank=True, null=True) 
+    radius= models.FloatField(blank=True, null=True)
+    status = models.CharField(max_length=30,choices=status)
+    type = models.CharField(max_length=30,choices=types) 
+    def __str__(self):
+        return f"EMCall {self.id}"
+    
 
 
 class EMCallMessages(models.Model): 
