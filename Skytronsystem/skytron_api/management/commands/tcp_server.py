@@ -1,6 +1,6 @@
 import socket,re
 from django.core.management.base import BaseCommand
-from skytron_api.models import GPSData, GPSDataLog ,DeviceTag
+from skytron_api.models import GPSData, GPSDataLog ,DeviceTag, DeviceStock
 
 import threading
 '''
@@ -106,24 +106,37 @@ def handle_client(conn, client_address):
                 except Exception as e:
                     print("Data processing error log:", e, flush=True)
 
+                
                 data_l = data_str.split('$')
                 for dat in data_l:
                     try:
+                        dat=",T,ATMV,1.1.4,BH,05,L,861850060252547,ABC00000012,0,25102024,023547,26.133602,N,91.804747,E,3,269,00,78,24.4,24.4,airtel,0,1,8.1,4.0,0,O,18,405,56,0092,F0A1,E364,0092,14,0F17,0092,18,0F17,0092,18,0,0,0,1100,00,000781,1162.0,E9,*"
                         dat = '$' + dat
                         if len(dat) > 4:
                             gps_data = process_gps_data(dat)
                             
                             if gps_data:
-                                print(dat)
-                                print(gps_data)
-                                reg=gps_data['vehicle_registration_number']
-                                device_tag=DeviceTag.objects.filter(vehicle_reg_no=reg).last()#,status='Device_Active'
-                                if device_tag:
-                                    gps_data['device_tag']=device_tag
-                                gps_data.pop('imei', None)
-                                gps_data.pop('vehicle_registration_number', None)
-                                g=GPSData.objects.create(**gps_data)
-                                g.save()
+
+                                reg=gps_data['imei']
+                                #print(reg)
+                                dev=DeviceStock.objects.filter(imei=reg).last()
+                                if dev:
+                                    device_tag=DeviceTag.objects.filter(device=dev).last()#,status='Device_Active'
+                                    print(reg)
+
+                                    if "861850060252547" in data_str:
+                                        print("Data foundddddddddd",861850060252547,device_tag.values())
+
+                                    if device_tag:
+                                        gps_data['device_tag']=device_tag
+                                        gps_data.pop('imei', None)
+                                        gps_data.pop('vehicle_registration_number', None)
+                                        g=GPSData.objects.create(**gps_data)
+                                        g.save()
+
+                                        print("########################")
+                                        print(dat)
+                                        print(gps_data)
                                 #print(gps_data)
                             else:
                                 print("Data format errot error:", dat, flush=True)

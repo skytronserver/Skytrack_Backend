@@ -27,18 +27,30 @@ CLIENT_KEY = "/etc/mosquitto/certs/client.key"
 
 authenticator = TokenAuthentication()
 # Callback when the client connects to the broker
+# Callback when the client connects to the broker
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("Connected successfully")
-        # Subscribe to the topic after connection
-        client.subscribe(TOPIC)
-        print(f"Subscribed to topic: {TOPIC}")
+        # Subscribe to all topics with a specific format
+        client.subscribe("gpsTracking/+")
+        print("Subscribed to all topics starting with 'track/'")
     else:
         print(f"Connection failed with code {rc}")
+
 def on_message(client, userdata, msg):
     try:
-        # Parse incoming message
-        print(msg)
+        # Split the topic to extract the user ID
+        topic_parts = msg.topic.split('/')
+        if len(topic_parts) == 2 and topic_parts[0] == 'gpsTracking':
+            user_id = topic_parts[1]
+            print(f"Message received for user ID: {user_id}")
+        else:
+            print("Invalid topic format")
+            return
+        print(msg.payload.decode())
+        return
+
+ 
         data = json.loads(msg.payload.decode())
         print(data)
         token = "Token "+data.get("token")

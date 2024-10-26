@@ -120,6 +120,8 @@ urlpatterns = [
     path('EM/DEx/replyCall/', DEx_replyCall, name='DEx_replyCall'),
 
     path('EM/DEx/broadcast/', DEx_broadcast, name='DEx_broadcast'),
+    path('checklive/', CheckLive, name='DEx_broadcast'),
+    
 
     path('EM/DEx/listBroadcast/', DEx_broadcastlist, name='DEx_broadcastlist'),
     path('EM/DEx/closeCase/', DEx_closeCase, name='DEx_closeCase'),
@@ -262,6 +264,8 @@ urlpatterns = [
     
     #Devicetag
     path('tag/TagDevice2Vehicle/', TagDevice2Vehicle, name='TagDevice2Vehicle'),
+    path('tag/cancelTagDevice2Vehicle/', deleteTagDevice2Vehicle, name='cancelTagDevice2Vehicle'),
+    
     path('tag/untag/', unTagDevice2Vehicle, name='unTagDevice2Vehicle'),
     path('tag/TagAwaitingOwnerApproval/', TagAwaitingOwnerApproval, name='TagAwaitingOwnerApproval'),
     path('tag/TagSendOwnerOtp/', TagSendOwnerOtp, name='TagSendOwnerOtp'),

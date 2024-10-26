@@ -46,6 +46,7 @@ def processEM(str_data):
                     data_list = dat.split(',')
                     if len(data_list)==20:
                         data_list=data_list[2:]
+                        print(data_list)
                         location = EMGPSLocation.create_from_string(data_list)
                         location.save()
                         RegNo=data_list[14]

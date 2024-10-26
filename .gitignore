@@ -54,3 +54,7 @@ Skytronsystem/*.jpg
 Skytronsystem/fileuploads/man/*.PNG
 V1.1.3.bin
 .gitignore
+Skytronsystem/tac_docs/*.PNG
+Skytronsystem/tac_docs/Capture7.PNG
+Skytronsystem/fileuploads/cop_files/*.PNG
+Skytronsystem/fileuploads/tac_docs/*.PNG

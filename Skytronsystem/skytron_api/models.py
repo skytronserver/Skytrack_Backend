@@ -1189,6 +1189,8 @@ class EMCall(models.Model):
     closer_comment = models.TextField(blank=True, null=True)
     def __str__(self):
         return f"EMCall {self.id}"
+ 
+
 
 
 
