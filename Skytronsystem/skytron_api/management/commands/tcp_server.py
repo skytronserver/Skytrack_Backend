@@ -110,7 +110,7 @@ def handle_client(conn, client_address):
                 data_l = data_str.split('$')
                 for dat in data_l:
                     try:
-                        dat=",T,ATMV,1.1.4,BH,05,L,861850060252547,ABC00000012,0,25102024,023547,26.133602,N,91.804747,E,3,269,00,78,24.4,24.4,airtel,0,1,8.1,4.0,0,O,18,405,56,0092,F0A1,E364,0092,14,0F17,0092,18,0F17,0092,18,0,0,0,1100,00,000781,1162.0,E9,*"
+                        #dat=",T,ATMV,1.1.4,BH,05,L,861850060252547,ABC00000012,0,25102024,023547,26.133602,N,91.804747,E,3,269,00,78,24.4,24.4,airtel,0,1,8.1,4.0,0,O,18,405,56,0092,F0A1,E364,0092,14,0F17,0092,18,0F17,0092,18,0,0,0,1100,00,000781,1162.0,E9,*"
                         dat = '$' + dat
                         if len(dat) > 4:
                             gps_data = process_gps_data(dat)
@@ -118,14 +118,15 @@ def handle_client(conn, client_address):
                             if gps_data:
 
                                 reg=gps_data['imei']
-                                #print(reg)
-                                dev=DeviceStock.objects.filter(imei=reg).last()
+                                dev=DeviceStock.objects.filter(imei__contains=str(reg)).last()
+                                print("#"+reg+"#",dev)
                                 if dev:
+                                    print("hhhh",reg)
                                     device_tag=DeviceTag.objects.filter(device=dev).last()#,status='Device_Active'
-                                    print(reg)
+                                    
 
-                                    if "861850060252547" in data_str:
-                                        print("Data foundddddddddd",861850060252547,device_tag.values())
+                                    if "8861850060252554" in data_str:
+                                        print("Data foundddddddddd",861850060252554,device_tag.values())
 
                                     if device_tag:
                                         gps_data['device_tag']=device_tag

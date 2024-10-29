@@ -1023,11 +1023,11 @@ def gps_track_data_api(request):
         for x in distinct_registration_numbers:
             latest_entry = GPSData.objects.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time') 
             
-            if regno:
-                if regno!="None":
-                    #.filter(vehicle_registration_number=x['vehicle_registration_number'])
-                    latest_entry = latest_entry.filter(device_tag__vehicle_reg_no__icontains=regno).filter(gps_status=1).order_by('-entry_time') 
-            elif imei:
+            #if regno:
+            #    if regno!="None":
+            #        #.filter(vehicle_registration_number=x['vehicle_registration_number'])
+            #        latest_entry = latest_entry.filter(device_tag__vehicle_reg_no__icontains=regno).filter(gps_status=1).order_by('-entry_time') 
+            if imei:
                 if imei !="None":
                     #filter(device_tag__vehicle_reg_no=x['vehicle_registration_number']).
                     latest_entry = latest_entry.filter(device_tag__device__imei__icontains=imei).filter(gps_status=1).order_by('-entry_time')
@@ -4900,6 +4900,63 @@ def TagSendDealerOtp(request ):
 
 def xml_to_dict(elem):
     return {elem.tag: {child.tag: child.text for child in elem}}
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def TagGetVehicle(request): 
+    user=request.user 
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="dtorto"
+    man=get_user_object(user,role)
+    if not man:
+        return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
+    user_id = request.user.id 
+    reg_no = request.data.get('reg_no') 
+    device_tag = DeviceTag.objects.filter(vehicle_reg_no=reg_no).last()
+    
+    if device_tag:
+        url = "https://staging.parivahan.gov.in/vltdmakerws/dataportws?wsdl"
+
+        payload = "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ser=\"http://service.web.homologation.transport.nic/\">\n   <soapenv:Header/>\n   <soapenv:Body>\n      <ser:getVltdInfoByIMEI>          \n         <userId>asbackendtest</userId>\n         <transactionPass>Asbackend@123</transactionPass>       \n         <imeiNo>" + str(device_tag.device.imei) +"</imeiNo>\n      </ser:getVltdInfoByIMEI>\n   </soapenv:Body>\n</soapenv:Envelope>"
+        headers = {
+        'Cookie': 'SERVERID_vahan8082_152=vahan_8082',
+        'Content-Type': 'application/xml',
+        'Content-Type': 'text/xml; charset=utf-8'
+        }
+        try:
+
+            #response = requests.request("POST", url, headers=headers, data=payload)
+            #print(response.text)
+            #root = ET.fromstring(response.text)
+            #namespace = {'S': 'http://schemas.xmlsoap.org/soap/envelope/', 'ns2': 'http://service.web.homologation.transport.nic/'}
+
+            #return_tag = root.find('.//ns2:getVltdInfoByIMEIResponse/return', namespace)
+
+            #inner_xml = html.unescape(return_tag.text)
+            #inner_root = ET.fromstring(inner_xml)
+
+
+            #vltd_details = xml_to_dict(inner_root) 
+            #json_output = json.dumps(vltd_details, indent=4)
+            serializer = DeviceTagSerializer2(device_tag)
+
+            last_loc=GPSData.objects.filter(device_tag=device_tag).last()
+            if(last_loc):
+                last_loc=GPSData_Serializer(last_loc)
+            else:
+                last_loc=None
+
+
+            return JsonResponse({'vehicle_device': serializer.data, "last_loc":last_loc.data}, status=201)#'vahan_data':json_output,
+        except:
+
+            #serializer = VahanSerializer(device_tag)
+            #return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data':{}}, status=201)
+            return JsonResponse({'error': "Unable to get VAHAN information. Please confirm the device IMEI."}, status=400)
+    else:
+        
+        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
 
 
 @api_view(['POST'])

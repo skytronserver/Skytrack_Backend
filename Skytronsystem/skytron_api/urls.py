@@ -271,6 +271,7 @@ urlpatterns = [
     path('tag/TagSendOwnerOtp/', TagSendOwnerOtp, name='TagSendOwnerOtp'),
     path('tag/TagVerifyOwnerOtp/', TagVerifyOwnerOtp, name='TagVerifyOwnerOtpe'),
     path('tag/TagAwaitingActivateTag/',TagAwaitingActivateTag, name='TagAwaitingOwnerApproval'),
+    path('tag/getVehicle/',TagGetVehicle, name='TagGetVehicle'),
     
     path('tag/GetVahanAPIInfo/',GetVahanAPIInfo, name='GetVahanAPIInfo'),
     path('tag/ActivateTag/',ActivateTag, name='ActivateTag'),

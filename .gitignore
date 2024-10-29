@@ -58,3 +58,5 @@ Skytronsystem/tac_docs/*.PNG
 Skytronsystem/tac_docs/Capture7.PNG
 Skytronsystem/fileuploads/cop_files/*.PNG
 Skytronsystem/fileuploads/tac_docs/*.PNG
+Skytronsystem/skytron_api/management/commands/__pycache__/tcp_server.cpython-38.pyc
+Skytronsystem/skytron_api/management/commands/__pycache__/tcp_server.cpython-38.pyc
