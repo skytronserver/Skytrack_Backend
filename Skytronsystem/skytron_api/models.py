@@ -802,8 +802,8 @@ class EMGPSLocation(models.Model): #imergency tracking data
 
         data_list[3]=adjusted_datetime.strftime("%Y-%m-%d") 
         data_list[4]=adjusted_datetime.strftime("%H:%M:%S") 
-        device_tag=DeviceTag.objects.filter(vehicle_reg_no=data_list[14],status='Owner_Final_OTP_Verified').last()
-        print(data_list[14])
+        device_tag=DeviceTag.objects.filter(device__imei=str(data_list[1]),status='Owner_Final_OTP_Verified').last()
+        print(data_list[1])
         print(data_list)
         print(device_tag)
         
