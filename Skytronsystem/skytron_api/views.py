@@ -4487,6 +4487,22 @@ def unTagDevice2Vehicle(request):
     return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
 
 
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
+def validate_ble(request):
+    if request.method == 'POST':
+        ble_key = request.data.get('ble_key', None)
+        imei=request.data.get('imei', None)
+        reg_no = request.data.get('reg_no', None)
+        user_mob = request.data.get('user_mob', None)
+        if not ble_key or not imei or not reg_no or not user_mob:
+            return Response({'error': 'Incomplete data'}, status=status.HTTP_401_UNAUTHORIZED)
+        if len(user_mob)!=10:
+            return Response({'error': 'Invalid mobile no'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({'success': 'Access Granted'}, status=200)  
+    return Response({'error': 'Invalid request'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -4502,6 +4518,8 @@ def deleteTagDevice2Vehicle(request):
     # Extract data from the request or adjust as needed
     if request.method == 'POST': 
         device_id = request.POST.get('device_id') 
+        if not device_id:
+            device_id = request.data.get('device_id') 
         if not device_id:
             return JsonResponse({'error': 'device_id is required'}, status=400)
         try: 
@@ -4949,6 +4967,51 @@ def TagGetVehicle(request):
 
 
             return JsonResponse({'vehicle_device': serializer.data, "last_loc":last_loc.data}, status=201)#'vahan_data':json_output,
+        except:
+
+            #serializer = VahanSerializer(device_tag)
+            #return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data':{}}, status=201)
+            return JsonResponse({'error': "Unable to get VAHAN information. Please confirm the device IMEI."}, status=400)
+    else:
+        
+        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def GetVahanAPIInfo_totestonly(request): 
+    
+    user=request.user  
+    user_id = request.user.id 
+    device_tag_id = request.data.get('device_id') 
+    device_tag = DeviceTag.objects.filter(device_id=device_tag_id).last()
+    
+    if device_tag:
+        url = "https://staging.parivahan.gov.in/vltdmakerws/dataportws?wsdl"
+
+        payload = "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ser=\"http://service.web.homologation.transport.nic/\">\n   <soapenv:Header/>\n   <soapenv:Body>\n      <ser:getVltdInfoByIMEI>          \n         <userId>asbackendtest</userId>\n         <transactionPass>Asbackend@123</transactionPass>       \n         <imeiNo>" + str(device_tag.device.imei) +"</imeiNo>\n      </ser:getVltdInfoByIMEI>\n   </soapenv:Body>\n</soapenv:Envelope>"
+        headers = {
+        'Cookie': 'SERVERID_vahan8082_152=vahan_8082',
+        'Content-Type': 'application/xml',
+        'Content-Type': 'text/xml; charset=utf-8'
+        }
+        try:
+
+            response = requests.request("POST", url, headers=headers, data=payload)
+            print(response.text)
+            root = ET.fromstring(response.text)
+            namespace = {'S': 'http://schemas.xmlsoap.org/soap/envelope/', 'ns2': 'http://service.web.homologation.transport.nic/'}
+
+            return_tag = root.find('.//ns2:getVltdInfoByIMEIResponse/return', namespace)
+
+            inner_xml = html.unescape(return_tag.text)
+            inner_root = ET.fromstring(inner_xml)
+
+
+            vltd_details = xml_to_dict(inner_root) 
+            json_output = json.dumps(vltd_details, indent=4)
+            serializer = VahanSerializer(device_tag)
+            return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data':json_output}, status=201)
         except:
 
             #serializer = VahanSerializer(device_tag)

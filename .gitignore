@@ -60,3 +60,6 @@ Skytronsystem/fileuploads/cop_files/*.PNG
 Skytronsystem/fileuploads/tac_docs/*.PNG
 Skytronsystem/skytron_api/management/commands/__pycache__/tcp_server.cpython-38.pyc
 Skytronsystem/skytron_api/management/commands/__pycache__/tcp_server.cpython-38.pyc
+Skytronsystem/skytron_api/static/notice/*.pdf
+Skytronsystem/skytron_api/static/notice/*.png
+Skytronsystem/FOTAFiles/*.bin

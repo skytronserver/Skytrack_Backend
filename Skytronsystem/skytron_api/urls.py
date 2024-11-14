@@ -270,6 +270,8 @@ urlpatterns = [
     #Devicetag
     path('tag/TagDevice2Vehicle/', TagDevice2Vehicle, name='TagDevice2Vehicle'),
     path('tag/cancelTagDevice2Vehicle/', deleteTagDevice2Vehicle, name='cancelTagDevice2Vehicle'),
+    path('validate_ble/', validate_ble, name='validate_ble'),
+    
     
     path('tag/untag/', unTagDevice2Vehicle, name='unTagDevice2Vehicle'),
     path('tag/TagAwaitingOwnerApproval/', TagAwaitingOwnerApproval, name='TagAwaitingOwnerApproval'),
