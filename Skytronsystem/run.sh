@@ -30,7 +30,7 @@ tmux new -s run_fota
 cd Skytronsystem/skytron_api/
  python3 fota_ftp.py
 
-
+tmux new -s run_mqtt
 
 tmux attach -d -t run_main
 gunicorn Skytronsystem.wsgi:application

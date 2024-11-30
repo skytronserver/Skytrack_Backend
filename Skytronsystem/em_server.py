@@ -38,10 +38,12 @@ def processEM(str_data):
             GPSemDataLog.objects.create(raw_data=str_data)
         except Exception as e:
             print("Data processing error log:", e, flush=True)
+
         data_l = str_data.split('$')
         for dat in data_l:
             dat='$'+dat
             if len(dat)>4:
+                print("Data processing 32323 :", dat, flush=True)
                 try:
                     data_list = dat.split(',')
                     if len(data_list)==20:
@@ -52,7 +54,7 @@ def processEM(str_data):
                         RegNo=data_list[14]
                 except Exception as e :
                     print("error1 ",e)
-                    raise e
+                    #raise e
                 
 def start_socket_server():
     host = '0.0.0.0'

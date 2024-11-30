@@ -533,7 +533,8 @@ class Route(models.Model):
         ('Deleted', 'Deleted'), 
     ]
     status = models.CharField(max_length=20, choices=status_choices)
-    route = models.TextField( ) 
+    route = models.TextField() 
+    routepoints = models.TextField() 
     device = models.ForeignKey('DeviceStock', on_delete=models.CASCADE)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
     created = models.DateField(auto_now_add=True)
@@ -753,7 +754,7 @@ class DeviceTag(models.Model):
     tagged = models.DateTimeField()    
     otp = models.CharField(max_length= 6,null=True,blank=True)
     otp_time = models.DateTimeField( null=True,blank=True)
-    drivers= models.ManyToManyField(Driver, related_name='driver_vehicles',null=True, blank=True)
+    drivers= models.ManyToManyField(Driver, related_name='driver_vehicles', blank=True)
 
     def __str__(self):
         return self.vehicle_reg_no
@@ -803,7 +804,7 @@ class EMGPSLocation(models.Model): #imergency tracking data
         data_list[3]=adjusted_datetime.strftime("%Y-%m-%d") 
         data_list[4]=adjusted_datetime.strftime("%H:%M:%S") 
         device_tag=DeviceTag.objects.filter(device__imei=str(data_list[1]),status='Owner_Final_OTP_Verified').last()
-        print(data_list[1])
+        print("datalist",data_list[1])
         print(data_list)
         print(device_tag)
         
@@ -886,10 +887,12 @@ def create_emergency_call(sender, instance, created, **kwargs):
                         ) 
 
         """
-
+        st=instance.device_tag.device.dealer.manufacturer.state 
+                                                                  
         if not existing_emergency_call:
             # Create a new EmergencyCall entry
-            team  = EMTeams.objects.filter(status="Active").last()
+            team  = EMTeams.objects.filter(status="Active",state=st
+                                           ).order_by('?').last()
             em=EMCall.objects.create(
                 device=instance.device_tag, 
                 #start_time=timezone.now(),
@@ -902,18 +905,17 @@ def create_emergency_call(sender, instance, created, **kwargs):
             #user_to_assign=get_logged_in_users_with_min_assignments()
             #if  user_to_assign:   
             EMCallAssignment.objects.create(
-                        admin =  EM_admin.objects.all().last(),#,filter(users__login=True)
+                        admin =   EM_admin.objects.filter().last(),#,filter(users__login=True)
                         call =em,
                         status = "pending",
                         type = "teamlead",
-                        ex = team.teamlead
-                    )  
+                        ex = team.teamlead    )  
             EMCallAssignment.objects.create(
-                    admin =  EM_admin.objects.all().last(),#filter(users__login=True)
+                    admin = EM_admin.objects.all().last(),#
                     call =em ,
                     status = "pending",
                     type = "desk_ex",
-                    ex = team.members.last() 
+                    ex = team.members.order_by('?').first(), #
                     )  
 
 
@@ -1116,37 +1118,33 @@ class GPSemDataLog(models.Model):
   
 class AlertsLog(models.Model):
     TYPE_CHOICES = [
-        ('Route_in', 'Route_in'),
-        ('Route_out', 'Route_out'),
-        ('Em_in', 'Em_in'),
-        ('Em_out', 'Em_out'),
-        ('Eng_on', 'Eng_on'),
-        ('Eng_off', 'Eng_off'),
-        ('OverSpeed_in', 'OverSpeed_in'),
-        ('OverSpeed_out', 'OverSpeed_out'),
-        ('LowIntBat_in', 'LowIntBat_in'),
-        ('LowIntBat_out', 'LowIntBat_out'),
-        ('LowExtBat_in', 'LowExtBat_in'),
-        ('LowExtBat_out', 'LowExtBat_out'),
-        ('ExtBatDiscnt_in', 'ExtBatDiscnt_in'),
-        ('ExtBatDiscnt_out', 'ExtBatDiscnt_out'),
-        ('BoxTemp_in', 'BoxTemp_in'),
-        ('BoxTemp_out', 'BoxTemp_out'),
-        ('EmTemp_in', 'EmTemp_in'),
-        ('EmTemp_out', 'EmTemp_out'),
-        ('Tilt_in', 'Tilt_in'),
-        ('Tilt_out', 'Tilt_out'),
+        ('Route', 'Route'), 
+        ('Em', 'Em'), 
+        ('Eng', 'Eng'), 
+        ('OverSpeed', 'OverSpeed'), 
+        ('LowIntBat', 'LowIntBat'), 
+        ('LowExtBat', 'LowExtBat'), 
+        ('ExtBatDiscnt', 'ExtBatDiscnt'), 
+        ('BoxTemp', 'BoxTemp'), 
+        ('EmTemp', 'EmTemp'), 
+        ('Tilt', 'Tilt'), 
         ('HarshBreak', 'HarshBreak'),
         ('HarshTurn', 'HarshTurn'),
         ('HarshAccileration', 'HarshAccileration'), 
     ]
+    status_CHOICES = [
+        ('in', 'in'), 
+        ('out', 'out'),  
+        ('', ''),  
+    ]
 
-    status = models.CharField(max_length=50, choices=TYPE_CHOICES)
+    type = models.CharField(max_length=50, choices=TYPE_CHOICES)
+    status = models.CharField(max_length=50, choices=status_CHOICES,null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
     gps_ref=models.ForeignKey(GPSData, on_delete=models.CASCADE)
     route_ref=models.ForeignKey(Route, on_delete=models.CASCADE,null=True, blank=True)
     em_ref=models.ForeignKey("EMCall", on_delete=models.CASCADE,null=True, blank=True)
-    #vehicle=models.ForeignKey(Vehicle, on_delete=models.CASCADE) 
+    dummnyuser=models.ForeignKey(User, on_delete=models.CASCADE,null=True,blank=True) 
     deviceTag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE) 
     district=models.ForeignKey(dto_rto, on_delete=models.CASCADE) 
     state=models.ForeignKey(Settings_State, on_delete=models.CASCADE) 
@@ -1167,7 +1165,7 @@ class EMTeams(models.Model):
     choices=[("NotActive", "NotActive"), ("Active", "Active"), ("Removed", "Removed")] 
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     teamlead =models.ForeignKey(EM_ex, on_delete=models.CASCADE)
-    members = models.ManyToManyField(EM_ex,  null=True,  related_name='SOS_Executive_member_team') 
+    members = models.ManyToManyField(EM_ex,   related_name='SOS_Executive_member_team') 
     created_by = models.ForeignKey(EM_admin, on_delete=models.CASCADE, related_name='SOS_admin_createdby_team') 
     created_at =   models.DateTimeField(auto_now_add=True, verbose_name="created_at")
     activated_at =   models.DateTimeField(blank=True, null=True)

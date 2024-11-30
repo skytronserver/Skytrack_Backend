@@ -1,7 +1,8 @@
 import socket,re
 from django.core.management.base import BaseCommand
-from skytron_api.models import GPSData, GPSDataLog ,DeviceTag, DeviceStock
-
+from skytron_api.models import GPSData, GPSDataLog ,DeviceTag, DeviceStock,Route,AlertsLog
+from geopy.distance import geodesic
+import json
 import threading
 '''
 def handle_client(conn, client_address):
@@ -83,6 +84,663 @@ class Command(BaseCommand):
 '''
 
 
+from django.db.models import Max
+
+def process_alert(gps_data, locid):
+    devicetag = gps_data['device_tag']
+    packet_type = gps_data['packet_type']
+    alert_id = gps_data['alert_id']
+    lat = gps_data['latitude']
+    lon = gps_data['longitude']
+
+    # Fetch active routes associated with the device
+    routes = Route.objects.filter(status='Active', device=devicetag.device)
+    route_status = []
+
+    last_alerts = (
+        AlertsLog.objects.filter(deviceTag=devicetag)
+        .exclude(type="Route")
+        .values('type')  # Group by type
+        .annotate(latest_timestamp=Max('timestamp'))  # Get the latest timestamp for each type
+    )
+
+    # Fetch the full objects corresponding to the latest alerts
+    lastnormal_alerts = AlertsLog.objects.filter(
+        deviceTag=devicetag,
+        type__in=[entry['type'] for entry in last_alerts],
+        timestamp__in=[entry['latest_timestamp'] for entry in last_alerts]
+    )
+    if alert_id=="02":#('Em', 'Em'), 
+        al=lastnormal_alerts.filter(type="Em").last()
+        if al.status=="out":
+            AlertsLog.objects.create(
+                type='Em',
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+    if alert_id=="03":
+        t="Eng"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="out":
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+    if alert_id=="04":
+        t="Eng"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="in":
+    
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+    if alert_id=="05":
+        t="OverSpeed"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="out":
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+    if alert_id=="06":
+        t="OverSpeed"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="in":
+    
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+    
+    if alert_id=="07":
+        t="LowIntBat"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="out":
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+    if alert_id=="08":
+        t="LowIntBat"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="in":
+    
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+    if alert_id=="09":
+        t="LowExtBat"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="out":
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+    if alert_id=="10":
+        t="LowExtBat"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="in":
+    
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+    if alert_id=="11":
+        t="ExtBatDiscnt"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="out":
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+    if alert_id=="12":
+        t="ExtBatDiscnt"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="in":
+    
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+
+    if alert_id=="13":
+        t="BoxTemp"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="out":
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+    if alert_id=="14":
+        t="BoxTemp"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="in":
+    
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+ 
+
+
+    if alert_id=="15":
+        t="EmTemp"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="out":
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+    if alert_id=="16":
+        t="EmTemp"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="in":
+    
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+ 
+
+    if alert_id=="17":
+        t="Tilt"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="out":
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+    if alert_id=="18":
+        t="Tilt"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="in":
+    
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+    if alert_id=="19":
+        t="HarshBreak"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="out":
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+    if alert_id=="20":
+        t="HarshBreak"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="in":
+    
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+    if alert_id=="21":
+        t="HarshTurn"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="out":
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+    if alert_id=="22":
+        t="HarshTurn"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="in":
+    
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+    if alert_id=="23":
+        t="HarshAccileration"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="out":
+            AlertsLog.objects.create(
+                type=t,
+                status="in",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+    if alert_id=="24":
+        t="HarshAccileration"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif al.status=="in":
+    
+            AlertsLog.objects.create(
+                type=t,
+                status="out",
+                timestamp=time.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+ 
+
+    
+
+    # Fetch last alerts for the given device tag, grouped by unique (type, route_ref)
+    last_alerts = AlertsLog.objects.filter(deviceTag=devicetag,type="Route").order_by('type', 'route_ref', '-timestamp')
+
+    # Create a dictionary to store the last alert for each (type, route_ref) combination
+    last_alert_map = {}
+    for alert in last_alerts:
+        key = (alert.type, alert.route_ref.id if alert.route_ref else None)
+        if key not in last_alert_map:
+            last_alert_map[key] = alert
+        
+
+    for route in routes:
+        r = route.route  # This is the route string containing coordinates
+        points = json.loads(r)  # Convert route string into a list of points
+        status = "out"  # Default status
+
+        # Check if any point in the route is within 100 meters of the given lat/lon
+        for point in points:
+            route_lat, route_lon, _ = point
+            distance = geodesic((lat, lon), (route_lat, route_lon)).meters
+            if distance <= 100:
+                status = "in"
+                break  # No need to check further if one point is within range
+
+        # Prepare the route status
+        rs = {"rid": route.id, "status": status, "gpsid": locid}
+        route_status.append(rs)
+
+        # Determine if a new alert needs to be created
+        alert_key = ('Route', route.id)
+        last_alert = last_alert_map.get(alert_key)
+
+        if not last_alert or not last_alert.status:  # Case 1: No previous alert or status is null/blank
+            AlertsLog.objects.create(
+                type='Route',
+                status=status,
+                timestamp=time.now(),
+                gps_ref_id=locid,
+                route_ref=route,
+                deviceTag=devicetag,
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+        elif last_alert.status != status:  # Case 2: Status has changed
+            AlertsLog.objects.create(
+                type='Route',
+                status=status,
+                timestamp=time.now(),
+                gps_ref_id=locid,
+                route_ref=route,
+                deviceTag=devicetag, 
+                district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
+
+
+
+
+
+
 import time
 def handle_client(conn, client_address):
     print(f"Accepted connection from {client_address}", flush=True)
@@ -132,10 +790,12 @@ def handle_client(conn, client_address):
                                         gps_data['device_tag']=device_tag
                                         gps_data.pop('imei', None)
                                         gps_data.pop('vehicle_registration_number', None)
+
                                         g=GPSData.objects.create(**gps_data)
                                         g.save()
+                                        process_alert(gps_data,g.id)
 
-                                        print("########################")
+                                        print("########################",flush=True)
                                         print(dat)
                                         print(gps_data)
                                 #print(gps_data)

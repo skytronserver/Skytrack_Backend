@@ -170,6 +170,7 @@ class NoticeSerializer(serializers.ModelSerializer):
 
 class RetailerSerializer(serializers.ModelSerializer):
     users = UserSerializer(many=True, read_only=True)
+    manufacturer=ManufacturerSerializer(many=False, read_only=True)
     class Meta:
         model = Retailer
         fields = '__all__'
@@ -334,29 +335,29 @@ class DeviceModelFileUploadSerializer(serializers.ModelSerializer):
 
 
 class GPSData_Serializer(serializers.ModelSerializer):
-    entry_time = serializers.DateTimeField(source='entry_time')
-    packet_status = serializers.CharField(source='packet_status')
+    entry_time = serializers.DateTimeField()
+    packet_status = serializers.CharField( )
     #imei = serializers.CharField()
     #rn = serializers.CharField(source='vehicle_registration_number')
-    latitude = serializers.CharField(source='latitude')
+    latitude = serializers.CharField()
     #latitudeDir = serializers.CharField(source='latitude_dir')
-    longitude  = serializers.CharField(source='longitude')
+    longitude  = serializers.CharField()
     #longitudeDir = serializers.CharField(source='longitude_dir')  
-    speed = serializers.CharField(source='speed')
-    heading  = serializers.CharField(source='heading')
-    satellites  = serializers.CharField(source='satellites')
-    gps_status  = serializers.CharField(source='gps_status')
-    altitude  = serializers.CharField(source='altitude')
+    speed = serializers.CharField()
+    heading  = serializers.CharField()
+    satellites  = serializers.CharField()
+    gps_status  = serializers.CharField()
+    altitude  = serializers.CharField()
     #pdop = serializers.CharField()
     #hdop = serializers.CharField()
-    network_operator = serializers.CharField(source='network_operator')
-    ignition_status = serializers.CharField(source='ignition_status')
-    main_power_status = serializers.CharField(source='main_power_status')
-    main_input_voltage = serializers.CharField(source='main_input_voltage')
-    internal_battery_voltage = serializers.CharField(source='internal_battery_voltage')
-    emergency_status = serializers.CharField(source='emergency_status')
-    box_tamper_alert = serializers.CharField(source='box_tamper_alert')
-    gsm_signal_strength = serializers.CharField(source='gsm_signal_strength')
+    network_operator = serializers.CharField()
+    ignition_status = serializers.CharField()
+    main_power_status = serializers.CharField()
+    main_input_voltage = serializers.CharField()
+    internal_battery_voltage = serializers.CharField()
+    emergency_status = serializers.CharField()
+    box_tamper_alert = serializers.CharField()
+    gsm_signal_strength = serializers.CharField()
     #mcc = serializers.CharField()
     #mnc = serializers.CharField()
     #lac = serializers.CharField()
@@ -373,11 +374,10 @@ class GPSData_Serializer(serializers.ModelSerializer):
     #nbr4CellId = serializers.CharField(source='nbr4_cell_id')
     #nbr4Lac = serializers.CharField(source='nbr4_lac')
     #nbr4SignalStrength = serializers.CharField(source='nbr4_signal_strength')
-    digital_input_status = serializers.CharField(source='digital_input_status')
-    digital_output_status = serializers.CharField(source='digital_output_status')
-    frame_number = serializers.CharField(source='frame_number')
-    odometer = serializers.CharField(source='odometer')
-    packet_type= serializers.CharField(source='packet_type')
+    digital_input_status = serializers.CharField()
+    digital_output_status = serializers.CharField() 
+    odometer = serializers.CharField()
+    packet_type= serializers.CharField()
     
 
 
@@ -488,7 +488,7 @@ class StateadminSerializer(serializers.ModelSerializer):
 class routeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Route
-        fields = ("id" ,"device_id","createdby_id","route")
+        fields = ("id" ,"device_id","createdby_id","route","routepoints")
 
 class dto_rtoSerializer(serializers.ModelSerializer):
     
@@ -542,7 +542,7 @@ class EM_adminSerializer(serializers.ModelSerializer):
 
 
 class DeviceTagSerializer2(serializers.ModelSerializer):
-    device = DeviceStockSerializer(many=False, read_only=True)
+    device = DeviceStockSerializer2(many=False, read_only=True)
     vehicle_owner = VehicleOwnerSerializer(many=False, read_only=True)
     drivers = DriverSerializer(many=True, read_only=True)
 

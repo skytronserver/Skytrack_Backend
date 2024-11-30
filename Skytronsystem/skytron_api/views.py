@@ -1194,9 +1194,9 @@ def gps_history_map_data(request):
             else:
                 return JsonResponse({'error': "Invalid Search 22"}, status=403) 
         return JsonResponse({'error': "Invalid Search"}, status=403) 
-        return Response({'error': "Invalid Search"}, status=403)
-        return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
-        return Response({'error': "Invalid Search"}, status=403)
+        #return Response({'error': "Invalid Search"}, status=403)
+        #return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
+        #return Response({'error': "Invalid Search"}, status=403)
     except Exception as e: 
         return JsonResponse({'error': str(e)}) 
         return Response({'error': "ww"}, status=400)
@@ -1320,6 +1320,7 @@ def saveRoute(request):
                 if not route:
                     return JsonResponse({"error": "existing route not fond for given id "}, status=405)
                 route.route = data['route']
+                route.routepoints = data['routepoints']
                 
                 route.createdby = createdby #User.objects.get(id=data['createdby_id']) 
                 route.save()
@@ -1329,6 +1330,7 @@ def saveRoute(request):
             else:
                 route = Route(
                     route=data['route'],
+                    routepoints=data['routepoints'],
                     status='Active',  # Assuming status is 'Active' when created
                     device=device,
                     createdby=createdby
@@ -1338,7 +1340,7 @@ def saveRoute(request):
                 return JsonResponse({"message": "New Route saved successfully!",'new':routeSerializer(route).data,"route": routeSerializer(routes, many=True).data }, status=201)
         except Exception as e:
             print(e)
-            return JsonResponse({"erroreee": str(e)}, status=400)
+            return JsonResponse({"error": str(e)}, status=400)
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -3543,7 +3545,6 @@ def TLEx_getPendingCallList(request):
         return Response({'call': str('Not found')}, status=404)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def DEx_getPendingCallList(request):
@@ -4967,14 +4968,13 @@ def TagGetVehicle(request):
 
 
             return JsonResponse({'vehicle_device': serializer.data, "last_loc":last_loc.data}, status=201)#'vahan_data':json_output,
-        except:
+        except Exception as e:
 
             #serializer = VahanSerializer(device_tag)
             #return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data':{}}, status=201)
-            return JsonResponse({'error': "Unable to get VAHAN information. Please confirm the device IMEI."}, status=400)
+            return JsonResponse({'error': "Unable to get VAHAN information. Please confirm the device IMEI."+str(e)}, status=400)
     else:
-        
-        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
+        return JsonResponse({'error': "Device not found with Status:Owner_OTP_Sent"}, status=400)
 
 
 @api_view(['POST'])
@@ -5018,8 +5018,8 @@ def GetVahanAPIInfo_totestonly(request):
             #return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data':{}}, status=201)
             return JsonResponse({'error': "Unable to get VAHAN information. Please confirm the device IMEI."}, status=400)
     else:
-        
-        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
+         
+        return JsonResponse({'error': "Error Geting Vahan Data"}, status=400)
 
 
 @api_view(['POST'])
@@ -5068,8 +5068,8 @@ def GetVahanAPIInfo(request):
             #return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data':{}}, status=201)
             return JsonResponse({'error': "Unable to get VAHAN information. Please confirm the device IMEI."}, status=400)
     else:
-        
-        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
+         
+        return JsonResponse({'error': "Error Geting Vahan Data"}, status=400)
 
 
 @api_view(['POST'])
@@ -5094,8 +5094,9 @@ def ActivateTag(request):
         add_sms_queue("CONF,"+device_tag.vehicle_reg_no+",216.10.244.243,6000,216.10.244.243,5001,216.10.244.243,5001,+919401633421,+919401633421",device_tag.device.msisdn1)
             
         return JsonResponse({'data': serializer.data,"message":"Temporery activation request Sent.Please wait untile live data is visisble on map."}, status=201)
-    else:
-        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
+    else: 
+    
+        return JsonResponse({'error': "Device not found with Status:Owner_OTP_Sent"}, status=400)
 
 
 @api_view(['POST'])
@@ -5112,8 +5113,8 @@ def TagVerifyOwnerOtp(request):
     user_id = request.user.id
     otp = request.data.get('otp')
     device_tag_id = request.data.get('device_id')
-    if not otp or not otp.isdigit() or len(otp) != 6:
-        return HttpResponseBadRequest("Invalid OTP format")
+    if not otp or not otp.isdigit() or len(otp) != 6: 
+        return JsonResponse({'error': "Invalid OTP format"}, status=400)
     device_tag = DeviceTag.objects.filter(device_id=device_tag_id,  status='Owner_OTP_Sent').last()
     
     
@@ -5124,10 +5125,10 @@ def TagVerifyOwnerOtp(request):
             #add_sms_queue("ACTV,123456,+9194016334212",device_tag.device.msisdn1)
             #add_sms_queue("CONF,"+device_tag.vehicle_reg_no+",216.10.244.243,6000,216.10.244.243,5001,216.10.244.243,5001,+919401633421,+919401633421",device_tag.device.msisdn1)
             return Response({"message": "Owner OTP verified successfully."}, status=200)
-        else:
-            return HttpResponseBadRequest("Invalid OTP")
+        else: 
+            return JsonResponse({'error': "Invalid OTP"}, status=400)
     else:
-        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
+        return JsonResponse({'error': "Device not found with Status:Owner_OTP_Sent"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -5142,8 +5143,9 @@ def TagVerifyOwnerOtpFinal(request):
     user_id = request.user.id
     otp = request.data.get('otp')
     device_tag_id = request.data.get('device_id')
-    if not otp or not otp.isdigit() or len(otp) != 6:
-        return HttpResponseBadRequest("Invalid OTP format")
+    if not otp or not otp.isdigit() or len(otp) != 6: 
+        return JsonResponse({'error': "Invalid OTP format"}, status=400)
+    
     device_tag = DeviceTag.objects.filter(device_id=device_tag_id,  status='Owner_Final_OTP_Sent').last()
     if device_tag:
         if otp == device_tag.otp:  
@@ -5153,9 +5155,10 @@ def TagVerifyOwnerOtpFinal(request):
             #add_sms_queue("CONF,"+device_tag.vehicle_reg_no+",216.10.244.243,6000,216.10.244.243,5001,216.10.244.243,5001,+919401633421,+919401633421",device_tag.device.msisdn1)
             return Response({"message": "Owner Fianl OTP verified successfully.Please wait till the final setitng complete."}, status=200)
         else:
-            return HttpResponseBadRequest("Invalid OTP")
-    else:
-        return HttpResponseBadRequest("Device not found with Status:Owner_OTP_Sent")
+            return JsonResponse({'error': "Invalid OTP"}, status=400)
+    else: 
+    
+        return JsonResponse({'error': "Device not found with Status:Owner_OTP_Sent"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -5173,7 +5176,7 @@ def TagVerifyDealerOtp(request  ):
         otp = request.data.get('otp')
         device_tag_id = request.data.get('device_id')
         if not otp or not otp.isdigit() or len(otp) != 6:
-            return HttpResponseBadRequest("Invalid OTP format")
+            return JsonResponse({'error': "Invalid OTP format"}, status=400)
         device_tag = DeviceTag.objects.filter(device=device_tag_id, status='Dealer_OTP_Sent').last()
 
         #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
@@ -5204,11 +5207,11 @@ def TagVerifyDealerOtp(request  ):
 
                 return Response({"message": "Dealer OTP verified successfully."}, status=200)
             else:
-                return HttpResponseBadRequest("Invalid OTP")
-        else:
-            return HttpResponseBadRequest("Device not found with Status:Dealer_OTP_Sent")
+                return JsonResponse({'error': "Invalid OTP"}, status=400)
+        else: 
+            return JsonResponse({'error': "Device not found with Status:Dealer_OTP_Sent"}, status=400)
     except Exception as e:
-            return HttpResponseBadRequest(str(e))
+            return Response({"message": str(e)}, status=200)
 
 #not in use for now 
 @api_view(['POST'])
@@ -5219,7 +5222,7 @@ def TagVerifyDTOOtp(request  ):
         otp = request.data.get('otp')
         device_tag_id = request.data.get('device_id')
         if not otp or not otp.isdigit() or len(otp) != 6:
-            return HttpResponseBadRequest("Invalid OTP format")
+            return JsonResponse({'error': "Invalid OTP format"}, status=400)
         device_tag = DeviceTag.objects.filter(device=device_tag_id, status='Dealer_OTP_Sent') 
 
         #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
@@ -5230,11 +5233,12 @@ def TagVerifyDTOOtp(request  ):
                 device_tag.save()
                 return Response({"message": "Dealer OTP verified successfully."}, status=200)
             else:
-                return HttpResponseBadRequest("Invalid OTP")
+                return JsonResponse({'error': "Invalid OTP"}, status=400)
         else:
-            return HttpResponseBadRequest("Device not found with Status:Dealer_OTP_Sent")
+            return JsonResponse({'error': "Device not found with Status:Dealer_OTP_Sent"}, status=400)
     except Exception as e:
-            return HttpResponseBadRequest(str(e))
+            
+            return JsonResponse({'error': str(e)}, status=400)
 
 
 
@@ -5808,7 +5812,7 @@ def COPVerifyStateAdminOtp(request):
  
     otp = request.data.get('otp') 
     if not otp or not otp.isdigit() or len(otp) != 6:
-        return HttpResponseBadRequest("Invalid OTP format")
+            return JsonResponse({'error': "Invalid OTP format"}, status=400)
 
     device_model = get_object_or_404(DeviceCOP, id=device_model_id, created_by=user_id, status='StateAdminOTPSend')
  
@@ -5817,7 +5821,7 @@ def COPVerifyStateAdminOtp(request):
         device_model.save()
         return Response({"message": "State Admin OTP verified and approval granted successfully."}, status=200)
     else:
-        return HttpResponseBadRequest("Invalid OTP")
+            return JsonResponse({'error': "Invalid OTP"}, status=400)
 
 
     
@@ -5838,7 +5842,7 @@ def COPManufacturerOtpVerify(request  ):
     otp = request.data.get('otp')
     device_model_id = request.data.get('device_model_id')
     if not otp or not otp.isdigit() or len(otp) != 6:
-        return HttpResponseBadRequest("Invalid OTP format")
+            return JsonResponse({'error': "Invalid OTP format"}, status=400)
 
     device_model = get_object_or_404(DeviceCOP, id=device_model_id, created_by=user_id, status='Manufacturer_OTP_Sent')
  
@@ -5847,7 +5851,7 @@ def COPManufacturerOtpVerify(request  ):
         device_model.save()
         return Response({"message": "Manufacturer OTP verified successfully."}, status=200)
     else:
-        return HttpResponseBadRequest("Invalid OTP")
+            return JsonResponse({'error': "Invalid OTP"}, status=400)
 
 
 
@@ -5958,7 +5962,7 @@ def DeviceVerifyStateAdminOtp(request):
  
     otp = request.data.get('otp')
     if device_model.otp!=otp:
-        return HttpResponseBadRequest("Invalid OTP")
+            return JsonResponse({'error': "Invalid OTP"}, status=400)
 
 
     device_model.status = 'StateAdminApproved'
@@ -5978,7 +5982,7 @@ def DeviceCreateManufacturerOtpVerify(request  ):
     otp = request.data.get('otp')
     device_model_id = request.data.get('device_model_id')
     if not otp or not otp.isdigit() or len(otp) != 6:
-        return HttpResponseBadRequest("Invalid OTP format")
+            return JsonResponse({'error': "Invalid OTP format"}, status=400)
 
     device_model = get_object_or_404(DeviceModel, id=device_model_id,status='Manufacturer_OTP_Sent')# created_by=user_id, 
     if device_model.created_by!=user:
@@ -5990,7 +5994,7 @@ def DeviceCreateManufacturerOtpVerify(request  ):
         device_model.save()
         return Response({"message": "Manufacturer OTP verified successfully."}, status=200)
     else:
-        return HttpResponseBadRequest("Invalid OTP")
+            return JsonResponse({'error': "Invalid OTP"}, status=400)
 
 
 
@@ -6550,13 +6554,13 @@ def homepage_VehicleOwner(request):
                  
 
 
-'Total_Vehicles':1,
-'Total_Device_Activated':1,
-'Total_Moving_Vehicles':1,
-'Total_Stopped_Vehicles':0,
-'Total_Idle_Vehicles':0,
+'Total_Vehicles':DeviceTag.objects.filter(vehicle_owner=profile).count(),
+'Total_Device_Activated':DeviceTag.objects.filter(vehicle_owner=profile,status="Owner_Final_OTP_Verified").count(),
+'Total_Moving_Vehicles':DeviceTag.objects.filter(vehicle_owner=profile,status="Owner_Final_OTP_Verified").count(),
+'Total_Stopped_Vehicles':DeviceTag.objects.filter(vehicle_owner=profile,status="Owner_Final_OTP_Verified").count(),
+'Total_Idle_Vehicles':DeviceTag.objects.filter(vehicle_owner=profile,status="Owner_Final_OTP_Verified").count(),
 
-'Total_Online_Device':1,
+'Total_Online_Device':DeviceTag.objects.filter(vehicle_owner=profile,status="Owner_Final_OTP_Verified").count(),
 'Total_Offline_Device_today':0,
 'Total_Offline_Device_7day':0,
 'Total_Offline_Device_30day':0,
