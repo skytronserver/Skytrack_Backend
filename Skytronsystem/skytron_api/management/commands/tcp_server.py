@@ -778,13 +778,9 @@ def handle_client(conn, client_address):
                                 reg=gps_data['imei']
                                 dev=DeviceStock.objects.filter(imei__contains=str(reg)).last()
                                 print("#"+reg+"#",dev)
-                                if dev:
-                                    print("hhhh",reg)
+                                if dev: 
                                     device_tag=DeviceTag.objects.filter(device=dev).last()#,status='Device_Active'
-                                    
-
-                                    if "8861850060252554" in data_str:
-                                        print("Data foundddddddddd",861850060252554,device_tag.values())
+                                     
 
                                     if device_tag:
                                         gps_data['device_tag']=device_tag

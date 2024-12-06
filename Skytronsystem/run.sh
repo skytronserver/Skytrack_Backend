@@ -44,6 +44,9 @@ python3 725033 root    9u  IPv4 10026146      0t0  TCP admiring-solomon.216-10-2
 
 
 
+tmux new -s run_em
+tmux attach -d -t run_main
+
 nohup gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application 
  --static-map /var/www/html/skytron_backend/staticfiles
 --static-map /static=/var/www/html/skytron_backend/Skytronsystem/skytron_api/static

@@ -172,7 +172,7 @@ def Process_sosEx_Data(msg,topic_parts):
             except AuthenticationFailed as e:
                 error_message = f"Authentication error: {str(e)}"
                 print(error_message)
-                client.publish("field_ex/location_update_response", json.dumps({"status": "error", "message": error_message}))
+                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
                 return
 
             # Get user object and validate roles
@@ -182,7 +182,7 @@ def Process_sosEx_Data(msg,topic_parts):
             if not uo:
                 error_message = f"Request must be from {role}"
                 print(error_message)
-                client.publish("field_ex/location_update_response", json.dumps({"status": "error", "message": error_message}))
+                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
                 return
             
             # Optional role validation for specific user types
@@ -208,7 +208,7 @@ def Process_sosEx_Data(msg,topic_parts):
                 ee=EMCallBroadcast.objects.filter( type=uo.user_type,status="pending")
                 
 
-                print(success_message,topic_parts)
+                #print(success_message,topic_parts)
                 client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "broadcast":EMCallBroadcastSerializer(ee,many=True).data,"message": success_message}))
             else:
                 error_message = "Location not updated. Value error."
@@ -257,13 +257,12 @@ def on_message(client, userdata, msg):
     try:
         # Split the topic to extract the user ID
         topic_parts = msg.topic.split('/')
-        """print(f"Message Topic: {topic_parts}")
+        print(f"Message Topic: {topic_parts}")
         if len(topic_parts) == 2 and topic_parts[0] == 'gpsTracking':
             user_id = topic_parts[1]
             print(f"Message received for user ID: {user_id}")
             Process_Device_Data(msg)
-        el"""
-        if len(topic_parts) == 2 and topic_parts[0] == 'sosEx':
+        elif len(topic_parts) == 2 and topic_parts[0] == 'sosEx':
             Process_sosEx_Data(msg,topic_parts)
         else:
             print("Invalid topic format")

@@ -193,7 +193,7 @@ class DeviceStockSerializer2(serializers.ModelSerializer):
     dealer  = RetailerSerializer(many=False, read_only=True)
     created_by = UserSerializer(many=False, read_only=True)
     esim_provider = eSimProviderSerializer(many=True, read_only=True)
-    is_tagged=serializers.CharField( )
+    #is_tagged=serializers.CharField( )
     class Meta:
         model = DeviceStock
         fields = '__all__'
