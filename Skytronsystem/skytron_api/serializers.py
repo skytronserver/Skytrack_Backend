@@ -541,16 +541,26 @@ class EM_adminSerializer(serializers.ModelSerializer):
         fields = '__all__' 
 
 
+class EMGPSLocationSerializer11(serializers.ModelSerializer):
+    class Meta:
+        model = EMGPSLocation
+        fields ='__all__'    # Specify relevant fields
+
 class DeviceTagSerializer2(serializers.ModelSerializer):
     device = DeviceStockSerializer2(many=False, read_only=True)
     vehicle_owner = VehicleOwnerSerializer(many=False, read_only=True)
     drivers = DriverSerializer(many=True, read_only=True)
+    deviceloc = serializers.SerializerMethodField()
 
     class Meta:
-        model = DeviceTag 
+        model = DeviceTag
         #fields = '__all__' #
         exclude = ['otp', 'otp_time']
- 
+
+    def get_deviceloc(self, obj):
+        locations = EMGPSLocation.objects.filter(device_tag=obj.id).order_by('-id')[:10]
+        return EMGPSLocationSerializer11(locations, many=True).data
+
 
 
 
@@ -569,6 +579,7 @@ class EMTeamsSerializer(serializers.ModelSerializer):
 class EMCallSerializer(serializers.ModelSerializer):  
     team  = EMTeamsSerializer(  read_only=True)
     device = DeviceTagSerializer2( read_only=True) 
+
     class Meta:
         model = EMCall 
         fields = '__all__'  

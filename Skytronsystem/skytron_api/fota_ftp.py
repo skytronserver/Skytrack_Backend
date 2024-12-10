@@ -84,7 +84,7 @@ class CustomFTPHandler(FTPHandler):
             self.respond('213 %d' % size)
         except Exception as err:
             self.respond('550 SIZE command failed: %s.' % str(err))
-
+"""
 def create_ftp_server(): 
     logging.basicConfig(filename='/var/log/ftp_server.log', level=logging.INFO)
 
@@ -105,6 +105,32 @@ def create_ftp_server():
     # Create and start the FTP server
     server = FTPServer(("0.0.0.0", 2121), handler)
     server.serve_forever()
+"""
 
+def create_ftp_server(): 
+    import logging
+    from pyftpdlib.authorizers import DummyAuthorizer
+    from pyftpdlib.handlers import FTPHandler
+    from pyftpdlib.servers import FTPServer
+
+    logging.basicConfig(filename='/var/log/ftp_server.log', level=logging.INFO)
+
+    # Set up authorizer with a user
+    authorizer = DummyAuthorizer()
+    authorizer.add_user("username1", "a12345678a", "/var/www/html/skytron_backend/Skytronsystem/FOTAFiles/", perm="elr")
+ 
+    # Use the default FTP handler
+    handler = FTPHandler
+    handler.authorizer = authorizer  
+ 
+    # Set timeout and log prefix
+    handler.timeout = 600 
+    handler.log_prefix = "%(username)s@%(remote_ip)s"
+ 
+    # Create and start the FTP server
+    server = FTPServer(("0.0.0.0", 2121), handler)
+    server.serve_forever()
+
+    
 if __name__ == "__main__":
     create_ftp_server()

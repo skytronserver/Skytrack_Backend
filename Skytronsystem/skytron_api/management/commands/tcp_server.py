@@ -85,7 +85,16 @@ class Command(BaseCommand):
 
 
 from django.db.models import Max
-
+def createAleart(t,s,locid,devicetag):
+            AlertsLog.objects.create(
+                type=t,
+                status=s,
+                timestamp=datetime.now(),
+                gps_ref_id=locid, 
+                deviceTag=devicetag,
+                #district=devicetag.device.dealer.district,
+                state=devicetag.device.dealer.manufacturer.state
+            )
 def process_alert(gps_data, locid):
     devicetag = gps_data['device_tag']
     packet_type = gps_data['packet_type']
@@ -110,318 +119,127 @@ def process_alert(gps_data, locid):
         type__in=[entry['type'] for entry in last_alerts],
         timestamp__in=[entry['latest_timestamp'] for entry in last_alerts]
     )
-    if alert_id=="02":#('Em', 'Em'), 
-        al=lastnormal_alerts.filter(type="Em").last()
+
+
+    if gps_data["packet_type"]=="EA":#('Em', 'Em'),
+        t= "Em"
+        al=lastnormal_alerts.filter(type=t).last()
+        if not al:
+            createAleart(t,"in",locid,devicetag)
         if al.status=="out":
-            AlertsLog.objects.create(
-                type='Em',
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
-    if alert_id=="03":
+            createAleart(t,"in",locid,devicetag)
+
+
+    if gps_data["ignition_status"]=="1":
         t="Eng"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
         elif al.status=="out":
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
-    if alert_id=="04":
+            createAleart(t,"in",locid,devicetag)
+    if gps_data["ignition_status"]=="0":
         t="Eng"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
         elif al.status=="in":
     
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
 
 
-    if alert_id=="05":
+    if gps_data["speed"]>80:
         t="OverSpeed"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
         elif al.status=="out":
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
 
 
-    if alert_id=="06":
+    if gps_data["speed"]<80:
         t="OverSpeed"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
         elif al.status=="in":
     
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
     
-    if alert_id=="07":
+    if gps_data["internal_battery_voltage"]<3:
         t="LowIntBat"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
         elif al.status=="out":
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
 
 
-    if alert_id=="08":
+    if gps_data["internal_battery_voltage"]>3:
         t="LowIntBat"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
         elif al.status=="in":
     
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
 
-    if alert_id=="09":
+    if gps_data["main_input_voltage"]<8:
         t="LowExtBat"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
         elif al.status=="out":
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
 
-
-    if alert_id=="10":
+    
+    if gps_data["main_input_voltage"]>9:
         t="LowExtBat"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
+
         elif al.status=="in":
     
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
 
-    if alert_id=="11":
+    if gps_data["internal_battery_voltage"]<2:
         t="ExtBatDiscnt"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
         elif al.status=="out":
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
 
 
-    if alert_id=="12":
+    if gps_data["internal_battery_voltage"]>2:
         t="ExtBatDiscnt"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
         elif al.status=="in":
     
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
 
 
 
-    if alert_id=="13":
+    if gps_data["box_tamper_alert"]=="C":
         t="BoxTemp"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
         elif al.status=="out":
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
 
 
-    if alert_id=="14":
+    if gps_data["box_tamper_alert"]=="O":
         t="BoxTemp"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
+        
         elif al.status=="in":
     
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
  
 
 
@@ -429,252 +247,92 @@ def process_alert(gps_data, locid):
         t="EmTemp"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
         elif al.status=="out":
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
 
 
     if alert_id=="16":
         t="EmTemp"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
         elif al.status=="in":
     
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
  
 
     if alert_id=="17":
         t="Tilt"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
         elif al.status=="out":
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
 
 
     if alert_id=="18":
         t="Tilt"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
         elif al.status=="in":
     
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
 
     if alert_id=="19":
         t="HarshBreak"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
         elif al.status=="out":
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
 
 
     if alert_id=="20":
         t="HarshBreak"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
         elif al.status=="in":
     
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
 
     if alert_id=="21":
         t="HarshTurn"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
         elif al.status=="out":
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
 
 
     if alert_id=="22":
         t="HarshTurn"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
         elif al.status=="in":
     
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
 
     if alert_id=="23":
         t="HarshAccileration"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
         elif al.status=="out":
-            AlertsLog.objects.create(
-                type=t,
-                status="in",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"in",locid,devicetag)
 
 
     if alert_id=="24":
         t="HarshAccileration"
         al=lastnormal_alerts.filter(type=t).last()
         if not al:
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
         elif al.status=="in":
     
-            AlertsLog.objects.create(
-                type=t,
-                status="out",
-                timestamp=time.now(),
-                gps_ref_id=locid, 
-                deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
-                state=devicetag.device.dealer.manufacturer.state
-            )
+            createAleart(t,"out",locid,devicetag)
 
 
  
@@ -717,22 +375,22 @@ def process_alert(gps_data, locid):
             AlertsLog.objects.create(
                 type='Route',
                 status=status,
-                timestamp=time.now(),
+                timestamp=datetime.now(),
                 gps_ref_id=locid,
                 route_ref=route,
                 deviceTag=devicetag,
-                district=devicetag.device.dealer.district,
+                #district=devicetag.device.dealer.district,
                 state=devicetag.device.dealer.manufacturer.state
             )
         elif last_alert.status != status:  # Case 2: Status has changed
             AlertsLog.objects.create(
                 type='Route',
                 status=status,
-                timestamp=time.now(),
+                timestamp=datetime.now(),
                 gps_ref_id=locid,
                 route_ref=route,
                 deviceTag=devicetag, 
-                district=devicetag.device.dealer.district,
+                #district=devicetag.device.dealer.district,
                 state=devicetag.device.dealer.manufacturer.state
             )
 
@@ -799,12 +457,13 @@ def handle_client(conn, client_address):
                                 print("Data format errot error:", dat, flush=True)
                     except Exception as e:
                         print("Data processing error main:", e, flush=True)
-                        #raise e
+                        raise e
 
     except socket.timeout:
         print(f"Client {client_address} timed out. Closing the connection.", flush=True)
     except Exception as e:
         print(f"Error handling client {client_address}: {e}", flush=True)
+        raise e
     finally:
         conn.close()
         print(f"Connection from {client_address} closed.", flush=True)
@@ -837,7 +496,7 @@ class Command(BaseCommand):
                         pass
 
 
-from datetime import datetime
+from datetime import datetime, timezone
 import pytz
 gmt_timezone = pytz.timezone('GMT')
 ist_timezone = pytz.timezone('Asia/Kolkata')

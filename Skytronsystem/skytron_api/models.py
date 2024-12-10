@@ -11,10 +11,6 @@ from django.db.models import Count, Q
 
 
 
-
-
-
-
 # SkytronServer/gps_api/models.py
 from django.db import models
 
@@ -1144,9 +1140,9 @@ class AlertsLog(models.Model):
     gps_ref=models.ForeignKey(GPSData, on_delete=models.CASCADE)
     route_ref=models.ForeignKey(Route, on_delete=models.CASCADE,null=True, blank=True)
     em_ref=models.ForeignKey("EMCall", on_delete=models.CASCADE,null=True, blank=True)
-    dummnyuser=models.ForeignKey(User, on_delete=models.CASCADE,null=True,blank=True) 
+    #dummnyuser=models.ForeignKey(User, on_delete=models.CASCADE,null=True,blank=True) 
     deviceTag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE) 
-    district=models.ForeignKey(dto_rto, on_delete=models.CASCADE) 
+    #district=models.ForeignKey(dto_rto, on_delete=models.CASCADE,null=True, blank=True) 
     state=models.ForeignKey(Settings_State, on_delete=models.CASCADE) 
     
 

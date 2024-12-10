@@ -9,7 +9,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "Skytronsystem.settings")
 django.setup()
 
 import  re 
-from skytron_api.models import EMCallBroadcast, GPSData, GPSDataLog ,DeviceTag, DeviceStock
+from skytron_api.models import EMCallAssignment, EMCallBroadcast, EMGPSLocation, GPSData, GPSDataLog ,DeviceTag, DeviceStock
 
 from skytron_api.serializers import EMCallBroadcastSerializer
 import threading
@@ -204,12 +204,33 @@ def Process_sosEx_Data(msg,topic_parts):
                 user.login = True
                 user.save()
                 success_message = f"Location updated successfully: {ob.id}"
+                try:
+                    assignment_id =data.get("assignment_id")  
+                    print(assignment_id)
+
+                    assignment =EMCallAssignment.objects.filter(id=assignment_id,ex=uo,status__in=["accepted"]).last()
+                    if not assignment and assignment_id!=None:
+                        client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": "Invalid assignment id"}))
+                        return 0
+                    else:
+                        deviceloc=list(EMGPSLocation.objects.filter(device_tag= assignment.call.device).order_by('-id')[:100].values())
+        
+                        ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted").last
+             
+                        client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "locationHistory":deviceloc,"broadcast":EMCallBroadcastSerializer(ee,many=False).data,"message": success_message}))
+                        return 0
+                except:
+                    pass
+
+
+
+        
 
                 ee=EMCallBroadcast.objects.filter( type=uo.user_type,status="pending")
+                dat={"status": "success", "broadcast":EMCallBroadcastSerializer(ee,many=True).data,"message": success_message}
+                 
                 
-
-                #print(success_message,topic_parts)
-                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "broadcast":EMCallBroadcastSerializer(ee,many=True).data,"message": success_message}))
+                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps(dat))
             else:
                 error_message = "Location not updated. Value error."
                 print(error_message)
@@ -261,7 +282,7 @@ def on_message(client, userdata, msg):
         if len(topic_parts) == 2 and topic_parts[0] == 'gpsTracking':
             user_id = topic_parts[1]
             print(f"Message received for user ID: {user_id}")
-            Process_Device_Data(msg)
+            ###Process_Device_Data(msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'sosEx':
             Process_sosEx_Data(msg,topic_parts)
         else:
