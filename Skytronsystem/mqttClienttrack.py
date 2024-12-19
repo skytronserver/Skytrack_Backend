@@ -9,9 +9,9 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "Skytronsystem.settings")
 django.setup()
 
 import  re 
-from skytron_api.models import EMCallAssignment, EMCallBroadcast, EMGPSLocation, GPSData, GPSDataLog ,DeviceTag, DeviceStock
+from skytron_api.models import EMCallAssignment, EMCallBroadcast, EMCallMessages, EMGPSLocation, GPSData, GPSDataLog ,DeviceTag, DeviceStock
 
-from skytron_api.serializers import EMCallBroadcastSerializer
+from skytron_api.serializers import EMCallBroadcastSerializer, EMCallMessagesSerializer
 import threading
 
 from django.utils import timezone
@@ -217,7 +217,9 @@ def Process_sosEx_Data(msg,topic_parts):
         
                         ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted").last
              
-                        client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "locationHistory":deviceloc,"broadcast":EMCallBroadcastSerializer(ee,many=False).data,"message": success_message}))
+                        msg=EMCallMessages.objects.filter(call=assignment.call).all()
+        
+                        client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "locationHistory":deviceloc,"broadcast":EMCallBroadcastSerializer(ee,many=False).data,"groupMSG":EMCallMessagesSerializer(msg,many=True).data,"message": success_message}))
                         return 0
                 except:
                     pass

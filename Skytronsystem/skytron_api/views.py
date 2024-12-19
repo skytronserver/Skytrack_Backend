@@ -3762,26 +3762,28 @@ def FEx_broadcastaccept(request):
     user=request.user
     uo=get_user_object(user,role)
     if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+        return JsonResponse({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
     if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex'or uo.user_type=='PCR'or uo.user_type=='ACR' :
  
-        return Response({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
+        return JsonResponse({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
         id =request.data.get("broadcast_id")  
         ee=EMCallBroadcast.objects.filter( id = id,type=uo.user_type,status="pending").last()
+        if not ee:
+            return JsonResponse({'error': "Not found"}, status=400)
         ee.status="accepted"
         ee.save()
         assignment =   EMCallAssignment.objects.create(
                     admin =  EM_admin.objects.all().last(),#filter(users__login=True)
                     call =ee.call ,
                     status = "accepted",
-                    type = ee.type,
+                    type = uo.user_type,
                     ex = uo 
                     )  
-        return Response( EMCallAssignmentSerializer(assignment ,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        return JsonResponse( {"assignment":EMCallAssignmentSerializer(assignment ,many=False).data}, status=200)#Response(SOS_userSerializer(retailer).data)
         
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 @api_view(['POST'])
@@ -4015,20 +4017,20 @@ def FEx_updateStatus(request):
     #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
         assignment =request.data.get("assignment_id") 
-        status =request.data.get("status") 
+        statuss =request.data.get("status") 
         assignment =EMCallAssignment.objects.filter(id=assignment, ex=uo).exclude(status__in=[ "rejected", "closed_false_allert" , "closed"]).last()
         if not assignment:
             return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
         if assignment:
-            assignment.status= status 
-
+            assignment.status= statuss 
             assignment.save()
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response({ EMCallAssignmentSerializer( assignment,many=False).data}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return JsonResponse({"assignment": EMCallAssignmentSerializer( assignment,many=False).data}, status=200)#Response(SOS_userSerializer(retailer).data)
         return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
+        #raise e
         return Response({'error': str(e)}, status=500)
 
   
