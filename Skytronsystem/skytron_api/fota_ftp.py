@@ -84,8 +84,11 @@ class CustomFTPHandler(FTPHandler):
             self.respond('213 %d' % size)
         except Exception as err:
             self.respond('550 SIZE command failed: %s.' % str(err))
-"""
-def create_ftp_server(): 
+
+def create_ftp_serverp(): 
+
+    from pyftpdlib.log import config_logging
+    config_logging(level='DEBUG')
     logging.basicConfig(filename='/var/log/ftp_server.log', level=logging.INFO)
 
     # Set up authorizer with a user
@@ -95,8 +98,10 @@ def create_ftp_server():
     # Use the custom handler to override FTP behavior
     handler = CustomFTPHandler
     handler.authorizer = authorizer 
-    handler.passive_ports = range(50000, 51000)   # Port range for passive mode
+    handler.passive_ports = range(50000, 50003)   # Port range for passive mode
     handler.masquerade_address = "216.10.244.243"  # Public IP address of your server
+
+    handler.permit_foreign_addresses = True
  
     # Set timeout and log prefix
     handler.timeout = 600 
@@ -105,13 +110,15 @@ def create_ftp_server():
     # Create and start the FTP server
     server = FTPServer(("0.0.0.0", 2121), handler)
     server.serve_forever()
-"""
+ 
 
 def create_ftp_server(): 
     import logging
     from pyftpdlib.authorizers import DummyAuthorizer
     from pyftpdlib.handlers import FTPHandler
     from pyftpdlib.servers import FTPServer
+    from pyftpdlib.log import config_logging
+    config_logging(level='DEBUG')
 
     logging.basicConfig(filename='/var/log/ftp_server.log', level=logging.INFO)
 
@@ -122,7 +129,7 @@ def create_ftp_server():
     # Use the default FTP handler
     handler = FTPHandler
     handler.authorizer = authorizer  
- 
+    handler.permit_foreign_addresses = True
     # Set timeout and log prefix
     handler.timeout = 600 
     handler.log_prefix = "%(username)s@%(remote_ip)s"
@@ -133,4 +140,4 @@ def create_ftp_server():
 
     
 if __name__ == "__main__":
-    create_ftp_server()
+    create_ftp_serverp()

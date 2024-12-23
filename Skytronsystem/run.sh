@@ -15,7 +15,7 @@ nohup python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0
 
 tmux new -s run_main
 cd Skytronsystem/
- gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
 
 tmux new -s run_gps
 cd Skytronsystem/
@@ -28,9 +28,12 @@ python3 em_server.py
 
 tmux new -s run_fota
 cd Skytronsystem/skytron_api/
- python3 fota_ftp.py
+python3 fota_ftp.py
 
 tmux new -s run_mqtt
+cd Skytronsystem/
+python3 mqttClienttrack.py
+
 
 tmux attach -d -t run_main
 gunicorn Skytronsystem.wsgi:application
