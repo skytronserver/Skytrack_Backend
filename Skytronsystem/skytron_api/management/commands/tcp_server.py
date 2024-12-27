@@ -349,15 +349,17 @@ def process_alert(gps_data, locid):
         if key not in last_alert_map:
             last_alert_map[key] = alert
         
-
+    print("rouutes found",len(routes),flush=True)
     for route in routes:
+        print("rouutes found")
         r = route.route  # This is the route string containing coordinates
         points = json.loads(r)  # Convert route string into a list of points
         status = "out"  # Default status
 
         # Check if any point in the route is within 100 meters of the given lat/lon
-        for point in points:
-            route_lat, route_lon, _ = point
+        for point in points[0:-1]:
+            route_lon,route_lat,  _ = point
+            print(point)
             distance = geodesic((lat, lon), (route_lat, route_lon)).meters
             if distance <= 100:
                 status = "in"

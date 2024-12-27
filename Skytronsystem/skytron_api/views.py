@@ -65,6 +65,7 @@ import base64
 import json
 import os 
 
+from django.utils.timezone import now
 #python3 -m pip install python-docx
 #python3 -m pip install pypandoc
 #python3 -m pip install docx2pdf
@@ -1854,31 +1855,49 @@ def delete_VehicleOwner(request, vo_id):
 @permission_classes([IsAuthenticated])
 def filter_VehicleOwner(request):
     try:
+
+        role="stateadmin"
+        user=request.user
+        uo=get_user_object(user,role)
+
         # Get filter parameters from the request
-        dealer_id = request.data.get('VehicleOwner_id', None)
+        obj_id = request.data.get('VehicleOwner_id', None)
         email = request.data.get('email', '')
         company_name = request.data.get('company_name', '')
         name = request.data.get('name', '')
         phone_no = request.data.get('phone_no', '')
         address = request.data.get('address', '') 
         filters = {} 
-        if dealer_id :
+        if uo:
+            state=uo.state
+            owners = DeviceTag.objects.filter( device__esim_provider__state=state, status="Owner_Final_OTP_Verified").values("vehicle_owner").distinct()
             manufacturers = VehicleOwner.objects.filter(
-                id=dealer_id ,
-                users__email__icontains=email,
-                company_name__icontains=company_name,
-                users__name__icontains=name,
-                users__mobile__icontains=phone_no, 
-            ).distinct()
+                        id__in=owners,
+                        users__email__icontains=email,
+                        company_name__icontains=company_name,
+                        users__name__icontains=name,
+                        users__mobile__icontains=phone_no, 
+                    ).distinct()
+        
         else:
-            manufacturers = VehicleOwner.objects.filter(
-                #id=manufacturer_id,
-                users__status='active',
-                users__email__icontains=email,
-                company_name__icontains=company_name,
-                users__name__icontains=name,
-                users__mobile__icontains=phone_no, 
-            ).distinct()
+            state = request.data.get('state', '')
+            if obj_id :
+                manufacturers = VehicleOwner.objects.filter(
+                    id=obj_id ,
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no, 
+                ).distinct()
+            else:
+                manufacturers = VehicleOwner.objects.filter(
+                    #id=manufacturer_id,
+                    users__status='active',
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no, 
+                ).distinct()
 
         # Serialize the queryset
         retailer_serializer = VehicleOwnerSerializer(manufacturers, many=True)
@@ -2348,6 +2367,8 @@ def filter_dealer(request):
         role="devicemanufacture"
         user=request.user
         uo=get_user_object(user,role)
+        role="stateadmin" 
+        suo=get_user_object(user,role)
         # Get filter parameters from the request
         dealer_id = request.data.get('dealer_id', None)
         email = request.data.get('email', '')
@@ -2379,6 +2400,28 @@ def filter_dealer(request):
                     users__mobile__icontains=phone_no, 
                     manufacturer=uo,
                 ).distinct()
+        elif  suo:
+                
+            if dealer_id :
+                manufacturers = Retailer.objects.filter(
+                    id=dealer_id ,
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no, 
+                    manufacturer__state=suo.state,
+                ).distinct()
+            else:
+                manufacturers = Retailer.objects.filter(
+                    #id=manufacturer_id,
+                    users__status='active',
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no, 
+                    manufacturer__state=suo.state,
+                ).distinct()
+        
         else:
             if dealer_id :
                 manufacturers = Retailer.objects.filter(
@@ -3007,29 +3050,40 @@ def update_DTO_RTO(request):
 @permission_classes([IsAuthenticated])
 def filter_DTO_RTO(request):
     try:
+        role="stateadmin"
+        user=request.user
+        uo=get_user_object(user,role)
+        if uo:
+            state=uo.state
+        else:
+            state = request.data.get('state', '')
+
         # Get filter parameters from the request
-        manufacturer_id = request.data.get('dto_rto_id', None)
+        obj_id = request.data.get('dto_rto_id', None)
         email = request.data.get('email', '') 
         name = request.data.get('name', '')
         phone_no = request.data.get('phone_no', '')
         address = request.data.get('address', '')
-        state = request.data.get('state', '')
+        
         district = request.data.get('district', '')
 
         # Create a dictionary to hold the filter parameters
         filters = {}
 
         # Add ID filter if provided
-        if manufacturer_id :
+        if obj_id :
             manufacturers = dto_rto.objects.filter(
-                id=manufacturer_id,
+                id=obj_id,
+                state=state,
+           
                 users__email__icontains=email, 
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
             ).distinct()
         else:
             manufacturers = dto_rto.objects.filter(
-                #id=manufacturer_id,
+                state=state,
+           
                 users__status='active',
                 users__email__icontains=email, 
                 users__name__icontains=name,
@@ -3532,6 +3586,11 @@ def list_EM_team(request):
 @permission_classes([IsAuthenticated])
 def TLEx_getPendingCallList(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
     role="sosexecutive"
     user=request.user
     uo=get_user_object(user,role)
@@ -3552,10 +3611,15 @@ def DEx_getPendingCallList(request):
     role="sosexecutive"
     user=request.user
     uo=get_user_object(user,role)
-    if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    role2="stateadmin" 
+    uo2=get_user_object(user,role2)
+    if not (uo or uo2):
+        return Response({"error":"Request must be from  "+role+' or '+role2+'.'}, status=status.HTTP_400_BAD_REQUEST)
     try: 
-        ee=EMCallAssignment.objects.filter(  ex = uo  ).exclude(status="closed")  
+        if uo2:
+            ee=EMCallAssignment.objects.filter(  ex__state = uo2.state  ).exclude(status="closed") 
+        else:
+            ee=EMCallAssignment.objects.filter(  ex = uo  ).exclude(status="closed")  
 
         if ee: 
             return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
@@ -4765,15 +4829,19 @@ def Tag_ownerlist(request):
     role="owner"
     user=request.user
     uo=get_user_object(user,role)
-    role="superadmin" 
-    sa=get_user_object(user,role)
-    #if not uo:
-    #    return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    role2="superadmin" 
+    sa=get_user_object(user,role2)
+    role3="stateadmin" 
+    sta=get_user_object(user,role3)
+    if not (uo or sa or sta):
+        return Response({"error":"Request must be from  "+role+',' +role2+',or' +role3+'.'}, status=status.HTTP_400_BAD_REQUEST)
     if request.method == 'POST': 
         if uo:
             devices = DeviceTag.objects.filter(vehicle_owner=uo, status="Owner_Final_OTP_Verified")#created_by=user_id,  
         elif sa:
             devices = DeviceTag.objects.filter( status="Owner_Final_OTP_Verified")
+        elif sta:
+            devices = DeviceTag.objects.filter( device__esim_provider__state=sta.state, status="Owner_Final_OTP_Verified")
 
          
         device_id = request.POST.get('device_id') 
@@ -5399,10 +5467,16 @@ def SellListAvailableDeviceStock(request):
     man=get_user_object(user,role)
     role1="devicemanufacture"
     man2=get_user_object(user,role1)
-    if not man and not man2:
-        return Response({"error":"Request must be from "+role+" or "+role1+"."}, status=status.HTTP_400_BAD_REQUEST)
+    role2="stateadmin"
+    man3=get_user_object(user,role2)
+    if not man and not man2 and not man3:
+        return Response({"error":"Request must be from "+role+" or "+role1+" or "+role2+"."}, status=status.HTTP_400_BAD_REQUEST)
     if man2:
-        device_stock =  DeviceStock.objects.all() 
+        device_stock =  DeviceStock.objects.filter(  dealer__manufacturer=man2,stock_status='Available_for_fitting') 
+        if not device_stock:
+            return JsonResponse({'error': "no device found "  }, status=400)
+    elif man3:
+        device_stock =  DeviceStock.objects.filter(  dealer__manufacturer__state=man3.state,stock_status='Available_for_fitting') 
         if not device_stock:
             return JsonResponse({'error': "no device found "  }, status=400)
 
@@ -6363,21 +6437,45 @@ def homepage_state(request):
 @permission_classes([IsAuthenticated])
 def homepage_alart(request):
     try:
-        # Create a dictionary to hold the filter parameters
-        filters = {}
-        # Add ID filter if provided
-        if True:
-            count_dict = {
-            'total_alart':0,
-            'alart_month': 0,
-            'alart_today':0, 
+        # Get the current date and time
+        current_date = now().date()
+        current_month_start = current_date.replace(day=1)
 
+        # Calculate total counts for "in" status
+        total_count = AlertsLog.objects.filter(status="in").count()
+        month_count = AlertsLog.objects.filter(status="in", timestamp__gte=current_month_start).count()
+        today_count = AlertsLog.objects.filter(status="in", timestamp__date=current_date).count()
+
+        # Initialize a dictionary to hold the counts
+        count_dict = {
+            'total_alerts': {
+                'total': total_count,
+                'this_month': month_count,
+                'today': today_count,
+            },
+            'alerts_by_type': {},
         }
-        # Return the serialized data as JSON response
+
+        # Fetch counts grouped by type for "total," "this month," and "today"
+        for alert_type, _ in AlertsLog.TYPE_CHOICES:
+            type_total_count = AlertsLog.objects.filter(type=alert_type, status="in").count()
+            type_month_count = AlertsLog.objects.filter(
+                type=alert_type, status="in", timestamp__gte=current_month_start
+            ).count()
+            type_today_count = AlertsLog.objects.filter(
+                type=alert_type, status="in", timestamp__date=current_date
+            ).count()
+
+            count_dict['alerts_by_type'][alert_type] = {
+                'total': type_total_count,
+                'this_month': type_month_count,
+                'today': type_today_count,
+            }
+
+        # Return the count dictionary as a JSON response
         return Response(count_dict)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
-
 
 
 @api_view(['POST'])
@@ -7054,7 +7152,7 @@ def filter_Settings_State(request):
         if  uo:
             state=uo.state
             manufacturers = Settings_State.objects.filter(id=state.id ).distinct()
-        if  uosos:
+        elif  uosos:
             state=uosos.state
             manufacturers = Settings_State.objects.filter(id=state.id ).distinct()
         else:
