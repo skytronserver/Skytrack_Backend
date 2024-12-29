@@ -14,7 +14,18 @@ sudo -i -u postgres
 psql
 CREATE DATABASE skytrondbnew2;
 CREATE USER dbadmin WITH PASSWORD 'lask1028zmnx';
+
+\c skytrondbnew2;
+GRANT USAGE ON SCHEMA public TO dbadmin;
+GRANT CREATE ON SCHEMA public TO dbadmin;
 GRANT ALL PRIVILEGES ON DATABASE skytrondbnew2 TO dbadmin;
+GRANT ALL PRIVILEGES ON SCHEMA public TO dbadmin;
+
+GRANT USAGE ON SCHEMA public TO dbadmin;
+GRANT CREATE ON SCHEMA public TO dbadmin;
+
+
+
 \q
 exit
 sudo nano /etc/postgresql/12/main/pg_hba.conf
@@ -30,10 +41,12 @@ add
 sudo systemctl restart postgresql
 #test
 psql -U dbadmin -d skytrondbnew2 -h localhost -W
+
+
 \q
 
 
-
+psql -U dbadmin -d skytrondbnew2 -h 20.210207.21 -W
   
 
 ### Docker installation 
@@ -45,8 +58,8 @@ sudo apt-get install docker-ce docker-ce-cli containerd.io -y
 sudo docker run hello-world
  
 
-### docker deployment
-docker build -t skytron-backend-api . --add-host=host.docker.internal:host-gateway 
+### docker deployment   --add-host=host.docker.internal:host-gateway 
+docker build -t skytron-backend-api . 
 docker run -d \
     -p 2000:2000 \
     -e MAIL_ID=testsddsftrack@gmdail.com \
@@ -67,7 +80,9 @@ docker image prune -f
 sudo ufw enable
 sudo ufw allow 5432/tcp
 sudo ufw allow 443/tcp
+sudo ufw allow 2000/tcp
 sudo ufw allow 22/tcp
+sudo ufw reload
 sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
 
 Save the rule persistently:
@@ -79,6 +94,9 @@ sudo netfilter-persistent save
 ###nginx configuration 
 sudo cp /var/www/html/Skytrack_Backend/api.conf /etc/nginx/sites-available/
 sudo cp /var/www/html/Skytrack_Backend/www.conf /etc/nginx/sites-available/
+sudo cp ../api.conf /etc/nginx/sites-available/
+sudo cp ../www.conf /etc/nginx/sites-available/
+
 sudo rm /etc/nginx/sites-enabled/api.conf 
 sudo rm /etc/nginx/sites-enabled/www.conf 
 sudo ln -s /etc/nginx/sites-available/api.conf /etc/nginx/sites-enabled/
