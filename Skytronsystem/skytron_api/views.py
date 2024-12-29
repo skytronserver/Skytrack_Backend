@@ -88,6 +88,12 @@ from docx import Document
 import subprocess
 from tempfile import NamedTemporaryFile
 
+from pathlib import Path
+import os  
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 def replace_text_in_docx_in_memory(template_path, replacements): 
     doc = Document(template_path) 
     for paragraph in doc.paragraphs:
@@ -113,7 +119,7 @@ def convert_docx_to_pdf_with_libreoffice(docx_buffer):
 
 
  
-template_path = '/var/www/html/skytron_backend/Skytronsystem/skytron_api/static/Cetificate_template.docx'
+template_path = '/app/skytron_api/static/Cetificate_template.docx'
  
 def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,ActivationDate,Status,Date):
     replacements = {
@@ -139,7 +145,7 @@ def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,A
  
 
 def load_private_key():
-    private_key_path = '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
+    private_key_path = '/app/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
     with open(private_key_path, 'rb') as key_file:
         private_key = RSA.import_key(key_file.read()) 
     with open(private_key_path, 'rb') as key_file: 
@@ -8855,7 +8861,7 @@ def create_notice(request):
         createdby = request.user    
         file = request.data.get('file') 
         try:
-            file  = save_file(request, 'file', '/var/www/html/skytron_backend/Skytronsystem/skytron_api/static/notice')  
+            file  = save_file(request, 'file', '/app/skytron_api/static/notice')  
             notice = Notice.objects.create(
                     title=title,
                     detail=detail,
@@ -8959,7 +8965,7 @@ def update_notice(request):
         if status:
             man.status=status
         if file:
-            f=save_file(request, 'file', '/var/www/html/skytron_backend/Skytronsystem/skytron_api/static/notice') 
+            f=save_file(request, 'file', '/app/skytron_api/static/notice') 
     
             man.file = ":2000/static/notice/"+f.split("/")[-1],
         man.createdby = createdby

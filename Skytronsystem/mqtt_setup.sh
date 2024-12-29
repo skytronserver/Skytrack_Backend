@@ -1,4 +1,4 @@
-sudo apt-get install mosquitto mosquitto-clients
+sudo apt-get install mosquitto mosquitto-clients -y
 
 sudo systemctl start mosquitto
 sudo systemctl enable mosquitto

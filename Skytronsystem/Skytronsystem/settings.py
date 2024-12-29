@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 import os 
+
 mail_id = os.environ.get("MAIL_ID", "testskytrack@gmail.com")
 mail_pw = os.environ.get("MAIL_PW", " ")
 
@@ -28,7 +29,7 @@ SECRET_KEY = 'django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['http://localhost:3000/','216.10.244.243','skytrack.tech','https://www.skytrack.tech','admiring-solomon.216-10-244-243.plesk.page']
+ALLOWED_HOSTS = ['http://localhost:3000/','api.skytron.in','skytron.in','localhost','172.17.0.1','skytron.in','216.10.244.243','skytrack.tech','https://www.skytrack.tech','admiring-solomon.216-10-244-243.plesk.page']
 
 DATA_UPLOAD_MAX_NUMBER_FIELD = 71193766
 # Application definition
@@ -108,7 +109,7 @@ DATABASES = {
         'NAME': 'skytrondbnew2',
         'USER': 'dbadmin',
         'PASSWORD': 'lask1028zmnx',
-        'HOST': 'localhost',
+        'HOST': '216.10.247.182',
         'PORT': '5432',
     }
  
@@ -167,18 +168,22 @@ CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     "http://localhost:3000",  
     "https://localhost:3000", 
     "https://skytrack.tech:3000",  
+    'https://skytron.in',
+    'https://api.skytron.in',
     "https://skytrack.tech",  # Add your frontend domain(s) here
     #"https://yourfrontenddomain.com",
-    # "*" to allow all origins
+    "*",# to allow all origins
 ]
 CORS_ALLOW_ALL_ORIGINS = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
-#STATIC_URL = 'static/'
-STATIC_URL = '/static/'
+#STATIC_URL = 'static/' 
+ 
 
-STATIC_ROOT = os.path.join('/var/www/html/skytron_backend/Skytronsystem', '../staticfiles/')
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+#STATIC_ROOT = os.path.join('/var/www/html/skytron_backend/Skytronsystem', '../staticfiles/')
 
 #STATIC_URL = '/static/'
 #STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
