@@ -56,25 +56,21 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docke
 sudo apt-get update
 sudo apt-get install docker-ce docker-ce-cli containerd.io -y
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+sudo apt  install docker-compose -y
 
 sudo docker run hello-world
  
 
 ### docker deployment   --add-host=host.docker.internal:host-gateway 
-docker build -t skytron-backend-api . 
-docker run -d \
-    -p 2000:2000 \
-    -e MAIL_ID=testsddsftrack@gmdail.com \
-    -e MAIL_PW=zmsfssdgdsfssqrlr \
-    --name skytron-backend-api-container \
-    skytron-backend-api
+sudo docker build -t skytron-backend-api . 
+sudo docker run -d  -p 2000:2000  -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api
 
     nc -zv 216.10.247.182 5432
 #check
 docker ps
 #restart
-docker stop skytron-backend-api-container
-docker rm skytron-backend-api-container
+sudo docker stop skytron-backend-api-container
+sudo docker rm skytron-backend-api-container
 docker image prune -f
 
 

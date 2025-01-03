@@ -66,8 +66,10 @@ RUN python manage.py collectstatic --noinput
 EXPOSE 2000
 
 # Option A: Set environment variables in the Dockerfile (not recommended for secrets)
-ENV MAIL_ID=testsddsftrack@gmdail.com
-ENV MAIL_PW=zmsfssdgdsfssqrlr
+ENV MAIL_ID=testskytrack@gmail.com
+ENV MAIL_PW=zmzmexdnrlmsqrlr
+#export 
+#export MAIL_PW=zmzmexdnrlmsqrlr
 
 # Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key
 CMD ["gunicorn", "--certfile=cert.pem", "--keyfile=key.pem", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]
