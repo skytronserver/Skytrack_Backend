@@ -29,7 +29,7 @@ SECRET_KEY = 'django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['http://localhost:3000/','20.210.207.21','api.skytron.in','skytron.in','localhost','172.17.0.1','skytron.in','216.10.244.243','skytrack.tech','https://www.skytrack.tech','admiring-solomon.216-10-244-243.plesk.page']
+ALLOWED_HOSTS = ['http://localhost:3000/','40.81.241.29','20.210.207.21','api.skytron.in','skytron.in','localhost','172.17.0.1','skytron.in','216.10.244.243','skytrack.tech','https://www.skytrack.tech','admiring-solomon.216-10-244-243.plesk.page']
 
 DATA_UPLOAD_MAX_NUMBER_FIELD = 71193766
 # Application definition
@@ -109,7 +109,7 @@ DATABASES = {
         'NAME': 'skytrondbnew2',
         'USER': 'dbadmin',
         'PASSWORD': 'lask1028zmnx',
-        'HOST': '20.210.207.21',
+        'HOST': '40.81.241.29',
         'PORT': '5432',
     }
  
