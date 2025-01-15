@@ -109,7 +109,7 @@ DATABASES = {
         'NAME': 'skytrondbnew2',
         'USER': 'dbadmin',
         'PASSWORD': 'lask1028zmnx',
-        'HOST': '40.81.241.29',
+        'HOST': 'localhost',# 40.81.241.29
         'PORT': '5432',
     }
  

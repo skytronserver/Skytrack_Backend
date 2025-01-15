@@ -3788,7 +3788,7 @@ def TLEx_reassign(request):
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
     if not uo.user_type=='teamlead' :
  
-        return Response({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error":"Request must be from team lead."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
 
         id =request.data.get("assignemtn_id")  
@@ -3831,6 +3831,7 @@ def FEx_broadcastaccept(request):
     role="sosexecutive"
     user=request.user
     uo=get_user_object(user,role)
+
     if not uo:
         return JsonResponse({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
     if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex'or uo.user_type=='PCR'or uo.user_type=='ACR' :

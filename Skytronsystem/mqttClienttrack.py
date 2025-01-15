@@ -9,9 +9,9 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "Skytronsystem.settings")
 django.setup()
 
 import  re 
-from skytron_api.models import EMCallAssignment, EMCallBroadcast, EMCallMessages, EMGPSLocation, GPSData, GPSDataLog ,DeviceTag, DeviceStock
+from skytron_api.models import * #EMCallAssignment, EMCallBroadcast, EMCallMessages, EMGPSLocation, GPSData, GPSDataLog ,DeviceTag, DeviceStock
 
-from skytron_api.serializers import EMCallBroadcastSerializer, EMCallMessagesSerializer
+from skytron_api.serializers import * #EMCallBroadcastSerializer, EMCallMessagesSerializer
 import threading
 
 from django.utils import timezone
@@ -242,6 +242,67 @@ def Process_sosEx_Data(msg,topic_parts):
             raise e
             print("data processign error function ",e, flush=True)
 
+
+def Process_owner_Data(msg,topic_parts): 
+    try:
+        data = json.loads(msg.payload.decode())
+        print(data)
+        token=data.get("token")
+        if token:
+            token = "Token "+token
+ 
+            try: 
+                class FakeRequest:
+                    def __init__(self, token):
+                        self.META = {'HTTP_AUTHORIZATION': f'{token}'}
+                        print(f"Authorization Header: Token {token}")
+                
+                fake_request = FakeRequest(token)
+                user_auth_tuple = authenticator.authenticate(fake_request)
+
+                if user_auth_tuple is None:
+                    raise AuthenticationFailed("Invalid token.")
+
+                user = user_auth_tuple[0]  # Extract the user from the authentication tuple
+            except AuthenticationFailed as e:
+                error_message = f"Authentication error: {str(e)}"
+                print(error_message)
+                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+                return
+
+
+            role = "owner"
+            uo = get_user_object(user, role)
+
+            if not uo:
+                error_message = f"Request must be from {role}"
+                print(error_message)
+                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+                return
+            
+
+            user.last_activity = timezone.now()
+            user.login = True
+            user.save() 
+            try:
+                alerts = AlertsLog.objects.filter(deviceTag__vvehicle_owner=uo)
+                if alerts:
+                    serializer = AlertsLogSerializer(alerts, many=True)
+     
+                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory":serializer.data}))
+                    return 0
+            except:
+                    pass
+
+
+
+         
+           
+           
+    except Exception as e:
+            raise e
+            print("data processign error function ",e, flush=True)
+
 def Process_Device_Data(msg):
     print(msg.payload.decode())
     data_str=str(msg.payload.decode())
@@ -287,6 +348,10 @@ def on_message(client, userdata, msg):
             ###Process_Device_Data(msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'sosEx':
             Process_sosEx_Data(msg,topic_parts)
+        elif len(topic_parts) == 2 and topic_parts[0] == 'owner':
+            Process_owner_Data(msg,topic_parts)
+
+            
         else:
             print("Invalid topic format")
             print(topic_parts)

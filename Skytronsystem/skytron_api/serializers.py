@@ -629,5 +629,15 @@ class EMUserLocationSerializer(serializers.ModelSerializer):
 
 
  
-  
+
+class AlertsLogSerializer(serializers.ModelSerializer):
+
+    gps_ref=GPSData_Serializer(read_only=True)
+    route_ref=routeSerializer(read_only=True)
+    #em_ref=models.ForeignKey("EMCall", on_delete=models.CASCADE,null=True, blank=True) 
+    deviceTag=DeviceTagSerializer2(read_only=True) 
+    state=Settings_StateSerializer( read_only=True)
+    class Meta:
+        model = AlertsLog
+        fields = '__all__'
 
