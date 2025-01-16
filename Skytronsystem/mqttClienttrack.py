@@ -248,6 +248,7 @@ def Process_owner_Data(msg,topic_parts):
         data = json.loads(msg.payload.decode())
         print(data)
         token=data.get("token")
+        
         if token:
             token = "Token "+token
  
@@ -284,15 +285,18 @@ def Process_owner_Data(msg,topic_parts):
             user.last_activity = timezone.now()
             user.login = True
             user.save() 
+            print(user)
             try:
-                alerts = AlertsLog.objects.filter(deviceTag__vvehicle_owner=uo)
+                alerts = AlertsLog.objects.filter(deviceTag__vehicle_owner=uo).order_by('-id')[:10]
                 if alerts:
                     serializer = AlertsLogSerializer(alerts, many=True)
      
                     client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory":serializer.data}))
+                    print("data sent")
                     return 0
-            except:
-                    pass
+            except Exception as e :
+                    print(e)
+            return 0
 
 
 

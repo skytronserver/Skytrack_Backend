@@ -1,0 +1,1000 @@
+ 1020  tmux attach -t run_main
+ 1021  python3
+ 1022  python3 em_server.py 
+ 1023  htop
+ 1024  python3 em_server.py 
+ 1025  htop
+ 1026  cd Skytronsystem/
+ 1027  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000 
+ 1028  htop
+ 1029  sudo reboot now
+ 1030  df -h
+ 1031  plesk login
+ 1032  iptables -I INPUT 1 -p tcp --dport=8443 -j ACCEPT
+ 1033  plesk login
+ 1034  service iptables save
+ 1035  checkfirewall
+ 1036  iptables -L
+ 1037  iptables -L --line-number
+ 1038  iptables -D INPUT 6 FORWARD 1
+ 1039  iptables -D INPUT 6 
+ 1040  iptables -D FORWARD 1
+ 1041  plesk login
+ 1042  tmux attach -t run_main
+ 1043  tmux new -s run_main
+ 1044  tmux attach -t run_main
+ 1045  tmux attach -d -t run_main
+ 1046  python3 
+ 1047  tmux attach -d -t run_main
+ 1048  cd Skytronsystem/
+ 1049  python3 manage.py makemigrations
+ 1050  python3  manage.py migrate
+ 1051  LS
+ 1052  ls
+ 1053  npm install 
+ 1054  npm start
+ 1055  npm install 
+ 1056  npm install js-base64
+ 1057  npm install node-forge
+ 1058  npm start
+ 1059  tmux attach -d -t run_main
+ 1060  npm start
+ 1061  htop
+ 1062  python3 manage.py makemigrations
+ 1063  python3  manage.py migrate
+ 1064  tmux attach -d -t run_main
+ 1065  python3 manage.py makemigrations
+ 1066  python3  manage.py migrate
+ 1067  ls
+ 1068  cd ../
+ 1069  ls
+ 1070  cd ..
+ 1071  ls
+ 1072  cd /var/www/html/skytron_backend/Skytronsystem
+ 1073  cd Skytronsystem/
+ 1074  ls
+ 1075  python3 
+ 1076  tmux attach -d -t run_main
+ 1077  python3 manage.py makemigrations
+ 1078  python3  manage.py migrate
+ 1079  python3 manage.py makemigrations
+ 1080  python3  manage.py migrate
+ 1081  python manage.py makemigrations
+ 1082  python3 manage.py makemigrations
+ 1083  python3  manage.py migrate
+ 1084  tmux attach -d -t run_main
+ 1085  ls
+ 1086  cd Skytronsystem/
+ 1087  tmux new -s run_gps
+ 1088  tmux attach -d -t run_main
+ 1089  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1090  tmux attach -d -t run_main
+ 1091  tmux new -s run_gps
+ 1092  tmux attach -d -t run_gps
+ 1093  htop
+ 1094  tmux new -s run_gps
+ 1095  tmux attach -d -t run_gps
+ 1096  python3 -m pip install python-docx
+ 1097  python3 -m pip install pypandoc
+ 1098  python3 -m pip install docx2pdf
+ 1099  cd Skytronsystem/
+ 1100  ls
+ 1101  lscd skytron_api/
+ 1102  cd skytron_api/
+ 1103  python3 certificateGen.py 
+ 1104  sudo apt-get install texlive-latex-base texlive-fonts-recommended texlive-fonts-extra texlive-latex-extra
+ 1105  python3 -m pip install pdfkit
+ 1106  sudo apt-get install wkhtmltopdf
+ 1107  sudo apt-get install libreoffice
+ 1108  python3 certificateGen.py 
+ 1109  tmux attach -d -t run_main
+ 1110  tmux attach -d -t run_gps
+ 1111  tmux attach -d -t run_main
+ 1112  tmux attach -d -t run_gps
+ 1113  tmux attach -d -t run_main
+ 1114  tmux attach -d -t run_gps
+ 1115  tmux attach -d -t run_main
+ 1116  python3 manage.py makemigrations
+ 1117  cd Skytronsystem/
+ 1118  python manage.py makemigrations
+ 1119  python3 manage.py makemigrations
+ 1120  python manage.py makemigrations
+ 1121  python3 manage.py makemigrations
+ 1122  python manage.py makemigrations
+ 1123  python3 manage.py makemigrations
+ 1124  python3 manage.py migrate
+ 1125  pgsql
+ 1126  sudo -i -u postgres
+ 1127  cd Skytronsystem/
+ 1128  python3 manage.py makemigrations
+ 1129  python3 manage.py migrate
+ 1130  python3 manage.py makemigrations
+ 1131  python3 manage.py migrate
+ 1132  python manage.py createsuperuser
+ 1133  python3 manage.py createsuperuser
+ 1134  tmux attach -d -t run_main
+ 1135  tmux attach -d -t run_gps
+ 1136  cd Skytronsystem/
+ 1137  ls
+ 1138  tmux attach -d -t run_main
+ 1139  cd Skytronsystem/
+ 1140  python manage.py createsuperuser
+ 1141  python3 manage.py createsuperuser
+ 1142  sudo apt-get install mosquitto mosquitto-clients
+ 1143  sudo systemctl start mosquitto
+ 1144  sudo systemctl enable mosquitto
+ 1145  sudo mkdir /etc/mosquitto/certs /etc/mosquitto/ca_certificates
+ 1146  ls /etc/mosquitto/certs’
+ 1147  ls /etc/mosquitto/certs
+ 1148  mkdir mqttKeys
+ 1149  cd mqtt
+ 1150  cd mqttKeys/
+ 1151  openssl genpkey -algorithm RSA -out ca.key
+ 1152  openssl req -new -x509 -days 3650 -key ca.key -out ca.crt -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=YourCA"
+ 1153  openssl genpkey -algorithm RSA -out server.key
+ 1154  openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650
+ 1155  openssl req -new -key server.key -out server.csr -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=your-server-ip-or-url"
+ 1156  openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650
+ 1157  openssl genpkey -algorithm RSA -out client.key
+ 1158  openssl req -new -key client.key -out client.csr -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=ClientName"
+ 1159  openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt -days 3650
+ 1160  sudo mv ca.crt /etc/mosquitto/ca_certificates/
+ 1161  sudo mv server.crt /etc/mosquitto/certs/
+ 1162  sudo mv server.key /etc/mosquitto/certs/
+ 1163  sudo mv client.crt /etc/mosquitto/certs/ # Optional
+ 1164  sudo mv client.key /etc/mosquitto/certs/ # Optional
+ 1165  sudo nano /etc/mosquitto/mosquitto.conf
+ 1166  sudo systemctl restart mosquitto
+ 1167  python3 -m pip install paho-mqtt
+ 1168  python3 mqtt_test.py 
+ 1169  ls
+ 1170  python3 mqtt_test.py 
+ 1171  openssl req -new -key server.key -out server.csr -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=216.10.244.243"
+ 1172  cd /etc/mosquitto/certs/
+ 1173  openssl req -new -key server.key -out server.csr -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=216.10.244.243"
+ 1174  openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650
+ 1175  cd /var/www/html/skytron_backend/
+ 1176  cd Skytronsystem/
+ 1177  ls
+ 1178  cd mqtt
+ 1179  cd  mqttKeys/
+ 1180  openssl genpkey -algorithm RSA -out ca.key
+ 1181  openssl req -new -x509 -days 3650 -key ca.key -out ca.crt -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=YourCA"
+ 1182  openssl genpkey -algorithm RSA -out server.key
+ 1183  openssl req -new -key server.key -out server.csr -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=216.10.244.243"
+ 1184  openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650
+ 1185  openssl genpkey -algorithm RSA -out client.key
+ 1186  openssl req -new -key client.key -out client.csr -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=ClientName"
+ 1187  openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt -days 3650
+ 1188  sudo cp ca.crt /etc/mosquitto/ca_certificates/
+ 1189  sudo cp server.crt /etc/mosquitto/certs/
+ 1190  sudo cp server.key /etc/mosquitto/certs/
+ 1191  sudo cp client.crt /etc/mosquitto/certs/ # Optional
+ 1192  sudo cp client.key /etc/mosquitto/certs/ # Optional
+ 1193  sudo systemctl restart mosquitto
+ 1194  python3 mqtt_test.py 
+ 1195  top /var/log/mosquitto/mosquitto.log
+ 1196  tail /var/log/mosquitto/mosquitto.log
+ 1197  sudo apt-get install mosquitto-clients
+ 1198  mosquitto_sub -h localhost -t '#' -v
+ 1199  mosquitto_sub -h localhost -t '#' 
+ 1200  mosquitto_sub -h 216.10.244.243 -t '#' 
+ 1201  mosquitto_sub -h localhost -t '#'
+ 1202  sudo mosquitto_sub -h localhost -t '#'
+ 1203  ip addr show
+ 1204  sudo mosquitto_sub -h 216.10.244.243 -t '#' 
+ 1205  mosquitto_sub -h localhost -p 8883 --capath /var/www/html/skytron_backend/Skytronsystem/mqttKeys -t '#'
+ 1206  ls /etc/mosquitto/mosquitto.conf
+ 1207  mosquitto_sub -h <broker_address> -p 8883 -t <topic_name> --cafile /etc/mosquitto/ca_certificates/ca.crt --cert /path/to/client.crt --key /path/to/client.key
+ 1208  mosquitto_sub -h <broker_address> -p 8883 -t '#' --cafile /etc/mosquitto/ca_certificates/ca.crt --cert /path/to/client.crt --key /path/to/client.key
+ 1209  mosquitto_sub -h localhost -p 8883 -t test/topic --cafile /etc/mosquitto/ca_certificates/ca.crt --cert /home/user/certs/client.crt --key /home/user/certs/client.key
+ 1210  mosquitto_sub -h '216.10.244.243' -p 8883 -t test/topic --cafile /etc/mosquitto/ca_certificates/ca.crt --cert /home/user/certs/client.crt --key /home/user/certs/client.key
+ 1211  mosquitto_sub -h '216.10.244.243' -p 8883 -t '#' --cafile /etc/mosquitto/ca_certificates/ca.crt --cert /home/user/certs/client.crt --key /home/user/certs/client.key
+ 1212  mosquitto_sub -h '216.10.244.243' -p 8883 -t '#' --cafile /var/www/html/skytron_backend/Skytronsystem/mqttKeys/ca.crt --cert /var/www/html/skytron_backend/Skytronsystem/mqttKeys/client.crt --key /var/www/html/skytron_backend/Skytronsystem/mqttKeys/client.key
+ 1213  tmux attach -d -t run_main
+ 1214  cd Skytronsystem/@
+ 1215  cd Skytronsystem/
+ 1216  python3 manage.py createsuperuser 
+ 1217  ls
+ 1218  cd ../..
+ 1219  ls
+ 1220  cd skytron_frontend/
+ 1221  ls
+ 1222  cd Skytronsystem/
+ 1223  python3 manage.py makemigrations
+ 1224  python3 manage.py migrate
+ 1225  ls
+ 1226  cd Skytronsystem/
+ 1227  ls
+ 1228  python3 manage.py makemigrations
+ 1229  python3 manage.py migrate
+ 1230  ld
+ 1231  ls
+ 1232  tmux attach -d -t run_main
+ 1233  tmux attach -d -t run_gps
+ 1234  htop
+ 1235  tmux attach -d -t run_gps
+ 1236  tmux attach -d -t run_main
+ 1237  htop
+ 1238  tmux attach -d -t run_main
+ 1239  htop
+ 1240  tmux attach -d -t run_main
+ 1241  tmux attach -d -t run_gps
+ 1242  tmux attach -d -t run_main
+ 1243  ls
+ 1244  cd Skytronsystem/
+ 1245  ls
+ 1246  python3 manage.py makemigrations
+ 1247  python3 manage.py migrate
+ 1248  tmux attach -d -t run_main
+ 1249  tmux attach -d -t run_gps
+ 1250  ls
+ 1251  cd Skytronsystem/
+ 1252  ls
+ 1253  python3 manage.py makemigrations
+ 1254  python3 manage.py migrate
+ 1255  tmux attach -d -t run_main
+ 1256  python3 manage.py makemigrations
+ 1257  cd Skytronsystem/
+ 1258  python3 manage.py makemigrations
+ 1259  python3 manage.py migrate
+ 1260  tmux attach -d -t run_main
+ 1261  curl --location --request GET 'https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_new_v2.php?token=fb46cfb86bea498dce694350fb6dd16d161ff8eb' --header 'Content-Type: application/json' --data '{
+ 1262    "points": [[78.20318640590668,17.068714730779163],[78.61577415314866,17.188468198056995],[78.46685828090666,17.359928106498742]]
+ 1263  }
+ 1264  '
+ 1265  tmux attach -d -t run_main
+ 1266  python3 manage.py makemigrations
+ 1267  python3 manage.py migrate
+ 1268  python3 manage.py makemigrations
+ 1269  python3 manage.py migrate
+ 1270  python3 manage.py makemigrations
+ 1271  python3 manage.py migrate
+ 1272  python3 manage.py makemigrations
+ 1273  python3 manage.py migrate
+ 1274  python3 manage.py makemigrations
+ 1275  python3 manage.py migrate
+ 1276  tmux attach -d -t run_main
+ 1277  cd skytron_api/
+ 1278  python3 fota_ftp.py 
+ 1279  python3 -m pip install pyftpdlib
+ 1280  python3 fota_ftp.py 
+ 1281  sudo ufw allow 2121/tcp
+ 1282  python3 fota_ftp.py 
+ 1283  python3 -m pip install --upgrade cryptography pyOpenSSL
+ 1284  python3 fota_ftp.py 
+ 1285  tmux attach -d -t gps_ftp
+ 1286  curl -u username1:a12345678a ftp://216.10.244.243:2121/V1.1.3.bin -o V1.1.3.bin
+ 1287  curl -u username1:a12345678a ftp://216.10.244.243:2121/certificate_filled.pdf -o certificate_filled.pdf
+ 1288  ls
+ 1289  curl -u username1:a12345678a ftp://216.10.244.243:2121/certificate_filled.pdf -o certificate_filled.pdf
+ 1290  curl -u username1:a12345678a ftp://216.10.244.243:2121/V1.1.3.bin -o V1.1.3.bin
+ 1291  ls
+ 1292  tmux new -s gps_ftp
+ 1293  tmux attach -d -t gps_ftp
+ 1294  curl -u username1:a12345678a ftp://216.10.244.243:2121/V1.1.3.bin -o V1.1.3.bin
+ 1295  tmux attach -d -t gps_ftp
+ 1296  ls /var/www/html/skytron_backend/Skytronsystem/
+ 1297  cat /var/www/html/skytron_backend/Skytronsystem/ftp_logfile.log 
+ 1298  tmux attach -d -t gps_ftp
+ 1299  cat /var/www/html/skytron_backend/Skytronsystem/ftp_logfile.log 
+ 1300  cat /var/www/html/skytron_backend/Skytronsystem/ftp0ldlogfile.log 
+ 1301  curl -u CCMSV1:CCMS@123 ftp://124.123.18.16:21/V1.1.3.bin -o V1.1.3.bin
+ 1302  ls
+ 1303  curl -u CCMSV1:CCMS@123 ftp://124.123.18.16:21/V1.1.3.bin -o V1.1.3.bin1
+ 1304  ls
+ 1305  curl -u CCMSV1:CCMS@123 ftp://124.123.18.16:21/V1.1.3.bin -o V1.1.3.bin1
+ 1306  curl -u username1:a12345678a ftp://216.10.244.243:2121/V1.1.3.bin -o V1.1.3.bin
+ 1307  tmux attach -d -t gps_ftp
+ 1308  curl -u CCMSV1:CCMS@123 ftp://124.123.18.16:21/V1.1.3.bin -o V1.1.3.bin1
+ 1309  tmux attach -d -t gps_ftp
+ 1310  curl -u CCMSV1:CCMS@123 ftp://124.123.18.16:2121/V1.1.3.bin -o V1.1.3.bin3
+ 1311  curl --ftp-port -u CCMSV1:CCMS@123 ftp://124.123.18.16:2121/V1.1.3.bin -o V1.1.3.bin3
+ 1312  ls
+ 1313  tmux attach -d -t gps_ftp
+ 1314  curl -u CCMSV1:CCMS@123 ftp://124.123.18.16:2121/V1.1.3.bin -o V1.1.3.bin3
+ 1315  curl -u username1:a12345678a ftp://216.10.244.243:2121/V1.1.3.bin -o V1.1.3.bin4
+ 1316  curl --ftp-port - -u username1:a12345678a ftp://216.10.244.243:2121/V1.1.3.bin -o V1.1.3.bin4
+ 1317  curl -v -u username1:a12345678a ftp://216.10.244.243:2121/V1.1.3.bin -o V1.1.3.bin4
+ 1318  curl -v --ftp-port - -u username1:a12345678a ftp://216.10.244.243:2121/V1.1.3.bin -o V1.1.3.bin4
+ 1319  tmux attach -d -t gps_main
+ 1320  tmux attach -d -t run_main
+ 1321  tmux attach -d -t gps_ftp
+ 1322  tmux attach -d -t run_main
+ 1323  sudo ufw allow 2121/tcp
+ 1324  sudo ufw allow 50000:51000/tcp
+ 1325  sudo ufw reload
+ 1326  tmux attach -d -t gps_ftp
+ 1327  tail /var/log/ftp_server.log
+ 1328  python3 /var/www/html/skytron_backend/Skytronsystem/skytron_api/fotatest.py
+ 1329  tail /var/log/ftp_client.log
+ 1330  python3 /var/www/html/skytron_backend/Skytronsystem/skytron_api/fotatest.py
+ 1331  tail /var/log/ftp_client.log
+ 1332  python3 /var/www/html/skytron_backend/Skytronsystem/skytron_api/fotatest.py
+ 1333  tail /var/log/ftp_client.log
+ 1334  python3 /var/www/html/skytron_backend/Skytronsystem/skytron_api/fotatest.py
+ 1335  tail /var/log/ftp_client.log
+ 1336  tmux attach -d -t gps_ftp
+ 1337  python3 /var/www/html/skytron_backend/Skytronsystem/skytron_api/fotatest.py
+ 1338  tail /var/log/ftp_client.log
+ 1339  tmux attach -d -t gps_ftp
+ 1340  python3 /var/www/html/skytron_backend/Skytronsystem/skytron_api/fotatest.py
+ 1341  tail /var/log/ftp_client.log
+ 1342  python3 /var/www/html/skytron_backend/Skytronsystem/skytron_api/fotatest.py
+ 1343  tail /var/log/ftp_client.log
+ 1344  sudo chmod 777 -R /var/www/html/skytron_backend/Skytronsystem/FOTAFiles
+ 1345  ls /var/www/html/skytron_backend/Skytronsystem/FOTAFiles
+ 1346  tmux attach -d -t run_main
+ 1347  htop
+ 1348  tmux attach -d -t run_main
+ 1349  tmux attach -d -t gps_ftp
+ 1350  cd Skytronsystem/
+ 1351  ls
+ 1352  python3 manage.py makemigrations
+ 1353  python3 manage.py migrate
+ 1354  tmux attach -d -t run_main
+ 1355  python3 manage.py makemigrations
+ 1356  python3 manage.py migrate
+ 1357  tmux attach -d -t run_main
+ 1358  ls
+ 1359  tmux attach -d -t run_main
+ 1360  tmux attach -d -t gps_ftp
+ 1361  sudo chmod 777 -R /var/www/html/skytron_backend/Skytronsystem/FOTAFiles
+ 1362  ls /var/www/html/skytron_backend/Skytronsystem/FOTAFiles
+ 1363  cd ../..
+ 1364  python3 /var/www/html/skytron_backend/Skytronsystem/skytron_api/fotatest.py
+ 1365  ls
+ 1366  cd /var/www/html/skytron_backend/Skytronsystem
+ 1367  ls
+ 1368  python3 manage.py makemigrations
+ 1369  python3 manage.py migrate
+ 1370  ls
+ 1371  tmux attach -d -t run_main
+ 1372  tmux attach -d -t run_gps
+ 1373  tmux attach -d -t run_main
+ 1374  npm start 
+ 1375  ls
+ 1376  yarn run dev
+ 1377  npm install 
+ 1378  npm start 
+ 1379  htop 
+ 1380  tmux attach -d -t run_main
+ 1381  tmux attach -d -t run_gps
+ 1382  htop
+ 1383  htop 
+ 1384  tmux attach -d -t run_main
+ 1385  tmux attach -d -t run_gps
+ 1386  tmux attach -d -t run_main
+ 1387  htop
+ 1388  tmux attach -d -t run_main
+ 1389  ls
+ 1390  top
+ 1391  tmux attach -d -t run_main
+ 1392  ls
+ 1393  tmux attach -d -t run_main
+ 1394  w
+ 1395  plesk login
+ 1396  uptime
+ 1397  top -c
+ 1398  uptime
+ 1399  hostname -i
+ 1400  tmux attach -d -t run_main
+ 1401  ls
+ 1402  cd Skytronsystem/
+ 1403  python3 manage.py makemigrations
+ 1404  python3 manage.py migrate
+ 1405  tmux attach -d -t run_main
+ 1406  python3 manage.py makemigrations
+ 1407  python3 manage.py migrate
+ 1408  tmux attach -d -t run_main
+ 1409  tmux attach -d -t run_sos
+ 1410  tmux new -s run_em
+ 1411  tmux attach -d -t run_gps
+ 1412  tmux attach -d -t run_em
+ 1413  cd Skytronsystem/
+ 1414  tmux attach -d -t run_em
+ 1415  cd Skytronsystem/
+ 1416  tmux attach -d -t run_em
+ 1417  tmux attach -d -t run_main
+ 1418  python3 -m pip install paho-mqtt
+ 1419  python3 /var/www/html/skytron_backend/Skytronsystem/mqttKeys/mqtt_test.py
+ 1420  python3 /var/www/html/skytron_backend/Skytronsystem/mqttClient1.py
+ 1421  python3 -m pip install djangorestframework-simplejwt
+ 1422  python3 /var/www/html/skytron_backend/Skytronsystem/mqttClient1.py
+ 1423  ls
+ 1424  tmux new -s run_mqtt
+ 1425  tmux attach -d -t run_main
+ 1426  tmux attach -d -t run_mqtt
+ 1427  tmux attach -d -t run_main
+ 1428  tmux attach -d -t run_mqtt
+ 1429  tmux attach -d -t run_main
+ 1430  tmux attach -d -t run_mqtt
+ 1431  plesk login\
+ 1432  plesk login
+ 1433  sudo iptables -L
+ 1434  tmux attach -d -t run_main
+ 1435  htop
+ 1436  tmux attach -d -t run_main
+ 1437  tmux attach -d -t run_gps
+ 1438  tmux attach -d -t run_main
+ 1439  tmux attach -d -t run_gps
+ 1440  tmux attach -d -t run_main
+ 1441  tmux attach -d -t run_gps
+ 1442  mosquitto_sub -h '216.10.244.243' -p 8883 -t test/topic --cafile /etc/mosquitto/ca_certificates/ca.crt --cert /home/user/certs/client.crt --key /home/user/certs/client.key
+ 1443  tmux attach -d -t run_gps
+ 1444  sudo chmod 777 -R /var/www/html/skytron_backend/Skytronsystem/FOTAFiles/
+ 1445  ls /var/log/ftp_server.log
+ 1446  tmux attach -d -t run_gps
+ 1447  tmux attach -d -t run_MAIN
+ 1448  tmux attach -d -t run_main
+ 1449  tmux attach -d -t run_em
+ 1450  tmux attach -d -t run_main
+ 1451  ls /etc/postgresql/12/main/postgresql.conf
+ 1452  sudo nano /etc/postgresql/12/main/postgresql.conf
+ 1453  sudo service postgresql restart
+ 1454  tmux attach -d -t run_main
+ 1455  mkdir ../facedoor
+ 1456  cd ..
+ 1457  sudo rm -r FaceLock/
+ 1458  ls
+ 1459  python3 manage.py runserver 0.0.0.0:3000
+ 1460  tmux attach -d -t run_main
+ 1461  htop
+ 1462  tmux attach -d -t run_main
+ 1463  htop
+ 1464  tmux attach -d -t run_gps
+ 1465  tmux attach -d -t run_main
+ 1466  cd myprojec3\ -\ Copy\ \(2\)/
+ 1467  ls
+ 1468  python3 manage.py runserver 0.0.0.0:3000
+ 1469  ls lsof -i tcp:3000
+ 1470  sudo  lsof -i tcp:3000
+ 1471  sudo kill 3966840
+ 1472  sudo  lsof -i tcp:3000
+ 1473  python3 manage.py runserver 0.0.0.0:3000
+ 1474  ls
+ 1475  cd myprojec3\ -\ Copy\ \(2\)/
+ 1476  ls
+ 1477  python3 manage.py runserver 0.0.0.0:3000
+ 1478  python3 manage.py makemigration
+ 1479  python3 manage.py makemigrations
+ 1480  python3 manage.py migrate
+ 1481  python3 manage.py runserver 0.0.0.0:3000
+ 1482  python3 manage.py createsuperuser
+ 1483  python3 manage.py runserver 0.0.0.0:3000
+ 1484  tmux attach -d -t run_main
+ 1485  cd Skytronsystem/skytron_api/
+ 1486  python3 fota_ftp.py
+ 1487  sudo chmod 777 -R /var/www/html/skytron_backend/Skytronsystem/FOTAFiles/ 
+ 1488  ls
+ 1489  python3 fota_ftp.py
+ 1490  netstat -ltnp | grep -w ':21'
+ 1491  python3 fota_ftp.py
+ 1492  htop
+ 1493  python3 fota_ftp.py
+ 1494  cd Skytronsystem/
+ 1495  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1496  export MAIL_ID=testskytrack@gmail.com
+ 1497  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1498  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1499  tmux new -s run_main
+ 1500  tmux attach run_main
+ 1501  tmux attach -t run_main
+ 1502  clear 
+ 1503  export MAIL_ID=testskytrack@gmail.com
+ 1504  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1505  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1506  htop
+ 1507  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1508  htop
+ 1509  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1510  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application  --static-map /static:/var/www/html/skytron_backend/staticfiles
+ 1511  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application  --static-map /var/www/html/skytron_backend/staticfiles
+ 1512  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1513  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1514  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1515  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1516  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1517  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1518  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1519  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1520  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1521  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1522  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1523  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1524  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1525  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1526  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1527  sudo chmod 777 -R *
+ 1528  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1529  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1530  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1531  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1532  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1533  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1534  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1535  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1536  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1537  htop
+ 1538  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1539  htop
+ 1540  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000
+ 1541  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1542  [A
+ 1543  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1544  cd Skytronsystem/
+ 1545  python3 em_server.py
+ 1546  python3 em_server_test.py
+ 1547  python3 manage.py makemigrations
+ 1548  python3 manage.py migrate
+ 1549  python3 em_server_test.py
+ 1550  python3 em_server.py
+ 1551  python3 em_server_test.py
+ 1552  python3 em_server.py
+ 1553  python3 em_server_test.py
+ 1554  tmux attach -d -t run_main
+ 1555  python3 em_server_test.py
+ 1556  python3 em_server.py
+ 1557  python3 /var/www/html/skytron_backend/Skytronsystem/mqttClient1.py
+ 1558  python3 /var/www/html/skytron_backend/Skytronsystem/mqttClient2.py
+ 1559  python3 /var/www/html/skytron_backend/Skytronsystem/mqttClient1.py
+ 1560  htop
+ 1561  python3 /var/www/html/skytron_backend/Skytronsystem/mqttClient1.py
+ 1562  python3 /var/www/html/skytron_backend/Skytronsystem/mqttClientrack.py
+ 1563  python3 /var/www/html/skytron_backend/Skytronsystem/mqttClienttrack.py 
+ 1564  iptables -nL INPUT --line-numbers
+ 1565  iptables -D INPUT 5
+ 1566  iptables-save
+ 1567  tmux attach -d -t run_main
+ 1568  tmux new -s run_main
+ 1569  tmux new -s run_gps
+ 1570  iptables -nL INPUT --line-numbers
+ 1571  iptables -D INPUT 5
+ 1572  iptables-save
+ 1573  plesk login
+ 1574  tmux attach -d -t run_main
+ 1575  tmux new -s run_em
+ 1576  cd myprojec3\ -\ Copy\ \(2\)/
+ 1577  ls
+ 1578  python3 manage.py tcp_server
+ 1579  manage.py runserver_plus --cert-file cert.pem --key-file
+ 1580  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 
+ 1581  python3 manage.py runserver 0.0.0.0:3000
+ 1582  cd ..
+ 1583  ls
+ 1584  python3 manage.py runserver 0.0.0.0:3000
+ 1585  tmux new -s run_em
+ 1586  tmux new -s run_sos
+ 1587  tmux attach -d -t run_main
+ 1588  ls
+ 1589  python3 manage.py runserver 0.0.0.0:3000
+ 1590  cd code_11_nov/
+ 1591  ls
+ 1592  python3 manage.py runserver 0.0.0.0:3000
+ 1593  python3 manage.py makemigration
+ 1594  python3 manage.py makemigrations
+ 1595  python3 manage.py migrate
+ 1596  python3 manage.py runserver 0.0.0.0:3000
+ 1597  cd ..
+ 1598  mkdir old
+ 1599  cd code_11_nov/
+ 1600  ls
+ 1601  python3 manage.py runserver 0.0.0.0:3000
+ 1602  tmux attach -d -t run_main
+ 1603  tmux new -s run_mqtt
+ 1604  plesk login
+ 1605  iptables -nL INPUT --line-numbers
+ 1606  iptables -A
+ 1607  exit
+ 1608  df -h
+ 1609  plesk login 
+ 1610  plesk login
+ 1611  w
+ 1612  history 
+ 1613  iptables -L
+ 1614  iptables -save
+ 1615  iptables --save
+ 1616  service iptables stop
+ 1617  w
+ 1618  uptime 
+ 1619  exit
+ 1620  tmux attach -d -t run_main
+ 1621  tmux attach -d -t run_main
+ 1622  info
+ 1623  systm -u
+ 1624  lsb_release -a 
+ 1625  tmux attach -d -t run_main
+ 1626  ls
+ 1627  cd Skytronsystem/
+ 1628  ls
+ 1629  python3 mqttClienttrack.py
+ 1630  tmux attach -d -t run_main
+ 1631  python3 manage.py tcp_server 
+ 1632  tmux attach -d -t run_main
+ 1633  python3 manage.py tcp_server 
+ 1634  tmux attach -d -t run_main
+ 1635  iptables -L
+ 1636  iptables -F
+ 1637  iptables -X
+ 1638  plesk login
+ 1639  tmux new -s run_em
+ 1640  tmux new -s run_main
+ 1641  tmux new -s run_ftp
+ 1642  tmux new -s run_mqtt
+ 1643  tmux new -s run_gps
+ 1644  curl -u username1:a12345678a ftp://216.10.244.243:2121/V1.2.1.bin -o V1.2.2.bin
+ 1645  tmux new -s run_main
+ 1646  tmux attach -d -t run_main
+ 1647  ls /var/log/ftp_server.log
+ 1648  tail /var/log/ftp_server.log
+ 1649  curl -u username1:a12345678a ftp://216.10.244.243:2121/V1.2.1.bin -o V1.2.2.bin
+ 1650  tmux attach -d -t run_main
+ 1651  tail /var/log/ftp_server.log
+ 1652  tmux attach -d -t run_main
+ 1653  tail /var/log/ftp_server.log
+ 1654  plesk login
+ 1655  wget -O - 43.225.54.108/diskusage.sh | bash
+ 1656  du -sch /*
+ 1657  iptables -nL
+ 1658  top -c
+ 1659  sar -r
+ 1660  sar -q
+ 1661  cd  Skytronsystem/
+ 1662  python3 fota_ftp.py
+ 1663  ls
+ 1664  cd..
+ 1665  cd ..
+ 1666  ls
+ 1667  cd Skytronsystem/
+ 1668  cd skytron_api/
+ 1669  python3 fota_ftp.py
+ 1670  cd Skytronsystem/
+ 1671  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1672  python3 em_server_test.py
+ 1673  python3 em_server.py
+ 1674  iptables -nL INPUT --line-numbers
+ 1675  cd Skytronsystem/
+ 1676  python3 manage.py tcp_server 
+ 1677  cd Skytronsystem/
+ 1678  python3 mqttClienttrack.py
+ 1679  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1680  cd Skytronsystem/
+ 1681  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1682  export MAIL_ID=testskytrack@gmail.com
+ 1683  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1684  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1685  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000 
+ 1686  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1687  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000 
+ 1688  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1689  python3 manage.py runserver_plus --cert-file cert.pem --key-file key.pem 0.0.0.0:2000 
+ 1690  gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.wsgi:application
+ 1691  cd Skytronsystem/skytron_api/
+ 1692  python3 fota_ftp.py
+ 1693  tail /var/log/ftp_server.log
+ 1694  python3 fota_ftp.py
+ 1695  sudo reboot
+ 1696  tmux new -s run_fota
+ 1697  sudo ufw status verbose
+ 1698  df -h
+ 1699  iptables -F
+ 1700  iptables -x
+ 1701  iptables -X
+ 1702  plesk login
+ 1703  w
+ 1704  tmux new -s run_fota
+ 1705  sudo ufw reload
+ 1706  sudo ufw enable
+ 1707  lsof -i :2121
+ 1708  d
+ 1709  tmux attach -d -t run_fota
+ 1710  w
+ 1711  uptime
+ 1712  sar -q
+ 1713  w
+ 1714  iptables -L
+ 1715  iptables -F
+ 1716  iptables -X
+ 1717  w
+ 1718  systemctl | grep fire
+ 1719  systemctl | grep fail
+ 1720  w
+ 1721  top
+ 1722  pwd
+ 1723  iptables -L
+ 1724  iptables -f
+ 1725  plesk login
+ 1726  tmux attach -d -t run_main
+ 1727  tmux new -s run_main
+ 1728  tmux new -s run_em
+ 1729  tmux new -s run_mqtt
+ 1730  tmux new -s run_gps
+ 1731  tmux attach -d -t run_main
+ 1732  sudo chmod 777 -R /var/www/html/skytron_backend/Skytronsystem/FOTAFiles
+ 1733  tmux attach -d -t run_main
+ 1734  cd Skytronsystem/
+ 1735  python3 em_server.py 
+ 1736  iptables -F
+ 1737  iptables -X
+ 1738  iptables -F
+ 1739  iptables -X
+ 1740  iptables -L
+ 1741  service sshd status
+ 1742  service sshd restart
+ 1743  init 6
+ 1744  iptables -F
+ 1745  iptables -X
+ 1746  iptables -
+ 1747  iptables -L
+ 1748  systemctl restart iptables
+ 1749  init 6
+ 1750  sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+ 1751  sudo iptables -A INPUT -p tcp --dport 2000 -j ACCEPT
+ 1752  sudo iptables -A INPUT -p tcp --dport 2121 -j ACCEPT
+ 1753  sudo iptables -A INPUT -p tcp --dport 5001 -j ACCEPT
+ 1754  sudo iptables -A INPUT -p tcp --dport 6000 -j ACCEPT
+ 1755  sudo iptables -A INPUT -p tcp --dport 8883 -j ACCEPT
+ 1756  sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+ 1757  sudo iptables -A INPUT -p tcp --dport 21 -j ACCEPT
+ 1758  sudo iptables -A INPUT -p tcp --dport 20 -j ACCEPT
+ 1759  sudo iptables -A INPUT -p tcp --dport 3001 -j ACCEPT
+ 1760  sudo iptables -A INPUT -p tcp --dport 3002 -j ACCEPT
+ 1761  sudo iptables -A INPUT -p tcp --dport 3003 -j ACCEPT
+ 1762  sudo iptables -A OUTPUT -p tcp --sport 443 -j ACCEPT
+ 1763  sudo iptables -A OUTPUT -p tcp --sport 2000 -j ACCEPT
+ 1764  sudo iptables -A OUTPUT -p tcp --sport 2121 -j ACCEPT
+ 1765  sudo iptables -A OUTPUT -p tcp --sport 5001 -j ACCEPT
+ 1766  sudo iptables -A OUTPUT -p tcp --sport 6000 -j ACCEPT
+ 1767  sudo iptables -A OUTPUT -p tcp --sport 8883 -j ACCEPT
+ 1768  sudo iptables -A OUTPUT -p tcp --sport 22 -j ACCEPT
+ 1769  sudo iptables -A OUTPUT -p tcp --sport 21 -j ACCEPT
+ 1770  sudo iptables -A OUTPUT -p tcp --sport 20 -j ACCEPT
+ 1771  sudo iptables -A OUTPUT -p tcp --sport 3001 -j ACCEPT
+ 1772  sudo iptables -A OUTPUT -p tcp --sport 3002 -j ACCEPT
+ 1773  sudo iptables -A OUTPUT -p tcp --sport 3003 -j ACCEPT
+ 1774  sudo iptables-save > /etc/iptables/rules.v4
+ 1775  sudo iptables -P INPUT DROP
+ 1776  sudo iptables -P OUTPUT DROP
+ 1777  sudo iptables -P FORWARD DROP
+ 1778  w
+ 1779  iptables -L
+ 1780  sudo iptables -A OUTPUT -p tcp --sport 8443 -j ACCEPT
+ 1781  sudo iptables-save > /etc/iptables/rules.v4
+ 1782  service iptables reload
+ 1783  systemctl restart iptables
+ 1784  iptables F
+ 1785  iptables -F
+ 1786  sudo iptables -A OUTPUT -p tcp --sport 443 -j ACCEPT
+ 1787  sudo iptables -A OUTPUT -p tcp --sport 2000 -j ACCEPT
+ 1788  sudo iptables -A OUTPUT -p tcp --sport 2121 -j ACCEPT
+ 1789  sudo iptables -A OUTPUT -p tcp --sport 5001 -j ACCEPT
+ 1790  sudo iptables -A OUTPUT -p tcp --sport 6000 -j ACCEPT
+ 1791  sudo iptables -A OUTPUT -p tcp --sport 8883 -j ACCEPT
+ 1792  sudo iptables -A OUTPUT -p tcp --sport 22 -j ACCEPT
+ 1793  sudo iptables -A OUTPUT -p tcp --sport 21 -j ACCEPT
+ 1794  sudo iptables -A OUTPUT -p tcp --sport 20 -j ACCEPT
+ 1795  sudo iptables -A OUTPUT -p tcp --sport 3001 -j ACCEPT
+ 1796  sudo iptables -A OUTPUT -p tcp --sport 3002 -j ACCEPT
+ 1797  sudo iptables -A OUTPUT -p tcp --sport 8443 -j ACCEPT
+ 1798  sudo iptables -A OUTPUT -p tcp --sport 8880 -j ACCEPT
+ 1799  sudo iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+ 1800  sudo iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+ 1801  sudo iptables -A INPUT -i lo -j ACCEPT
+ 1802  sudo iptables -A OUTPUT -o lo -j ACCEPT
+ 1803  sudo iptables -A OUTPUT -p tcp --sport 443 -j ACCEPT
+ 1804  sudo iptables -A OUTPUT -p tcp --sport 2000 -j ACCEPT
+ 1805  sudo iptables -A OUTPUT -p tcp --sport 2121 -j ACCEPT
+ 1806  sudo iptables -A OUTPUT -p tcp --sport 5001 -j ACCEPT
+ 1807  sudo iptables -A OUTPUT -p tcp --sport 6000 -j ACCEPT
+ 1808  sudo iptables -A OUTPUT -p tcp --sport 8883 -j ACCEPT
+ 1809  sudo iptables -A OUTPUT -p tcp --sport 22 -j ACCEPT
+ 1810  sudo iptables -A OUTPUT -p tcp --sport 21 -j ACCEPT
+ 1811  sudo iptables -A OUTPUT -p tcp --sport 20 -j ACCEPT
+ 1812  sudo iptables -A OUTPUT -p tcp --sport 3001 -j ACCEPT
+ 1813  sudo iptables -A OUTPUT -p tcp --sport 3002 -j ACCEPT
+ 1814  sudo iptables -A OUTPUT -p tcp --sport 3003 -j ACCEPT
+ 1815  sudo iptables -A OUTPUT -p tcp --sport 8443 -j ACCEPT
+ 1816  sudo iptables -A OUTPUT -p tcp --sport 8880 -j ACCEPT
+ 1817  sudo iptables-save > /etc/iptables/rules.v4
+ 1818  sudo iptables -P INPUT DROP
+ 1819  w
+ 1820  iptables -L
+ 1821  netstat -tuln | grep 8443
+ 1822  iptables -A INPUT -p tcp --dport 8443 -j ACCEPT
+ 1823  firewall-cmd --zone=public --add-port=8443/tcp --permanent
+ 1824  ufw allow 8443/tcp
+ 1825  plesk panel restart
+ 1826  iptables -L
+ 1827  iptables -L
+ 1828  iptables -F
+ 1829  iptables -L
+ 1830  iptables -X
+ 1831  systemctl restart iptable
+ 1832  iptables -L
+ 1833  cat /etc/iptables/rules.v4
+ 1834  mv /etc/iptables/rules.v4 /etc/iptables/rules.v4-bk
+ 1835  iptables -F
+ 1836  iptables -L
+ 1837  iptables -X
+ 1838  iptables -L
+ 1839  sar -q
+ 1840  init 6
+ 1841  iptables -L
+ 1842  lsb_release -a
+ 1843  systemctl | grep ufw
+ 1844  sudo ufw allow 443/tcp
+ 1845  cd /usr/src/
+ 1846  wget https://download.configserver.com/csf.tgz
+ 1847  tar -xzf csf.tgz
+ 1848  cd csf/
+ 1849  sh install.sh
+ 1850  cd /usr/local/csf/bin/
+ 1851  perl csftest.pl
+ 1852  cd /etc/csf/
+ 1853  vim csf.conf
+ 1854  systemctl start csf
+ 1855  systemctl enable csf
+ 1856  systemctl status csf
+ 1857  csf -l
+ 1858  iptables -L
+ 1859  w
+ 1860  vim csf.conf
+ 1861  csf -r
+ 1862  iptables -L
+ 1863  w
+ 1864  vim csf.conf
+ 1865  csf -r
+ 1866  systemctl start csf
+ 1867  systemctl status csf
+ 1868  iptables -L
+ 1869  iptables -F
+ 1870  w
+ 1871  service ufw status
+ 1872  plesk login 
+ 1873  iptables -L
+ 1874  iptables -L |grep 443
+ 1875  cat /etc/resolv.conf 
+ 1876  cat /etc/issue
+ 1877  ifconfig 
+ 1878  iptables -L
+ 1879  service httpd status
+ 1880  service apache2 status
+ 1881  netstat -npln 
+ 1882  netstat -npln |grep ng
+ 1883  netstat -ant 
+ 1884  service mysqld status
+ 1885  cat /etc/mysql/
+ 1886  cat /etc/mysql/my.cnf
+ 1887  plesk login 
+ 1888  service httpd status
+ 1889  service apache2 status
+ 1890  nano /etc/apache2/plesk.conf.d/vhosts/mapwala.sk
+ 1891  nano /etc/apache2/plesk.conf.d/vhosts/mapwala.skytrack.tech.conf 
+ 1892  netstat -ant |grep 80
+ 1893  netstat -ant |grep 443
+ 1894  service apache2 reload
+ 1895  service apache2 start 
+ 1896  systemctl status apache2.service
+ 1897  netstat -ant 
+ 1898  iptables -L |grep 5001
+ 1899  sudo ufw status
+ 1900  sudo reboot
+ 1901  sudo iptables -P INPUT ACCEPT
+ 1902  sudo iptables -P OUTPUT ACCEPT
+ 1903  iptables -L
+ 1904  sudo iptables -P FORWARD ACCEPT
+ 1905  iptables -L
+ 1906  history 
+ 1907  cat /etc/iptables/rules.v4
+ 1908  lsof -i:443
+ 1909  lsof -i:80
+ 1910  systemctl | grep nginx
+ 1911  systemctl restart nginx.service
+ 1912  systemctl | grep nginx
+ 1913  lsof -i:
+ 1914  plesk repair all -y
+ 1915  plesk login
+ 1916  lsof -i:80
+ 1917  lsof -i:443
+ 1918  apache2 -t
+ 1919  vi /etc/apache2/apache2.conf
+ 1920  apache2 -t
+ 1921  vi /etc/apache2/apache2.conf
+ 1922  apache2 -t
+ 1923  iptables -L
+ 1924  netstat -ntpul
+ 1925  cd /etc/csf/
+ 1926  w
+ 1927  lsof -i:21
+ 1928  iptables -L
+ 1929  service ufw status
+ 1930  iptables -L
+ 1931  iptables -F
+ 1932  systemctl | grep fail2
+ 1933  systemctl | grep fail
+ 1934  lsb_release -a
+ 1935  sudo systemctl start apache2
+ 1936  systemctl status apache2.service
+ 1937  suso nano /etc/apache2/plesk.conf.d/vhosts/mapwala.skytrack.tech.conf
+ 1938  sudo nano  /etc/apache2/plesk.conf.d/vhosts/mapwala.skytrack.tech.conf
+ 1939  sudo systemctl start apache2
+ 1940  systemctl status apache2.service
+ 1941  sudo systemctl start apache2
+ 1942  systemctl status apache2.service
+ 1943  sudo systemctl start apache2
+ 1944  systemctl status apache2.service
+ 1945  tmux new -s run_gps
+ 1946  tmux new -s run_em
+ 1947  tmux new -s run_fota
+ 1948  tmux new -s run_mqtt
+ 1949  tmux new -s run_main
+ 1950  nginx -v 
+ 1951  tmux new -s run_gps
+ 1952  tmux attach -d -t run_gps
+ 1953  tmux new -s runmain
+ 1954  tmux attach -d -t run_main
+ 1955  tmux attach -d -t run_ftp
+ 1956  tmux attach -d -t run_main
+ 1957  tmux attach -d -t run_ftp
+ 1958  tmux attach -d -t run_fota
+ 1959  export PGPASSWORD='lask1028zmnx' && psql -U dbadmin -h 216.10.247.182 -p 5432 -d skytrondbnew2
+ 1960  python3 manage.py makemigrations
+ 1961  cd Skytronsystem/
+ 1962  python3 manage.py makemigrations
+ 1963  python3  manage.py migrate
+ 1964  clear
+ 1965  python3  manage.py migrate
+ 1966  python3 manage.py makemigrations
+ 1967  cd Skytronsystem/
+ 1968  python3 manage.py makemigrations
+ 1969  python3  manage.py migrate
+ 1970  tmux attach -d -t run_main
+ 1971  perl -e 'open(F, "<", "V1.2.4.bin") or die $!; $sum=0; while(read(F, $buf, 1024)) { $sum += unpack("C*", $buf); } printf "0x%02x\n", $sum & 0xFF;' 
+ 1972  cd /var/www/html/skytron_backend/Skytronsystem/FOTAFiles/V
+ 1973  cd /var/www/html/skytron_backend/Skytronsystem/FOTAFiles/
+ 1974  perl -e 'open(F, "<", "V1.2.4.bin") or die $!; $sum=0; while(read(F, $buf, 1024)) { $sum += unpack("C*", $buf); } printf "0x%02x\n", $sum & 0xFF;' 
+ 1975  ls
+ 1976  tmux attach -d -t run_ftp
+ 1977  tmux attach -d -t run_main
+ 1978  cd Skytronsystem/
+ 1979  ls
+ 1980  cd FoT
+ 1981  cd FOTAFiles/
+ 1982  ls
+ 1983  sudo nano test.sh
+ 1984  sudo ./test.sh 
+ 1985  sudo chmod 777 test.sh 
+ 1986  sudo ./test.sh 
+ 1987  python3 checksum_verify.py V1.2.4.bin
+ 1988  python3 test.py V1.2.4.bin
+ 1989  tmux attach -d -t run_fota
+ 1990  python3
+ 1991  python3 test.py 
+ 1992  tmux attach -d -t run_fota
+ 1993  python3 test.py 
+ 1994  cd Skytronsystem/
+ 1995  python3 manage.py tcp_server 
+ 1996  c
+ 1997  python3 manage.py tcp_server 
+ 1998  cd Skytronsystem/
+ 1999  python3 em_server.py
+ 2000  cd Skytronsystem/
+ 2001  python3 mqttClienttrack.py
+ 2002  ls
+ 2003  python3 mqttClienttrack.py
+ 2004  ls
+ 2005  cd ../skytron_api/
+ 2006  ls
+ 2007  cd ../Skytronsystem/
+ 2008  ls
+ 2009  cd /var/www/html/skytron_backend/Skytronsystem/mqttClienttrack.py
+ 2010  cd /var/www/html/skytron_backend/Skytronsystem/
+ 2011  python3 mqttClienttrack.py
+ 2012  mkdir /app/keys/
+ 2013  mkdir /app
+ 2014  mkdir /app/keys/
+ 2015  cp /var/www/html/skytron_backend/Skytronsystem/mqttKeys/*.* /app/keys/
+ 2016  python3 mqttClienttrack.py
+ 2017  cp /var/www/html/skytron_backend/Skytronsystem/keys/*.* /app/keys/
+ 2018  python3 mqttClienttrack.py
+ 2019  history > terminal_history.txt
