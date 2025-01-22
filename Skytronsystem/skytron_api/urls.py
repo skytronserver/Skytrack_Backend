@@ -99,7 +99,7 @@ urlpatterns = [
     path('homepageandstat/homepage_Dealer/', homepage_Dealer, name='homepage_Dealer'),
     path('homepageandstat/homepage_stateAdmin/', homepage_stateAdmin, name='homepage_stateAdmin'),
     
-    path('homepageandstat/homepage/', homepage, name='homepage'),
+    #path('homepageandstat/homepage/', homepage, name='homepage'),
     path('SOS/SOS_Admin_report/', SOS_adminreport, name='SOS_adminreport'),
     path('SOS/SOS_TL_report/', SOS_TLreport, name='SOS_TLreport'),
     path('SOS/SOS_EX_report/', SOS_EXreport, name='SOS_EXreport'),
@@ -253,19 +253,19 @@ urlpatterns = [
     path('devicestock/deviceStockCreate/', deviceStockCreate, name='deviceStockCreate'),
     path('devicestock/deviceStockBulkSample/', download_static_file, name='download_static_file'),
     path('devicestock/deviceStockCreateBulk/', deviceStockCreateBulk, name='deviceStockCreateBulk'),
-    path('devicestock/deviceStockFilter/', deviceStockFilter, name='deviceStockFilter'),
+    #path('devicestock/deviceStockFilter/', deviceStockFilter, name='deviceStockFilter'),
     path('devicestock/StockAssignToRetailer/', StockAssignToRetailer, name='StockAssignToRetailer'),
     
     #sell
-    #path('sell/SellFitDevice/', SellFitDevice, name='SellFitDevice'),
+    ## path('sell/SellFitDevice/', SellFitDevice, name='SellFitDevice'),
     path('sell/SellListAvailableDeviceStock/', SellListAvailableDeviceStock, name='SellListAvailableDeviceStock'),
-    path('sell/activate_esim_request/', ActivateESIMRequest, name='activate_esim_request'),
-    path('sell/confirm_esim_activation/', ConfirmESIMActivation, name='confirm_esim_activation'),
+    #path('sell/activate_esim_request/', ActivateESIMRequest, name='activate_esim_request'),
+    ##path('sell/confirm_esim_activation/', ConfirmESIMActivation, name='confirm_esim_activation'),
     #path('sell/configure_ip_port/', ConfigureIPPort, name='configure_ip_port'),
     #path('sell/configure_sos_gateway/', ConfigureSOSGateway, name='configure_sos_gateway'),
     #path('sell/configure_sms_gateway/', ConfigureSMSGateway, name='configure_sms_gateway'),
-    path('sell/mark_device_defective/', MarkDeviceDefective, name='mark_device_defective'),
-    path('sell/return_to_manufacturer/', ReturnToDeviceManufacturer, name='return_to_manufacturer'),
+    ##path('sell/mark_device_defective/', MarkDeviceDefective, name='mark_device_defective'),
+    ##path('sell/return_to_manufacturer/', ReturnToDeviceManufacturer, name='return_to_manufacturer'),
     
     #Devicetag
     path('tag/TagDevice2Vehicle/', TagDevice2Vehicle, name='TagDevice2Vehicle'),
