@@ -1,8 +1,9 @@
 # skytron_api/views.py
 from rest_framework.authtoken.models import Token 
-from django.http import HttpResponseBadRequest, JsonResponse,HttpResponse 
+from django.http import HttpResponseBadRequest, JsonResponse,HttpResponse  
 from django.views.decorators.csrf import csrf_exempt
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import authenticate,logout,login 
 from rest_framework.response import Response
@@ -90,6 +91,8 @@ from tempfile import NamedTemporaryFile
 
 from pathlib import Path
 import os  
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -168,7 +171,9 @@ PRIVATE_KEY=load_private_key()
 
 
 
-@csrf_exempt
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle]) 
 def generate_captcha_api(request):
     byte_io, result = generate_captcha()
     key = uuid.uuid4().hex
@@ -179,7 +184,9 @@ def generate_captcha_api(request):
 
     return JsonResponse({'key': key, 'captcha': img_base64})
 
-@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def verify_captcha_api(request):
     key = request.POST.get('key')
     user_input = request.POST.get('captcha')
@@ -319,7 +326,8 @@ def update_status(request, field_ex):
 #@login_required
 
 @api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def get_latest_gps_location(request, emergency_call_id):
     headers = {key: value for key, value in request.headers.items()}
     auth=headers.get('Authorization')
@@ -393,7 +401,8 @@ def get_latest_gps_location(request, emergency_call_id):
 
 #@login_required
 @api_view(['POST' ])
-@permission_classes([IsAuthenticated]) 
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])  
 def Broadcast_help(request):
     if request.method == 'POST':
         call_id = request.data.get('call_id')
@@ -407,7 +416,8 @@ def Broadcast_help(request):
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
 
 @api_view(['POST' ])
-@permission_classes([IsAuthenticated]) 
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])  
 @csrf_exempt
 def SubmitStatus(request):
     if request.method == 'POST':
@@ -435,7 +445,8 @@ def SubmitStatus(request):
 #@login_required
 
 @api_view(['POST','GET' ])
-@permission_classes([IsAuthenticated]) 
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])  
 def emergency_call_details_field(request, emergency_call_id):
     # Get the EmergencyCall object based on the provided emergency_call_id
     user=request.user #User.objects.filter(id=8).last() #
@@ -510,7 +521,8 @@ def latest_gps(request):
 
 @csrf_exempt
 @api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def map2(request,emergency_call_id):
     # Get the EmergencyCall object based on the provided emergency_call_id
     user=request.user
@@ -545,7 +557,8 @@ def map2(request,emergency_call_id):
 #@login_required
 
 @api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def emergency_call_listener_admin(request):
     #return JsonResponse({"ok":"ok"})
     headers = {key: value for key, value in request.headers.items()}
@@ -641,6 +654,7 @@ folders = [
 ]
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])  # Apply throttling here
 def downloadfile(request):
     if request.method == 'POST': 
         file_path =   request.data.get('file_path') 
@@ -703,7 +717,8 @@ def get_live_call_init():
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def get_live_call(request):
     user=request.user  
     user.last_activity=timezone.now() 
@@ -744,7 +759,8 @@ def get_live_call(request):
 
 
 @api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def get_all_call(request): 
     existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
     live_data1=[]
@@ -777,7 +793,8 @@ def get_all_call(request):
 #@login_required
 @csrf_exempt
 @api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def emergency_call_listener_field(request):
     
     #return JsonResponse({"ok":"ok"})
@@ -849,7 +866,8 @@ def get_live_call_field_init():
 #@login_required
 
 @api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def get_live_call_field(request ): 
     user=request.user
     live_data={}
@@ -1232,7 +1250,8 @@ def setRoute(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def delRoute(request):
     if request.method == 'POST':
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -1266,7 +1285,8 @@ def delRoute(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def get_routePath(request):
     # The target external API URL
     url = 'https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_new_v2.php?token=fb46cfb86bea498dce694350fb6dd16d161ff8eb' 
@@ -1288,7 +1308,8 @@ def get_routePath(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def saveRoute(request):
     if request.method == 'POST':
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -1355,7 +1376,8 @@ def saveRoute(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def getRoute(request):
     if request.method == 'POST':
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -1394,7 +1416,8 @@ def getRoute(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])  
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])   
 def getRoutelist(request):
     if request.method == 'GET':
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -1522,7 +1545,7 @@ def send_SMS(no,text,tpid):
 
 
 def sms_send(no,text,tpid):
-    #text = "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+    #text = "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
     url = "http://tra.bulksmshyderabad.co.in/websms/sendsms.aspx"
     params = {
         'userid': "Gobell",
@@ -1612,6 +1635,7 @@ def esim_provider_list(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def get_live_vehicle_no(request):
     try:
@@ -1636,6 +1660,7 @@ def get_live_vehicle_no(request):
     
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def update_VehicleOwner(request):
     
@@ -1700,6 +1725,7 @@ def update_VehicleOwner(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def create_VehicleOwner(request):
     
@@ -1748,6 +1774,7 @@ def create_VehicleOwner(request):
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def delete_manufacturer(request, manufacturer_id):
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -1776,6 +1803,7 @@ def delete_manufacturer(request, manufacturer_id):
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def delete_dealer(request, dealer_id):
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -1804,6 +1832,7 @@ def delete_dealer(request, dealer_id):
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def delete_eSimProvider(request, esimProvider_id):
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -1831,6 +1860,7 @@ def delete_eSimProvider(request, esimProvider_id):
         return Response({'error': str(e)}, status=500)
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def delete_VehicleOwner(request, vo_id):
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -1859,6 +1889,7 @@ def delete_VehicleOwner(request, vo_id):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_VehicleOwner(request):
     try:
 
@@ -1920,6 +1951,7 @@ def filter_VehicleOwner(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def update_manufacturer(request):
     try:
@@ -2001,6 +2033,7 @@ def update_manufacturer(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def update_eSimProvider(request):
     
@@ -2079,7 +2112,8 @@ def update_eSimProvider(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated]) 
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])  
 def create_eSimProvider(request):
       
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -2152,6 +2186,7 @@ def create_eSimProvider(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_eSimProvider(request):
     try:
 
@@ -2218,6 +2253,7 @@ def filter_eSimProvider(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def update_dealer(request):
     
@@ -2298,6 +2334,7 @@ def update_dealer(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def create_dealer(request):
     
@@ -2366,6 +2403,7 @@ def create_dealer(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_dealer(request):
     try:
 
@@ -2460,6 +2498,7 @@ def filter_dealer(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def update_manufacturer(request):
     try:
@@ -2541,6 +2580,7 @@ def update_manufacturer(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def create_manufacturer(request):
     
@@ -2629,6 +2669,7 @@ def create_manufacturer(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_manufacturers(request):
     try:
         # Get filter parameters from the request
@@ -2728,6 +2769,7 @@ def send_usercreation_otp(user,new_password,type):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def create_StateAdmin(request):    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -2782,6 +2824,7 @@ def create_StateAdmin(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def update_StateAdmin(request):
     
@@ -2847,6 +2890,7 @@ def update_StateAdmin(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_StateAdmin(request):
     try:
         # Get filter parameters from the request
@@ -2914,6 +2958,7 @@ def getDistrictList(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def create_DTO_RTO(request):
     
@@ -2977,6 +3022,7 @@ def create_DTO_RTO(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def update_DTO_RTO(request):
     
@@ -3054,6 +3100,7 @@ def update_DTO_RTO(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_DTO_RTO(request):
     try:
         role="stateadmin"
@@ -3108,6 +3155,7 @@ def filter_DTO_RTO(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def transfer_DTO_RTO(request):
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -3149,6 +3197,7 @@ def transfer_DTO_RTO(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def create_SOS_user(request):
     
@@ -3201,6 +3250,7 @@ def create_SOS_user(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_SOS_user(request):
     try:
         # Get filter parameters from the request
@@ -3289,6 +3339,7 @@ def list_alert_logs(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def create_SOS_admin(request):
     
@@ -3341,6 +3392,7 @@ def create_SOS_admin(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_SOS_admin(request):
     try:
         # Get filter parameters from the request
@@ -3388,6 +3440,7 @@ def filter_SOS_admin(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def list_desk_ex(request):
 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -3416,6 +3469,7 @@ def list_desk_ex(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def list_team_lead(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role = "sosadmin"
@@ -3439,6 +3493,7 @@ def list_team_lead(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_EM_team(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
@@ -3509,6 +3564,7 @@ def create_EM_team(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def activate_EM_team(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
@@ -3531,6 +3587,7 @@ def activate_EM_team(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def remove_EM_team(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
@@ -3553,6 +3610,7 @@ def remove_EM_team(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def get_EM_team(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
@@ -3571,6 +3629,7 @@ def get_EM_team(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def list_EM_team(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
@@ -3590,6 +3649,7 @@ def list_EM_team(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TLEx_getPendingCallList(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
@@ -3612,6 +3672,7 @@ def TLEx_getPendingCallList(request):
         return Response({'error': str(e)}, status=500)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DEx_getPendingCallList(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3635,6 +3696,7 @@ def DEx_getPendingCallList(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DEx_getLiveCallList(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3654,6 +3716,7 @@ def DEx_getLiveCallList(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DEx_replyCall(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3692,11 +3755,13 @@ def DEx_replyCall(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def CheckLive(request):
     return Response({'detail':"live"}, status=200)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DEx_broadcast(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3730,6 +3795,7 @@ def DEx_broadcast(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DEx_broadcastlist(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3756,6 +3822,7 @@ def DEx_broadcastlist(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def FEx_broadcastlist(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3779,6 +3846,7 @@ def FEx_broadcastlist(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TLEx_reassign(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3826,6 +3894,7 @@ def TLEx_reassign(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def FEx_broadcastaccept(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3859,6 +3928,7 @@ def FEx_broadcastaccept(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def  DEx_closeCase(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3896,6 +3966,7 @@ def  DEx_closeCase(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DEx_sendMsg(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3924,6 +3995,7 @@ def DEx_sendMsg(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DEx_rcvMsg(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3951,6 +4023,7 @@ def DEx_rcvMsg(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DEx_commentFE(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -3989,6 +4062,7 @@ def DEx_commentFE(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def  DEx_getloc(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4027,6 +4101,7 @@ def  DEx_getloc(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def  FEx_getloc(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4051,6 +4126,7 @@ def  FEx_getloc(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def FEx_updateLoc(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4077,6 +4153,7 @@ def FEx_updateLoc(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def FEx_updateStatus(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4109,6 +4186,7 @@ def FEx_updateStatus(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def FEx_reqBackup(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4145,6 +4223,7 @@ def FEx_reqBackup(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DEx_acceptBackup(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4187,6 +4266,7 @@ def DEx_acceptBackup(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DEx_listBackup(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4226,6 +4306,7 @@ def DEx_listBackup(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def accept_EMassignment(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4256,6 +4337,7 @@ def accept_EMassignment(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def reject_EMassignment(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4285,6 +4367,7 @@ def reject_EMassignment(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def arriving_EMassignment(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4314,6 +4397,7 @@ def arriving_EMassignment(request):
   
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def arrived_EMassignment(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4344,6 +4428,7 @@ def arrived_EMassignment(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def close_EMassignment(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
@@ -4379,6 +4464,7 @@ def close_EMassignment(request):
 
 #@api_view(['POST'])
 #@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def download_static_file(request):
     #user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4398,6 +4484,7 @@ def download_static_file(request):
 """
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def CancelTagDevice2Vehicle(request):
     
     user=request.user 
@@ -4468,6 +4555,7 @@ def CancelTagDevice2Vehicle(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagDevice2Vehicle(request):
     
     user=request.user 
@@ -4537,6 +4625,7 @@ def TagDevice2Vehicle(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def unTagDevice2Vehicle(request):
     
     user=request.user 
@@ -4580,6 +4669,7 @@ def validate_ble(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def deleteTagDevice2Vehicle(request):
     
     user=request.user 
@@ -4611,6 +4701,7 @@ def deleteTagDevice2Vehicle(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def download_receiptPDF(request): 
     
     user=request.user 
@@ -4645,6 +4736,7 @@ def download_receiptPDF(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def upload_receiptPDF(request):
     
     user=request.user 
@@ -4682,6 +4774,7 @@ def upload_receiptPDF(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def driver_remove(request):
     
     user=request.user 
@@ -4724,6 +4817,7 @@ def driver_remove(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def driver_add(request):
     
     user=request.user 
@@ -4774,6 +4868,7 @@ def driver_add(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagAwaitingActivateTag(request): 
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
@@ -4792,6 +4887,7 @@ def TagAwaitingActivateTag(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def Tag_status(request): 
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
@@ -4829,6 +4925,7 @@ def Tag_status(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def Tag_ownerlist(request): 
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
@@ -4875,6 +4972,7 @@ def Tag_ownerlist(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagAwaitingOwnerApproval(request): 
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
@@ -4892,6 +4990,7 @@ def TagAwaitingOwnerApproval(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagAwaitingOwnerApprovalFinal(request): 
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
@@ -4910,6 +5009,7 @@ def TagAwaitingOwnerApprovalFinal(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagSendOwnerOtp(request ):  
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4946,6 +5046,7 @@ def TagSendOwnerOtp(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagSendOwnerOtpFinal(request ):  
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4982,6 +5083,7 @@ def TagSendOwnerOtpFinal(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagSendDealerOtp(request ): 
     device_model_id = request.data.get('device_id')
     # Validate current status and update the status
@@ -5000,6 +5102,7 @@ def xml_to_dict(elem):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagGetVehicle(request): 
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5056,6 +5159,7 @@ def TagGetVehicle(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def GetVahanAPIInfo_totestonly(request): 
     
     user=request.user  
@@ -5101,6 +5205,7 @@ def GetVahanAPIInfo_totestonly(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def GetVahanAPIInfo(request): 
     
     user=request.user 
@@ -5151,6 +5256,7 @@ def GetVahanAPIInfo(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def ActivateTag(request): 
     
     user=request.user 
@@ -5178,6 +5284,7 @@ def ActivateTag(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagVerifyOwnerOtp(request): 
     
     user=request.user 
@@ -5209,6 +5316,7 @@ def TagVerifyOwnerOtp(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagVerifyOwnerOtpFinal(request):
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5239,6 +5347,7 @@ def TagVerifyOwnerOtpFinal(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagVerifyDealerOtp(request  ): 
     
     user=request.user 
@@ -5293,6 +5402,7 @@ def TagVerifyDealerOtp(request  ):
 #not in use for now 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def TagVerifyDTOOtp(request  ): 
     try:
         user_id = request.user.id
@@ -5325,6 +5435,7 @@ def TagVerifyDTOOtp(request  ):
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def ActivateESIMRequest(request):
     
     user=request.user 
@@ -5350,6 +5461,7 @@ def ActivateESIMRequest(request):
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def ConfirmESIMActivation(request):
     
     user=request.user 
@@ -5373,6 +5485,7 @@ def ConfirmESIMActivation(request):
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def ConfigureIPPort(request):
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='ESIM_Active_Confirmed')
@@ -5387,6 +5500,7 @@ def ConfigureIPPort(request):
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def ConfigureSOSGateway(request):
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='IP_PORT_Configured')
@@ -5401,6 +5515,7 @@ def ConfigureSOSGateway(request):
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def ConfigureSMSGateway(request):
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='SOS_GATEWAY_NO_Configured')
@@ -5415,6 +5530,7 @@ def ConfigureSMSGateway(request):
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def MarkDeviceDefective(request):
     
     user=request.user 
@@ -5440,6 +5556,7 @@ def MarkDeviceDefective(request):
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def ReturnToDeviceManufacturer(request):
     
     user=request.user 
@@ -5466,6 +5583,7 @@ def ReturnToDeviceManufacturer(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def SellListAvailableDeviceStock(request):
     
     user=request.user 
@@ -5498,6 +5616,7 @@ def SellListAvailableDeviceStock(request):
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def SellFitDevice(request):
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5520,6 +5639,7 @@ def SellFitDevice(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def StockAssignToRetailer(request):
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5593,6 +5713,7 @@ def StockAssignToRetailer(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def deviceStockFilter(request):
     user=request.user
     man=None
@@ -5637,6 +5758,7 @@ def deviceStockFilter(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def deviceStockCreateBulk(request):
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5735,6 +5857,7 @@ def deviceStockCreateBulk(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def deviceStockCreate(request):
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5768,6 +5891,7 @@ def deviceStockCreate(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def COPCreate(request): 
     user=request.user
         
@@ -5816,12 +5940,12 @@ def COPCreate(request):
             device_cop_instance.cop_file = file_path
             device_cop_instance.save()
                     
-            text="Dear User, Your  OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            text="Dear User, Your  OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             #send_SMS(stateadmin.users.last().mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'test@skytrack.tech',
                 [user.email],
                 fail_silently=False,
@@ -5834,6 +5958,7 @@ def COPCreate(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def COPAwaitingStateApproval(request): 
     role="stateadmin"
     user=request.user
@@ -5851,6 +5976,7 @@ def COPAwaitingStateApproval(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def COPSendStateAdminOtp(request ): 
        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="stateadmin"
@@ -5868,12 +5994,12 @@ def COPSendStateAdminOtp(request ):
     device_model.otp = otp
     device_model.status = 'StateAdminOTPSend'
     device_model.save()
-    text="Dear User, Your  OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+    text="Dear User, Your  OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
     tpid="1007536593942813283"
     #send_SMS(stateadmin.users.last().mobile,text,tpid) 
     send_mail(
         'Login OTP',
-        "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+        "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
         'test@skytrack.tech',
         [user.email],
         fail_silently=False,
@@ -5883,6 +6009,7 @@ def COPSendStateAdminOtp(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def COPVerifyStateAdminOtp(request):
     role="stateadmin"
     user=request.user
@@ -5913,6 +6040,7 @@ def COPVerifyStateAdminOtp(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def COPManufacturerOtpVerify(request  ): 
     user_id = request.user.id 
        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5942,6 +6070,7 @@ def COPManufacturerOtpVerify(request  ):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def list_devicemodel(request): 
     device_models = DeviceModel.objects.all() 
     serializer = DeviceModelSerializer_disp(device_models, many=True) 
@@ -5949,6 +6078,7 @@ def list_devicemodel(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_devicemodel(request):
     role="devicemanufacture"
     user=request.user
@@ -5974,6 +6104,7 @@ def filter_devicemodel(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def details_devicemodel(request ):     
     device_model_id = request.data.get('device_model_id')
     device_model = get_object_or_404(DeviceModel, id=device_model_id) 
@@ -5982,6 +6113,7 @@ def details_devicemodel(request ):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DeviceModelAwaitingStateApproval(request): 
     #user_id = request.user.id    
     user=request.user 
@@ -6000,6 +6132,7 @@ def DeviceModelAwaitingStateApproval(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DeviceSendStateAdminOtp(request ): 
     user=request.user 
     sa=get_user_object(user,"stateadmin")
@@ -6016,12 +6149,12 @@ def DeviceSendStateAdminOtp(request ):
     device_model.otp = otp
     device_model.status = 'StateAdminOTPSend'
     device_model.save()
-    text="Dear User, Your  OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+    text="Dear User, Your  OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
     tpid="1007536593942813283"
     #send_SMS(stateadmin.users.last().mobile,text,tpid) 
     send_mail(
                 'Login OTP',
-                "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'test@skytrack.tech',
                 [user.email],
                 fail_silently=False,
@@ -6032,6 +6165,7 @@ def DeviceSendStateAdminOtp(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DeviceVerifyStateAdminOtp(request):
     user=request.user 
     sa=get_user_object(user,"stateadmin")
@@ -6055,6 +6189,7 @@ def DeviceVerifyStateAdminOtp(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DeviceCreateManufacturerOtpVerify(request  ): 
     user_id = request.user.id
     user=request.user 
@@ -6083,6 +6218,7 @@ def DeviceCreateManufacturerOtpVerify(request  ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_Settings_hp_freq(request): 
      
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -6111,6 +6247,7 @@ def create_Settings_hp_freq(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_Settings_hp_freq(request):
     try:
         # Create a dictionary to hold the filter parameters
@@ -6131,6 +6268,7 @@ def filter_Settings_hp_freq(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_Settings_ip(request):
       #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
@@ -6165,6 +6303,7 @@ def create_Settings_ip(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_Settings_District(request):
     try:
         #"superadmin","devicemanufacture","","dtorto","dealer","owner","esimprovider"
@@ -6193,6 +6332,7 @@ def filter_Settings_District(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_Settings_District(request): 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
@@ -6244,6 +6384,7 @@ def create_Settings_District(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_Settings_firmware(request):
     try:
         # Create a dictionary to hold the filter parameters
@@ -6262,6 +6403,7 @@ def filter_Settings_firmware(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_Settings_firmware(request): 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="devicemanufacture"
@@ -6311,6 +6453,7 @@ def create_Settings_firmware(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_Settings_VehicleCategory(request):
     try:
         # Create a dictionary to hold the filter parameters
@@ -6329,6 +6472,7 @@ def filter_Settings_VehicleCategory(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_Settings_VehicleCategory(request): 
       #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
@@ -6362,6 +6506,7 @@ def create_Settings_VehicleCategory(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage(request):
     try:
         # Create a dictionary to hold the filter parameters
@@ -6421,6 +6566,7 @@ def homepage(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_state(request):
     try:
         # Create a dictionary to hold the filter parameters
@@ -6442,6 +6588,7 @@ def homepage_state(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_alart(request):
     try:
         # Get the current date and time
@@ -6487,6 +6634,7 @@ def homepage_alart(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_device1(request):
     try:
         # Create a dictionary to hold the filter parameters
@@ -6508,6 +6656,7 @@ def homepage_device1(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_device2(request):
     try:
         # Create a dictionary to hold the filter parameters
@@ -6530,6 +6679,7 @@ def homepage_device2(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_Manufacturer(request):
     try:
          
@@ -6587,6 +6737,7 @@ def homepage_Manufacturer(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_DTO(request):
     try:
         
@@ -6644,6 +6795,7 @@ def homepage_DTO(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_VehicleOwner(request):
     try: 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -6704,6 +6856,7 @@ def homepage_VehicleOwner(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_VehicleOwnerold(request):
     try: 
 
@@ -6767,6 +6920,7 @@ def homepage_VehicleOwnerold(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_Dealer(request):
     try:
          
@@ -6818,6 +6972,7 @@ def homepage_Dealer(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def SOS_adminreport(request):
     try: 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -6884,6 +7039,7 @@ def SOS_adminreport(request):
 
 @api_view(['get'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def SOS_TLreport(request):
     try: 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -6957,6 +7113,7 @@ def SOS_TLreport(request):
 
 @api_view(['get'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def SOS_EXreport(request):
     try: 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -7019,6 +7176,7 @@ def SOS_EXreport(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_stateAdmin(request):
     try: 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -7093,6 +7251,7 @@ def homepage_stateAdmin(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_user1(request):
     try:
         # Create a dictionary to hold the filter parameters
@@ -7120,6 +7279,7 @@ def homepage_user1(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def homepage_user2(request):
     try:
         # Create a dictionary to hold the filter parameters
@@ -7144,6 +7304,7 @@ def homepage_user2(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_Settings_State(request):
     try:
         # Create a dictionary to hold the filter parameters
@@ -7177,6 +7338,7 @@ def filter_Settings_State(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_Settings_State(request): 
       #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
@@ -7209,6 +7371,7 @@ def create_Settings_State(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_Settings_ip(request):
     try:
         # Create a dictionary to hold the filter parameters
@@ -7230,6 +7393,7 @@ def filter_Settings_ip(request):
 '''
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_VehicleOwner(request):
     try: 
         dealer_id = request.data.get('eSimProvider_id', None)
@@ -7271,6 +7435,7 @@ def filter_VehicleOwner(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_esim_activation_request(request):
     if request.method == 'POST':
             
@@ -7395,6 +7560,7 @@ def get_user_object(user,role):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_device_model(request): 
     user_id = request.user.id
     user=request.user 
@@ -7441,12 +7607,12 @@ def create_device_model(request):
             # Update the tac_doc_path field in the DeviceModel instance
             device_model_instance.tac_doc_path = file_path
             device_model_instance.save()
-            text="Dear User, Your  OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            text="Dear User, Your  OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             #send_SMS(stateadmin.users.last().mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'test@skytrack.tech',
                 [user.email],
                 fail_silently=False,
@@ -7747,6 +7913,7 @@ def create_user(request):
 @csrf_exempt
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def update_user(request, user_id):
     """
     Update user details.
@@ -7958,12 +8125,12 @@ def send_sms_otp(request):
             session.save()
 
             user=session.user
-            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(session.otp)
+            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp)
             tpid="1007536593942813283"
             send_SMS(user.mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(session.otp),
+                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp),
                 'test@skytrack.tech',
                 [user.email],
                 fail_silently=False,
@@ -8093,12 +8260,12 @@ def user_login(request):
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
             session_serializer.save()         
-            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             send_SMS(user.mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'test@skytrack.tech',
                 [user.email],
                 fail_silently=False,
@@ -8123,14 +8290,14 @@ def temp_user_login(request):
         tempu=TempUser.objects.create(mobile=mobile,name=name,em_contact=em_contact,ble_key=ble_key,otp=otp,otp_time=otp_time,session_key=session_key) 
         
         
-        text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+        text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
         tpid="1007536593942813283"
         if tempu:
 
             send_SMS(tempu.mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'test@skytrack.tech',
                 ["kishalaychakraborty1@gmail.com"],
                 fail_silently=False,
@@ -8156,13 +8323,13 @@ def temp_user_resendOTP(request):
         tempu.otp=otp
         tempu.otp_time=otp_time
         tempu.save()
-        text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+        text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
         tpid="1007536593942813283"
         if tempu:
             send_SMS(tempu.mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'test@skytrack.tech',
                 ["kishalaychakraborty1@gmail.com"],
                 fail_silently=False,
@@ -8362,12 +8529,12 @@ def temp_user_logout(request):
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
             session_serializer.save()         
-            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             send_SMS(user.mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'test@skytrack.tech',
                 [user.email],
                 fail_silently=False,
@@ -8456,12 +8623,12 @@ def user_login_app(request):
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
             session_serializer.save()         
-            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             send_SMS(user.mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp),
+                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'test@skytrack.tech',
                 [user.email],
                 fail_silently=False,
@@ -8535,6 +8702,7 @@ def validate_otp(request):
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def user_logout(request):
     """
     User logout.
@@ -8584,6 +8752,7 @@ def user_get_parent(request, user_id):
 @csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def get_list(request):
     """
     Get a list of users.
@@ -8602,6 +8771,7 @@ def get_list(request):
 @csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def get_details(request, user_id):
     """
     Get details of a specific user.
@@ -8618,6 +8788,7 @@ def get_details(request, user_id):
 '''
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_vehicle(request):
     serializer = VehicleSerializer(data=request.data)
     if serializer.is_valid():
@@ -8628,6 +8799,7 @@ def create_vehicle(request):
 '''
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def update_vehicle(request, vehicle_id):
     try:
         vehicle = Vehicle.objects.get(pk=vehicle_id)
@@ -8645,6 +8817,7 @@ def update_vehicle(request, vehicle_id):
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def delete_vehicle(request, vehicle_id):
     try:
         vehicle = Vehicle.objects.get(pk=vehicle_id)
@@ -8656,6 +8829,7 @@ def delete_vehicle(request, vehicle_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def list_vehicles(request):
     vehicles = Vehicle.objects.all()
     serializer = VehicleSerializer(vehicles, many=True)
@@ -8663,6 +8837,7 @@ def list_vehicles(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def vehicle_details(request, vehicle_id):
     try:
         vehicle = Vehicle.objects.get(pk=vehicle_id)
@@ -8674,6 +8849,7 @@ def vehicle_details(request, vehicle_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def manufacturer_details(request, manufacturer_id):
     try:
         manufacturer = Manufacturer.objects.get(pk=manufacturer_id)
@@ -8685,6 +8861,7 @@ def manufacturer_details(request, manufacturer_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def retailer_details(request, retailer_id):
     try:
         retailer = Retailer.objects.get(pk=retailer_id)
@@ -8696,6 +8873,7 @@ def retailer_details(request, retailer_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def device_details(request, device_id):
     try:
         device = Device.objects.get(pk=device_id)
@@ -8707,6 +8885,7 @@ def device_details(request, device_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def device_model_details(request, device_model_id):
     try:
         device_model = DeviceModel.objects.get(pk=device_model_id)
@@ -8719,6 +8898,7 @@ def device_model_details(request, device_model_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def list_manufacturers(request):
     company_name = request.query_params.get('company_name', '')
     manufacturers = Manufacturer.objects.filter(company_name__icontains=company_name)
@@ -8727,6 +8907,7 @@ def list_manufacturers(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def list_retailers(request):
     name = request.query_params.get('name', '')
     retailers = Retailer.objects.filter(name__icontains=name)
@@ -8735,6 +8916,7 @@ def list_retailers(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def list_devices(request):
     # Add filters based on your requirements
     devices = Device.objects.all()
@@ -8743,6 +8925,7 @@ def list_devices(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def list_device_models(request):
     device_model = request.query_params.get('device_model', '')
     device_models = DeviceModel.objects.filter(device_model__icontains=device_model)
@@ -8753,6 +8936,7 @@ def list_device_models(request):
  
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def delete_retailer(request, pk):
     retailer = Retailer.objects.get(pk=pk)
     retailer.delete()
@@ -8760,6 +8944,7 @@ def delete_retailer(request, pk):
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def delete_device(request, pk):
     device = Device.objects.get(pk=pk)
     device.delete()
@@ -8767,6 +8952,7 @@ def delete_device(request, pk):
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def delete_device_model(request, pk):
     device_model = DeviceModel.objects.get(pk=pk)
     device_model.delete()
@@ -8775,6 +8961,7 @@ def delete_device_model(request, pk):
 
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def update_manufacturer(request, pk):
     manufacturer = Manufacturer.objects.get(pk=pk)
     serializer = ManufacturerSerializer(manufacturer, data=request.data)
@@ -8785,6 +8972,7 @@ def update_manufacturer(request, pk):
 
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def update_retailer(request, pk):
     retailer = Retailer.objects.get(pk=pk)
     serializer = RetailerSerializer(retailer, data=request.data)
@@ -8795,6 +8983,7 @@ def update_retailer(request, pk):
 
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def update_device(request, pk):
     device = Device.objects.get(pk=pk)
     serializer = DeviceSerializer(device, data=request.data)
@@ -8805,6 +8994,7 @@ def update_device(request, pk):
 
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def update_device_model(request, pk):
     device_model = DeviceModel.objects.get(pk=pk)
     serializer = DeviceModelSerializer(device_model, data=request.data)
@@ -8815,6 +9005,7 @@ def update_device_model(request, pk):
  
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_manufacturer(request):
     serializer = ManufacturerSerializer(data=request.data)
     if serializer.is_valid():
@@ -8824,6 +9015,7 @@ def create_manufacturer(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_retailer(request):
     serializer = RetailerSerializer(data=request.data)
     if serializer.is_valid():
@@ -8833,6 +9025,7 @@ def create_retailer(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def create_device(request):
     serializer = DeviceSerializer(data=request.data)
     if serializer.is_valid():
@@ -8848,6 +9041,7 @@ def create_device(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def create_notice(request):
     role="superadmin"
@@ -8880,6 +9074,7 @@ def create_notice(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def filter_notice(request):
     role="superadmin"
     user=request.user
@@ -8942,6 +9137,7 @@ def list_notice(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def update_notice(request):
     role="superadmin"
@@ -8977,6 +9173,7 @@ def update_notice(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 def delete_notice(request):
     role="superadmin"
