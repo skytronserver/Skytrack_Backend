@@ -72,18 +72,18 @@ ENV MAIL_ID=testskytrack@gmail.com
 ENV MAIL_PW=zmzmexdnrlmsqrlr
 ENV DEBUG=False
 ENV SECRET_KEY=django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
-ENV DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+#ENV DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
 
 ENV EMAIL_HOST_USER=testskytrack@gmail.com
 ENV EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
-ENV ALLOWED_HOSTS= api.skytron.in, skytron.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech,localhost
+ENV ALLOWED_HOSTS=api.skytron.in,skytron.in,dev.skytron.in,dev-api.skytron.in,skytrack.tech,localhost
  
 ENV DB_NAME=skytrondbnew2
 ENV DB_USER=dbadmin
 ENV DB_PASSWORD=lask1028zmnx
-ENV DB_HOST=localhost 
+ENV DB_HOST=40.81.241.29
 ENV DB_PORT=5432
- # 40.81.241.29
+ # 
  
 
 # Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key

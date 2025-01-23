@@ -95,10 +95,14 @@ sudo cp /var/www/html/Skytrack_Backend/www.conf /etc/nginx/sites-available/
 sudo cp ../api.conf /etc/nginx/sites-available/
 sudo cp ../www.conf /etc/nginx/sites-available/
 
-sudo rm /etc/nginx/sites-enabled/api.conf 
+
 sudo rm /etc/nginx/sites-enabled/www.conf 
-sudo ln -s /etc/nginx/sites-available/api.conf /etc/nginx/sites-enabled/
 sudo ln -s /etc/nginx/sites-available/www.conf /etc/nginx/sites-enabled/
+sudo nano  /etc/nginx/sites-available/api.conf 
+
+
+sudo rm /etc/nginx/sites-enabled/api.conf 
+sudo ln -s /etc/nginx/sites-available/api.conf /etc/nginx/sites-enabled/
 
 sudo nginx -t
 sudo systemctl reload nginx
@@ -140,6 +144,12 @@ sudo nano /etc/mosquitto/mosquitto.conf
 sudo systemctl restart mosquitto
 #test
 mosquitto_sub -h localhost -p 8883 --capath /var/www/html/skytron_backend/Skytronsystem -t '#'
+
+
+sudo docker stop skytron-backend-api-container
+sudo docker rm skytron-backend-api-container
+sudo docker build -t skytron-backend-api . 
+sudo docker run -d  -p 2000:2000  -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api
 
 
 #ssl check
