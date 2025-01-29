@@ -151,6 +151,8 @@ sudo docker rm skytron-backend-api-container
 sudo docker build -t skytron-backend-api . 
 sudo docker run -d  -p 2000:2000  -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api
 
+sudo docker run -d --restart=always -p 2000:2000   -e MAIL_ID=testskytrack@gmail.com  -e MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container  skytron-backend-api
+
 
 #ssl check
 openssl x509 -in /var/www/html/Skytrack_Backend/Skytronsystem/cert.pem -text -noout

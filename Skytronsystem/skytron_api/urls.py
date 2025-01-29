@@ -253,7 +253,7 @@ urlpatterns = [
     path('devicestock/deviceStockCreate/', deviceStockCreate, name='deviceStockCreate'),
     path('devicestock/deviceStockBulkSample/', download_static_file, name='download_static_file'),
     path('devicestock/deviceStockCreateBulk/', deviceStockCreateBulk, name='deviceStockCreateBulk'),
-    #path('devicestock/deviceStockFilter/', deviceStockFilter, name='deviceStockFilter'),
+    path('devicestock/deviceStockFilter/', deviceStockFilter, name='deviceStockFilter'),
     path('devicestock/StockAssignToRetailer/', StockAssignToRetailer, name='StockAssignToRetailer'),
     
     #sell
