@@ -3,7 +3,8 @@ from rest_framework.authtoken.models import Token
 from django.http import HttpResponseBadRequest, JsonResponse,HttpResponse  
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
-
+import secrets
+import string
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import authenticate,logout,login 
 from rest_framework.response import Response
@@ -8255,7 +8256,7 @@ def user_login(request):
 
         session_data = {
             'user': user.id,
-            'token': str(token.key),
+            'token': str(token),
             'otp': otp,
             'status': 'otpsent',
             'login_time': timezone.now(),
@@ -8273,7 +8274,7 @@ def user_login(request):
                 [user.email],
                 fail_silently=False,
             )  
-            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token.key,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
+            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -8698,15 +8699,20 @@ def validate_otp(request):
             session.login_time=timezone.now(),
       
             session.save()
-            timenow= timezone.now()
-            session.user.last_login =   timenow
-            session.user.last_activity =  timenow
-            session.user.login=True
-            session.user.save()
-            uu=get_user_object(session.user,session.user.role)
-            if uu:
-                uu = recursive_model_to_dict(uu,["users"])
-            return Response({'status':'Login Successful','token': session.token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
+            try:
+                timenow= timezone.now()
+                session.user.last_login =   timenow
+                session.user.last_activity =  timenow
+                session.user.login=True
+                session.user.save()
+                uu=get_user_object(session.user,session.user.role)
+                if uu:
+                    uu = recursive_model_to_dict(uu,["users","esim_provider"])
+
+  
+                return Response({'status':'Login Successful','token': session.token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
+            except Exception as e:
+                return Response({'error': str(e)}, status=400)
         else:
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)
             
