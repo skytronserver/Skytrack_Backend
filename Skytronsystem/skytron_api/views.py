@@ -734,7 +734,7 @@ def get_live_call(request):
     #for call in existing_emergency_call:
     #    live_data1 = live_data1+"<button onclick=\"loadCallDetails('"+str(call.call_id)+"')\">Call ID: "+str(call.call_id)+" ("+str(call.status)+"); Vehicle: "+str(call.vehicle_no)+";</button><br>"
 
-        #'<a href="https://skytrack.tech:2000/api/emergency-call-details/'+str( call.call_id )+'"  target="_self">Call ID:'+ str( call.call_id )+"("+  str(call.status)+");  Vehicle:"+  str( call.vehicle_no)+"; </a><br>"
+        #'<a href="https://dev.skytron.in:2000/api/emergency-call-details/'+str( call.call_id )+'"  target="_self">Call ID:'+ str( call.call_id )+"("+  str(call.status)+");  Vehicle:"+  str( call.vehicle_no)+"; </a><br>"
       
     #print(live_data1)
     #existing_emergency_call = EmergencyCall.objects.filter( 
@@ -769,7 +769,7 @@ def get_all_call(request):
         live_data1.append({"call_id":str(call.call_id), 'device_imei': call.device_imei,"status":str(call.status),"Vehicle": str(call.vehicle_no)})
         #= live_data1+"<button onclick=\"loadCallDetails('"+str(call.call_id)+"')\">Call ID: "+str(call.call_id)+" ("+str(call.status)+"); Vehicle: "+str(call.vehicle_no)+";</button><br>"
 
-        #'<a href="https://skytrack.tech:2000/api/emergency-call-details/'+str( call.call_id )+'"  target="_self">Call ID:'+ str( call.call_id )+"("+  str(call.status)+");  Vehicle:"+  str( call.vehicle_no)+"; </a><br>"
+        #'<a href="https://dev.skytron.in:2000/api/emergency-call-details/'+str( call.call_id )+'"  target="_self">Call ID:'+ str( call.call_id )+"("+  str(call.status)+");  Vehicle:"+  str( call.vehicle_no)+"; </a><br>"
       
     #print(live_data1)
     existing_emergency_call = EmergencyCall.objects.filter( 
@@ -2764,13 +2764,13 @@ def send_usercreation_otp(user,new_password,type):
     try:
         tpid ="1007387007813205696" #1007274756418421381"
         #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-        #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
-        text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
+        #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://dev.skytron.in/new/{#var#} The link will expire in 5 minutes.-SkyTron
+        text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://dev.skytron.in/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
         send_SMS(user.mobile,text,tpid) 
         send_mail(
                 type+' Account Created',text
                 #f'Temporery password is : {new_password}'
-                ,'test@skytrack.tech',
+                ,'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
                 ) 
@@ -4541,7 +4541,7 @@ def CancelTagDevice2Vehicle(request):
             status='Dealer_OTP_Sent',
             tagged_by=user,
             tagged=current_datetime,
-            otp="888888", #str(random.randint(100000, 999999)) ,
+            otp=str(random.randint(100000, 999999)) ,
             otp_time=timezone.now() 
             )
             stock_assignment.stock_status= 'Fitted'
@@ -4555,7 +4555,7 @@ def CancelTagDevice2Vehicle(request):
             send_mail(
                 'Login OTP',
                 text,
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
             )
@@ -4612,7 +4612,7 @@ def TagDevice2Vehicle(request):
             status='Dealer_OTP_Sent',
             tagged_by=user,
             tagged=current_datetime,
-            otp="888888", #str(random.randint(100000, 999999)) ,
+            otp= str(random.randint(100000, 999999)) ,
             otp_time=timezone.now() 
             )
             stock_assignment.stock_status= 'Fitted'
@@ -4626,7 +4626,7 @@ def TagDevice2Vehicle(request):
             send_mail(
                 'Login OTP',
                 text,
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
             )
@@ -5035,7 +5035,7 @@ def TagSendOwnerOtp(request ):
 
     device_model = get_object_or_404(DeviceTag, device__id=device_model_id,  status__in=["Owner_OTP_Sent",'Dealer_OTP_Verified'])
  
-    device_model.otp="888888"#str(random.randint(100000, 999999)) 
+    device_model.otp=str(random.randint(100000, 999999)) 
     device_model.otp_time=timezone.now() 
     device_model.status = 'Owner_OTP_Sent'
     device_model.save()
@@ -5048,7 +5048,7 @@ def TagSendOwnerOtp(request ):
     send_mail(
                 'Login OTP',
                 text,
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
     )
@@ -5072,7 +5072,7 @@ def TagSendOwnerOtpFinal(request ):
     #device_model = get_object_or_404(DeviceTag, id=device_model_id,   status='TempActive')
     device_model = get_object_or_404(DeviceTag, device__id=device_model_id,  status__in=['Owner_OTP_Verified','TempActiveSent','TempActive',"Owner_Final_OTP_Sent"])
  
-    device_model.otp="888888" #str(random.randint(100000, 999999)) 
+    device_model.otp=str(random.randint(100000, 999999)) 
     device_model.otp_time=timezone.now() 
     device_model.status = 'Owner_Final_OTP_Sent'
     device_model.save()
@@ -5085,7 +5085,7 @@ def TagSendOwnerOtpFinal(request ):
     send_mail(
                 'Login OTP',
                 text,
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
     )
@@ -5100,7 +5100,7 @@ def TagSendDealerOtp(request ):
     device_model_id = request.data.get('device_id')
     # Validate current status and update the status
     device_model = get_object_or_404(DeviceTag, id=device_model_id,  status='Dealer_OTP_Verified')
-    device_model.otp="888888" #str(random.randint(100000, 999999)) 
+    device_model.otp=str(random.randint(100000, 999999)) 
     device_model.otp_time=timezone.now() 
     device_model.status = 'Dealer_OTP_Sent'
     device_model.save()
@@ -5915,7 +5915,7 @@ def COPCreate(request):
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
     
     manufacturer = request.user.id 
-    otp="888888" # str(random.randint(100000, 999999))
+    otp= str(random.randint(100000, 999999))
  
     data = {
         'created_by': manufacturer,
@@ -5958,7 +5958,7 @@ def COPCreate(request):
             send_mail(
                 'Login OTP',
                 "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
             )
@@ -6001,7 +6001,7 @@ def COPSendStateAdminOtp(request ):
     device_model_id = request.data.get('device_model_id')
     # Validate current status and update the status
     device_model = get_object_or_404(DeviceCOP, id=device_model_id,  status='Manufacturer_OTP_Verified')
-    otp="888888" # str(random.randint(100000, 999999))
+    otp= str(random.randint(100000, 999999))
     device_model.otp_time = timezone.now()
     device_model.otp = otp
     device_model.status = 'StateAdminOTPSend'
@@ -6012,7 +6012,7 @@ def COPSendStateAdminOtp(request ):
     send_mail(
         'Login OTP',
         "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-        'test@skytrack.tech',
+        'test@dev.skytron.in',
         [user.email],
         fail_silently=False,
     )
@@ -6154,7 +6154,7 @@ def DeviceSendStateAdminOtp(request ):
     device_model_id = request.data.get('device_model_id')
     # Validate current status and update the status
     device_model = get_object_or_404(DeviceModel, id=device_model_id,  status__in =['Manufacturer_OTP_Verified',"StateAdminOTPSend"])
-    otp="888888" # str(random.randint(100000, 999999))
+    otp= str(random.randint(100000, 999999))
 
      
     device_model.otp_time = timezone.now()
@@ -6167,7 +6167,7 @@ def DeviceSendStateAdminOtp(request ):
     send_mail(
                 'Login OTP',
                 "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
     )
@@ -7611,7 +7611,7 @@ def create_device_model(request):
 
      
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    otp="888888" # str(random.randint(100000, 999999))
+    otp= str(random.randint(100000, 999999))
 
     # Create data for the new DeviceModel entry
     data = {
@@ -7651,7 +7651,7 @@ def create_device_model(request):
             send_mail(
                 'Login OTP',
                 "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
             )
@@ -7934,7 +7934,7 @@ def create_user(request):
             send_mail(
                 'Account Created',
                 f'Temporery password is : {new_password}',
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [data['email']],
                 fail_silently=False,
             ) 
@@ -8014,8 +8014,15 @@ def password_reset(request):
                 dob=dob,
                 mobile=mobile 
                 ).last()
-            if user.id != request.user.id:
+            
+            try:
+                if user.id != request.user.id:
+                    user=None
+            except:
                 user=None
+                return Response({'error': 'Invalid Token'}, status=status.HTTP_400_BAD_REQUEST)
+                
+            
             valid=True
             if not user:
                 return Response({'error': 'user information missmatch'}, status=status.HTTP_400_BAD_REQUEST)
@@ -8142,22 +8149,18 @@ def send_sms_otp(request):
             return Response({'error': 'Token not provided'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             session = Session.objects.filter(token=token).last()
-
             if not session:
                 return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
             if session.status!= 'otpsent':
                 return Response({'error': 'Invalid session token.No otp pending'}, status=status.HTTP_404_NOT_FOUND)
-
-
             time_difference = timezone.now() - session.loginTime
-
             if time_difference.total_seconds() > 5 * 60:
                 return Response({'error': 'OTP has expired.Please login again.'}, status=status.HTTP_403_FORBIDDEN)
             if time_difference.total_seconds() < 3 * 60:
                 return Response({'error': 'You need to wait 3 min to resend otp.'}, status=status.HTTP_403_FORBIDDEN)
 
-     
-            session.otp = "888888" # str(random.randint(100000, 999999))
+    
+            session.otp = str(random.randint(100000, 999999))
             #session.loginTime=timezone.now()
             session.lastactivity=timezone.now()
             session.save()
@@ -8169,7 +8172,7 @@ def send_sms_otp(request):
             send_mail(
                 'Login OTP',
                 "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp),
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
             ) 
@@ -8213,15 +8216,15 @@ def reset_password(request):
         try:
             tpid ="1007214796274246200"#"1007387007813205696" #1007274756418421381"
             #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://www.skytrack.tech/mis/new/{#var#} The link will expire in 5 minutes.-SkyTron
-            text='Dear User, To  reset your password for SkyTron platform, please click at the following link and validate the registration request- https://skytrack.tech/mis/reset-password/'+str(new_password)+' .The link will expire in 5 minutes.-SkyTron'
+            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://dev.skytron.in/new/{#var#} The link will expire in 5 minutes.-SkyTron
+            text='Dear User, To  reset your password for SkyTron platform, please click at the following link and validate the registration request- https://dev.skytron.in/reset-password/'+str(new_password)+' .The link will expire in 5 minutes.-SkyTron'
 
             
             send_SMS(user.mobile,text,tpid)             
             send_mail( 
                     'Password Reset',
                     text,
-                    'test@skytrack.tech',
+                    'test@dev.skytron.in',
                     [email],
                     fail_silently=False,
             ) 
@@ -8282,15 +8285,15 @@ def user_login(request):
         existing_session = Session.objects.filter(user=user.id, status='login').last()
         #if existing_session:
         #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
-        otp ="888888" #  str(random.randint(100000, 999999))
+        otp = str(random.randint(100000, 999999))
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
-
-        token  = Token.objects.create(user=user) 
+        token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(30))
+        #token  = str(random.randint(100000000000000000000, 99999900000000000000000000))#Token.objects.create(user=user) 
 
         session_data = {
             'user': user.id,
-            'token': str(token.key),
+            'token': str(token),
             'otp': otp,
             'status': 'otpsent',
             'login_time': timezone.now(),
@@ -8304,11 +8307,11 @@ def user_login(request):
             send_mail(
                 'Login OTP',
                 "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
             )  
-            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token.key,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
+            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -8322,7 +8325,7 @@ def temp_user_login(request):
         name=request.data.get('name', None) 
         em_contact=request.data.get('em_contact', None)  
         ble_key=request.data.get('ble_key', "") 
-        otp = "888888" # str(random.randint(100000, 999999))
+        otp = str(random.randint(100000, 999999))
         otp_time=timezone.now()
         session_key=str(random.randint(1000000000000000, 99999999999999999))
         tempu=TempUser.objects.create(mobile=mobile,name=name,em_contact=em_contact,ble_key=ble_key,otp=otp,otp_time=otp_time,session_key=session_key) 
@@ -8333,13 +8336,13 @@ def temp_user_login(request):
         if tempu:
 
             send_SMS(tempu.mobile,text,tpid) 
-            send_mail(
-                'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@skytrack.tech',
-                ["kishalaychakraborty1@gmail.com"],
-                fail_silently=False,
-            )  
+            #send_mail(
+            #    'Login OTP',
+            #    "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+            #    'test@dev.skytron.in',
+            #    ["kishalaychakraborty1@gmail.com"],
+            #    fail_silently=False,
+            #)  
             return Response({'status':'SMS OTP Sent to /'+str(tempu.mobile)+'.','session_key': session_key}, status=status.HTTP_200_OK)
        
     
@@ -8351,7 +8354,7 @@ def temp_user_resendOTP(request):
     if request.method == 'POST':
         mobile = request.data.get('mobile', None) 
         ble_key=request.data.get('ble_key', "") 
-        otp = "888888" # str(random.randint(100000, 999999))
+        otp = str(random.randint(100000, 999999))
         otp_time=timezone.now()
         session_key=request.data.get('session_key', None) 
         tempu=TempUser.objects.filter(mobile=mobile,  session_key=session_key).last()
@@ -8365,13 +8368,13 @@ def temp_user_resendOTP(request):
         tpid="1007536593942813283"
         if tempu:
             send_SMS(tempu.mobile,text,tpid) 
-            send_mail(
-                'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@skytrack.tech',
-                ["kishalaychakraborty1@gmail.com"],
-                fail_silently=False,
-            )  
+            #send_mail(
+            #    'Login OTP',
+            #    "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+            #    'test@dev.skytron.in',
+            #    ["kishalaychakraborty1@gmail.com"],
+            #    fail_silently=False,
+            #)  
             return Response({'status':'SMS OTP Sent to /'+str(tempu.mobile)+'.','session_key': session_key}, status=status.HTTP_200_OK)
        
     
@@ -8573,7 +8576,7 @@ def temp_user_logout(request):
             send_mail(
                 'Login OTP',
                 "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
             )  
@@ -8645,7 +8648,7 @@ def user_login_app(request):
         existing_session = Session.objects.filter(user=user.id, status='login').last()
         #if existing_session:
         #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
-        otp ="888888" #  str(random.randint(100000, 999999))
+        otp = str(random.randint(100000, 999999))
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
 
@@ -8667,7 +8670,7 @@ def user_login_app(request):
             send_mail(
                 'Login OTP',
                 "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@skytrack.tech',
+                'test@dev.skytron.in',
                 [user.email],
                 fail_silently=False,
             )  
@@ -8691,14 +8694,14 @@ def validate_otp(request):
         
         otp = decrypt_field(otp,PRIVATE_KEY)  
         # Find the session based on the provided token
-        session = Session.objects.filter(token=token).last()
+        session = Session.objects.filter(token=token,status= 'otpsent').last()
 
 
         if not session:
             return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
-        tok=Token.objects.filter(key=token,user_id=session.user.id)
-        if not tok:
-            return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
+        #tok=Token.objects.filter(key=token,user_id=session.user.id)
+        #if not tok:
+        #    return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
         
         time_difference = timezone.now() - session.lastactivity
         #if time_difference.total_seconds() > 10 * 60:
@@ -8724,16 +8727,29 @@ def validate_otp(request):
         #print(otp,session.otp)
         if str(otp) == str(session.otp) or str(otp) == "199422" :
             session.status = 'login'
+            Token.objects.filter(user=session.user).delete()
+
+            token  = Token.objects.create(user=session.user) 
+
+            session.token=str(token.key)
+             
+            session.login_time=timezone.now(),
+      
             session.save()
-            timenow= timezone.now()
-            session.user.last_login =   timenow
-            session.user.last_activity =  timenow
-            session.user.login=True
-            session.user.save()
-            uu=get_user_object(session.user,session.user.role)
-            if uu:
-                uu = recursive_model_to_dict(uu,["users"])
-            return Response({'status':'Login Successful','token': session.token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
+            try:
+                timenow= timezone.now()
+                session.user.last_login =   timenow
+                session.user.last_activity =  timenow
+                session.user.login=True
+                session.user.save()
+                uu=get_user_object(session.user,session.user.role)
+                if uu:
+                    uu = recursive_model_to_dict(uu,["users","esim_provider"])
+
+  
+                return Response({'status':'Login Successful','token': session.token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
+            except Exception as e:
+                return Response({'error': str(e)}, status=400)
         else:
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)
             

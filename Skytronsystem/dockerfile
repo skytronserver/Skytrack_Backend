@@ -70,9 +70,9 @@ EXPOSE 2000
 # Option A: Set environment variables in the Dockerfile (not recommended for secrets)
 ENV MAIL_ID=testskytrack@gmail.com
 ENV MAIL_PW=zmzmexdnrlmsqrlr
-ENV DEBUG=False
+ENV DEBUG=True
 ENV SECRET_KEY=django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
-ENV DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+#ENV DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
 
 ENV EMAIL_HOST_USER=testskytrack@gmail.com
 ENV EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
@@ -83,7 +83,7 @@ ENV DB_USER=dbadmin
 ENV DB_PASSWORD=lask1028zmnx
 ENV DB_HOST=host.docker.internal
 ENV DB_PORT=5432
- # 40.81.241.29
+ # 
  
 
 # Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key

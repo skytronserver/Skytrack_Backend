@@ -92,14 +92,14 @@ urlpatterns = [
     path('SOSuser/filter_SOSuser/', filter_SOS_user, name='filter_SOSuser'),
 
 
-    #path('homepageandstat/homepage_DTO/', homepage_DTO, name='homepage_DTO'),
+    path('homepageandstat/homepage_DTO/', homepage_DTO, name='homepage_DTO'),
     path('homepageandstat/homepage_Manufacturer/', homepage_Manufacturer, name='homepage_Manufacturer'),
     path('homepageandstat/homepage_DTO/', homepage_DTO, name='homepage_DTO'),
     path('homepageandstat/homepage_VehicleOwner/', homepage_VehicleOwner, name='homepage_VehicleOwner'),
     path('homepageandstat/homepage_Dealer/', homepage_Dealer, name='homepage_Dealer'),
     path('homepageandstat/homepage_stateAdmin/', homepage_stateAdmin, name='homepage_stateAdmin'),
     
-    #path('homepageandstat/homepage/', homepage, name='homepage'),
+    path('homepageandstat/homepage/', homepage, name='homepage'),
     path('SOS/SOS_Admin_report/', SOS_adminreport, name='SOS_adminreport'),
     path('SOS/SOS_TL_report/', SOS_TLreport, name='SOS_TLreport'),
     path('SOS/SOS_EX_report/', SOS_EXreport, name='SOS_EXreport'),
