@@ -76,15 +76,15 @@ ENV DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
 
 ENV EMAIL_HOST_USER=testskytrack@gmail.com
 ENV EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
-ENV ALLOWED_HOSTS= api.skytron.in, skytron.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech,localhost
+ENV ALLOWED_HOSTS="api.skytron.in,skytron.in,dev.skytron.in,api-dev.skytron.in,skytrack.tech,localhost"
  
 ENV DB_NAME=skytrondbnew2
 ENV DB_USER=dbadmin
 ENV DB_PASSWORD=lask1028zmnx
-ENV DB_HOST=localhost 
+ENV DB_HOST=host.docker.internal
 ENV DB_PORT=5432
  # 40.81.241.29
  
 
 # Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key
-CMD ["gunicorn", "--certfile=cert.pem", "--keyfile=key.pem", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]
+CMD ["gunicorn", "--certfile=cert_old.pem", "--keyfile=key_old.pem", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]

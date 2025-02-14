@@ -27,7 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', ' ')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+DEBUG = True #os.environ.get('DEBUG', 'False') == 'True'
 # True
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
@@ -195,6 +195,8 @@ CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     "http://localhost:3000",  
     "https://localhost:3000", 
     "https://skytrack.tech:3000",  
+    "https://skytrack.tech:2000",  
+    "https://skytrack.tech",
     'https://skytron.in',
     'https://api.skytron.in',
     'https://skytron.in',
@@ -211,7 +213,7 @@ CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
  
 
 STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles' 
+STATIC_ROOT = BASE_DIR / '../staticfiles' 
 
 # WhiteNoise settings to enable static file compression and caching
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'

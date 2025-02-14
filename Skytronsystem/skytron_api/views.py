@@ -4,6 +4,7 @@ from django.http import HttpResponseBadRequest, JsonResponse,HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 
+from django.core.serializers import serialize
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import authenticate,logout,login 
 from rest_framework.response import Response
@@ -1474,6 +1475,12 @@ def gps_data_log_table(request):
         data = GPSDataLog.objects.filter(raw_data__contains=search_query).order_by('-timestamp')[:200]
     else:
         data = GPSDataLog.objects.all().order_by('-timestamp')[:200]
+    serialized_data = serialize('json', data)
+    
+    return JsonResponse({
+        'data': serialized_data,
+        'search_query': search_query
+    }, status=200)
     
     return render(request, 'gps_data_log_table.html', {'data': data, 'search_query': search_query})
 
@@ -1484,7 +1491,12 @@ def gps_em_data_log_table(request):
         data = GPSemDataLog.objects.filter(raw_data__contains=search_query).order_by('-timestamp')[:200]
     else:
         data = GPSemDataLog.objects.all().order_by('-timestamp')[:200]
+    serialized_data = serialize('json', data)
     
+    return JsonResponse({
+        'data': serialized_data,
+        'search_query': search_query
+    }, status=200)
     return render(request, 'gps_data_log_table.html', {'data': data, 'search_query': search_query})
 
         
@@ -6632,6 +6644,32 @@ def homepage_alart(request):
         return Response({'error': str(e)}, status=500)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+def alart_list(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="owner"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        alerts = AlertsLog.objects.filter(deviceTag__vehicle_owner=uo).order_by('-id')[:10]
+        if alerts:
+            serializer = AlertsLogSerializer(alerts, many=True)
+            return Response({"alertHistory":serializer.data}, status=200)
+        
+        return Response({"alertHistory":[]}, status=200)
+        
+    except:
+        pass
+    return Response({"error":"No Valid Data Found"+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
+ 
+     
+                
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 

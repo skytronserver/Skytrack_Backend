@@ -112,6 +112,7 @@ urlpatterns = [
 
     path('homepageandstat/homepage_alart/', homepage_alart, name='homepage_alart'),
     path('homepageandstat/homepage_state/', homepage_state, name='homepage_state'),
+    path('alart_list/',alart_list, name='alart_list'),
 
 
 
@@ -253,7 +254,7 @@ urlpatterns = [
     path('devicestock/deviceStockCreate/', deviceStockCreate, name='deviceStockCreate'),
     path('devicestock/deviceStockBulkSample/', download_static_file, name='download_static_file'),
     path('devicestock/deviceStockCreateBulk/', deviceStockCreateBulk, name='deviceStockCreateBulk'),
-    #path('devicestock/deviceStockFilter/', deviceStockFilter, name='deviceStockFilter'),
+    path('devicestock/deviceStockFilter/', deviceStockFilter, name='deviceStockFilter'),
     path('devicestock/StockAssignToRetailer/', StockAssignToRetailer, name='StockAssignToRetailer'),
     
     #sell
