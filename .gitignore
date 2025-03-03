@@ -63,3 +63,4 @@ Skytronsystem/skytron_api/management/commands/__pycache__/tcp_server.cpython-38.
 Skytronsystem/skytron_api/static/notice/*.pdf
 Skytronsystem/skytron_api/static/notice/*.png
 Skytronsystem/FOTAFiles/*.bin
+Skytronsystem/logs/errors.log

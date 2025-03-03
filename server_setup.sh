@@ -161,5 +161,16 @@ openssl x509 -noout -modulus -in  /var/www/html/Skytrack_Backend/Skytronsystem/c
 openssl rsa -noout -modulus -in /var/www/html/Skytrack_Backend/Skytronsystem/key.pem | openssl md5
 
 
-
+ 
 !pe)dP7+,VB0
+
+
+
+
+sudo docker build -t skytron-backend-api -f dockerfile.api .
+sudo docker run -d  --restart=always -p 2000:2000  -f dockerfile.api -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
+
+
+
+sudo docker build -t skytron-backend-mqtt -f dockerfile.mqtt .
+sudo docker run -d  --restart=always -p 2000:2000  -f dockerfile.mqtt -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-mqtt-container skytron-backend-mqtt 

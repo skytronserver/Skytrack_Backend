@@ -23,14 +23,14 @@ from rest_framework.authentication import TokenAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
 # MQTT Settings
-BROKER_URL ="216.10.244.243"
+BROKER_URL ="4.240.90.1"
 BROKER_PORT = 8883  # Use SSL/TLS port
 TOPIC = "field_ex/location_update"
 
 # Paths to certificates
-ROOT_CA = "/etc/mosquitto/ca_certificates/ca.crt"
-CLIENT_CERT = "/etc/mosquitto/certs/client.crt"
-CLIENT_KEY = "/etc/mosquitto/certs/client.key"
+ROOT_CA = "ca.crt"
+CLIENT_CERT = "client.crt"
+CLIENT_KEY = "client.key"
 
 
 

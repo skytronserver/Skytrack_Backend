@@ -194,7 +194,9 @@ USE_TZ = True
 CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     "http://localhost:3000",  
     "https://localhost:3000", 
-    "https://skytrack.tech:3000",  
+    "https://skytrack.tech:3000", 
+    "https://gromed.in",  
+    "https://api.gromed.in",  
     "https://skytrack.tech:2000",  
     "https://skytrack.tech",
     'https://skytron.in',
@@ -206,7 +208,7 @@ CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     #"https://yourfrontenddomain.com",
      # to allow all origins
 ]
-#CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
