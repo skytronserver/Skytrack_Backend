@@ -5127,10 +5127,16 @@ def TagGetVehicle(request):
     # If the user is NOT logged in:
     if not request.user.is_authenticated:
         device_tag = DeviceTag.objects.filter(vehicle_reg_no=reg_no).last()
-        return JsonResponse({
-            'imei': "861850060253610",
-            'reg_no': reg_no
-        }, status=200)
+        if device_tag:
+            return JsonResponse({
+                'imei': str(device_tag.device.imei),
+                'reg_no': reg_no
+            }, status=200)
+        else:
+            return JsonResponse({
+            'error': "Device not found"
+             }, status=400)
+
 
     # If the user IS logged in, proceed as before
     user = request.user
