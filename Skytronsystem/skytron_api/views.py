@@ -10,6 +10,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import authenticate,logout,login 
 from rest_framework.response import Response
 from rest_framework import status 
+import bleach
 from .models import *
 from .serializers import *
 import xml.etree.ElementTree as ET
@@ -67,6 +68,9 @@ from Crypto.Cipher import PKCS1_OAEP
 import base64
 import json
 import os 
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email, RegexValidator
+from datetime import datetime, timedelta
 
 from django.utils.timezone import now
 #python3 -m pip install python-docx
@@ -125,7 +129,116 @@ def convert_docx_to_pdf_with_libreoffice(docx_buffer):
 
  
 template_path = '/app/skytron_api/static/Cetificate_template.docx'
+
+def validate_inputs(data):
+    errors = {}
+    data=data.data
+
+    # Validate expiry date (should be more than 6 months from today)
+    expiry_date = data.get('expiryDate')
+    if expiry_date:
+        try:
+            expiry_date = datetime.strptime(expiry_date, '%Y-%m-%d')
+            if expiry_date <= datetime.now() + timedelta(days=180):
+                errors['expiryDate'] = 'Expiry date should be more than 6 months from today.'
+        except ValueError:
+            errors['expiryDate'] = 'Invalid date format for expiry date.'
+
+    # Validate date of birth (should be less than 18 years from today)
+    dob = data.get('dob')
+    if dob:
+        try:
+            dob = datetime.strptime(dob, '%Y-%m-%d')
+            if dob >= datetime.now() - timedelta(days=365*18):
+                errors['dob'] = 'Date of birth should be at least 18 years ago.'
+        except ValueError:
+            errors['dob'] = 'Invalid date format for date of birth.'
+
+  
+    # Validate mobile (should be exactly 10 digits)
+    mobile = data.get('mobile')
+    if mobile:
+        if not mobile.isdigit() or len(mobile) != 10:
+            errors['mobile'] = 'Mobile number should be exactly 10 digits.'
+    # Validate mobile (should be exactly 10 digits)
+    mobile = data.get('pincode')
+    if mobile:
+        if not mobile.isdigit() or len(mobile) != 6:
+            errors['pincode'] = 'pincode number should be exactly 6 digits.'
+
+    # Validate email format
+    email = data.get('email')
+    if email:
+        try:
+            validate_email(email)
+        except ValidationError:
+            errors['email'] = 'Invalid email format.'
+
+
+     
+        
+    # Validate (date))
+    Keys=["expiryDate","created"]
+    for key in Keys:
+        val = data.get(key)
+        if val:
+            try:
+                d = datetime.strptime(val, '%Y-%m-%d')
+            except ValueError:
+                errors[key] = key+' Invalid date format.'
+           
+    # Validate (only alphabets and spaces)
+    Keys=['name', 'city','state','country','company_name', "title","detail","feedback","em_msg","company_name","vehicle_owner"]
+    for key in Keys:
+        val = data.get(key)
+        if val:
+            if not all(x.isalpha() or x.isspace() for x in val):
+                errors[key] = key+' should contain only alphabets and spaces.'
+                
+    # Validate (only alphanumaric and spaces)
+    Keys=[ 'remarks','address']
+    for key in Keys:
+        val = data.get(key)
+        if val:
+            if not all(x.isalnum() or x.isspace() for x in val):
+                errors[key] = key+' should contain only alphanumeric and spaces.'
+                
+    # Validate (only alphanumaric and spaces)
+    Keys=[ 'remarks','address']
+    for key in Keys:
+        val = data.get(key)
+        if val:
+            if not all(x.isalnum() or x.isspace() for x in val):
+                errors[key] = key+' should contain only alphanumeric and spaces.'
+                
+    
+    
+    
+    # Validate (only alphanumaric)
+    Keys=['idProofno','idProofType', 'vehicle_reg_no','engine_no','chassis_no','vehicle_make','vehicle_model','category']
+    for key in Keys:
+        val = data.get(key)
+        #if val  and not val.c():
+        #        errors[key] = key+' should be alphanumeric.'
+
+    # Validate (only int)
+    Keys=['device_id','call_id']
+    for key in Keys:
+        val = str(data.get(key))
+        if val  and not val.isalnum():
+                errors[key] = key+' should be int.'
  
+ 
+
+    # Validate otp (should be exactly 6 digits)
+    otp = data.get('otp')
+    if otp:
+        if not otp.isdigit() or len(otp) != 6:
+            errors['otp'] = 'OTP should be exactly 6 digits.'
+ 
+
+    return errors
+
 def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,ActivationDate,Status,Date):
     replacements = {
         '{{IMEI}}':IMEI,
@@ -176,7 +289,12 @@ PRIVATE_KEY=load_private_key()
 @api_view(['GET'])
 @permission_classes([AllowAny])
 @throttle_classes([AnonRateThrottle]) 
-def generate_captcha_api(request):
+def generate_captcha_api(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     byte_io, result = generate_captcha()
     key = uuid.uuid4().hex
     Captcha.objects.create(key=key, answer=result)
@@ -189,7 +307,12 @@ def generate_captcha_api(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def verify_captcha_api(request):
+def verify_captcha_api(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     key = request.POST.get('key')
     user_input = request.POST.get('captcha')
 
@@ -206,429 +329,36 @@ def verify_captcha_api(request):
             return JsonResponse({'success': False, 'error': 'Invalid captcha'})
     except Captcha.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Captcha not found'})
-  
-'''
-@csrf_exempt
-def LoginAndroid(request):
-    if request.method == 'POST':
-        return HttpResponse("LoginDone")
-        user=authenticate(request,username=request.POST.get('username'),password=request.POST.get('password'))
-        #print(user)
-        if user is not None:
-            #print("LoginDone")
-            login(request,user)
-            return HttpResponse("LoginDone")
-        else:
-            return HttpResponse("Credentials are Incorrect")
-    else:
-        return HttpResponse("error")
-
-@csrf_exempt
-def Login2(request):
-    if request.method == 'GET':
-        ##print("login2",request.GET )
-        return redirect('/api/emergency-call-listener-field/') 
-        username=request.GET.get('username')
-        password=request.GET.get('password')
-        user=authenticate(request,username=username,password=password)
-        #print("login2",user,username,password)
-        if user is not None:
-            #print("LoginDone")
-            login(request,user)
-
-            if "FieldEx" in username:
-                #print("Loginvalid")
-                #return HttpResponse("This account is not authorized to use this app.")
-                return redirect('/api/emergency-call-listener-field/') 
-            else:
-                return HttpResponse("This account is not authorized to use this app.")
-        else:
-            return HttpResponse("Credentials are Incorrect")
-    else:
-        return HttpResponse("error")
-
-'''
-"""
-#@login_required
-@csrf_exempt
-@api_view(['POST','GET'])
-@permission_classes([IsAuthenticated]) 
-def update_location(request):
-    live_data={}
-    if request.method == 'POST':
-        loc_lat = request.POST.get('latitude')
-        loc_lon = request.POST.get('longitude')
-        field_ex = request.user#POST.get('uername')
- 
-
-        # Update the Help object with the provided FieldEx
-        try:
-            help_obj = Help.objects.filter(field_ex=field_ex).last()
-            if help_obj:
-                help_obj.loc_lat = loc_lat
-                help_obj.loc_lon = loc_lon
-                #print("help ",help_obj)
-                help_obj.save()
-            else:
-                Help.objects.create(
-                    type='Emergency',
-                    field_ex=field_ex,loc_lat = loc_lat,loc_lon = loc_lon
-                )
-            #print("test1")
-            existing_emergency_call = EmergencyCall.objects.filter( 
-                Q(status='Broadcast')# Exclude entries with Status 'Complete'
-            ).order_by('-start_time').last()
-            #print(existing_emergency_call)
-
-        
-            running_call = EmergencyCall.objects.filter( 
-                    Q(field_executive_id=field_ex)# Exclude entries with Status 'Complete'
-                ).order_by('-start_time').last()
-            if existing_emergency_call:
-                live_data = {'status': 'success',
-                    'vehicle_no': existing_emergency_call.vehicle_no,
-                    'device_imei': existing_emergency_call.device_imei,
-                    'call_id': existing_emergency_call.call_id, 
-                }
-            else :
-                live_data = {'status': 'success'} 
-
-            if running_call is None:
-                live_data=live_data
-            else:
-                live_data={'status': 'success'}
-    
-
-            return JsonResponse(live_data)
-        except Help.DoesNotExist:
-            print("Help not avialable")
-            return JsonResponse({'status': 'error', 'message': 'Help object not found'})
-    else:
-        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
-    
-#@login_required
-@csrf_exempt
-def update_status(request, field_ex):
-    if request.method == 'POST':
-        status = request.POST.get('status') 
-
-        # Update the Help object with the provided FieldEx
-        try:
-            help_obj = Help.objects.get(field_ex=field_ex)
-            help_obj.status = status 
-            help_obj.save()
-
-            return JsonResponse({'status': 'success'})
-        except Help.DoesNotExist:
-            return JsonResponse({'status': 'error', 'message': 'Help object not found'})
-    else:
-        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
-    
-
-#@login_required
-
-@api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def get_latest_gps_location(request, emergency_call_id):
-    headers = {key: value for key, value in request.headers.items()}
-    auth=headers.get('Authorization')
-    #print("*(*(*(*(*(*)))))",auth)
-    # Get the EmergencyCall object based on the provided emergency_call_id
-    emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
-
-    # Get the latest GPSLocation for the same IMEI and vehicle number
-    latest_gps_location = GPSLocation.objects.filter(
-        device_imei=emergency_call.device_imei,
-        vehicle_reg_no=emergency_call.vehicle_no
-    ).order_by('-date', '-time').first()
-    help_obj = Help.objects.filter(field_ex=emergency_call.field_executive_id).first()
-    if help_obj is not None:
-        loc_lat=help_obj.loc_lat
-        loc_lon=help_obj.loc_lon
-    else:
-        loc_lat=0
-        loc_lon=0
-    headers = {'Content-Type': 'application/json'} 
-
-    
-    try:
-        route = requests.post('https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_state.php?lat1='+str(latest_gps_location.latitude)+'&lon1='+str(latest_gps_location.longitude)+'&lat2='+str(loc_lat)+'&lon2='+str(loc_lon)+'&token=fb46cfb86bea498dce694350fb6dd16d161ff8eb', headers=headers ).json()
-    except Exception as e:
-        print("no route",e)
-        route=json.dumps({"err":"err"}, indent = 4) 
-    
-    #print(route)
-    #route.raise_for_status()  # Check for HTTP errors
-     
-    # Parse message as json
-    #route = json.loads(route['Message'])
-    DeskE="None"
-    FieldE="None"
-    if emergency_call.desk_executive_id:
-        DeskE=emergency_call.desk_executive_id.name+"("+str(emergency_call.desk_executive_id.id)+")" 
-    if emergency_call.field_executive_id  :
-        FieldE=emergency_call.field_executive_id.name+"("+str(emergency_call.field_executive_id.id)+")" 
-    
-        
-
-
-
-    context1 = {
-        'status':emergency_call.status,
-        'desk_executive_id':DeskE,
-        'field_executive_id':FieldE,
-        'final_comment':emergency_call.final_comment,
-        'date':latest_gps_location.date.strftime("%Y-%m-%d"),
-        'time':latest_gps_location.time.strftime("%H:%M:%S"), 
-        'latitude':str(latest_gps_location.latitude  ) ,#+ str(  latest_gps_location.latitude_direction ),       
-        'longitude':str( latest_gps_location.longitude),#+str(latest_gps_location.longitude_direction),
-        'field_latitude':str( loc_lat  ) ,#+ str(  latest_gps_location.latitude_direction ),       
-        'field_longitude':str(  loc_lon ),#+str(latest_gps_location.longitude_direction),
-        'route': route,
-        
-    }
- 
-    '''
-    context = {
-        'lat':str(latest_gps_location.latitude ) ,
-        'lon':str( latest_gps_location.longitude),
-        'html': str(render(request, 'latest_gps_location_partial.html', context1)),
-    }
-    print( render(request, 'latest_gps_location_partial.html', context1))
-    '''
-    
-    data = json.dumps(context1)
-    return   HttpResponse(data)
-
-#@login_required
-@api_view(['POST' ])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])  
-def Broadcast_help(request):
-    if request.method == 'POST':
-        call_id = request.data.get('call_id')
-        #print("call_id",call_id)
-        ecall=EmergencyCall.objects.get(call_id=call_id)
-        ecall.status="Broadcast"
-        #ecall.field_executive_id=""
-        ecall.save()
-        return JsonResponse({'status': 'success'})
-    else:
-        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
-
-@api_view(['POST' ])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])  
-@csrf_exempt
-def SubmitStatus(request):
-    if request.method == 'POST':
-        call_id = request.data.get('call_id') 
-        #print(request.POST.get('status'))
-        #print(request.POST.get('comment'))
-        ecall=EmergencyCall.objects.get(call_id=call_id)
-        ecall.status=request.data.get('status')
-        ecall.final_comment=request.data.get('comment')
-        if request.data.get('status')=="Closed"  or request.data.get('status')=="closed":
-            ecall.field_executive_id=None
-            em=EmergencyCall_assignment.objects.filter(emergencyCall_id=call_id, status='Assigned').last()
-            ecall.status="Closed"
-            if em:
-                em.status="Closed"
-                em.save()
-
-
-        #ecall.field_executive_id=""
-        ecall.save()
-        return JsonResponse({'status': 'success'})
-    else:
-        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
-    
-#@login_required
-
-@api_view(['POST','GET' ])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])  
-def emergency_call_details_field(request, emergency_call_id):
-    # Get the EmergencyCall object based on the provided emergency_call_id
-    user=request.user #User.objects.filter(id=8).last() #
-    headers = {key: value for key, value in request.headers.items()}
-    auth= headers.get('Authorization') 
-    #print("Auth((((((((((((((((()))))))))))))))))",auth)
-
-    emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
-
-    # Get the latest GPSLocation for the same IMEI and vehicle number
-    latest_gps_location = GPSLocation.objects.filter(
-        device_imei=emergency_call.device_imei,
-        vehicle_reg_no=emergency_call.vehicle_no
-    ).order_by('-date', '-time').first()
-    help_obj = Help.objects.filter(field_ex= user ).last()
-     
-     
-    
-    context = {
-        'user':user,
-        'auth':auth,
-        'emergency_call': emergency_call,
-        'latest_gps_location': latest_gps_location,
-        'fieldexs': help_obj,
-    } 
-
-
-    return render(request, 'emergency_call_details_field.html', context)
-#@login_required
-def emergency_call_details(request, emergency_call_id):
-    # Get the EmergencyCall object based on the provided emergency_call_id
-    emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
-
-    # Get the latest GPSLocation for the same IMEI and vehicle number
-    latest_gps_location = GPSLocation.objects.filter(
-        device_imei=emergency_call.device_imei,
-        vehicle_reg_no=emergency_call.vehicle_no
-    ).order_by('-date', '-time').first()
-    help_obj = Help.objects.filter(status=1 ) 
-     
-    context = {
-        'emergency_call': emergency_call,
-        'latest_gps_location': latest_gps_location,
-        'fieldexs': help_obj,
-    } 
-
-    return render(request, 'emergency_call_details.html', context)
-
-#@login_required
-def latest_gps(request):
-    try:
-        latest_location = GPSLocation.objects.latest('id')
-        help_obj = Help.objects.filter(field_ex=request.user.username ) 
-        context = {
-        'lat': latest_location.latitude,
-        'lon': latest_location.longitude,
-        #'html': render(request, 'gps_api/latest_gps.html', {'location': latest_location}),
-        }
-    except GPSLocation.DoesNotExist:
-        # Handle the case where no GPSLocation record is found
-        latest_location = None
-        context = {
-        'lat': '0.0',
-        'lon': '0.0',
-        #'html': render(request, 'gps_api/latest_gps.html', {'location': latest_location}),
-        }
-    
-    data = json.dumps(context )
-    return JsonResponse(context) #HttpResponse(data, content_type="application/json") 
-
-
-
-@csrf_exempt
-@api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def map2(request,emergency_call_id):
-    # Get the EmergencyCall object based on the provided emergency_call_id
-    user=request.user
-    headers = {key: value for key, value in request.headers.items()}
-    auth=headers.get('Authorization') 
-    #print("Auth((((((((((((((((()))))))))))))))))",auth)
-    emergency_call = get_object_or_404(EmergencyCall, pk=emergency_call_id)
-
-    # Get the latest GPSLocation for the same IMEI and vehicle number
-    latest_gps_location = GPSLocation.objects.filter(
-        device_imei=emergency_call.device_imei,
-        vehicle_reg_no=emergency_call.vehicle_no
-    ).order_by('-date', '-time').first()
-    help_obj = Help.objects.filter(status=1 ) 
-     
-    context = {
-        'user':user,
-        'auth':auth,
-        'emergency_call': emergency_call,
-        'latest_gps_location': latest_gps_location,
-        'fieldexs': help_obj,
-    } 
-
-    return render(request, 'bhooban.html', context)
-     
-
-    #return render(request, 'bhooban.html', {'live_data': []})
-
-
-
-
-#@login_required
-
-@api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def emergency_call_listener_admin(request):
-    #return JsonResponse({"ok":"ok"})
-    headers = {key: value for key, value in request.headers.items()}
-    #print(headers)
-    user=request.user
-    #print(user) 
-    #return Response({"user": str(user)})
-    if request.method == 'POST':
-        # Handle the 'Accept' button press
-        data = json.loads(request.body)
-        
-        
-        call_id = data.get('call_id')
-        accept = data.get('accept')
-        
-        desk_executive_id = user
-        try:
-            if accept:
-                emergency_call = EmergencyCall.objects.get(call_id=call_id)
-                assign=EmergencyCall_assignment.objects.filter(emergencyCall_id=call_id,user=user,status='Assigned').last()
-                if assign:
-                    emergency_call.desk_executive_id = desk_executive_id
-                    emergency_call.status = 'Accepted'
-                    emergency_call.save()                
-                    assign.accept_time =   timezone.now()
-                    assign.status = 'Acccepted' 
-                    assign.save()
-
-            else:
-                assign=EmergencyCall_assignment.objects.filter(emergencyCall_id=call_id,user=user,status='Assigned').last()
-                #assign.accept_time =   timezone.now()
-                if assign:
-                    assign.status = 'Rejected' 
-                    assign.save()
-        except Exception as e:
-            print("accept reeject error ",e)
-        
- 
-
-    # Fetch live data updates every 5 seconds
-    live_data ={}# get_live_call_init()
-    context = {
-        'live_data': live_data,
-        'user': user,
-        'username': user.name,
-        'email': user.email,
-        'user_id': user.id,
-        'authorization': headers.get('Authorization'),
-    } 
-
-    return render(request, 'emergency_call_listener_admin.html', context)
-"""
-
+   
 
 import os
 import glob
-def save_file(request,tag,path):
+def save_file(request, tag, path):
     uploaded_file = request.FILES.get(tag)
-    n=uploaded_file.name
-    
+    if not uploaded_file:
+        return Response({'error': f"File not found"}, status=400)
+      
+    # Validate file size (should be less than 2 MB)
+    max_file_size = 2 * 1024 * 1024  # 2 MB in bytes
+    if uploaded_file.size > max_file_size:
+        return Response({'error': f"File size should be less than 2 MB. Current size: {uploaded_file.size / (1024 * 1024):.2f} MB"}, status=400)
+      
 
-    if uploaded_file:
-        file_path = path+'/' + ''.join(random.choices('0123456789', k=40))+"."+n.split(".")[-1]
-        with open(file_path, 'wb') as file:
-            for chunk in uploaded_file.chunks():
-                file.write(chunk)
-        return file_path
-    return False
+    # Validate file type (should be png, jpg, pdf, or excel)
+    valid_extensions = ['png', 'jpg', 'jpeg', 'pdf', 'xls', 'xlsx']
+    file_extension = os.path.splitext(uploaded_file.name)[1][1:].lower()
+    if file_extension not in valid_extensions:
+        return Response({'error': f"Invalid file type. Allowed types are: {', '.join(valid_extensions)}"}, status=400)
+     
+
+    # Generate a random file name and save the file
+    file_path = os.path.join(path, ''.join(random.choices('0123456789', k=40)) + "." + file_extension)
+    with open(file_path, 'wb') as file:
+        for chunk in uploaded_file.chunks():
+            file.write(chunk)
+    return file_path
+
+
 
 
 def find_file_in_folders(filename, folders):
@@ -657,7 +387,12 @@ folders = [
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])  # Apply throttling here
-def downloadfile(request):
+def downloadfile(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST': 
         file_path =   request.data.get('file_path') 
         #print(request.content_type )
@@ -685,243 +420,6 @@ def downloadfile(request):
     return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
 
 
-"""
-#@login_required
-@csrf_exempt
-def emergency_call_listener(request):
-    if request.method == 'POST':
-        data = json.loads(request.body)
-        call_id = data.get('call_id')
-        desk_executive_id = ' ' 
-        emergency_call = EmergencyCall.objects.get(call_id=call_id)
-        emergency_call.desk_executive_id = desk_executive_id
-        emergency_call.status = 'Accepted'
-        emergency_call.save()
-    live_data = get_live_call_init()
-
-    return render(request, 'emergency_call_listener.html', {'live_data': live_data})
-
-
-def get_live_call_init(): 
-    existing_emergency_call = EmergencyCall.objects.filter( 
-            Q(status='Pending') # Exclude entries with Status 'Complete'
-        ).order_by('-start_time').last()
-    if existing_emergency_call:
-        live_data = {
-            'vehicle_no': existing_emergency_call.vehicle_no,
-            'device_imei': existing_emergency_call.device_imei,
-            'call_id': existing_emergency_call.call_id, 
-        }
-    else :
-        live_data = {}
-
-    return JsonResponse(live_data)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def get_live_call(request):
-    user=request.user  
-    user.last_activity=timezone.now() 
-    user.save()
-    #print(user)
-    emcall= EmergencyCall_assignment.objects.filter(user=user,status ="Assigned").last()
-    
-      
-    
-    #existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
-    #live_data1=""
-    #for call in existing_emergency_call:
-    #    live_data1 = live_data1+"<button onclick=\"loadCallDetails('"+str(call.call_id)+"')\">Call ID: "+str(call.call_id)+" ("+str(call.status)+"); Vehicle: "+str(call.vehicle_no)+";</button><br>"
-
-        #'<a href="https://dev.skytron.in:2000/api/emergency-call-details/'+str( call.call_id )+'"  target="_self">Call ID:'+ str( call.call_id )+"("+  str(call.status)+");  Vehicle:"+  str( call.vehicle_no)+"; </a><br>"
-      
-    #print(live_data1)
-    #existing_emergency_call = EmergencyCall.objects.filter( 
-    #        Q(status='Pending')# Exclude entries with Status 'Complete'
-    #    ).order_by('-start_time').last()
-    if emcall:
-        #EmergencyCall_assignment.objects.filter( 
-        #     EmergencyCall_id=existing_emergency_call # Exclude entries with Status 'Complete'
-        #).last()
-
-
-        live_data = {
-            'vehicle_no': emcall.emergencyCall_id.vehicle_no,
-            'device_imei': emcall.emergencyCall_id.device_imei,
-            'call_id': emcall.emergencyCall_id.call_id, 
-        }
-    else :
-        live_data = {}
-    #if live_data1!="":
-    #    live_data["table_data"]=live_data1
-
-    return JsonResponse(live_data)
-
-
-@api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def get_all_call(request): 
-    existing_emergency_call = EmergencyCall.objects.order_by('-start_time').all()
-    live_data1=[]
-    for call in existing_emergency_call:
-        live_data1.append({"call_id":str(call.call_id), 'device_imei': call.device_imei,"status":str(call.status),"Vehicle": str(call.vehicle_no)})
-        #= live_data1+"<button onclick=\"loadCallDetails('"+str(call.call_id)+"')\">Call ID: "+str(call.call_id)+" ("+str(call.status)+"); Vehicle: "+str(call.vehicle_no)+";</button><br>"
-
-        #'<a href="https://dev.skytron.in:2000/api/emergency-call-details/'+str( call.call_id )+'"  target="_self">Call ID:'+ str( call.call_id )+"("+  str(call.status)+");  Vehicle:"+  str( call.vehicle_no)+"; </a><br>"
-      
-    #print(live_data1)
-    existing_emergency_call = EmergencyCall.objects.filter( 
-            Q(status='Pending')# Exclude entries with Status 'Complete'
-        ).order_by('-start_time').last()
-    if existing_emergency_call:
-        live_data = {"Notification":{
-            'vehicle_no': existing_emergency_call.vehicle_no,
-            'device_imei': existing_emergency_call.device_imei,
-            'call_id': existing_emergency_call.call_id, },
-        }
-    else :
-        live_data = {"Notification":None}
-     
-    live_data["Call_list"]=live_data1
-
-    return JsonResponse(live_data)
-
-
-
-
-#@login_required
-@csrf_exempt
-@api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def emergency_call_listener_field(request):
-    
-    #return JsonResponse({"ok":"ok"})
-    headers = {key: value for key, value in request.headers.items()}
-    #print(headers)
-    #return render(request, 'emergency_call_listener_field.html', {})
-
-    user=request.user
-    #print(user) 
-    #return Response({"user": str(user)})
-    if request.method == 'POST':
-        # Handle the 'Accept' button press
-        data = json.loads(request.body)
-        
-        
-        call_id = data.get('call_id')
-        accept = data.get('accept') 
-        try:
-            if accept:
-                emergency_call = EmergencyCall.objects.get(call_id=call_id) 
-                emergency_call.field_executive_id = request.user 
-                emergency_call.status = 'FieldAccepted'
-                emergency_call.save()
-
-
-            
-        except Exception as e:
-            print("accept reeject error ",e)
-        
- 
-
-    # Fetch live data updates every 5 seconds
-    live_data ={}# get_live_call_init()
-    context = {
-        'live_data': live_data,
-        'user': user,
-        'username': user.name,
-        'email': user.email,
-        'user_id': user.id,
-        'authorization': headers.get('Authorization'),
-    } 
-
-
-
-
- 
-
-    return render(request, 'emergency_call_listener_field.html', context)
-
-
-def get_live_call_field_init(): 
-    existing_emergency_call = EmergencyCall.objects.filter( 
-            Q(status='Broadcast') # Exclude entries with Status 'Complete'
-        ).order_by('-start_time').last()
-    if existing_emergency_call:
-        if existing_emergency_call.status=='Broadcast':
-            live_data = {
-                'vehicle_no': existing_emergency_call.vehicle_no,
-                'device_imei': existing_emergency_call.device_imei,
-                'call_id': existing_emergency_call.call_id, 
-            }
-        else:
-            ive_data = {}
-    else :
-        live_data = {}
-
-    return JsonResponse(live_data)
-
-#@login_required
-
-@api_view(['POST','GET'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def get_live_call_field(request ): 
-    user=request.user
-    live_data={}
-    if 1:
-        # Handle the 'Accept' button press  
-        existing_emergency_call = EmergencyCall.objects.filter( 
-                Q(status='FieldAccepted'),field_executive_id=user# Exclude entries with Status 'Complete'
-            ).order_by('-start_time').last()
-        if not existing_emergency_call:
-            existing_emergency_call = EmergencyCall.objects.filter( 
-                    Q(status='Broadcast')# Exclude entries with Status 'Complete'
-                ).order_by('-start_time').last()
-
-        
-         
-        if existing_emergency_call:
-            live_data = {
-                'vehicle_no': existing_emergency_call.vehicle_no,
-                'device_imei': existing_emergency_call.device_imei,
-                'call_id': existing_emergency_call.call_id, 
-            }
-        else :
-            live_data = {} 
-
-    return JsonResponse(live_data)
-
-
-from django.contrib.auth.views import LogoutView
-from django.shortcuts import redirect
-from django.urls import reverse_lazy
-
-class CustomLogoutView(LogoutView): 
-    next_page = reverse_lazy('login')   
-    def dispatch(self, request, *args, **kwargs): 
-        response = super().dispatch(request, *args, **kwargs) 
-
-        return response
-
-@method_decorator(csrf_exempt, name='dispatch')
-class CustomLoginView(LoginView):
-    template_name = 'custom_login.html'  # Create a custom login template
-    
-    def get_success_url(self):
-        # Customize the redirect logic based on the username
-        username = self.request.POST.get('username')
-        if "FieldEx" in username:
-            return '/api/emergency-call-listener-field/'  # Redirect to the admin panel for the admin user
-        else:
-            return '/api/emergency-call-listener/' 
-        
- 
-"""
 
 def apply_low_pass_filter(queryset, columns):
     # Get the values of the specified columns from the queryset
@@ -988,7 +486,12 @@ def median_filter(data, kernel_size=3):
  
 
 
-def gps_data_table(request):
+def gps_data_table(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     form = GPSDataFilterForm(request.GET)
     data = GPSData.objects.all()#.order_by('-entry_time')[:200]
 
@@ -1005,7 +508,12 @@ def gps_data_table(request):
     data=data.order_by('-entry_time')[:200]
     return render(request, 'gps_data_table.html', {'data': data, 'form': form})
 
-def gps_data_table1(request):
+def gps_data_table1(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     data = GPSData.objects.all().order_by('-entry_time')[:200]
     #print("data", flush=True)
     #print(data, flush=True)
@@ -1031,7 +539,12 @@ def model_to_dict(instance, fields=None, exclude=None):
 
 
 @csrf_exempt   
-def gps_track_data_api(request):
+def gps_track_data_api(request ): 
+    #errors = validate_inputs(request)
+    #if errors:
+    #    return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'GET':
         imei=False
         regno=False
@@ -1101,7 +614,12 @@ def get_size(obj, seen=None):
     return size
 #@csrf_exempt   
 #@csrf_exempt
-def gps_history_map(request): 
+def gps_history_map(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     t = time.time()
     #print("Timer init",time.time() - t )   
 
@@ -1169,7 +687,12 @@ def gps_history_map(request):
         return Response({'error': "ww"}, status=400)
 
 #@csrf_exempt
-def gps_history_map_data(request): 
+def gps_history_map_data(request ): 
+    #errors = validate_inputs(request)
+    #if errors:
+    #    return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     t = time.time()
     #print("Timer init",time.time() - t )   
 
@@ -1217,7 +740,7 @@ def gps_history_map_data(request):
                 try:    #return JsonResponse({"eg":vehicle_registration_number})     
                     return JsonResponse( {'data': data,'mapdata': mapdata,'mapdata_length': datalen })
                 except Exception as e:
-                    return JsonResponse({"error": str(e) +"No Record Found 1: "+vehicle_registration_number}, status=403) 
+                    return JsonResponse({"error": "Unable to process request" +"No Record Found 1: "+vehicle_registration_number}, status=403) 
             else:
                 return JsonResponse({'error': "Invalid Search 22"}, status=403) 
         return JsonResponse({'error': "Invalid Search"}, status=403) 
@@ -1225,12 +748,17 @@ def gps_history_map_data(request):
         #return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
         #return Response({'error': "Invalid Search"}, status=403)
     except Exception as e: 
-        return JsonResponse({'error': str(e)}) 
+        return JsonResponse({'error': "Unable to process request"}) 
         return Response({'error': "ww"}, status=400)
 
 
 
-def setRoute(request):
+def setRoute(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     # Get the latest entry for each unique vehicle_registration_number
     #latest_data = GPSData.objects.filter(
     #    vehicle_registration_number=OuterRef('vehicle_registration_number')
@@ -1254,7 +782,12 @@ def setRoute(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def delRoute(request):
+def delRoute(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         user=request.user
@@ -1280,7 +813,7 @@ def delRoute(request):
         
         except Exception as e:
             print(e)
-            return JsonResponse({"error": str(e)}, status=400)
+            return JsonResponse({"error": "Unable to process request"}, status=400)
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -1289,7 +822,12 @@ def delRoute(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def get_routePath(request):
+def get_routePath(request ): 
+    #errors = validate_inputs(request)
+    #if errors:
+    #    return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     # The target external API URL
     url = 'https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_new_v2.php?token=fb46cfb86bea498dce694350fb6dd16d161ff8eb' 
     points_data = request.data.get("points", [])
@@ -1302,17 +840,29 @@ def get_routePath(request):
             json={"points": points_data},  # Send points data in the correct format
             headers={"Content-Type": "application/json"}
         )
-        response.raise_for_status()   
-        return Response(response.json(), status=response.status_code)
+        
+        #sanitized_json_output = bleach.clean(json_output)
+        response.raise_for_status()  
+        json_output=response.json()
+        
+        #sanitized_json_output = bleach.clean(json_output)
+        hash_object = hashlib.sha256(str(json_output).encode())
+        hash_hex = hash_object.hexdigest()  
+        return Response({"data":json_output,"hash":hash_hex}, status=response.status_code)
     
     except requests.exceptions.RequestException as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({"error": "Unable to get route"}, status=400)
 
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def saveRoute(request):
+def saveRoute(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         user=request.user
@@ -1370,7 +920,7 @@ def saveRoute(request):
                 return JsonResponse({"message": "New Route saved successfully!",'new':routeSerializer(route).data,"route": routeSerializer(routes, many=True).data }, status=201)
         except Exception as e:
             print(e)
-            return JsonResponse({"error": str(e)}, status=400)
+            return JsonResponse({"error": "Unable to save route"}, status=400)
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -1380,7 +930,12 @@ def saveRoute(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def getRoute(request):
+def getRoute(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         user=request.user
@@ -1411,7 +966,7 @@ def getRoute(request):
         except Route.DoesNotExist:
             return JsonResponse({"error": "No active route found for this device"}, status=404)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=400)
+            return JsonResponse({"error": "Unable to get route"}, status=400)
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -1420,7 +975,12 @@ def getRoute(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])   
-def getRoutelist(request):
+def getRoutelist(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'GET':
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         user=request.user
@@ -1439,11 +999,16 @@ def getRoutelist(request):
         except Route.DoesNotExist:
             return JsonResponse({"error": "No active route found for this device"}, status=404)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=400)
+            return JsonResponse({"error": "Unable to get route list"}, status=400)
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
-def gps_data_allmap(request):
+def gps_data_allmap(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
 
     if request.method == 'GET':
         imei=False
@@ -1469,7 +1034,12 @@ def gps_data_allmap(request):
         data = GPSData.objects.filter(id__in=Subquery(latest_data))
 
     return render(request, 'map.html', {'data': data,'regno':regno,'imei':imei})
-def gps_data_log_table(request):
+def gps_data_log_table(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     # Filter data based on the search query
     search_query = request.GET.get('search', '')
     if search_query:
@@ -1485,7 +1055,12 @@ def gps_data_log_table(request):
     
     return render(request, 'gps_data_log_table.html', {'data': data, 'search_query': search_query})
 
-def gps_em_data_log_table(request):
+def gps_em_data_log_table(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     # Filter data based on the search query
     search_query = request.GET.get('search', '')
     if search_query:
@@ -1585,18 +1160,28 @@ def add_sms_queue(msg,no):
      sms_entry = sms_out.objects.create( sms_text=msg,no=no, status='Queue'  )
 
 @csrf_exempt
-def sms_queue_add(request):
+def sms_queue_add(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         no= request.GET.get('no')#request.data.get('no')
         msg = request.GET.get('msg', '') 
         add_sms_queue(msg,no)
         return JsonResponse({'status':"Success  "+msg})
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500) 
+        return JsonResponse({'error': "error creating sms"}, status=400) 
 
 @api_view(['POST'])  
 @permission_classes([AllowAny])
-def sms_received(request):
+def sms_received(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Extract necessary parameters from the request data
         no= request.data.get('no')
@@ -1605,11 +1190,16 @@ def sms_received(request):
         new_sms_in = sms_in.objects.create( sms_text=msg,no=no, status='Received'  )
         return Response({'status':"Success"})
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "error geting sms"}, status=400)
     
 @api_view(['get'])  
 @permission_classes([AllowAny])
-def sms_queue(request):
+def sms_queue(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try: 
         sms_entry = sms_out.objects.filter(status='Queue').first()
     
@@ -1628,18 +1218,23 @@ def sms_queue(request):
             #return Response({'no':"+917635975648",'msg':'data to send'})
         return Response({'no':"",'msg':''})
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "no sms"}, status=400)
 
     
 @api_view(['get'])  
-def esim_provider_list(request):
+def esim_provider_list(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         esimprovider= eSimProvider.objects.all()         
         esimprovider_serializer = eSimProviderSerializer(esimprovider, many=True)
         # Return the serialized data as JSON response
         return Response(esimprovider_serializer.data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "esim_provider_list"}, status=400)
 
 
 
@@ -1650,7 +1245,12 @@ def esim_provider_list(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def get_live_vehicle_no(request):
+def get_live_vehicle_no(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         if request.method == 'POST':
             # Fetch distinct vehicle registration numbers
@@ -1666,16 +1266,20 @@ def get_live_vehicle_no(request):
                         vehicle_list = vehicle_list +[vehicle.device_tag.vehicle_reg_no]
             return Response(vehicle_list)
         else:
-            return Response({'error': "POST request only"}, status=500)
+            return Response({'error': "POST request only"}, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "get_live_vehicle_no"}, status=400)
  
     
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def update_VehicleOwner(request):
+def update_VehicleOwner(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="dealer"
@@ -1685,12 +1289,13 @@ def update_VehicleOwner(request):
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
+        
         id = request.data.get('vehicleowner_id')
         vehicle_owner = VehicleOwner.objects.filter(id=id).last()
         if not vehicle_owner:
-            return Response({'error': "Invalid VehicleOwner id"}, status=500)
+            return Response({'error': "Invalid VehicleOwner id"}, status=400)
         if vehicle_owner.createdby != request.user:
-            return Response({'error': "User can be edited by only the creator"}, status=500)
+            return Response({'error': "User can be edited by only the creator"}, status=400)
         
         date_joined = timezone.now()
         created = timezone.now()
@@ -1732,7 +1337,7 @@ def update_VehicleOwner(request):
         return Response(VehicleOwnerSerializer(vehicle_owner).data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -1740,7 +1345,12 @@ def update_VehicleOwner(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def create_VehicleOwner(request):
+def create_VehicleOwner(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="dealer"
@@ -1773,15 +1383,15 @@ def create_VehicleOwner(request):
                 ) 
             except Exception as e:
                 user.delete()
-                return Response({'error': str(e)}, status=500)
+                return Response({'error': "Unable to process request"}, status=400)
             retailer.users.add(user) 
             send_usercreation_otp(user,new_password,'Vehicle Owner ')
              
             return Response(VehicleOwnerSerializer(retailer).data)
         else:
-            return Response(error, status=500)        
+            return Response(error, status=400)        
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -1812,7 +1422,7 @@ def delete_manufacturer(request, manufacturer_id):
         return Response({'message': 'Manufacturer and associated user deleted successfully'})
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
@@ -1841,7 +1451,7 @@ def delete_dealer(request, dealer_id):
         return Response({'message': 'Dealer and associated user deleted successfully'})
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
@@ -1870,7 +1480,7 @@ def delete_eSimProvider(request, esimProvider_id):
         return Response({'message': 'eSim Provider and associated user deleted successfully'})
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
@@ -1898,12 +1508,17 @@ def delete_VehicleOwner(request, vo_id):
         return Response({'message': 'Vehicle Owner and associated user deleted successfully'})
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_VehicleOwner(request):
+def filter_VehicleOwner(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
 
         role="stateadmin"
@@ -1956,7 +1571,7 @@ def filter_VehicleOwner(request):
         return Response(retailer_serializer.data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -1966,15 +1581,19 @@ def filter_VehicleOwner(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def update_manufacturer(request):
+def update_manufacturer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
-        
         id = request.data.get('manufacturer_id')
         man=Manufacturer.objects.filter(id=id).last()
         if not man:
-            return Response({'error': "Invalid manufacturer id"}, status=500)
+            return Response({'error': "Invalid manufacturer id"}, status=400)
         if man.createdby == request.user :
-            return Response({'error': "User can be edited by only the creator"}, status=500)
+            return Response({'error': "User can be edited by only the creator"}, status=400)
         
         date_joined = timezone.now()
         created = timezone.now() 
@@ -2041,14 +1660,19 @@ def update_manufacturer(request):
         return Response(ManufacturerSerializer(man ).data)
       
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def update_eSimProvider(request):
+def update_eSimProvider(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
@@ -2061,9 +1685,9 @@ def update_eSimProvider(request):
         id = request.data.get('esimprovider_id')
         esimprovider = eSimProvider.objects.filter(id=id).last()
         if not esimprovider:
-            return Response({'error': "Invalid eSimProvider id"}, status=500)
+            return Response({'error': "Invalid eSimProvider id"}, status=400)
         if esimprovider.createdby != request.user:
-            return Response({'error': "User can be edited by only the creator"}, status=500)
+            return Response({'error': "User can be edited by only the creator"}, status=400)
         
         date_joined = timezone.now()
         created = timezone.now()
@@ -2120,14 +1744,19 @@ def update_eSimProvider(request):
         return Response(eSimProviderSerializer(esimprovider).data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])  
-def create_eSimProvider(request):
+def create_eSimProvider(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
       
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
@@ -2163,7 +1792,7 @@ def create_eSimProvider(request):
                     user.delete()
 
 
-                    return Response({'error44': str(e)}, status=500)
+                    return Response({'error44': "Unable to process request"}, status=400)
 
 
                 retailer = eSimProvider.objects.create(
@@ -2185,22 +1814,27 @@ def create_eSimProvider(request):
                 user.delete()
 
 
-                return Response({'error1': str(e)}, status=500)
+                return Response({'error1': "Unable to process request"}, status=400)
             retailer.users.add(user)
             send_usercreation_otp(user,new_password,'EsimProvider ')
              
             return Response(eSimProviderSerializer(retailer).data)
         else:
-            return Response({'error131': str(error)}, status=500)
+            return Response({'error131': str(error)}, status=400)
 
     except Exception as e:
-        return Response({'error2': str(e)}, status=500)
+        return Response({'error2': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_eSimProvider(request):
+def filter_eSimProvider(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -2262,13 +1896,18 @@ def filter_eSimProvider(request):
 
     except Exception as e:
         raise e
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def update_dealer(request):
+def update_dealer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="devicemanufacture"
@@ -2281,9 +1920,9 @@ def update_dealer(request):
         id = request.data.get('dealer_id')
         dealer = Retailer.objects.filter(id=id).last()
         if not dealer:
-            return Response({'error': "Invalid dealer id"}, status=500)
+            return Response({'error': "Invalid dealer id"}, status=400)
         if dealer.createdby != request.user:
-            return Response({'error': "User can be edited by only the creator"}, status=500)
+            return Response({'error': "User can be edited by only the creator"}, status=400)
         
         date_joined = timezone.now()
         created = timezone.now() 
@@ -2343,13 +1982,18 @@ def update_dealer(request):
         return Response(RetailerSerializer(dealer).data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def create_dealer(request):
+def create_dealer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="stateadmin"
@@ -2404,20 +2048,25 @@ def create_dealer(request):
                 )
             except Exception as e:
                 user.delete()
-                return Response({'error': str(e)}, status=500) 
+                return Response({'error': "Unable to process request"}, status=400) 
             retailer.users.add(user)
             send_usercreation_otp(user,new_password,'Dealer ')             
             return Response(RetailerSerializer(retailer).data)
         else:
-            return Response(error, status=500)
+            return Response(error, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_dealer(request):
+def filter_dealer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -2505,7 +2154,7 @@ def filter_dealer(request):
         return Response(retailer_serializer.data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -2513,15 +2162,20 @@ def filter_dealer(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def update_manufacturer(request):
+def update_manufacturer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         
         id = request.data.get('manufacturer_id')
         man=Manufacturer.objects.filter(id=id).last()
         if not man:
-            return Response({'error': "Invalid manufacturer id"}, status=500)
+            return Response({'error': "Invalid manufacturer id"}, status=400)
         if man.createdby == request.user :
-            return Response({'error': "User can be edited by only the creator"}, status=500)
+            return Response({'error': "User can be edited by only the creator"}, status=400)
         
         date_joined = timezone.now()
         created = timezone.now() 
@@ -2588,14 +2242,19 @@ def update_manufacturer(request):
         return Response(ManufacturerSerializer(man ).data)
       
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def create_manufacturer(request):
+def create_manufacturer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
@@ -2657,33 +2316,38 @@ def create_manufacturer(request):
                     else:
                         user.delete()
                         manufacturer.delete()
-                        return Response({'error': "State missmatch with M2M Provider"}, status=500)
+                        return Response({'error': "State missmatch with M2M Provider"}, status=400)
                 if a==0:
 
                     user.delete()
                     manufacturer.delete()
-                    return Response({'error': "No valid M2M Provider"}, status=500)
+                    return Response({'error': "No valid M2M Provider"}, status=400)
                 
 
 
 
             except Exception as e:
                 user.delete()
-                return Response({'error': str(e)}, status=500)
+                return Response({'error': "Unable to process request"}, status=400)
             
             manufacturer.users.add(user) 
             send_usercreation_otp(user, new_password, 'Device Manufacture ')
             return Response(ManufacturerSerializer(manufacturer).data)
         else:
-            return Response(error, status=500)
+            return Response(error, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_manufacturers(request):
+def filter_manufacturers(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Get filter parameters from the request
         manufacturer_id = request.data.get('manufacturer_id', None)
@@ -2722,7 +2386,7 @@ def filter_manufacturers(request):
         return Response(manufacturer_serializer.data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -2760,7 +2424,7 @@ def create_user(role,req):
         token=Token.objects.create(user=user,key=new_password)
         return [user,None,new_password]
     except Exception as e:
-        return [None,{'error': str(e)},None]#Response({'error': str(e)}, status=500)
+        return [None,{'error': "Unable to process request"},None]#Response({'error': "Unable to process request"}, status=400)
 def send_usercreation_otp(user,new_password,type):
     try:
         tpid ="1007387007813205696" #1007274756418421381"
@@ -2777,14 +2441,19 @@ def send_usercreation_otp(user,new_password,type):
                 ) 
     except Exception as e:
         pass
-        # Response({'error': "Error in sendig email  "+str(e)}, status=500)
+        # Response({'error': "Error in sendig email  "+"Unable to process request"}, status=400)
     
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def create_StateAdmin(request):    
+def create_StateAdmin(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
     user=request.user
@@ -2824,22 +2493,27 @@ def create_StateAdmin(request):
                 ) 
             except Exception as e:
                 user.delete()
-                return Response({'error': str(e)}, status=500)
+                return Response({'error': "Unable to process request"}, status=400)
             retailer.users.add(user)
             send_usercreation_otp(user,new_password,'State Admin ')
              
             return Response(StateadminSerializer(retailer).data)
         else:
-            return Response(error, status=500)
+            return Response(error, status=400)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def update_StateAdmin(request):
+def update_StateAdmin(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
@@ -2852,9 +2526,9 @@ def update_StateAdmin(request):
         id = request.data.get('stateadmin_id')
         stateadmin = StateAdmin.objects.filter(id=id).last()
         if not stateadmin:
-            return Response({'error': "Invalid StateAdmin id"}, status=500)
+            return Response({'error': "Invalid StateAdmin id"}, status=400)
         if stateadmin.createdby != request.user:
-            return Response({'error': "User can be edited by only the creator"}, status=500)
+            return Response({'error': "User can be edited by only the creator"}, status=400)
         
         date_joined = timezone.now()
         created = timezone.now()
@@ -2899,12 +2573,17 @@ def update_StateAdmin(request):
         return Response(StateadminSerializer(stateadmin).data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_StateAdmin(request):
+def filter_StateAdmin(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Get filter parameters from the request
         manufacturer_id = request.data.get('StateAdmin_id', None)
@@ -2941,7 +2620,7 @@ def filter_StateAdmin(request):
         return Response(serializer.data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
  
 
@@ -2957,7 +2636,12 @@ Districtlist={'Kamrup':'AS01','Kamrup Rural':'AS25','Nagaon':'AS02','Jorhat':'AS
 
 @csrf_exempt
 @api_view(['POST'])
-def getDistrictList(request):
+def getDistrictList(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         state= request.data.get('State')
         districts = Settings_District.objects.filter(state_id=state).order_by('district', 'id')
@@ -2973,7 +2657,12 @@ def getDistrictList(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def create_DTO_RTO(request):
+def create_DTO_RTO(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="stateadmin"
@@ -3023,21 +2712,26 @@ def create_DTO_RTO(request):
                 ) 
             except Exception as e:
                 user.delete()
-                return Response({'error': str(e)}, status=500)
+                return Response({'error': "Unable to process request"}, status=400)
             retailer.users.add(user) 
             send_usercreation_otp(user,new_password,'DTO/RTO ')
              
             return Response(dto_rtoSerializer(retailer).data)
         else:
-            return Response(error, status=500)          
+            return Response(error, status=400)          
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def update_DTO_RTO(request):
+def update_DTO_RTO(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="stateadmin"
@@ -3050,9 +2744,9 @@ def update_DTO_RTO(request):
         id = request.data.get('dtorto_id')
         dtorto = dto_rto.objects.filter(id=id).last()
         if not dtorto:
-            return Response({'error': "Invalid DTO/RTO id"}, status=500)
+            return Response({'error': "Invalid DTO/RTO id"}, status=400)
         if dtorto.createdby != request.user:
-            return Response({'error': "User can be edited by only the creator"}, status=500)
+            return Response({'error': "User can be edited by only the creator"}, status=400)
         
         date_joined = timezone.now()
         created = timezone.now()
@@ -3109,12 +2803,17 @@ def update_DTO_RTO(request):
         return Response(dto_rtoSerializer(dtorto).data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_DTO_RTO(request):
+def filter_DTO_RTO(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         role="stateadmin"
         user=request.user
@@ -3163,13 +2862,18 @@ def filter_DTO_RTO(request):
         return Response(serializer.data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def transfer_DTO_RTO(request):
+def transfer_DTO_RTO(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="stateadmin"
@@ -3202,7 +2906,7 @@ def transfer_DTO_RTO(request):
 
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
  
@@ -3212,7 +2916,12 @@ def transfer_DTO_RTO(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def create_SOS_user(request):
+def create_SOS_user(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
@@ -3251,20 +2960,25 @@ def create_SOS_user(request):
                 ) 
             except Exception as e:
                 user.delete()
-                return Response({'error': str(e)}, status=500)
+                return Response({'error': "Unable to process request"}, status=400)
             retailer.users.add(user) 
             send_usercreation_otp(user,new_password,'SOS user ')             
             return Response(EM_exSerializer(retailer).data)
         else:
-            return Response(error, status=500)
+            return Response(error, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_SOS_user(request):
+def filter_SOS_user(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Get filter parameters from the request
         manufacturer_id = request.data.get('dto_rto_id', None)
@@ -3302,13 +3016,18 @@ def filter_SOS_user(request):
         return Response(serializer.data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 from collections import defaultdict
 
 @api_view(['POST'])
-def list_alert_logs(request):
+def list_alert_logs(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
         start_datetime = request.POST.get('start_datetime')
         end_datetime = request.POST.get('end_datetime')
@@ -3354,7 +3073,12 @@ def list_alert_logs(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def create_SOS_admin(request):
+def create_SOS_admin(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
@@ -3392,21 +3116,26 @@ def create_SOS_admin(request):
                 ) 
             except Exception as e:
                 user.delete()
-                return Response({'error': str(e)}, status=500)
+                return Response({'error': "Unable to process request"}, status=400)
             retailer.users.add(user) 
             send_usercreation_otp(user,new_password,'State Admin ')
              
             return Response(EM_adminSerializer(retailer).data)
         else:
-            return Response(error, status=500)
+            return Response(error, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_SOS_admin(request):
+def filter_SOS_admin(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Get filter parameters from the request
         manufacturer_id = request.data.get('dto_rto_id', None)
@@ -3444,7 +3173,7 @@ def filter_SOS_admin(request):
         return Response(serializer.data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -3454,7 +3183,12 @@ def filter_SOS_admin(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def list_desk_ex(request):
+def list_desk_ex(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
@@ -3477,13 +3211,18 @@ def list_desk_ex(request):
         serializer = EM_exSerializer(emex, many=True)
         return Response(serializer.data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def list_team_lead(request):
+def list_team_lead(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role = "sosadmin"
     user = request.user
@@ -3501,13 +3240,18 @@ def list_team_lead(request):
         serializer = EM_exSerializer(emex, many=True)
         return Response(serializer.data)
     except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_EM_team(request):
+def create_EM_team(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
     user=request.user
@@ -3565,10 +3309,10 @@ def create_EM_team(request):
                 ob.members.set(members) 
                 ob.save()
                 return Response({'status': str('Team Created Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to create team. Incomplete data.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to create team. Incomplete data.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -3578,7 +3322,12 @@ def create_EM_team(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def activate_EM_team(request):
+def activate_EM_team(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
     user=request.user
@@ -3593,15 +3342,20 @@ def activate_EM_team(request):
             ob.activated_at= timezone.now()
             ob.save()
             return Response({'status': str('Team Activated Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to activate team.  Team not found.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to activate team.  Team not found.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def remove_EM_team(request):
+def remove_EM_team(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
     user=request.user
@@ -3616,15 +3370,20 @@ def remove_EM_team(request):
             ob.activated_at= timezone.now()
             ob.save()
             return Response({'status': str('Team Removed Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to remove team. Team not found.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to remove team. Team not found.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def get_EM_team(request):
+def get_EM_team(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
     user=request.user
@@ -3636,14 +3395,19 @@ def get_EM_team(request):
         ob=EMTeams.objects.filter(id = id ,state=uo.state).last()
         if ob: 
             return Response({"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Team not found')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Team not found')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def list_EM_team(request):
+def list_EM_team(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosadmin"
     user=request.user
@@ -3654,16 +3418,21 @@ def list_EM_team(request):
         ob=EMTeams.objects.filter( state=uo.state).all()
         if ob: 
             return Response({ "teams":EMTeamsSerializer(ob,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Team not found')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Team not found')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def TLEx_getPendingCallList(request):
+def TLEx_getPendingCallList(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
     user=request.user
@@ -3682,11 +3451,16 @@ def TLEx_getPendingCallList(request):
             return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
         return Response({'call': str('Not found')}, status=404)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DEx_getPendingCallList(request):
+def DEx_getPendingCallList(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3705,12 +3479,17 @@ def DEx_getPendingCallList(request):
             return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
         return Response({'call': str('Not found')}, status=404)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DEx_getLiveCallList(request):
+def DEx_getLiveCallList(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3724,13 +3503,18 @@ def DEx_getLiveCallList(request):
             return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
         return Response({'call': str('Not found')}, status=200)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DEx_replyCall(request):
+def DEx_replyCall(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3761,21 +3545,31 @@ def DEx_replyCall(request):
             user.login=True
             user.save()
             return Response( EMCallAssignmentSerializer(assignment,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def CheckLive(request):
+def CheckLive(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     return Response({'detail':"live"}, status=200)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DEx_broadcast(request):
+def DEx_broadcast(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3802,14 +3596,19 @@ def DEx_broadcast(request):
         return Response( EMCallBroadcastSerializer(ee,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
         
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DEx_broadcastlist(request):
+def DEx_broadcastlist(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3829,14 +3628,19 @@ def DEx_broadcastlist(request):
         return Response( EMCallBroadcastSerializer(ee,many=True).data, status=200)#Response(SOS_userSerializer(retailer).data)
         
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def FEx_broadcastlist(request):
+def FEx_broadcastlist(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3852,7 +3656,7 @@ def FEx_broadcastlist(request):
         return Response( EMCallBroadcastSerializer(ee,many=True).data, status=200)#Response(SOS_userSerializer(retailer).data)
         
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
  
 
@@ -3860,7 +3664,12 @@ def FEx_broadcastlist(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def TLEx_reassign(request):
+def TLEx_reassign(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3902,13 +3711,18 @@ def TLEx_reassign(request):
 
           
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def FEx_broadcastaccept(request):
+def FEx_broadcastaccept(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3936,13 +3750,18 @@ def FEx_broadcastaccept(request):
         return JsonResponse( {"assignment":EMCallAssignmentSerializer(assignment ,many=False).data}, status=200)#Response(SOS_userSerializer(retailer).data)
         
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def  DEx_closeCase(request):
+def  DEx_closeCase(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -3973,14 +3792,19 @@ def  DEx_closeCase(request):
         return Response( EMCallSerializer(assignment.call,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
         
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DEx_sendMsg(request):
+def DEx_sendMsg(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4002,14 +3826,19 @@ def DEx_sendMsg(request):
             return Response(EMCallMessagesSerializer(ob,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
         return Response({'error': str('Unable to send message. value error.')}, status=200)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DEx_rcvMsg(request):
+def DEx_rcvMsg(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4030,14 +3859,19 @@ def DEx_rcvMsg(request):
             return Response(EMCallMessagesSerializer(ob,many=True).data, status=200)#Response(SOS_userSerializer(retailer).data)
         return Response([], status=200)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DEx_commentFE(request):
+def DEx_commentFE(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4064,9 +3898,9 @@ def DEx_commentFE(request):
             user.login=True
             user.save()
             return Response(EMCallAssignmentSerializer(assignment2,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to read message. value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to read message. value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -4076,7 +3910,12 @@ def DEx_commentFE(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def  DEx_getloc(request):
+def  DEx_getloc(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4108,14 +3947,19 @@ def  DEx_getloc(request):
         return Response( {"target":deviceloc,"fieldEx":fieldEx}, status=200)#Response(SOS_userSerializer(retailer).data)
         
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def  FEx_getloc(request):
+def  FEx_getloc(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4134,13 +3978,18 @@ def  FEx_getloc(request):
         return Response( {"target":deviceloc}, status=200)#Response(SOS_userSerializer(retailer).data)
         
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def FEx_updateLoc(request):
+def FEx_updateLoc(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4157,9 +4006,9 @@ def FEx_updateLoc(request):
             user.login=True
             user.save()
             return Response({ "loc":list(ob.values())}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Location not updated. value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Location not updated. value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
  
 
@@ -4167,7 +4016,12 @@ def FEx_updateLoc(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def FEx_updateStatus(request):
+def FEx_updateStatus(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4189,10 +4043,10 @@ def FEx_updateStatus(request):
             user.login=True
             user.save()
             return JsonResponse({"assignment": EMCallAssignmentSerializer( assignment,many=False).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
         #raise e
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
   
 
@@ -4200,7 +4054,12 @@ def FEx_updateStatus(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def FEx_reqBackup(request):
+def FEx_reqBackup(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4229,15 +4088,20 @@ def FEx_reqBackup(request):
             user.login=True
             user.save()
             return Response({ "loc":list(ob.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to send. value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('Unable to send. value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DEx_acceptBackup(request):
+def DEx_acceptBackup(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4264,9 +4128,9 @@ def DEx_acceptBackup(request):
             user.login=True
             user.save()
             return Response({ "loc":list(backup.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -4280,7 +4144,12 @@ def DEx_acceptBackup(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DEx_listBackup(request):
+def DEx_listBackup(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4304,9 +4173,9 @@ def DEx_listBackup(request):
             user.login=True
             user.save()
             return Response(EMCallBackupRequestSerializer( backup,many=True).data, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -4320,7 +4189,12 @@ def DEx_listBackup(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def accept_EMassignment(request):
+def accept_EMassignment(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4344,14 +4218,19 @@ def accept_EMassignment(request):
             user.login=True
             user.save()
             return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def reject_EMassignment(request):
+def reject_EMassignment(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4374,14 +4253,19 @@ def reject_EMassignment(request):
             user.login=True
             user.save()
             return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def arriving_EMassignment(request):
+def arriving_EMassignment(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4403,15 +4287,20 @@ def arriving_EMassignment(request):
             user.login=True
             user.save()
             return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
   
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def arrived_EMassignment(request):
+def arrived_EMassignment(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4434,15 +4323,20 @@ def arrived_EMassignment(request):
             user.login=True
             user.save()
             return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def close_EMassignment(request):
+def close_EMassignment(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="sosexecutive"
     user=request.user
@@ -4469,16 +4363,21 @@ def close_EMassignment(request):
             user.login=True
             user.save()
             return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=500)#Response(SOS_userSerializer(retailer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500) 
+        return Response({'error': "Unable to process request"}, status=400) 
 
 
 
 #@api_view(['POST'])
 #@permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def download_static_file(request):
+def download_static_file(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     #man=get_user_object(user,"devicemanufacture")
@@ -4498,7 +4397,12 @@ def download_static_file(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def CancelTagDevice2Vehicle(request):
+def CancelTagDevice2Vehicle(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4569,7 +4473,12 @@ def CancelTagDevice2Vehicle(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def TagDevice2Vehicle(request):
+def TagDevice2Vehicle(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4639,7 +4548,12 @@ def TagDevice2Vehicle(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def unTagDevice2Vehicle(request):
+def unTagDevice2Vehicle(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4665,7 +4579,12 @@ def unTagDevice2Vehicle(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
-def validate_ble(request):
+def validate_ble(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
         ble_key = request.data.get('ble_key', None)
         imei=request.data.get('imei', None)
@@ -4683,7 +4602,12 @@ def validate_ble(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def deleteTagDevice2Vehicle(request):
+def deleteTagDevice2Vehicle(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4715,7 +4639,12 @@ def deleteTagDevice2Vehicle(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def download_receiptPDF(request): 
+def download_receiptPDF(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4750,7 +4679,12 @@ def download_receiptPDF(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def upload_receiptPDF(request):
+def upload_receiptPDF(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4788,7 +4722,12 @@ def upload_receiptPDF(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def driver_remove(request):
+def driver_remove(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4831,7 +4770,12 @@ def driver_remove(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def driver_add(request):
+def driver_add(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4882,7 +4826,12 @@ def driver_add(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def TagAwaitingActivateTag(request): 
+def TagAwaitingActivateTag(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
     user=request.user 
@@ -4901,7 +4850,12 @@ def TagAwaitingActivateTag(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def Tag_status(request): 
+def Tag_status(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4939,7 +4893,12 @@ def Tag_status(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def Tag_ownerlist(request): 
+def Tag_ownerlist(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4986,7 +4945,12 @@ def Tag_ownerlist(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def TagAwaitingOwnerApproval(request): 
+def TagAwaitingOwnerApproval(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5004,7 +4968,12 @@ def TagAwaitingOwnerApproval(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def TagAwaitingOwnerApprovalFinal(request): 
+def TagAwaitingOwnerApprovalFinal(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     # user_id = request.user.id
     # Retrieve device models with status "Manufacturer_OTP_Verified"
     user=request.user 
@@ -5116,7 +5085,12 @@ def xml_to_dict(elem):
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow non-logged-in users as well
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
-def TagGetVehicle(request):
+def TagGetVehicle(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     """
     If not logged in: return only { 'imei': '...', 'reg_no': ... }.
     If logged in: do your normal processing (using get_user_object, etc.).
@@ -5180,7 +5154,7 @@ def TagGetVehicle(request):
             }, status=201)
         except Exception as e:
             return JsonResponse({
-                'error': "Unable to get VAHAN information. Please confirm the device IMEI. " + str(e)
+                'error': "Unable to get VAHAN information. Please confirm the device IMEI. " + "Unable to process request"
             }, status=400)
     else:
         return JsonResponse({
@@ -5190,7 +5164,12 @@ def TagGetVehicle(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def GetVahanAPIInfo_totestonly(request): 
+def GetVahanAPIInfo_totestonly(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     
     user=request.user  
     user_id = request.user.id 
@@ -5209,7 +5188,7 @@ def GetVahanAPIInfo_totestonly(request):
         try:
 
             response = requests.request("POST", url, headers=headers, data=payload)
-            print(response.text)
+            #print(response.text)
             root = ET.fromstring(response.text)
             namespace = {'S': 'http://schemas.xmlsoap.org/soap/envelope/', 'ns2': 'http://service.web.homologation.transport.nic/'}
 
@@ -5221,8 +5200,14 @@ def GetVahanAPIInfo_totestonly(request):
 
             vltd_details = xml_to_dict(inner_root) 
             json_output = json.dumps(vltd_details, indent=4)
+            #sanitized_json_output = bleach.clean(json_output)
+
+            # Generate a hash of the sanitized output
+            hash_object = hashlib.sha256(string(json_output).encode())
+            hash_hex = hash_object.hexdigest() 
+            
             serializer = VahanSerializer(device_tag)
-            return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data':json_output}, status=201)
+            return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data':json_output,"hash":hash_hex}, status=200)
         except:
 
             #serializer = VahanSerializer(device_tag)
@@ -5236,7 +5221,12 @@ def GetVahanAPIInfo_totestonly(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def GetVahanAPIInfo(request): 
+def GetVahanAPIInfo(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5272,8 +5262,15 @@ def GetVahanAPIInfo(request):
 
             vltd_details = xml_to_dict(inner_root) 
             json_output = json.dumps(vltd_details, indent=4)
+            #sanitized_json_output = bleach.clean(json_output)
+
+            # Generate a hash of the sanitized output
+            hash_object = hashlib.sha256(str(json_output).encode())
+            hash_hex = hash_object.hexdigest() 
+            
+            
             serializer = VahanSerializer(device_tag)
-            return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data':json_output}, status=201)
+            return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data':json_output ,'hash':hash_hex}, status=201)
         except:
 
             #serializer = VahanSerializer(device_tag)
@@ -5287,7 +5284,12 @@ def GetVahanAPIInfo(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def ActivateTag(request): 
+def ActivateTag(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5315,7 +5317,12 @@ def ActivateTag(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def TagVerifyOwnerOtp(request): 
+def TagVerifyOwnerOtp(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5347,7 +5354,12 @@ def TagVerifyOwnerOtp(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def TagVerifyOwnerOtpFinal(request):
+def TagVerifyOwnerOtpFinal(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="dealer"
@@ -5427,7 +5439,7 @@ def TagVerifyDealerOtp(request  ):
         else: 
             return JsonResponse({'error': "Device not found with Status:Dealer_OTP_Sent"}, status=400)
     except Exception as e:
-            return Response({"message": str(e)}, status=200)
+            return Response({"message": "Unable to process request"}, status=200)
 
 #not in use for now 
 @api_view(['POST'])
@@ -5455,7 +5467,7 @@ def TagVerifyDTOOtp(request  ):
             return JsonResponse({'error': "Device not found with Status:Dealer_OTP_Sent"}, status=400)
     except Exception as e:
             
-            return JsonResponse({'error': str(e)}, status=400)
+            return JsonResponse({'error': "Unable to process request"}, status=400)
 
 
 
@@ -5466,7 +5478,12 @@ def TagVerifyDTOOtp(request  ):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def ActivateESIMRequest(request):
+def ActivateESIMRequest(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5492,7 +5509,12 @@ def ActivateESIMRequest(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def ConfirmESIMActivation(request):
+def ConfirmESIMActivation(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5516,7 +5538,12 @@ def ConfirmESIMActivation(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def ConfigureIPPort(request):
+def ConfigureIPPort(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='ESIM_Active_Confirmed')
     stock_assignment.stock_status = 'IP_PORT_Configured'
@@ -5531,7 +5558,12 @@ def ConfigureIPPort(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def ConfigureSOSGateway(request):
+def ConfigureSOSGateway(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='IP_PORT_Configured')
     stock_assignment.stock_status = 'SOS_GATEWAY_NO_Configured'
@@ -5546,7 +5578,12 @@ def ConfigureSOSGateway(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def ConfigureSMSGateway(request):
+def ConfigureSMSGateway(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     device_id = int(request.data['device_id'])
     stock_assignment = get_object_or_404(DeviceStock, id=device_id, stock_status='SOS_GATEWAY_NO_Configured')
     stock_assignment.stock_status = 'SMS_GATEWAY_NO_Configured'
@@ -5561,7 +5598,12 @@ def ConfigureSMSGateway(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def MarkDeviceDefective(request):
+def MarkDeviceDefective(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5587,7 +5629,12 @@ def MarkDeviceDefective(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def ReturnToDeviceManufacturer(request):
+def ReturnToDeviceManufacturer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5614,7 +5661,12 @@ def ReturnToDeviceManufacturer(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def SellListAvailableDeviceStock(request):
+def SellListAvailableDeviceStock(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5647,7 +5699,12 @@ def SellListAvailableDeviceStock(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def SellFitDevice(request):
+def SellFitDevice(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="dealer"
@@ -5670,7 +5727,12 @@ def SellFitDevice(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def StockAssignToRetailer(request):
+def StockAssignToRetailer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     man=get_user_object(user,"devicemanufacture")
@@ -5709,12 +5771,17 @@ def StockAssignToRetailer(request):
 
         except Exception as e:
              
-            return JsonResponse({'error': str(e)}, status=400)
+            return JsonResponse({'error': "Unable to process request"}, status=400)
     if len(error)==0:
         return JsonResponse({'data': stock_assignments , 'message': 'Stock assigned successfully.'}, status=201)
     else:
         return JsonResponse({'data': stock_assignments,'error':error  , 'message': 'Stock Partially assigned.'}, status=201)
-'''def StockAssignToRetailer3333(request):
+'''def StockAssignToRetailer3333(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     # Deserialize the input data
     data = request.data.copy() 
     data['assigned_by'] = request.user.id
@@ -5744,7 +5811,12 @@ def StockAssignToRetailer(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def deviceStockFilter(request):
+def deviceStockFilter(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     user=request.user
     man=None
     data = request.data.copy()    
@@ -5789,7 +5861,12 @@ def deviceStockFilter(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def deviceStockCreateBulk(request):
+def deviceStockCreateBulk(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     man=get_user_object(user,"devicemanufacture")
@@ -5816,7 +5893,7 @@ def deviceStockCreateBulk(request):
     #        if ee==e.id:
     #            True
     #    if not st:
-    #        return JsonResponse({'error': 'Esim provider id='+str(e)+' is not in the devicemodel\'s esimprovider list.'}, status=400)
+    #        return JsonResponse({'error': 'Esim provider id='+"Unable to process request"+' is not in the devicemodel\'s esimprovider list.'}, status=400)
 
 
 
@@ -5825,7 +5902,7 @@ def deviceStockCreateBulk(request):
     try:
         excel_data = pd.read_excel(request.FILES['excel_file'], engine='openpyxl')
     except Exception as e:
-        return JsonResponse({'error': 'Error reading Excel file.', 'details': str(e)}, status=400)
+        return JsonResponse({'error': 'Error reading Excel file.', 'details': "Unable to process request"}, status=400)
 
     headers = list(excel_data.columns)
     success_count = 0
@@ -5888,7 +5965,12 @@ def deviceStockCreateBulk(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def deviceStockCreate(request):
+def deviceStockCreate(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     man=get_user_object(user,"devicemanufacture")
@@ -5922,7 +6004,12 @@ def deviceStockCreate(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def COPCreate(request): 
+def COPCreate(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     user=request.user
         
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -5989,7 +6076,12 @@ def COPCreate(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def COPAwaitingStateApproval(request): 
+def COPAwaitingStateApproval(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     role="stateadmin"
     user=request.user
     uo=get_user_object(user,role)
@@ -6040,7 +6132,12 @@ def COPSendStateAdminOtp(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def COPVerifyStateAdminOtp(request):
+def COPVerifyStateAdminOtp(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     role="stateadmin"
     user=request.user
     uo=get_user_object(user,role)
@@ -6101,7 +6198,12 @@ def COPManufacturerOtpVerify(request  ):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def list_devicemodel(request): 
+def list_devicemodel(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     device_models = DeviceModel.objects.all() 
     serializer = DeviceModelSerializer_disp(device_models, many=True) 
     return Response(serializer.data)
@@ -6109,7 +6211,12 @@ def list_devicemodel(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_devicemodel(request):
+def filter_devicemodel(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     role="devicemanufacture"
     user=request.user
     if user.role==role:
@@ -6144,7 +6251,12 @@ def details_devicemodel(request ):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DeviceModelAwaitingStateApproval(request): 
+def DeviceModelAwaitingStateApproval(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     #user_id = request.user.id    
     user=request.user 
     sa=get_user_object(user,"stateadmin")
@@ -6196,7 +6308,12 @@ def DeviceSendStateAdminOtp(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def DeviceVerifyStateAdminOtp(request):
+def DeviceVerifyStateAdminOtp(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     user=request.user 
     sa=get_user_object(user,"stateadmin")
     if not sa:
@@ -6249,7 +6366,12 @@ def DeviceCreateManufacturerOtpVerify(request  ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_Settings_hp_freq(request): 
+def create_Settings_hp_freq(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
      
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
@@ -6278,7 +6400,12 @@ def create_Settings_hp_freq(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_Settings_hp_freq(request):
+def filter_Settings_hp_freq(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Create a dictionary to hold the filter parameters
         filters = {}
@@ -6292,14 +6419,19 @@ def filter_Settings_hp_freq(request):
         # Return the serialized data as JSON response
         return Response(retailer_serializer.data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_Settings_ip(request):
+def create_Settings_ip(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
       #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
     user=request.user
@@ -6334,7 +6466,12 @@ def create_Settings_ip(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_Settings_District(request):
+def filter_Settings_District(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         #"superadmin","devicemanufacture","","dtorto","dealer","owner","esimprovider"
         role="stateadmin"
@@ -6356,14 +6493,19 @@ def filter_Settings_District(request):
         # Return the serialized data as JSON response
         return Response(retailer_serializer.data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_Settings_District(request): 
+def create_Settings_District(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
     user=request.user
@@ -6415,7 +6557,12 @@ def create_Settings_District(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_Settings_firmware(request):
+def filter_Settings_firmware(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Create a dictionary to hold the filter parameters
         filters = {}
@@ -6429,12 +6576,17 @@ def filter_Settings_firmware(request):
         # Return the serialized data as JSON response
         return Response(retailer_serializer.data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_Settings_firmware(request): 
+def create_Settings_firmware(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="devicemanufacture"
     user=request.user
@@ -6484,7 +6636,12 @@ def create_Settings_firmware(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_Settings_VehicleCategory(request):
+def filter_Settings_VehicleCategory(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Create a dictionary to hold the filter parameters
         filters = {}
@@ -6498,12 +6655,17 @@ def filter_Settings_VehicleCategory(request):
         # Return the serialized data as JSON response
         return Response(retailer_serializer.data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_Settings_VehicleCategory(request): 
+def create_Settings_VehicleCategory(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
       #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
     user=request.user
@@ -6537,7 +6699,12 @@ def create_Settings_VehicleCategory(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage(request):
+def homepage(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Create a dictionary to hold the filter parameters
         filters = {}
@@ -6590,14 +6757,19 @@ def homepage(request):
         # Return the serialized data as JSON response
         return Response(count_dict)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_state(request):
+def homepage_state(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Create a dictionary to hold the filter parameters
         filters = {}
@@ -6612,14 +6784,19 @@ def homepage_state(request):
         # Return the serialized data as JSON response
         return Response(count_dict)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_alart(request):
+def homepage_alart(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Get the current date and time
         current_date = now().date()
@@ -6659,13 +6836,18 @@ def homepage_alart(request):
         # Return the count dictionary as a JSON response
         return Response(count_dict)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def alart_list(request):
+def alart_list(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="owner"
     user=request.user
@@ -6691,7 +6873,12 @@ def alart_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_device1(request):
+def homepage_device1(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Create a dictionary to hold the filter parameters
         filters = {}
@@ -6706,14 +6893,19 @@ def homepage_device1(request):
         # Return the serialized data as JSON response
         return Response(count_dict)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_device2(request):
+def homepage_device2(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Create a dictionary to hold the filter parameters
         filters = {}
@@ -6727,7 +6919,7 @@ def homepage_device2(request):
         # Return the serialized data as JSON response
         return Response(count_dict)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -6736,7 +6928,12 @@ def homepage_device2(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_Manufacturer(request):
+def homepage_Manufacturer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
          
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -6786,15 +6983,20 @@ def homepage_Manufacturer(request):
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
-            return Response({'error': "Unauthorised user"}, status=500)
+            return Response({'error': "Unauthorised user"}, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_DTO(request):
+def homepage_DTO(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -6843,16 +7045,21 @@ def homepage_DTO(request):
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
-            return Response({'error': "Unauthorised user"}, status=500)
+            return Response({'error': "Unauthorised user"}, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_VehicleOwner(request):
+def homepage_VehicleOwner(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try: 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         role="owner"
@@ -6903,9 +7110,9 @@ def homepage_VehicleOwner(request):
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
-            return Response({'error': "Unauthorised user"}, status=500)
+            return Response({'error': "Unauthorised user"}, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -6913,7 +7120,12 @@ def homepage_VehicleOwner(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_VehicleOwnerold(request):
+def homepage_VehicleOwnerold(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try: 
 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -6969,15 +7181,20 @@ def homepage_VehicleOwnerold(request):
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
-            return Response({'error': "Unauthorised user"}, status=500)
+            return Response({'error': "Unauthorised user"}, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_Dealer(request):
+def homepage_Dealer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
          
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -7021,15 +7238,20 @@ def homepage_Dealer(request):
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
-            return Response({'error': "Unauthorised user"}, status=500)
+            return Response({'error': "Unauthorised user"}, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def SOS_adminreport(request):
+def SOS_adminreport(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try: 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         role="sosadmin" 
@@ -7088,15 +7310,20 @@ def SOS_adminreport(request):
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
-            return Response({'error': "Unauthorised user"}, status=500)
+            return Response({'error': "Unauthorised user"}, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['get'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def SOS_TLreport(request):
+def SOS_TLreport(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try: 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         role="sosexecutive" 
@@ -7161,16 +7388,21 @@ def SOS_TLreport(request):
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
-            return Response({'error': "Unauthorised user"}, status=500)
+            return Response({'error': "Unauthorised user"}, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['get'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def SOS_EXreport(request):
+def SOS_EXreport(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try: 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         role="sosexecutive" 
@@ -7224,16 +7456,21 @@ def SOS_EXreport(request):
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
-            return Response({'error': "Unauthorised user"}, status=500)
+            return Response({'error': "Unauthorised user"}, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_stateAdmin(request):
+def homepage_stateAdmin(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try: 
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         role="stateadmin"
@@ -7299,16 +7536,21 @@ def homepage_stateAdmin(request):
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
-            return Response({'error': "Unauthorised user"}, status=500)
+            return Response({'error': "Unauthorised user"}, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_user1(request):
+def homepage_user1(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Create a dictionary to hold the filter parameters
         filters = {}
@@ -7330,13 +7572,18 @@ def homepage_user1(request):
         # Return the serialized data as JSON response
         return Response(count_dict)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def homepage_user2(request):
+def homepage_user2(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Create a dictionary to hold the filter parameters
         filters = {}
@@ -7355,13 +7602,18 @@ def homepage_user2(request):
         # Return the serialized data as JSON response
         return Response(count_dict)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_Settings_State(request):
+def filter_Settings_State(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Create a dictionary to hold the filter parameters
         filters = {}
@@ -7388,14 +7640,19 @@ def filter_Settings_State(request):
         # Return the serialized data as JSON response
         return Response(retailer_serializer.data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_Settings_State(request): 
+def create_Settings_State(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
       #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="superadmin"
     user=request.user
@@ -7428,7 +7685,12 @@ def create_Settings_State(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_Settings_ip(request):
+def filter_Settings_ip(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try:
         # Create a dictionary to hold the filter parameters
         filters = {}
@@ -7442,7 +7704,7 @@ def filter_Settings_ip(request):
         # Return the serialized data as JSON response
         return Response(retailer_serializer.data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
@@ -7450,7 +7712,12 @@ def filter_Settings_ip(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_VehicleOwner(request):
+def filter_VehicleOwner(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try: 
         dealer_id = request.data.get('eSimProvider_id', None)
         email = request.data.get('email', '')
@@ -7482,7 +7749,7 @@ def filter_VehicleOwner(request):
         return Response(retailer_serializer.data)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 '''
@@ -7492,7 +7759,12 @@ def filter_VehicleOwner(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_esim_activation_request(request):
+def create_esim_activation_request(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
             
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -7525,7 +7797,12 @@ def create_esim_activation_request(request):
 
 
 @api_view(['POST'])
-def filter_esim_activation_request(request):       
+def filter_esim_activation_request(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+           
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="esimprovider"
     user=request.user
@@ -7542,7 +7819,12 @@ def filter_esim_activation_request(request):
 
 @permission_classes([AllowAny])
 @api_view(['POST'])
-def update_esim_activation_request(request):  
+def update_esim_activation_request(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+      
     if request.method == 'POST':
         #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
         role="esimprovider"
@@ -7617,7 +7899,12 @@ def get_user_object(user,role):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_device_model(request): 
+def create_device_model(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+     
     user_id = request.user.id
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -7746,7 +8033,12 @@ class FileUploadView(APIView):
 
 
 @api_view(['POST'])
-def validate_email_confirmation(request):
+def validate_email_confirmation(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     user = request.data.get('user', None)
     confirmation_token = request.data.get('confirmation_token', None)
 
@@ -7772,7 +8064,12 @@ def validate_email_confirmation(request):
 
 
 @api_view(['POST']) 
-def send_email_confirmation(request):
+def send_email_confirmation(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user = request.data.get('user', None) 
     if not user:
@@ -7802,11 +8099,16 @@ def send_email_confirmation(request):
 
         return Response({'status': 'Email confirmation link sent successfully'}, status=200)
     else:
-        return Response({'error': 'Failed to send email confirmation link'}, status=500)
+        return Response({'error': 'Failed to send email confirmation link'}, status=400)
 
 
 @api_view(['POST'])
-def validate_pwrst_confirmation(request):
+def validate_pwrst_confirmation(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     user = request.data.get('user', None)
     confirmation_token = request.data.get('confirmation_token', None)
 
@@ -7831,7 +8133,12 @@ def validate_pwrst_confirmation(request):
 
 
 @api_view(['POST']) 
-def send_pwrst_confirmation(request):
+def send_pwrst_confirmation(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     
     user = request.data.get('user', None) 
     if not user:
@@ -7857,12 +8164,17 @@ def send_pwrst_confirmation(request):
 
         return Response({'status': 'Email confirmation link sent successfully'}, status=200)
     else:
-        return Response({'error': 'Failed to send email confirmation link'}, status=500)
+        return Response({'error': 'Failed to send email confirmation link'}, status=400)
 
 
 
 @api_view(['POST'])
-def validate_sms_confirmation(request):
+def validate_sms_confirmation(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     user = request.data.get('user', None)
     confirmation_token = request.data.get('confirmation_token', None)
 
@@ -7887,7 +8199,12 @@ def validate_sms_confirmation(request):
 
 
 @api_view(['POST']) 
-def send_sms_confirmation(request):
+def send_sms_confirmation(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     user = request.data.get('user', None) 
     if not user:
         return Response({'error': 'User not provided'}, status=400)
@@ -7912,7 +8229,7 @@ def send_sms_confirmation(request):
 
         return Response({'status': 'Email confirmation link sent successfully'}, status=200)
     else:
-        return Response({'error': 'Failed to send email confirmation link'}, status=500)
+        return Response({'error': 'Failed to send email confirmation link'}, status=400)
 
 
 
@@ -7930,11 +8247,16 @@ class DeleteAllUsersView(APIView):
 
             return Response({'message': 'All users deleted successfully.'}, status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': "Unable to process request"}, status=400)
  
 @csrf_exempt
 @api_view(['POST'])
-def create_user(request):
+def create_user(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     """
     Create a new user.
     """
@@ -8006,7 +8328,12 @@ def is_valid_string(s):
         return False
 @csrf_exempt
 @api_view(['POST'])
-def password_reset(request):
+def password_reset(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     """
     Reset user password.
     """
@@ -8135,7 +8462,12 @@ def password_reset(request):
 
 @csrf_exempt
 @api_view(['POST'])
-def send_email_otp(request):
+def send_email_otp(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     """
     Send OTP to the user's email.
     """
@@ -8157,7 +8489,12 @@ def send_email_otp(request):
 @api_view(['POST'])
 
 @permission_classes([AllowAny])
-def send_sms_otp(request):
+def send_sms_otp(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     """
     Send OTP to the user's mobile.
     """
@@ -8208,7 +8545,12 @@ def send_sms_otp(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @transaction.atomic
-def reset_password(request):
+def reset_password(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     try: 
         email = request.data.get('email', '')
         mobile = request.data.get('mobile', '')   
@@ -8248,47 +8590,37 @@ def reset_password(request):
             ) 
             return Response({'Success': "Password reset email sent"}, status=200)
         except: 
-            return Response({'error': "Error in sendig sms/email"}, status=500)
+            return Response({'error': "Error in sendig sms/email"}, status=400)
     except:
-        return Response({'error': "Something went wrong."}, status=500)
+        return Response({'error': "Something went wrong."}, status=400)
                
 
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
-def user_login(request):
+def user_login(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
         username = request.data.get('username', None)
         password=request.data.get('password', None)
-        key = request.data.get('captcha_key', None)
-        user_input = request.data.get('captcha_reply', None)
-        if not username or not password or not key or not user_input:
+        #key = request.data.get('captcha_key', None)
+        #user_input = request.data.get('captcha_reply', None)
+        if not username or not password :#or not key or not user_input:
             return Response({'error': 'Incomplete credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         
         password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
         captchaSuccess=False
-        try:
-            user_input=int(user_input)
-        except:
-            return JsonResponse({'success': False, 'error': 'Invalid Captcha Input. Only integers allowed'})
+        #try:
+        #    user_input=int(user_input)
+        #except:
+        #    return JsonResponse({'success': False, 'error': 'Invalid Captcha Input. Only integers allowed'})
 
-        try:
-            captcha = Captcha.objects.filter(key=key).last() 
-            if not captcha.is_valid():
-                captcha.delete()  # Optionally, delete the expired captcha
-                return JsonResponse({'success': False, 'error': 'Captcha expired'}) 
-            if int(user_input) == int(captcha.answer):
-                captcha.delete()  # Optionally, delete the captcha after successful verification
-                captchaSuccess=True
-            else:
-                return JsonResponse({'success': False, 'error': 'Invalid captcha'})
-        except Captcha.DoesNotExist: 
-            return JsonResponse({'success': False, 'error': 'Captcha not found'})
-        except Exception as e: #Captcha.DoesNotExist: 
-            print('error',e)
-            return JsonResponse({'success': False, 'error': 'Captcha not found'})
-         
+          
     
         
         if not username or not password:
@@ -8309,16 +8641,41 @@ def user_login(request):
         token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(30))
         #token  = str(random.randint(100000000000000000000, 99999900000000000000000000))#Token.objects.create(user=user) 
 
+        token  = Token.objects.create(user=user) 
+        token=str(token.key)
+             
+
+        
         session_data = {
             'user': user.id,
             'token': str(token),
             'otp': otp,
-            'status': 'otpsent',
+            'status': 'login',
             'login_time': timezone.now(),
         } 
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
-            session_serializer.save()         
+            session_serializer.save()     
+
+            
+            try:
+                timenow= timezone.now()
+                user.last_login =   timenow
+                user.last_activity =  timenow
+                user.login=True
+                user.save()
+                uu=get_user_object(user,user.role)
+                if uu:
+                    uu = recursive_model_to_dict(uu,["users","esim_provider"])
+
+  
+                return Response({'status':'Login Successful','token': str(token),'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
+
+            except:
+                return Response({'error': 'Failed to create session'}, status=400)
+
+
+
             text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             send_SMS(user.mobile,text,tpid) 
@@ -8331,13 +8688,18 @@ def user_login(request):
             )  
             return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
         else:
-            return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': 'Failed to create session'}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
-def temp_user_login(request):
+def temp_user_login(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
         mobile = request.data.get('mobile', None)
         name=request.data.get('name', None) 
@@ -8368,7 +8730,12 @@ def temp_user_login(request):
  
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
-def temp_user_resendOTP(request):
+def temp_user_resendOTP(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
         mobile = request.data.get('mobile', None) 
         ble_key=request.data.get('ble_key', "") 
@@ -8400,7 +8767,12 @@ def temp_user_resendOTP(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
-def temp_user_OTPValidate(request):
+def temp_user_OTPValidate(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
         mobile = request.data.get('mobile', None) 
         ble_key=request.data.get('ble_key', None) 
@@ -8426,7 +8798,12 @@ def temp_user_OTPValidate(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
-def temp_user_BLEValidate(request):
+def temp_user_BLEValidate(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST': 
         ble_key=request.data.get('ble_key', "") 
         session_key=request.data.get('session_key', None)  
@@ -8448,7 +8825,12 @@ def temp_user_BLEValidate(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
-def temp_user_Feedback(request):
+def temp_user_Feedback(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST': 
         feedback=request.data.get('feedback', "") 
         session_key=request.data.get('session_key', None)  
@@ -8471,7 +8853,12 @@ def temp_user_Feedback(request):
  
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
-def temp_user_emcall(request):
+def temp_user_emcall(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST': 
         em_lat=float(request.data.get('em_lat', 0.0)) 
         em_lon=float(request.data.get('em_lon', 0.0) )
@@ -8502,7 +8889,12 @@ def temp_user_emcall(request):
     
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
-def temp_user_logout(request):
+def temp_user_logout(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':  
         session_key=request.data.get('session_key', None)  
         tempu=TempUser.objects.filter(online=True,  session_key=session_key).last()
@@ -8600,7 +8992,7 @@ def temp_user_logout(request):
             )  
             return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token.key,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
         else:
-            return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': 'Failed to create session'}, status=400)
 
     """
 
@@ -8642,7 +9034,12 @@ def recursive_model_to_dict(data, exclude_fields=None):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
-def user_login_app(request):
+def user_login_app(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
         username = request.data.get('username', None)
         password=request.data.get('password', None)  
@@ -8697,12 +9094,17 @@ def user_login_app(request):
                 uu = recursive_model_to_dict(uu,["users"]) 
             return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token.key,'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
         else:
-            return Response({'error': 'Failed to create session'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': 'Failed to create session'}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the OTP validation endpoint
-def validate_otp(request):
+def validate_otp(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     if request.method == 'POST':
         otp = request.data.get('otp', None)
         token = request.data.get('token', None)
@@ -8767,7 +9169,7 @@ def validate_otp(request):
   
                 return Response({'status':'Login Successful','token': session.token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
             except Exception as e:
-                return Response({'error': str(e)}, status=400)
+                return Response({'error': "Unable to process request"}, status=400)
         else:
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)
             
@@ -8775,7 +9177,12 @@ def validate_otp(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def user_logout(request):
+def user_logout(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     """
     User logout.
     """
@@ -8825,7 +9232,12 @@ def user_get_parent(request, user_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def get_list(request):
+def get_list(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     """
     Get a list of users.
     """
@@ -8861,7 +9273,12 @@ def get_details(request, user_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_vehicle(request):
+def create_vehicle(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     serializer = VehicleSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save(createdby=request.user, owner=request.user)
@@ -8902,7 +9319,12 @@ def delete_vehicle(request, vehicle_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def list_vehicles(request):
+def list_vehicles(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     vehicles = Vehicle.objects.all()
     serializer = VehicleSerializer(vehicles, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
@@ -8971,7 +9393,12 @@ def device_model_details(request, device_model_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def list_manufacturers(request):
+def list_manufacturers(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     company_name = request.query_params.get('company_name', '')
     manufacturers = Manufacturer.objects.filter(company_name__icontains=company_name)
     serializer = ManufacturerSerializer(manufacturers, many=True)
@@ -8980,7 +9407,12 @@ def list_manufacturers(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def list_retailers(request):
+def list_retailers(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     name = request.query_params.get('name', '')
     retailers = Retailer.objects.filter(name__icontains=name)
     serializer = RetailerSerializer(retailers, many=True)
@@ -8989,7 +9421,12 @@ def list_retailers(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def list_devices(request):
+def list_devices(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     # Add filters based on your requirements
     devices = Device.objects.all()
     serializer = DeviceSerializer(devices, many=True)
@@ -8998,7 +9435,12 @@ def list_devices(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def list_device_models(request):
+def list_device_models(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     device_model = request.query_params.get('device_model', '')
     device_models = DeviceModel.objects.filter(device_model__icontains=device_model)
     serializer = DeviceModelSerializer_disp(device_models, many=True)
@@ -9078,7 +9520,12 @@ def update_device_model(request, pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_manufacturer(request):
+def create_manufacturer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     serializer = ManufacturerSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save(createdby=request.user)
@@ -9088,7 +9535,12 @@ def create_manufacturer(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_retailer(request):
+def create_retailer(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     serializer = RetailerSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save(createdby=request.user)
@@ -9098,7 +9550,12 @@ def create_retailer(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_device(request):
+def create_device(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     serializer = DeviceSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save(createdby=request.user)
@@ -9115,7 +9572,12 @@ def create_device(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def create_notice(request):
+def create_notice(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     role="superadmin"
     user=request.user
     uo=get_user_object(user,role)
@@ -9139,15 +9601,20 @@ def create_notice(request):
             serializer = NoticeSerializer(notice)
             return Response(serializer.data)
         except Exception as e: 
-                return Response({'error': str(e)}, status=500)
+                return Response({'error': "Unable to process request"}, status=400)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def filter_notice(request):
+def filter_notice(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     role="superadmin"
     user=request.user
     uo=get_user_object(user,role)
@@ -9175,13 +9642,18 @@ def filter_notice(request):
         serializer = NoticeSerializer(notice, many=True)
         return Response(serializer.data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny]) 
-def list_notice(request):
+def list_notice(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
 
     try:
         id = request.data.get('notice_id', None)
@@ -9204,14 +9676,19 @@ def list_notice(request):
         serializer = NoticeSerializer(notice, many=True)
         return Response(serializer.data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def update_notice(request):
+def update_notice(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     role="superadmin"
     user=request.user
     uo=get_user_object(user,role)
@@ -9221,7 +9698,7 @@ def update_notice(request):
         id = request.data.get('id')
         man=Notice.objects.filter(id=id).last()
         if not man:
-            return Response({'error': "Invalid Notice id"}, status=500) 
+            return Response({'error': "Invalid Notice id"}, status=400) 
         title = request.data.get('title')
         detail = request.data.get('detail')
         status = request.data.get('status')
@@ -9241,13 +9718,18 @@ def update_notice(request):
         man.save() 
         return Response(NoticeSerializer(man ).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
-def delete_notice(request):
+def delete_notice(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
     role="superadmin"
     user=request.user
     uo=get_user_object(user,role)
@@ -9257,11 +9739,11 @@ def delete_notice(request):
         id = request.data.get('id')
         man=Notice.objects.filter(id=id).last()
         if not man:
-            return Response({'error': "Invalid Notice id"}, status=500)  
+            return Response({'error': "Invalid Notice id"}, status=400)  
         man.status="Deleted" 
         man.createdby = user
         man.save() 
         return Response(NoticeSerializer(man ).data)
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'error': "Unable to process request"}, status=400)
 

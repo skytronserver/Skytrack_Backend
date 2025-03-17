@@ -168,9 +168,13 @@ openssl rsa -noout -modulus -in /var/www/html/Skytrack_Backend/Skytronsystem/key
 
 
 sudo docker build -t skytron-backend-api -f dockerfile.api .
-sudo docker run -d  --restart=always -p 2000:2000  -f dockerfile.api -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
-
+sudo docker run -d  --restart=always -p 2000:2000    -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
+sudo docker run -d  --restart=always -p 2000:2000    -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
 
 
 sudo docker build -t skytron-backend-mqtt -f dockerfile.mqtt .
 sudo docker run -d  --restart=always -p 2000:2000  -f dockerfile.mqtt -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-mqtt-container skytron-backend-mqtt 
+
+
+sudo docker build -t skytron-backend-gps -f dockerfile.gps .
+sudo docker run -d  --restart=always -p 6000:6000   -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-gps skytron-backend-gps

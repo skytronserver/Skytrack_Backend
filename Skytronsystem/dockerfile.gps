@@ -21,8 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python dependencies
 RUN pip install --upgrade pip
 RUN pip install \
+    geopy \
     django \
-    bleach \
     djangorestframework \
     markdown \
     django-filter \
@@ -41,6 +41,7 @@ RUN pip install \
     python-docx \
     pdfkit \
     whitenoise \
+    paho-mqtt  \
     gunicorn \
     django \
     djangorestframework \
@@ -66,7 +67,7 @@ COPY . /app
 RUN python manage.py collectstatic --noinput
 
 # Expose port 2000
-EXPOSE 2000
+EXPOSE 6000
 
 # Option A: Set environment variables in the Dockerfile (not recommended for secrets)
 ENV MAIL_ID=testskytrack@gmail.com
@@ -77,18 +78,16 @@ ENV SECRET_KEY=django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2q
 
 ENV EMAIL_HOST_USER=testskytrack@gmail.com
 ENV EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
-ENV ALLOWED_HOSTS="gromed.in,api.gromed.in,api.skytron.in,skytron.in,dev.skytron.in,api-dev.skytron.in,skytrack.tech,dev-api.skytron.in,localhost"
+ENV ALLOWED_HOSTS="gromed.in,api.gromed.in,api.skytron.in,skytron.in,dev.skytron.in,api-dev.skytron.in,skytrack.tech,localhost"
 
 ENV DB_NAME=skytrondbnew2
 ENV DB_USER=dbadmin
 ENV DB_PASSWORD=lask1028zmnx
 ENV DB_HOST=40.81.241.29
-#216.10.244.243
 #host.docker.internal
 ENV DB_PORT=5432
 # 
 
 
 # Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key
-#CMD ["python3 manage.py runserver_plus --cert-file cert_old.pem --key-file key_old.pem 0.0.0.0:2000"]
-CMD ["gunicorn", "--certfile=cert_old.pem","--workers=3", "--timeout=120", "--keyfile=key_old.pem", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]
+CMD ["python", "manage.py","tcp_server"]
