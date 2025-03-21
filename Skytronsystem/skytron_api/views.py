@@ -5678,32 +5678,37 @@ def GetVahanAPIInfo_totestonly(request ):
         return JsonResponse({'error': "Error Geting Vahan Data"}, status=400)
 
 
-
 response_schema2 = {
     "type": "object",
     "properties": {
-        "chassisNo": {"type": "string"},
-        "dateOfRegistration": {"type": "string", "format": "date"},
-        "deviceActivationStatus": {"type": "string"},
-        "deviceSerialno": {"type": "string"},
-        "engineNo": {"type": "string"},
-        "fitmentCentreName": {"type": "string"},
-        "gnssConstellationCode": {"type": "string"},
-        "iccId": {"type": "string"},
-        "imeiNo": {"type": "string"},
-        "makerName": {"type": "string"},
-        "modelName": {"type": "string"},
-        "ownerName": {"type": "string"},
-        "regnNo": {"type": "string"},
-        "tacNo": {"type": "string"},
-        "tacValidUpto": {"type": "string", "format": "date"},
-        "vehClass": {"type": "string"}
+        "VltdDetailsDobj": {
+            "type": "object",
+            "properties": {
+                "chassisNo": {"type": "string"},
+                "dateOfRegistration": {"type": "string", "format": "date"},
+                "deviceActivationStatus": {"type": "string"},
+                "deviceSerialno": {"type": "string"},
+                "engineNo": {"type": "string"},
+                "fitmentCentreName": {"type": "string"},
+                "gnssConstellationCode": {"type": "string"},
+                "iccId": {"type": "string"},
+                "imeiNo": {"type": "string"},
+                "makerName": {"type": "string"},
+                "modelName": {"type": "string"},
+                "ownerName": {"type": "string"},
+                "regnNo": {"type": "string"},
+                "tacNo": {"type": "string"},
+                "tacValidUpto": {"type": "string", "format": "date"},
+                "vehClass": {"type": "string"}
+            },
+            "required": [
+                "chassisNo", "dateOfRegistration", "deviceActivationStatus", "deviceSerialno",
+                "engineNo", "fitmentCentreName", "gnssConstellationCode", "iccId", "imeiNo",
+                "makerName", "modelName", "ownerName", "regnNo", "tacNo", "tacValidUpto", "vehClass"
+            ]
+        }
     },
-    "required": [
-        "chassisNo", "dateOfRegistration", "deviceActivationStatus", "deviceSerialno",
-        "engineNo", "fitmentCentreName", "gnssConstellationCode", "iccId", "imeiNo",
-        "makerName", "modelName", "ownerName", "regnNo", "tacNo", "tacValidUpto", "vehClass"
-    ]
+    "required": ["VltdDetailsDobj"]
 }
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -5760,13 +5765,14 @@ def GetVahanAPIInfo(request):
             vltd_details = xml_to_dict(inner_root)
 
             # Validate the response against the schema
-            try:
-                validate(instance=vltd_details, schema=response_schema)
-            except ValidationError as e:
-                return JsonResponse({'error': f"Response validation failed."}, status=400)
-
+           
             # Sanitize the JSON output
             json_output = json.dumps(vltd_details, indent=4)
+            try:
+                validate(instance=vltd_details, schema=response_schema2)
+            except Exception as e:
+                return JsonResponse({'error': f"Response validation failed."}, status=400) #,"err":str(e),"det":str(vltd_details)
+
             sanitized_json_output_str = bleach.clean(json_output)
             sanitized_json_output = json.loads(sanitized_json_output_str)
 
@@ -5784,9 +5790,7 @@ def GetVahanAPIInfo(request):
         return JsonResponse({'error': "Error Getting Vahan Data"}, status=400)
 
 
-
-
-
+ 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
