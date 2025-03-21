@@ -191,6 +191,15 @@ USE_I18N = True
 
 USE_TZ = True
 
+CORS_ALLOW_METHODS = [
+    "GET",
+    "POST",
+]
+CORS_ALLOW_HEADERS = [
+    "content-type",
+    "authorization",
+    "x-csrftoken",
+]
 CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     "http://localhost:3000",  
     "https://localhost:3000", 
@@ -204,6 +213,7 @@ CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     'https://skytron.in',
     'https://dev-api.skytron.in',
     'http://dev-api.skytron.in',
+    'https://dev.skytron.in/',
     'http://dev.skytron.in',
     'https://dev.skytron.in',
     "https://dev.skytrack.tech",  # Add your frontend domain(s) here

@@ -1,7 +1,7 @@
 # Start from an official Python image
 FROM python:3.9-slim-buster
 
-# Install required system dependencies
+# Install required system dependenciessudo apt-get install libmagic1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wkhtmltopdf \          
     # for pdfkit
@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \          
     # often needed by cryptography/pycryptodome
     libffi-dev \    
+    libmagic1 \
     # often needed by cryptography/pycryptodome
     build-essential \     
     # for compiling numpy/scipy if needed
@@ -23,6 +24,7 @@ RUN pip install --upgrade pip
 RUN pip install \
     django \
     bleach \
+    openpyxl \
     djangorestframework \
     markdown \
     django-filter \
@@ -30,6 +32,7 @@ RUN pip install \
     django-bootstrap-datepicker-plus \
     drf_spectacular \
     django-cors-headers \
+    python-magic \
     django-extensions \
     psycopg2-binary \
     pandas \

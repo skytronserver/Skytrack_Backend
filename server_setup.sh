@@ -1,7 +1,11 @@
 sudo apt-get update
 
 sudo apt-get install nginx  mosquitto   mosquitto-clients   openssl  postgresql-contrib   git -y
+sudo apt-get install nginx-extras
 
+sudo nano /etc/nginx/nginx.conf
+uncomment the line 
+server_tokens off;
 ###pgsql setup 
 sudo systemctl start postgresql
 sudo systemctl enable postgresql
@@ -101,7 +105,9 @@ sudo ln -s /etc/nginx/sites-available/www.conf /etc/nginx/sites-enabled/
 sudo nano  /etc/nginx/sites-available/api.conf 
 
 
+sudo rm /etc/nginx/sites-enabled/www.conf 
 sudo rm /etc/nginx/sites-enabled/api.conf 
+sudo ln -s /etc/nginx/sites-available/www.conf /etc/nginx/sites-enabled/
 sudo ln -s /etc/nginx/sites-available/api.conf /etc/nginx/sites-enabled/
 
 sudo nginx -t
