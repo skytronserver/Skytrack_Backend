@@ -83,7 +83,7 @@ from django.utils.timezone import now
 #sudo apt-get update
 #sudo apt-get install libreoffice
 
-
+eeeeeee=""
 
 import io
 from docx import Document
@@ -327,17 +327,17 @@ def load_private_key():
 
 def decrypt_field(encrypted_field, private_key):
     cipher = PKCS1_OAEP.new(private_key)
-    if len(encrypted_field)<16:
-        return encrypted_field
+    #if len(encrypted_field)<16:
+    #    return encrypted_field
     enc=base64.b64decode(encrypted_field)
-    print(enc)
-    #try:
-    decrypted_data = cipher.decrypt(enc)
-    return decrypted_data.decode('utf-8')
-    #except:
-    #    return ""
+    try:
+        decrypted_data = cipher.decrypt(enc)
+        return decrypted_data.decode('utf-8')
+    except:
+        return None
 PRIVATE_KEY=load_private_key() 
 #print(PRIVATE_KEY)
+
 
 
 
@@ -396,14 +396,17 @@ import os
 import random
 from rest_framework.response import Response
 
+
 def save_file(request, tag, path):
     uploaded_file = request.FILES.get(tag)
     if not uploaded_file:
         return Response({'error': f"File not found"}, status=400)
+    #Response({'error': f"Invalid file type. Allowed types are:"}, status=400)
 
     # Validate file size (should be less than 1 MB)
     max_file_size = 1 * 1024 * 1024  # 1 MB in bytes
     if uploaded_file.size > max_file_size:
+        return None 
         return Response({'error': f"File size should be less than 1 MB. Current size: {uploaded_file.size / (1024 * 1024):.2f} MB"}, status=400)
 
     # Validate file type using magic numbers
@@ -420,9 +423,22 @@ def save_file(request, tag, path):
     mime_type = mime.from_buffer(uploaded_file.read(2048))  # Read the first 2 KB of the file
 
     if mime_type not in valid_mime_types:
+        return None 
         return Response({'error': f"Invalid file type. Allowed types are: {', '.join(valid_mime_types.keys())}"}, status=400)
 
-    # Generate a random file name and save the file
+    # Additional validation to prevent executable files
+    uploaded_file.seek(0)  # Reset file pointer to the beginning
+    file_content = uploaded_file.read(2048)  # Read the first 2 KB of the file
+    if b'MZ' in file_content or b'PK\x03\x04' in file_content:
+        return None 
+        return Response({'error': "Invalid file detected. Upload denied."}, status=400)
+    data=file_content
+    if data.startswith(b"MZ") or data.startswith(b"\x7FELF") or data.startswith(b"\xcf\xfa\xed\xfe") or \
+        data.startswith(b"\xce\xfa\xed\xfe") or \
+        data.startswith(b"\xca\xfe\xba\xbe")or data.startswith(b"#!"):
+            return None 
+        #return Response({'error': "Invalid file detected. Upload denied."}, status=400)
+    
     file_extension = valid_mime_types[mime_type]
     file_path = os.path.join(path, ''.join(random.choices('0123456789', k=40)) + "." + file_extension)
     with open(file_path, 'wb') as file:
@@ -826,7 +842,7 @@ def gps_history_map_data(request ):
         #return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
         #return Response({'error': "Invalid Search"}, status=403)
     except Exception as e: 
-        return JsonResponse({'error': "Unable to process request."+str(e)}) 
+        return JsonResponse({'error': "Unable to process request."+eeeeeee}) 
         return Response({'error': "ww"}, status=400)
 
 
@@ -893,7 +909,7 @@ def delRoute(request ):
         
         except Exception as e:
             print(e)
-            return JsonResponse({"error": "Unable to process request."+str(e)}, status=400)
+            return JsonResponse({"error": "Unable to process request."+eeeeeee}, status=400)
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -1040,7 +1056,7 @@ def get_routePath(request):
     except ValueError:
         return Response({"error": "Invalid response received from the external API."}, status=400)
     except Exception as e:
-        return Response({"error": "An unexpected error occurred."+ str(e)}, status=400)
+        return Response({"error": "An unexpected error occurred."+ eeeeeee}, status=400)
     
 @csrf_exempt
 @api_view(['POST'])
@@ -1567,7 +1583,7 @@ def update_VehicleOwner(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -1619,7 +1635,7 @@ def create_VehicleOwner(request ):
 
             except Exception as e:
                 user.delete()
-                return Response({'error': "Unable to process request."+str(e)}, status=400)
+                return Response({'error': "Unable to process request."+eeeeeee}, status=400)
             retailer.users.add(user) 
             send_usercreation_otp(user,new_password,'Vehicle Owner ')
              
@@ -1628,7 +1644,7 @@ def create_VehicleOwner(request ):
             return Response(error, status=400)        
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -1660,7 +1676,7 @@ def delete_manufacturer(request, manufacturer_id):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
@@ -1690,7 +1706,7 @@ def delete_dealer(request, dealer_id):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
@@ -1720,7 +1736,7 @@ def delete_eSimProvider(request, esimProvider_id):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
@@ -1749,7 +1765,7 @@ def delete_VehicleOwner(request, vo_id):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -1814,7 +1830,7 @@ def filter_VehicleOwner(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -1905,7 +1921,7 @@ def update_manufacturer(request ):
       
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -1991,7 +2007,7 @@ def update_eSimProvider(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -2040,7 +2056,7 @@ def create_eSimProvider(request ):
                     user.delete()
 
 
-                    return Response({'error44': "Unable to process request."+str(e)}, status=400)
+                    return Response({'error44': "Unable to process request."+eeeeeee}, status=400)
 
 
                 retailer ,error= eSimProvider.objects.safe_create(
@@ -2067,7 +2083,7 @@ def create_eSimProvider(request ):
                 user.delete()
 
 
-                return Response({'error1': "Unable to process request."+str(e)}, status=400)
+                return Response({'error1': "Unable to process request."+eeeeeee}, status=400)
             retailer.users.add(user)
             send_usercreation_otp(user,new_password,'EsimProvider ')
              
@@ -2076,7 +2092,7 @@ def create_eSimProvider(request ):
             return Response({'error131': str(error)}, status=400)
 
     except Exception as e:
-        return Response({'error2': "Unable to process request."+str(e)}, status=400)
+        return Response({'error2': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -2150,7 +2166,7 @@ def filter_eSimProvider(request ):
 
     except Exception as e:
         
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -2238,7 +2254,7 @@ def update_dealer(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -2310,7 +2326,7 @@ def create_dealer(request ):
 
             except Exception as e:
                 user.delete()
-                return Response({'error': "Unable to process request."+str(e)}, status=400) 
+                return Response({'error': "Unable to process request."+eeeeeee}, status=400) 
             retailer.users.add(user)
             send_usercreation_otp(user,new_password,'Dealer ')             
             return Response(RetailerSerializer(retailer).data)
@@ -2318,7 +2334,7 @@ def create_dealer(request ):
             return Response(error, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -2419,7 +2435,7 @@ def filter_dealer(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -2509,7 +2525,7 @@ def update_manufacturer(request ):
       
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -2600,7 +2616,7 @@ def create_manufacturer(request ):
 
             except Exception as e:
                 user.delete()
-                return Response({'error': "Unable to process request."+str(e)}, status=400)
+                return Response({'error': "Unable to process request."+eeeeeee}, status=400)
             
             manufacturer.users.add(user) 
             send_usercreation_otp(user, new_password, 'Device Manufacture ')
@@ -2609,7 +2625,7 @@ def create_manufacturer(request ):
             return Response(error, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -2661,7 +2677,7 @@ def filter_manufacturers(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 from django.db import IntegrityError
@@ -2709,9 +2725,9 @@ def create_user(role, req):
 
     except IntegrityError as e:
         # Handle database integrity errors (e.g., duplicate keys)
-        if 'email' in str(e):
+        if 'email' in eeeeeee:
             return [None, {'error': "Email field is invalid or already exists."}, None]
-        elif 'mobile' in str(e):
+        elif 'mobile' in eeeeeee:
             return [None, {'error': "Mobile field is invalid or already exists."}, None]
         else:
             return [None, {'error': "A database integrity error occurred."}, None]
@@ -2725,7 +2741,7 @@ def create_user(role, req):
 
     except Exception as e:
         # General exception handling
-        return [None, {'error': "Unable to process request.1"+str(e)}, None]
+        return [None, {'error': "Unable to process request.1"+eeeeeee}, None]
 
 
 def send_usercreation_otp(user,new_password,type):
@@ -2744,7 +2760,7 @@ def send_usercreation_otp(user,new_password,type):
                 ) 
     except Exception as e:
         pass
-        # Response({'error': "Error in sendig email  "+"Unable to process request."+str(e)}, status=400)
+        # Response({'error': "Error in sendig email  "+"Unable to process request."+eeeeeee}, status=400)
     
 
 @api_view(['POST'])
@@ -2783,8 +2799,13 @@ def create_StateAdmin(request ):
                 #return Response({'error': "Unable to process request1." }, status=400)
             
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                if not file_idProof:
+                    user.delete()
+                    return Response({'error': "Invalid file." }, status=400)
                 file_authorisation_letter=save_file(request,'file_authorisation_letter','fileuploads/man')
-
+                if not file_authorisation_letter:
+                    user.delete()
+                    return Response({'error': "Invalid file." }, status=400)
                 #user.delete()
                 
                 retailer, error = StateAdmin.objects.safe_create( 
@@ -2816,7 +2837,7 @@ def create_StateAdmin(request ):
             return Response(error, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -2889,7 +2910,7 @@ def update_StateAdmin(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -2938,7 +2959,7 @@ def filter_StateAdmin(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
  
 
@@ -3037,7 +3058,7 @@ def create_DTO_RTO(request ):
 
             except Exception as e:
                 user.delete()
-                return Response({'error': "Unable to process request."+str(e)}, status=400)
+                return Response({'error': "Unable to process request."+eeeeeee}, status=400)
             retailer.users.add(user) 
             send_usercreation_otp(user,new_password,'DTO/RTO ')
              
@@ -3046,7 +3067,7 @@ def create_DTO_RTO(request ):
             return Response(error, status=400)          
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -3131,7 +3152,7 @@ def update_DTO_RTO(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -3192,7 +3213,7 @@ def filter_DTO_RTO(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -3238,7 +3259,7 @@ def transfer_DTO_RTO(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
  
@@ -3297,7 +3318,7 @@ def create_SOS_user(request ):
 
             except Exception as e:
                 user.delete()
-                return Response({'error': "Unable to process request."+str(e)}, status=400)
+                return Response({'error': "Unable to process request."+eeeeeee}, status=400)
             retailer.users.add(user) 
             send_usercreation_otp(user,new_password,'SOS user ')             
             return Response(EM_exSerializer(retailer).data)
@@ -3305,7 +3326,7 @@ def create_SOS_user(request ):
             return Response(error, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -3356,7 +3377,7 @@ def filter_SOS_user(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 from collections import defaultdict
@@ -3457,7 +3478,7 @@ def create_SOS_admin(request ):
 
             except Exception as e:
                 user.delete()
-                return Response({'error': "Unable to process request."+str(e)}, status=400)
+                return Response({'error': "Unable to process request."+eeeeeee}, status=400)
             retailer.users.add(user) 
             send_usercreation_otp(user,new_password,'State Admin ')
              
@@ -3466,7 +3487,7 @@ def create_SOS_admin(request ):
             return Response(error, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -3517,7 +3538,7 @@ def filter_SOS_admin(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -3557,7 +3578,7 @@ def list_desk_ex(request ):
         return Response(serializer.data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -3588,7 +3609,7 @@ def list_team_lead(request ):
         return Response(serializer.data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -3666,7 +3687,7 @@ def create_EM_team(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -3700,7 +3721,7 @@ def activate_EM_team(request ):
         return Response({'error': str('Unable to activate team.  Team not found.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -3730,7 +3751,7 @@ def remove_EM_team(request ):
         return Response({'error': str('Unable to remove team. Team not found.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -3757,7 +3778,7 @@ def get_EM_team(request ):
         return Response({'error': str('Team not found')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -3782,7 +3803,7 @@ def list_EM_team(request ):
         return Response({'error': str('Team not found')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -3815,7 +3836,7 @@ def TLEx_getPendingCallList(request ):
         return Response({'call': str('Not found')}, status=404)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
@@ -3842,10 +3863,10 @@ def DEx_getPendingCallList(request ):
 
         if ee: 
             return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'call': str('Not found')}, status=404)#Response(SOS_userSerializer(retailer).data)
+        return Response({'call': str('Not found')}, status=200)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -3871,7 +3892,7 @@ def DEx_getLiveCallList(request ):
         return Response({'call': str('Not found')}, status=200)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -3917,7 +3938,7 @@ def DEx_replyCall(request ):
         return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -3973,7 +3994,7 @@ def DEx_broadcast(request ):
         
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -4007,7 +4028,7 @@ def DEx_broadcastlist(request ):
         
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -4037,7 +4058,7 @@ def FEx_broadcastlist(request ):
         
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
  
 
@@ -4098,7 +4119,7 @@ def TLEx_reassign(request ):
           
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -4142,7 +4163,7 @@ def FEx_broadcastaccept(request ):
         return JsonResponse( {"assignment":EMCallAssignmentSerializer(assignment ,many=False).data}, status=200)#Response(SOS_userSerializer(retailer).data)
         
     except Exception as e:
-        return JsonResponse({'error': "Unable to process request."+str(e)}, status=400)
+        return JsonResponse({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -4186,7 +4207,7 @@ def  DEx_closeCase(request ):
         
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -4226,7 +4247,7 @@ def DEx_sendMsg(request ):
         return Response({'error': str('Unable to send message. value error.')}, status=200)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -4261,7 +4282,7 @@ def DEx_rcvMsg(request ):
         return Response([], status=200)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -4304,7 +4325,7 @@ def DEx_commentFE(request ):
         return Response({'error': str('Unable to read message. value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -4353,7 +4374,7 @@ def  DEx_getloc(request ):
         
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -4386,7 +4407,7 @@ def  FEx_getloc(request ):
         
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -4421,7 +4442,7 @@ def FEx_updateLoc(request ):
         return Response({'error': str('Location not updated. value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
  
 
@@ -4460,7 +4481,7 @@ def FEx_updateStatus(request ):
         return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
     except Exception as e:
         #raise e
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
   
 
@@ -4509,7 +4530,7 @@ def FEx_reqBackup(request ):
         return Response({'error': str('Unable to send. value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -4551,7 +4572,7 @@ def DEx_acceptBackup(request ):
         return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -4598,7 +4619,7 @@ def DEx_listBackup(request ):
         return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -4645,7 +4666,7 @@ def accept_EMassignment(request ):
         return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -4682,7 +4703,7 @@ def reject_EMassignment(request ):
         return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -4718,7 +4739,7 @@ def arriving_EMassignment(request ):
         return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
   
 @api_view(['POST'])
@@ -4756,7 +4777,7 @@ def arrived_EMassignment(request ):
         return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -4798,7 +4819,7 @@ def close_EMassignment(request ):
         return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400) 
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400) 
 
 
 
@@ -5612,7 +5633,7 @@ def TagGetVehicle(request ):
             }, status=200)
         except Exception as e:
             return JsonResponse({
-                'error': "Unable to get VAHAN information. Please confirm the device IMEI. " + "Unable to process request."+str(e)
+                'error': "Unable to get VAHAN information. Please confirm the device IMEI. " + "Unable to process request."+eeeeeee
             }, status=400)
     else:
         return JsonResponse({
@@ -5771,7 +5792,7 @@ def GetVahanAPIInfo(request):
             try:
                 validate(instance=vltd_details, schema=response_schema2)
             except Exception as e:
-                return JsonResponse({'error': f"Response validation failed."}, status=400) #,"err":str(e),"det":str(vltd_details)
+                return JsonResponse({'error': f"Response validation failed."}, status=400) #,"err":eeeeeee,"det":str(vltd_details)
 
             sanitized_json_output_str = bleach.clean(json_output)
             sanitized_json_output = json.loads(sanitized_json_output_str)
@@ -5785,7 +5806,7 @@ def GetVahanAPIInfo(request):
         except ET.ParseError:
             return JsonResponse({'error': "Failed to parse VAHAN API response."}, status=400)
         except requests.RequestException as e:
-            return JsonResponse({'error': f"Error communicating with VAHAN API: {str(e)}"}, status=400)
+            return JsonResponse({'error': f"Error communicating with VAHAN API: {eeeeeee}"}, status=400)
     else:
         return JsonResponse({'error': "Error Getting Vahan Data"}, status=400)
 
@@ -5953,7 +5974,7 @@ def TagVerifyDealerOtp(request  ):
         else: 
             return JsonResponse({'error': "Device not found with Status:Dealer_OTP_Sent"}, status=400)
     except Exception as e:
-            return Response({"message": "Unable to process request."+str(e)}, status=200)
+            return Response({"message": "Unable to process request."+eeeeeee}, status=200)
 
 #not in use for now 
 @api_view(['POST'])
@@ -5982,7 +6003,7 @@ def TagVerifyDTOOtp(request  ):
             return JsonResponse({'error': "Device not found with Status:Dealer_OTP_Sent"}, status=400)
     except Exception as e:
             
-            return JsonResponse({'error': "Unable to process request."+str(e)}, status=400)
+            return JsonResponse({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -6296,7 +6317,7 @@ def StockAssignToRetailer(request ):
 
         except Exception as e:
              
-            return JsonResponse({'error': "Unable to process request."+str(e)}, status=400)
+            return JsonResponse({'error': "Unable to process request."+eeeeeee}, status=400)
     if len(error)==0:
         return JsonResponse({'data': stock_assignments , 'message': 'Stock assigned successfully.'}, status=201)
     else:
@@ -6420,7 +6441,7 @@ def deviceStockCreateBulk(request ):
     #        if ee==e.id:
     #            True
     #    if not st:
-    #        return JsonResponse({'error': 'Esim provider id='+"Unable to process request."+str(e)+' is not in the devicemodel\'s esimprovider list.'}, status=400)
+    #        return JsonResponse({'error': 'Esim provider id='+"Unable to process request."+eeeeeee+' is not in the devicemodel\'s esimprovider list.'}, status=400)
 
 
 
@@ -6429,7 +6450,7 @@ def deviceStockCreateBulk(request ):
     try:
         excel_data = pd.read_excel(request.FILES['excel_file'], engine='openpyxl')
     except Exception as e:
-        return JsonResponse({'error': 'Error reading Excel file.', 'details': "Unable to process request."+str(e)}, status=400)
+        return JsonResponse({'error': 'Error reading Excel file.', 'details': "Unable to process request."+eeeeeee}, status=400)
 
     headers = list(excel_data.columns)
     success_count = 0
@@ -6962,7 +6983,7 @@ def filter_Settings_hp_freq(request ):
         return Response(retailer_serializer.data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -7039,7 +7060,7 @@ def filter_Settings_District(request ):
         return Response(retailer_serializer.data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -7126,7 +7147,7 @@ def filter_Settings_firmware(request ):
         return Response(retailer_serializer.data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -7208,7 +7229,7 @@ def filter_Settings_VehicleCategory(request ):
         return Response(retailer_serializer.data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -7313,7 +7334,7 @@ def homepage(request ):
         return Response(count_dict)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -7342,7 +7363,7 @@ def homepage_state(request ):
         return Response(count_dict)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -7396,7 +7417,7 @@ def homepage_alart(request ):
         return Response(count_dict)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -7456,7 +7477,7 @@ def homepage_device1(request ):
         return Response(count_dict)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -7484,7 +7505,7 @@ def homepage_device2(request ):
         return Response(count_dict)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -7552,7 +7573,7 @@ def homepage_Manufacturer(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -7616,7 +7637,7 @@ def homepage_DTO(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -7683,7 +7704,7 @@ def homepage_VehicleOwner(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -7756,7 +7777,7 @@ def homepage_VehicleOwnerold(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -7815,7 +7836,7 @@ def homepage_Dealer(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['GET'])
@@ -7889,7 +7910,7 @@ def SOS_adminreport(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['get'])
@@ -7969,7 +7990,7 @@ def SOS_TLreport(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -8039,7 +8060,7 @@ def SOS_EXreport(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -8121,7 +8142,7 @@ def homepage_stateAdmin(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -8157,7 +8178,7 @@ def homepage_user1(request ):
         return Response(count_dict)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -8189,7 +8210,7 @@ def homepage_user2(request ):
         return Response(count_dict)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -8229,7 +8250,7 @@ def filter_Settings_State(request ):
         return Response(retailer_serializer.data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -8296,7 +8317,7 @@ def filter_Settings_ip(request ):
         return Response(retailer_serializer.data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -8342,7 +8363,7 @@ def filter_VehicleOwner(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 '''
@@ -8850,7 +8871,7 @@ class DeleteAllUsersView(APIView):
 
             return Response({'message': 'All users deleted successfully.'}, status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
-            return Response({'error': "Unable to process request."+str(e)}, status=400)
+            return Response({'error': "Unable to process request."+eeeeeee}, status=400)
  
 @csrf_exempt
 @api_view(['POST'])
@@ -9055,6 +9076,8 @@ def password_reset(request ):
 
         # Generate a random password, set and hash it
         new_password = decrypt_field(new_password,PRIVATE_KEY)  
+        if not new_password:
+            return Response({'message': 'Invalid password'})
         hashed_password = make_password(new_password)
         user.password = hashed_password
         user.status='active'
@@ -9670,6 +9693,9 @@ def user_login_app(request ):
         
         password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
         captchaSuccess=True
+           
+        if not password:
+            return Response({'message': 'Invalid password'})
          
          
         
@@ -9738,6 +9764,9 @@ def validate_otp(request ):
             return Response({'error': 'OTP or session token not provided'}, status=status.HTTP_400_BAD_REQUEST)
         
         otp = decrypt_field(otp,PRIVATE_KEY)  
+         
+        if not otp:
+            return Response({'message': 'Invalid otp'})
         # Find the session based on the provided token
         session = Session.objects.filter(token=token,status= 'otpsent').last()
 
@@ -9794,7 +9823,7 @@ def validate_otp(request ):
   
                 return Response({'status':'Login Successful','token': session.token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
             except Exception as e:
-                return Response({'error': "Unable to process request."+str(e)}, status=400)
+                return Response({'error': "Unable to process request."+eeeeeee}, status=400)
         else:
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)
             
@@ -10217,12 +10246,22 @@ def create_notice(request ):
         status = request.data.get('status')
         createdby = request.user    
         file = request.data.get('file') 
+        if status not in ["live","delete"]:
+            return Response({'error': "Invalid status"}, status=400)
+        if title:
+            if not all(x.isalnum() or x.isspace() for x in  title ):
+                return Response({'error': "title should contain only alphanumeric and spaces."}, status=400)
+          
+        if detail:
+            if not all(x.isalnum() or x.isspace() for x in  detail ):
+                return Response({'error': "detail should contain only alphanumeric and spaces."}, status=400)
+          
         try:
             file  = save_file(request, 'file', '/app/skytron_api/static/notice')  
             notice ,error= Notice.objects.safe_create(
                     title=title,
                     detail=detail,
-                    file=":2000/static/notice/"+file.split("/")[-1],
+                    file="dev-api.skytron.in/static/notice/"+file.split("/")[-1],
                     createdby=createdby,
                     status=status,
             )
@@ -10232,10 +10271,10 @@ def create_notice(request ):
             serializer = NoticeSerializer(notice)
             return Response(serializer.data)
         except Exception as e: 
-                return Response({'error': "Unable to process request."+str(e)}, status=400)
+                return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -10276,7 +10315,7 @@ def filter_notice(request ):
         return Response(serializer.data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 
@@ -10312,7 +10351,7 @@ def list_notice(request ):
         return Response(serializer.data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
 @api_view(['POST'])
@@ -10356,7 +10395,7 @@ def update_notice(request ):
         return Response(NoticeSerializer(man ).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -10385,5 +10424,5 @@ def delete_notice(request ):
         return Response(NoticeSerializer(man ).data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
