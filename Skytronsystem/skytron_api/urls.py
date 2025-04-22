@@ -38,9 +38,17 @@ urlpatterns = [
     path('VehicleOwner/delete_VehicleOwner/<int:vo_id>/', delete_VehicleOwner, name='delete_VehicleOwner'),
     
 
+    path('apiLog/', search_request_logs, name='apilog'),
+    
     path('driver/add_driver/', driver_add, name='add_driver'),
     path('driver/remove_driver/', driver_remove, name='remove_driver'),
 
+    path('poi/create/', create_poi, name='create_poi'),
+    path('poi/update/', update_poi, name='update_poi'),
+    path('poi/delete/', delete_poi, name='delete_poi'),
+    path('poi/list/', list_pois, name='list_pois'),
+
+    
     path('manufacturer/create_manufacturer/', create_manufacturer, name='create_manufacturer'),
     path('manufacturer/update_manufacturer/', update_manufacturer, name='update_manufacturer'),
     path('manufacturer/filter_manufacturers/', filter_manufacturers, name='filter_manufacturers'),

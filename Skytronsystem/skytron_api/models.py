@@ -77,6 +77,53 @@ class RequestLog(models.Model):
     def __str__(self):
         return self.ip_address
 
+class POI(models.Model): 
+    status_choices = [
+            ('Active', 'Active'),
+            ('NotActive', 'NotActive'),
+            ('Deleted', 'Deleted'), 
+        ]
+    
+    status = models.CharField(max_length=20, choices=status_choices)
+    mark_type_choices = [
+            ('Point', 'Point'),
+            ('Road', 'Road'),
+            ('Circle', 'Circle'), 
+            ('Polygon', 'Polygon'), 
+        ]
+    mark_type = models.CharField(max_length=20, choices=mark_type_choices)
+    use_type_choices = [
+            ('StateBoundary', 'StateBoundary'),
+            ( 'DistrictBoundary', 'DistrictBoundary'),
+            ( 'CityBoundary',  'CityBoundary'), 
+            ( 'VillageBoundary',  'VillageBoundary'), 
+            ( 'PermitRoute',  'PermitRoute'), 
+            ( 'School',  'School'), 
+            ( 'Hospital',  'Hospital'), 
+            ( 'PoliceStation',  'PoliceStation'), 
+            ( 'BusStop',  'BusStop'),  
+            ( 'RailwayStation',  'RailwayStation'), 
+            ( 'Airport',  'Airport'), 
+            ( 'FuelStation',  'FuelStation'), 
+            ( 'TollGate',  'TollGate'), 
+            ( 'Other',  'Other'),
+            ( 'Personal',  'Personal'),
+            
+        ]
+    use_type = models.CharField(max_length=20, choices=use_type_choices)
+    location = models.TextField()
+    radius = models.FloatField(blank=True, null=True)
+    name = models.CharField(max_length=50, unique=True)
+    description = models.TextField()
+    created_by = models.ForeignKey('User', on_delete=models.CASCADE,related_name='POI_created_by')
+    updated_by = models.ForeignKey('User', on_delete=models.CASCADE,related_name='POI_updated_by')
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        return self.name
+    
+     
+
     
 def get_logged_in_users_with_min_assignments(): 
     eight_hours_ago = timezone.now() - timezone.timedelta(hours=8) 

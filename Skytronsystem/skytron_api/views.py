@@ -6,6 +6,7 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 import secrets
 import string
 from django.core.serializers import serialize
+from django.core.paginator import Paginator
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import authenticate,logout,login 
 from rest_framework.response import Response
@@ -4407,6 +4408,122 @@ def arriving_EMassignment(request):
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def create_poi(request):
+    try:
+        data = request.data
+        poi = POI.objects.create(
+            status=data.get('status'),
+            mark_type=data.get('mark_type'),
+            use_type=data.get('use_type'),
+            location=data.get('location'),
+            radius=data.get('radius'),
+            name=data.get('name'),
+            description=data.get('description'),
+            created_by=request.user,
+            updated_by=request.user
+        )
+        return Response({'message': 'POI created successfully', 'data': model_to_dict(poi)}, status=201)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def update_poi(request):
+    try:
+        poi_id = request.data.get('poi_id')
+        poi = POI.objects.get(id=poi_id)
+        data = request.data
+        poi.status = data.get('status', poi.status)
+        poi.mark_type = data.get('mark_type', poi.mark_type)
+        poi.use_type = data.get('use_type', poi.use_type)
+        poi.location = data.get('location', poi.location)
+        poi.radius = data.get('radius', poi.radius)
+        poi.name = data.get('name', poi.name)
+        poi.description = data.get('description', poi.description)
+        poi.updated_by = request.user
+        poi.save()
+        return Response({'message': 'POI updated successfully', 'data': model_to_dict(poi)}, status=200)
+    except POI.DoesNotExist:
+        return Response({'error': 'POI not found'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+     
+ 
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def delete_poi(request):
+    try:
+        poi_id = request.data.get('poi_id')
+        poi = POI.objects.get(id=poi_id)
+        poi.delete()
+        return Response({'message': 'POI deleted successfully'}, status=200)
+    except POI.DoesNotExist:
+        return Response({'error': 'POI not found'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def list_pois(request):
+    try:
+        pois = POI.objects.all()
+        data = list(pois.values())
+        return Response({'data': data}, status=200)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+    
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+def search_request_logs(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    
+    query = request.GET.get('q', '')  # Get the search query from the request
+    page = request.GET.get('page', 1)  # Get the page number from the request
+    per_page = request.GET.get('per_page', 10)  # Number of items per page (default: 10)
+
+    # Filter the RequestLog model based on the search query
+    logs = RequestLog.objects.filter(
+        Q(ip_address__icontains=query) |
+        Q(system_info__icontains=query) |
+        Q(request_url__icontains=query) |
+        Q(request_type__icontains=query) |
+        Q(headers__icontains=query) |
+        Q(incoming_data__icontains=query) |
+        Q(response_type__icontains=query) |
+        Q(error_code__icontains=query)
+    ).order_by('-timestamp')  # Order by timestamp (descending)
+
+    # Paginate the results
+    paginator = Paginator(logs, per_page)
+    paginated_logs = paginator.get_page(page)
+
+    # Prepare the response data
+    data = {
+        'results': list(paginated_logs.object_list.values()),
+        'page': paginated_logs.number,
+        'total_pages': paginator.num_pages,
+        'total_results': paginator.count,
+    }
+
+    return JsonResponse(data)
   
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -4861,7 +4978,7 @@ def driver_add(request):
         try:
             uploaded_file = request.FILES.get('photo')
             if uploaded_file:
-                file_path = 'fileuploads/driver/' + str(device_tag.id) + '_' + uploaded_file.name
+                file_path = 'fileuploads/driver_' + str(device_tag.id) + '_' + uploaded_file.name
                 with open(file_path, 'wb') as file:
                     for chunk in uploaded_file.chunks():
                         file.write(chunk)
