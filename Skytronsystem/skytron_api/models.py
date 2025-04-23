@@ -76,14 +76,30 @@ class RequestLog(models.Model):
     error_code = models.IntegerField(null=True, blank=True)
     def __str__(self):
         return self.ip_address
+    
+    
+class RequestLogaaaaa(models.Model):
+    timestamp = models.DateTimeField(auto_now_add=True)
+    ip_address = models.CharField(max_length=70)  # Supports IPv6
+    system_info = models.TextField()
+    request_url = models.URLField()
+    request_type = models.CharField(max_length=100)
+    headers = models.TextField()
+    incoming_data = models.TextField()
+    response_type = models.CharField(max_length=100)
+    error_code = models.IntegerField(null=True, blank=True)
+    def __str__(self):
+        return self.ip_address
 
-class POI(models.Model): 
+class pointofinterests(models.Model): 
     status_choices = [
             ('Active', 'Active'),
             ('NotActive', 'NotActive'),
-            ('Deleted', 'Deleted'), 
+            ('Deleted', 'Deleted'),  
+            ('Deleted2', 'Deleted2'),  
         ]
     
+    status2 = models.CharField(max_length=20, choices=status_choices)
     status = models.CharField(max_length=20, choices=status_choices)
     mark_type_choices = [
             ('Point', 'Point'),

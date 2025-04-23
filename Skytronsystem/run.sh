@@ -87,3 +87,6 @@ createdb skytrondb;
 skytron_main_db
 GRANT ALL PRIVILEGES ON DATABASE skytrondb TO dbadmin;
 GRANT ALL PRIVILEGES ON DATABASE skytron_main_db TO dbadmin;
+
+
+python3  manage.py migrate

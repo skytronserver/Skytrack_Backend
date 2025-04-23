@@ -4414,7 +4414,7 @@ def arriving_EMassignment(request):
 def create_poi(request):
     try:
         data = request.data
-        poi = POI.objects.create(
+        poi = pointofinterests.objects.create(
             status=data.get('status'),
             mark_type=data.get('mark_type'),
             use_type=data.get('use_type'),
@@ -4425,7 +4425,7 @@ def create_poi(request):
             created_by=request.user,
             updated_by=request.user
         )
-        return Response({'message': 'POI created successfully', 'data': model_to_dict(poi)}, status=201)
+        return Response({'message': 'poi created successfully', 'data': model_to_dict(poi)}, status=201)
     except Exception as e:
         return Response({'error': str(e)}, status=400)
     
@@ -4436,7 +4436,7 @@ def create_poi(request):
 def update_poi(request):
     try:
         poi_id = request.data.get('poi_id')
-        poi = POI.objects.get(id=poi_id)
+        poi = pointofinterests.objects.get(id=poi_id)
         data = request.data
         poi.status = data.get('status', poi.status)
         poi.mark_type = data.get('mark_type', poi.mark_type)
@@ -4447,9 +4447,9 @@ def update_poi(request):
         poi.description = data.get('description', poi.description)
         poi.updated_by = request.user
         poi.save()
-        return Response({'message': 'POI updated successfully', 'data': model_to_dict(poi)}, status=200)
-    except POI.DoesNotExist:
-        return Response({'error': 'POI not found'}, status=404)
+        return Response({'message': 'poi updated successfully', 'data': model_to_dict(poi)}, status=200)
+    except poi.DoesNotExist:
+        return Response({'error': 'poi not found'}, status=404)
     except Exception as e:
         return Response({'error': str(e)}, status=400)
     
@@ -4462,11 +4462,11 @@ def update_poi(request):
 def delete_poi(request):
     try:
         poi_id = request.data.get('poi_id')
-        poi = POI.objects.get(id=poi_id)
+        poi = pointofinterests.objects.get(id=poi_id)
         poi.delete()
-        return Response({'message': 'POI deleted successfully'}, status=200)
-    except POI.DoesNotExist:
-        return Response({'error': 'POI not found'}, status=404)
+        return Response({'message': 'poi deleted successfully'}, status=200)
+    except poi.DoesNotExist:
+        return Response({'error': 'poi not found'}, status=404)
     except Exception as e:
         return Response({'error': str(e)}, status=400)
     
@@ -4476,7 +4476,7 @@ def delete_poi(request):
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 def list_pois(request):
     try:
-        pois = POI.objects.all()
+        pois = pointofinterests.objects.all()
         data = list(pois.values())
         return Response({'data': data}, status=200)
     except Exception as e:
