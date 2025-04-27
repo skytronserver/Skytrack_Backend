@@ -64,3 +64,4 @@ Skytronsystem/skytron_api/static/notice/*.pdf
 Skytronsystem/skytron_api/static/notice/*.png
 Skytronsystem/FOTAFiles/*.bin
 Skytronsystem/logs/errors.log
+Skytronsystem/venv/*
