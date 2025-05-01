@@ -77,16 +77,17 @@ ENV SECRET_KEY=django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2q
 ENV EMAIL_HOST_USER=testskytrack@gmail.com
 ENV EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
 ENV ALLOWED_HOSTS="gromed.in,api.gromed.in,api.skytron.in,skytron.in,dev.skytron.in,api-dev.skytron.in,skytrack.tech,localhost"
- 
+
 ENV DB_NAME=skytrondbnew2
 ENV DB_USER=dbadmin
 ENV DB_PASSWORD=lask1028zmnx
-ENV DB_HOST=216.10.244.243
+ENV DB_HOST=135.235.166.209
+#216.10.244.243
 #host.docker.internal
 ENV DB_PORT=5432
- # 
-RUN python manage.py makemigrations
-RUN python manage.py migrate
+# 
+#RUN python manage.py makemigrations
+#RUN python manage.py migrate
 
 # Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key
 #CMD ["python3 manage.py runserver_plus --cert-file cert_old.pem --key-file key_old.pem 0.0.0.0:2000"]
