@@ -8410,7 +8410,7 @@ def user_login(request):
         
         if not username or not password:
             return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
-        user = User.objects.filter(mobile=username,is_acrive=True).last() #or User.objects.filter(mobile=username).first()
+        user = User.objects.filter(mobile=username,is_active=True).last() #or User.objects.filter(mobile=username).first()
         if not user or not  check_password(password, user.password):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         
