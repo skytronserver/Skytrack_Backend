@@ -510,24 +510,6 @@ class Migration(migrations.Migration):
             ],
         ),
         migrations.CreateModel(
-            name='poi',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('status2', models.CharField(choices=[('Active', 'Active'), ('NotActive', 'NotActive'), ('Deleted', 'Deleted'), ('Deleted2', 'Deleted2')], max_length=20)),
-                ('status', models.CharField(choices=[('Active', 'Active'), ('NotActive', 'NotActive'), ('Deleted', 'Deleted'), ('Deleted2', 'Deleted2')], max_length=20)),
-                ('mark_type', models.CharField(choices=[('Point', 'Point'), ('Road', 'Road'), ('Circle', 'Circle'), ('Polygon', 'Polygon')], max_length=20)),
-                ('use_type', models.CharField(choices=[('StateBoundary', 'StateBoundary'), ('DistrictBoundary', 'DistrictBoundary'), ('CityBoundary', 'CityBoundary'), ('VillageBoundary', 'VillageBoundary'), ('PermitRoute', 'PermitRoute'), ('School', 'School'), ('Hospital', 'Hospital'), ('PoliceStation', 'PoliceStation'), ('BusStop', 'BusStop'), ('RailwayStation', 'RailwayStation'), ('Airport', 'Airport'), ('FuelStation', 'FuelStation'), ('TollGate', 'TollGate'), ('Other', 'Other'), ('Personal', 'Personal')], max_length=20)),
-                ('location', models.TextField()),
-                ('radius', models.FloatField(blank=True, null=True)),
-                ('name', models.CharField(max_length=50, unique=True)),
-                ('description', models.TextField()),
-                ('created', models.DateTimeField(auto_now_add=True)),
-                ('updated', models.DateTimeField(auto_now_add=True)),
-                ('created_by', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='POI_created_by', to=settings.AUTH_USER_MODEL)),
-                ('updated_by', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='POI_updated_by', to=settings.AUTH_USER_MODEL)),
-            ],
-        ),
-        migrations.CreateModel(
             name='Notice',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),

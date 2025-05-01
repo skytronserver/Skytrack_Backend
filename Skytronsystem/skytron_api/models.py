@@ -303,7 +303,6 @@ class TempUser(models.Model):
     em_msg=models.TextField(blank=True, null=True, verbose_name="em_msg") 
     em_time= models.DateTimeField(blank=True, null=True)
       
-
 class Confirmation(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     token = models.CharField(max_length=32, unique=True)
@@ -819,6 +818,37 @@ class DeviceTag(models.Model):
         return self.vehicle_reg_no
 
 
+
+
+
+
+
+class Holiday(models.Model):
+    STATUS_CHOICES = [
+        ('Active', 'Active'),
+        ('Inactive', 'Inactive'),
+    ]
+
+    HOLIDAY_TYPE_CHOICES = [
+        ('Public', 'Public'),
+        ('Private', 'Private'),
+    ]
+
+    holiday_name = models.CharField(max_length=255, verbose_name="Holiday Name")
+    start_date = models.DateField(verbose_name="Start Date")
+    end_date = models.DateField(verbose_name="End Date")
+    description = models.TextField(blank=True, null=True, verbose_name="Description")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Active', verbose_name="Status")
+    holiday_type = models.CharField(max_length=20, choices=HOLIDAY_TYPE_CHOICES, verbose_name="Holiday Type")
+    vehicles = models.ManyToManyField(DeviceTag, related_name="holiday_vehicles", verbose_name="Vehicle List")
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="holiday_created_by", verbose_name="Created By")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Created At")
+
+    def __str__(self):
+        return self.holiday_name
+    
+    
+    
 ##unused
 
 

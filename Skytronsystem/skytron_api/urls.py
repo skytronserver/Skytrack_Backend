@@ -19,6 +19,7 @@ urlpatterns = [
     path('user_login_app/', user_login_app, name='user_login_app'),
     path('reset_password_request/', reset_password, name='reset_password'),
      
+    path('deactivateUser/', deactivate_user, name='user_dactivate'),
     path('user_logout/', user_logout, name='user_logout'),
     #path('user_get_parent/<int:user_id>/', user_get_parent, name='user_get_parent'),
     path('get_list/', get_list, name='get_list'),
@@ -37,6 +38,11 @@ urlpatterns = [
     path('eSimProvider/delete_eSimProvider/<int:esimProvider_id>/', delete_eSimProvider, name='delete_eSimProvider'),
     path('VehicleOwner/delete_VehicleOwner/<int:vo_id>/', delete_VehicleOwner, name='delete_VehicleOwner'),
     
+    path('holiday/create/', create_holiday, name='create_holiday'),
+    path('holiday/update/<int:holiday_id>/', update_holiday, name='update_holiday'),
+    path('holiday/delete/<int:holiday_id>/', delete_holiday, name='delete_holiday'),
+    path('holiday/list/', list_holidays, name='list_holidays'),
+
 
     path('apiLog/', search_request_logs, name='apilog'),
     

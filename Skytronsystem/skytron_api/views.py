@@ -8410,12 +8410,13 @@ def user_login(request):
         
         if not username or not password:
             return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
-        user = User.objects.filter(mobile=username).last() #or User.objects.filter(mobile=username).first()
+        user = User.objects.filter(mobile=username,is_acrive=True).last() #or User.objects.filter(mobile=username).first()
         if not user or not  check_password(password, user.password):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         
 
         user.is_active=True
+        user.login=True
         user.save()
         existing_session = Session.objects.filter(user=user.id, status='login').last()
         #if existing_session:
@@ -8887,7 +8888,103 @@ def validate_otp(request):
                 return Response({'error': str(e)}, status=400)
         else:
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)
-            
+      
+      
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def deactivate_user(request):
+    # Ensure only superadmin can access this API
+    if request.user.role != "superadmin":
+        return Response({"error": "Access denied. Only superadmins can perform this action."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Get the user ID from the request
+    user_id = request.data.get('userid')
+    if not user_id:
+        return Response({"error": "User ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        # Fetch the user and deactivate them
+        user = User.objects.get(id=user_id)
+        user.is_active = False
+        user.save()
+        return Response({"message": f"User with ID {user_id} has been deactivated successfully."}, status=status.HTTP_200_OK)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def create_holiday(request):
+    try:
+        data = request.data
+        vehicles = data.get('vehicles', [])
+        holiday = Holiday.objects.create(
+            holiday_name=data.get('holidayName'),
+            start_date=data.get('startDate'),
+            end_date=data.get('endDate'),
+            description=data.get('description'),
+            status=data.get('status', 'Active'),
+            holiday_type=data.get('holidayType'),
+            created_by=request.user
+        )
+        holiday.vehicles.set(DeviceTag.objects.filter(id__in=vehicles))
+        holiday.save()
+        return Response({'message': 'Holiday created successfully', 'data': model_to_dict(holiday)}, status=201)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def update_holiday(request, holiday_id):
+    try:
+        holiday = Holiday.objects.get(id=holiday_id, created_by=request.user)
+        data = request.data
+        vehicles = data.get('vehicles', [])
+        holiday.holiday_name = data.get('holidayName', holiday.holiday_name)
+        holiday.start_date = data.get('startDate', holiday.start_date)
+        holiday.end_date = data.get('endDate', holiday.end_date)
+        holiday.description = data.get('description', holiday.description)
+        holiday.status = data.get('status', holiday.status)
+        holiday.holiday_type = data.get('holidayType', holiday.holiday_type)
+        holiday.vehicles.set(DeviceTag.objects.filter(id__in=vehicles))
+        holiday.save()
+        return Response({'message': 'Holiday updated successfully', 'data': model_to_dict(holiday)}, status=200)
+    except Holiday.DoesNotExist:
+        return Response({'error': 'Holiday not found or access denied'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def delete_holiday(request, holiday_id):
+    try:
+        holiday = Holiday.objects.get(id=holiday_id, created_by=request.user)
+        holiday.delete()
+        return Response({'message': 'Holiday deleted successfully'}, status=200)
+    except Holiday.DoesNotExist:
+        return Response({'error': 'Holiday not found or access denied'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def list_holidays(request):
+    try:
+        holidays = Holiday.objects.filter(created_by=request.user)
+        data = list(holidays.values())
+        return Response({'data': data}, status=200)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+          
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
