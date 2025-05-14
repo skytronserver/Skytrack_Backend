@@ -78,6 +78,22 @@ class RequestLog(models.Model):
         return self.ip_address
     
     
+    
+class MediaFile(models.Model):
+    device_tag = models.ForeignKey('Device', on_delete=models.CASCADE)
+    camera_id = models.CharField(max_length=255)
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    media_type = models.CharField(max_length=50, choices=[('audio', 'Audio'), ('video', 'Video'), ('image', 'Image')])
+    media_link = models.URLField()
+    duration_ms = models.IntegerField()
+    alert_type = models.CharField(max_length=255)
+    message = models.TextField()
+
+    def __str__(self):
+        return f"{self.media_type} from {self.camera_id} at {self.start_time}"
+    
+    
 class RequestLogaaaaa(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     ip_address = models.CharField(max_length=70)  # Supports IPv6
