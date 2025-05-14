@@ -151,7 +151,7 @@ def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,A
  
 
 def load_private_key():
-    private_key_path = '/app/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
+    private_key_path = '/home/azureuser/Skytrack_Backend/Skytronsystem/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
     with open(private_key_path, 'rb') as key_file:
         private_key = RSA.import_key(key_file.read()) 
     with open(private_key_path, 'rb') as key_file: 

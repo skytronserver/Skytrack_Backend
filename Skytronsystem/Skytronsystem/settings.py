@@ -89,6 +89,7 @@ MIDDLEWARE = [
 
 
 # Content Security Policy settings
+"""
 CSP_DEFAULT_SRC = ("'self'",)  # Default source for all content types
 CSP_SCRIPT_SRC = ("'self'", )  # For JavaScript
 CSP_STYLE_SRC = ("'self'",)  # For CSS
@@ -102,6 +103,7 @@ CSP_MEDIA_SRC = ("'self'",)  # For media like audio and video
 # Optionally report violations
 CSP_REPORT_ONLY = False  # Set to True to test the policy without enforcing
 CSP_REPORT_URI = 'https://'
+"""
 
  
 # Security settings
