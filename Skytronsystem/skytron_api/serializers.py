@@ -45,7 +45,11 @@ class DeviceTagSerializer(serializers.ModelSerializer):
         model =DeviceTag        
         exclude = ['otp','otp_time'] 
 
-
+class MediaFileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MediaFile
+        fields = ['device_tag', 'camera_id', 'start_time', 'end_time', 'media_type', 'media_link', 'duration_ms', 'alert_type', 'message']
+        
 
 class UserSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()

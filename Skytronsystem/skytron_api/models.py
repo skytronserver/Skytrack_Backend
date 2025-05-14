@@ -407,6 +407,21 @@ class VehicleOwner(models.Model):
     status = models.CharField(max_length=20, choices=status_choices)
     
 
+class MediaFile(models.Model):
+    device_tag = models.ForeignKey('Device', on_delete=models.CASCADE)
+    camera_id = models.CharField(max_length=255)
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    media_type = models.CharField(max_length=50, choices=[('audio', 'Audio'), ('video', 'Video'), ('image', 'Image')])
+    media_link = models.URLField()
+    duration_ms = models.IntegerField()
+    alert_type = models.CharField(max_length=255)
+    message = models.TextField()
+
+    def __str__(self):
+        return f"{self.media_type} from {self.camera_id} at {self.start_time}"
+    
+
 class StateAdmin(models.Model):
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     users = models.ManyToManyField('User', related_name='stateadmin_User')

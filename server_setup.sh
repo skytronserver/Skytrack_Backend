@@ -178,3 +178,8 @@ sudo docker run -d  --restart=always -p 2000:2000  -f dockerfile.mqtt -e  MAIL_I
 mosquitto_sub -h '216.10.244.243' -p 8883 -t 'gps' --cafile /etc/mosquitto/ca_certificates/ca.crt --cert /etc/mosquitto/certs/client.crt --key /etc/mosquitto/certs/client.key
 
 mosquitto_sub -h '4.240.90.1' -p 8883 -t 'gps' --cafile /etc/mosquitto/ca_certificates/ca.crt --cert /etc/mosquitto/certs/client.crt --key /etc/mosquitto/certs/client.key
+
+sudo docker build -t skytron-backend-api -f dockerfile.api .
+sudo docker stop skytron-backend-api-container
+sudo docker rm skytron-backend-api-container
+sudo docker run -d  --restart=always -p 2000:2000  -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 

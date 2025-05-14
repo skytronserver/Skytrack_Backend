@@ -26,3 +26,7 @@ sudo apt-get install mosquitto-clients
 mosquitto_sub -h localhost -p 8883 --capath /var/www/html/skytron_backend/Skytronsystem/mqttKeys -t '#'
 
 mosquitto_sub -h '135.235.166.209' -p 8883 -t '#' --cafile ca.crt --cert client.crt --key client.key
+mosquitto_sub -h '4.240.90.1' -p 8883 -t '#' --cafile /home/azureuser/Skytrack_Backend/Skytronsystem/mqttKeys/ca.crt --cert /home/azureuser/Skytrack_Backend/Skytronsystem/mqttKeys/client.crt --key /home/azureuser/Skytrack_Backend/Skytronsystem/mqttKeys/client.key
+
+
+4.240.90.1

@@ -86,8 +86,10 @@ ENV DB_HOST=135.235.166.209
 #host.docker.internal
 ENV DB_PORT=5432
 # 
-#RUN python manage.py makemigrations
-#RUN python manage.py migrate
+RUN python manage.py makemigrations
+RUN python manage.py migrate --fake-initial
+RUN python manage.py migrate
+
 
 # Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key
 #CMD ["python3 manage.py runserver_plus --cert-file cert_old.pem --key-file key_old.pem 0.0.0.0:2000"]
