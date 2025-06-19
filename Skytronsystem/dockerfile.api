@@ -86,7 +86,8 @@ ENV ALLOWED_HOSTS="gromed.in,api.gromed.in,api.skytron.in,skytron.in,dev.skytron
 ENV DB_NAME=skytrondbnew2
 ENV DB_USER=dbadmin
 ENV DB_PASSWORD=lask1028zmnx
-ENV DB_HOST=40.81.241.29
+ENV DB_HOST=135.235.166.209
+#40.81.241.29
 #216.10.244.243
 #host.docker.internal
 ENV DB_PORT=5432
