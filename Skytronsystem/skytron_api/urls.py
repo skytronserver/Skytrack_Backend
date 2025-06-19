@@ -152,8 +152,12 @@ urlpatterns = [
     path('EM/DEx/commentFE/', DEx_commentFE, name='DEx_commentFE'),
     path('EM/DEx/getCallAllLoc/', DEx_getloc, name='DEx_getCallAllLoc'),
     path('EM/DEx/get-media/', DEx_getMedia, name='get_media'),
+   
 
-
+    path('api/device_media_upload', upload_media_file, name='upload_media_file'),
+    path('api/dummy-insert-data', dummy_insert_data, name='dummy_insert_data'),
+    
+    
     path('EM/FEx/listBroadcast/', FEx_broadcastlist, name='FEx_broadcastlist'),
     path('EM/FEx/acceptBroadcast/', FEx_broadcastaccept, name='FEx_broadcastaccept'),
     path('EM/FEx/sendMsg/', DEx_sendMsg, name='FEx_sendMsg'),

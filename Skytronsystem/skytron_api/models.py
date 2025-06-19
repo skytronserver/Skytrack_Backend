@@ -79,8 +79,8 @@ class RequestLog(models.Model):
     
     
     
-class MediaFile(models.Model):
-    device_tag = models.ForeignKey('Device', on_delete=models.CASCADE)
+class Media_File1(models.Model):
+    device_tag = models.ForeignKey('DeviceTag', on_delete=models.CASCADE)
     camera_id = models.CharField(max_length=255)
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()

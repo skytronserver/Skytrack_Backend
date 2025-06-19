@@ -11,9 +11,9 @@ from .models import *
 from .models import VehicleOwner
 
 
-class MediaFileSerializer(serializers.ModelSerializer):
+class Media_FileSerializer(serializers.ModelSerializer):
     class Meta:
-        model = MediaFile
+        model = Media_File1
         fields = ['device_tag', 'camera_id', 'start_time', 'end_time', 'media_type', 'media_link', 'duration_ms', 'alert_type', 'message']
         
 class Settings_StateSerializer(serializers.ModelSerializer):

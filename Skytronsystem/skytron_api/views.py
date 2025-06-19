@@ -727,6 +727,7 @@ folders = [
     'fileuploads/cop_files/',
     'fileuploads/file_bin/',
     'fileuploads/man/',
+    'fileuploads/media/',
     'fileuploads/driver/',
     # Add more folders as needed
 ]
@@ -4146,19 +4147,130 @@ def DEx_commentFE(request):
 
 
 
+@api_view(['POST'])
+@permission_classes([AllowAny]) 
+#@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def upload_media_file(request):
+    """
+    API to upload media files (.jpg, .mp4, .avi, .wav, .mp3, etc.) and save data in fileuploads/media.
+    The uploaded file will be prefixed with the camera_id.
+    """
+    try:
+        device_tag_id = request.data.get('device_tag')
+        camera_id = request.data.get('camera_id')
+        start_time = request.data.get('start_time')
+        end_time = request.data.get('end_time')
+        media_type = request.data.get('media_type')
+        duration_ms = request.data.get('duration_ms')
+        alert_type = request.data.get('alert_type')
+        message = request.data.get('message')
+        uploaded_file = request.FILES.get('media_file')
+
+        if not (device_tag_id and camera_id and uploaded_file):
+            return JsonResponse({'error': 'device_tag, camera_id, and media_file are required.'}, status=400)
+
+        device_tag = get_object_or_404(DeviceTag, id=device_tag_id)
+
+        # Allowed file extensions
+        allowed_ext = ['.jpg', '.jpeg', '.mp4', '.avi', '.wav', '.mp3']
+        filename = uploaded_file.name
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in allowed_ext:
+            return JsonResponse({'error': f'File type {ext} not allowed.'}, status=400)
+
+        # Prefix camera_id to filename
+        safe_filename = f"{camera_id}_{filename.replace(' ', '_')}"
+        file_path = f'fileuploads/media/{safe_filename}'
+
+        # Save file
+        with open(file_path, 'wb') as f:
+            for chunk in uploaded_file.chunks():
+                f.write(chunk)
+
+        # Save record in Media_File1
+        media_file = Media_File1.objects.create(
+            device_tag=device_tag,
+            camera_id=camera_id,
+            start_time=start_time,
+            end_time=end_time,
+            media_type=media_type,
+            media_link=file_path,
+            duration_ms=duration_ms,
+            alert_type=alert_type,
+            message=message,
+        )
+
+        return JsonResponse({
+            "success": "Media file uploaded successfully",
+            "media_id": media_file.id,
+            "media_link": file_path
+        }, status=201)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+    
+    
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+def dummy_insert_data(request):
+    """
+    Dummy API to insert data using GET parameters.
+    Example usage:
+    /api/dummy-insert-data?device_tag=1&camera_id=101&start_time=2023-05-01T10:00:00Z&end_time=2023-05-01T10:05:00Z&media_type=video&media_link=http://example.com/video.mp4&duration_ms=300000&alert_type=alert&message=Test
+    """
+    if request.method == 'POST':
+        try:  
+            device_tag = request.data.get('device_tag')
+            device_tag = get_object_or_404(DeviceTag, id=device_tag)
+
+            camera_id = request.data.get('camera_id')
+            start_time = request.data.get('start_time')
+            end_time = request.data.get('end_time')
+            media_type = request.data.get('media_type')
+            media_link = request.data.get('media_link')
+            duration_ms = request.data.get('duration_ms')
+            alert_type = request.data.get('alert_type')
+            message = request.data.get('message')
+
+            media_file = Media_File1.objects.create(
+                device_tag=device_tag,
+                camera_id=camera_id,
+                start_time=start_time,
+                end_time=end_time,
+                media_type=media_type,
+                media_link=media_link,
+                duration_ms=duration_ms,
+                alert_type=alert_type,
+                message=message,
+            )
+
+            return JsonResponse({"success": "Data inserted successfully", "media_id": media_file.id}, status=201)
+
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"error": "Only GET requests are allowed"}, status=405)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def DEx_getMedia(request):
     if request.method != 'POST':
         return Response({"error": "Invalid request method."}, status=status.HTTP_400_BAD_REQUEST)
     role="sosexecutive"
     user=request.user
-    uo=get_user_object(user,role)
-    if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)  
+    #uo=get_user_object(user,role)
+    #if not uo:
+    #    return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)  
     
     
 
     assignment =request.data.get("assignment_id")  
-    assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=["accepted"]).last()
+    assignment =EMCallAssignment.objects.filter(id=assignment,status__in=["accepted"]).last()#ex=uo,
     if not assignment:
             return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
     
@@ -4167,7 +4279,7 @@ def DEx_getMedia(request):
         return Response({"error": "device_tag is required."}, status=status.HTTP_400_BAD_REQUEST)
 
        
-    media_items = MediaFile.objects.filter(device_tag=device_tag).order_by('-start_time')[:100]
+    media_items = Media_File1.objects.filter(device_tag=device_tag.id).order_by('-start_time')[:100]
     
     media_dict = {}
     for item in media_items:
@@ -9592,3 +9704,68 @@ def delete_notice(request):
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
+
+@api_view(['POST'])
+@permission_classes([AllowAny]) 
+#@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def upload_media_file(request):
+    """
+    API to upload media files (.jpg, .mp4, .avi, .wav, .mp3, etc.) and save data in fileuploads/media.
+    The uploaded file will be prefixed with the camera_id.
+    """
+    try:
+        device_tag_id = request.data.get('device_tag')
+        camera_id = request.data.get('camera_id')
+        start_time = request.data.get('start_time')
+        end_time = request.data.get('end_time')
+        media_type = request.data.get('media_type')
+        duration_ms = request.data.get('duration_ms')
+        alert_type = request.data.get('alert_type')
+        message = request.data.get('message')
+        uploaded_file = request.FILES.get('media_file')
+
+        if not (device_tag_id and camera_id and uploaded_file):
+            return JsonResponse({'error': 'device_tag, camera_id, and media_file are required.'}, status=400)
+
+        device_tag = get_object_or_404(DeviceTag, id=device_tag_id)
+
+        # Allowed file extensions
+        allowed_ext = ['.jpg', '.jpeg', '.mp4', '.avi', '.wav', '.mp3']
+        filename = uploaded_file.name
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in allowed_ext:
+            return JsonResponse({'error': f'File type {ext} not allowed.'}, status=400)
+
+        # Prefix camera_id to filename
+        safe_filename = f"{camera_id}_{filename.replace(' ', '_')}"
+        file_path = f'fileuploads/media/{safe_filename}'
+
+        # Save file
+        with open(file_path, 'wb') as f:
+            for chunk in uploaded_file.chunks():
+                f.write(chunk)
+
+        # Save record in Media_File1
+        media_file = Media_File1.objects.create(
+            device_tag=device_tag,
+            camera_id=camera_id,
+            start_time=start_time,
+            end_time=end_time,
+            media_type=media_type,
+            media_link=file_path,
+            duration_ms=duration_ms,
+            alert_type=alert_type,
+            message=message,
+        )
+
+        return JsonResponse({
+            "success": "Media file uploaded successfully",
+            "media_id": media_file.id,
+            "media_link": file_path
+        }, status=201)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+    
+    
