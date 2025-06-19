@@ -333,7 +333,7 @@ def decrypt_field(encrypted_field, private_key):
     try:
         decrypted_data = cipher.decrypt(enc)
         return decrypted_data.decode('utf-8')
-    except:
+    except Exception as e :
         return None
 PRIVATE_KEY=load_private_key() 
 #print(PRIVATE_KEY)
@@ -1560,6 +1560,8 @@ def update_VehicleOwner(request ):
             vehicle_owner.idProofno = idProofno
         if file_idProof:
             vehicle_owner.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+            if not vehicle_owner.file_idProof : 
+                    return Response({'error': "Invalid file." }, status=400)
         vuser=vehicle_owner.users.last()
         if email:
             vuser.email = email
@@ -1619,6 +1621,10 @@ def create_VehicleOwner(request ):
         if user: 
             try:
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                
+                if not file_idProof : 
+                    user.delete()
+                    return Response({'error': "Invalid file." }, status=400)
                 retailer ,error= VehicleOwner.objects.safe_create(
                     company_name=company_name, 
                     created=created,
@@ -1885,16 +1891,27 @@ def update_manufacturer(request ):
             man.idProofno=idProofno
         if file_authLetter:
             man.file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man') 
+            
+            if not man.file_authLetter : 
+                    return Response({'error': "Invalid file." }, status=400)
 
         if file_companRegCertificate :
             man.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
                 
+            if not man.file_companRegCertificate : 
+                    return Response({'error': "Invalid file." }, status=400)
 
         if file_GSTCertificate :
             man.file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
+            if not man.file_GSTCertificate : 
+                    return Response({'error': "Invalid file." }, status=400)
+            
 
         if file_idProof:
             man.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+            if not man.file_idProof : 
+                    return Response({'error': "Invalid file." }, status=400)
+            
         if esim_provider_ids !=[]:
             man.esim_provider_ids=esim_provider_ids
 
@@ -1978,12 +1995,24 @@ def update_eSimProvider(request ):
             esimprovider.idProofno = idProofno
         if file_authLetter:
             esimprovider.file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man')
+            
+            if not esimprovider.file_authLetter: 
+                    return Response({'error': "Invalid file." }, status=400)
         if file_companRegCertificate:
             esimprovider.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
+        
+            if not esimprovider.file_companRegCertificate: 
+                    return Response({'error': "Invalid file." }, status=400)
         if file_GSTCertificate:
             esimprovider.file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
+        
+            if not esimprovider.file_GSTCertificate:
+                    return Response({'error': "Invalid file." }, status=400)
         if file_idProof:
             esimprovider.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+            
+            if not esimprovider.file_idProof: 
+                    return Response({'error': "Invalid file." }, status=400)
 
         if email:
             esimprovider.user.email = email
@@ -2052,6 +2081,9 @@ def create_eSimProvider(request ):
                     file_companRegCertificate=save_file(request,'file_dot_m2m_registration','fileuploads/man')
                     file_GSTCertificate=save_file(request,'file_GSTCertificate','fileuploads/man')
                     file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                    if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof:    
+                        user.delete()
+                        return Response({'error': "Invalid file." }, status=400)
                 except Exception as e:
                     user.delete()
 
@@ -2223,12 +2255,20 @@ def update_dealer(request ):
             dealer.idProofno = idProofno
         if file_authLetter:
             dealer.file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man')
+            if not dealer.file_authLetter:
+                    return Response({'error': "Invalid file." }, status=400)
         if file_companRegCertificate:
             dealer.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
+            if not dealer.file_companRegCertificate:
+                    return Response({'error': "Invalid file." }, status=400)
         if file_GSTCertificate:
             dealer.file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
+            if not dealer.file_GSTCertificate:
+                    return Response({'error': "Invalid file." }, status=400)
         if file_idProof:
             dealer.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+            if not dealer.file_idProof:
+                    return Response({'error': "Invalid file." }, status=400)
         if district:
             dealer.district = district
 
@@ -2301,6 +2341,10 @@ def create_dealer(request ):
                 file_companRegCertificate=save_file(request,'file_companRegCertificate','fileuploads/man')
                 file_GSTCertificate=save_file(request,'file_GSTCertificate','fileuploads/man')
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof:
+                    user.delete()
+                    return Response({'error': "Invalid file." }, status=400)
+                
 
 
                 retailer ,error= Retailer.objects.safe_create(
@@ -2489,16 +2533,24 @@ def update_manufacturer(request ):
             man.idProofno=idProofno
         if file_authLetter:
             man.file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man') 
+            if not man.file_authLetter :
+                    return Response({'error': "Invalid file." }, status=400)
 
         if file_companRegCertificate :
             man.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
-                
+            if not man.file_companRegCertificate :
+                return Response({'error': "Invalid file." }, status=400)
 
         if file_GSTCertificate :
             man.file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
+            if not file_GSTCertificate :
+                return Response({'error': "Invalid file." }, status=400)
 
         if file_idProof:
             man.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+            
+            if not file_idProof :
+                return Response({'error': "Invalid file." }, status=400)
         if esim_provider_ids !=[]:
             man.esim_provider_ids=esim_provider_ids
 
@@ -2571,6 +2623,9 @@ def create_manufacturer(request ):
                 file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
                 file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
                 file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+                if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof:
+                    user.delete()
+                    return Response({'error': "Invalid file." }, status=400)
 
                 manufacturer ,error= Manufacturer.objects.safe_create(
                     company_name=company_name,
@@ -2887,6 +2942,9 @@ def update_StateAdmin(request ):
             stateadmin.state_id = state
         if file_idProof:
             stateadmin.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+            if not stateadmin.file_idProof:
+                     
+                    return Response({'error': "Invalid file." }, status=400)
 
         if new_email:
             stateadmin.user.email = new_email
@@ -3037,7 +3095,10 @@ def create_DTO_RTO(request ):
             try: 
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
                 file_authorisation_letter = save_file(request,'file_authorisation_letter','fileuploads/man')
-
+                if not file_idProof or not file_authorisation_letter:
+                    user.delete() 
+                     
+                    return Response({'error': "Invalid file." }, status=400)
 
                 retailer,error = dto_rto.objects.safe_create( 
                     created=created,
@@ -3127,8 +3188,14 @@ def update_DTO_RTO(request ):
             dtorto.district = districtC
         if file_idProof:
             dtorto.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+            if not dtorto.file_idProof: 
+                    return Response({'error': "Invalid file." }, status=400)
+                
+                
         if file_authorisation_letter:
             dtorto.file_idProof = save_file(request, 'file_authorisation_letter', 'fileuploads/man')
+            if not dtorto.file_idProof: 
+                    return Response({'error': "Invalid file." }, status=400)
 
         if email:
             dtorto.user.email = email
@@ -3299,6 +3366,9 @@ def create_SOS_user(request ):
         if user:  
             try: 
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                if not  file_idProof: 
+                    user.delete()
+                    return Response({'error': "Invalid file." }, status=400)
 
 
                 retailer,error = EM_ex.objects.safe_create( 
@@ -3461,6 +3531,9 @@ def create_SOS_admin(request ):
         if user:
             try:   
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                if not file_idProof: 
+                    user.delete()
+                    return Response({'error': "Invalid file." }, status=400)
                 retailer,error = EM_admin.objects.safe_create( 
                     created=created,
                     state_id=state, 
@@ -9249,6 +9322,7 @@ def user_login(request ):
             return Response({'error': 'Incomplete credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         
         password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
+        
         captchaSuccess=False
         #try:
         #    user_input=int(user_input)
@@ -10258,6 +10332,8 @@ def create_notice(request ):
           
         try:
             file  = save_file(request, 'file', '/app/skytron_api/static/notice')  
+            if not file: 
+                    return Response({'error': "Invalid file." }, status=400)
             notice ,error= Notice.objects.safe_create(
                     title=title,
                     detail=detail,
@@ -10388,6 +10464,8 @@ def update_notice(request ):
             man.status=status
         if file:
             f=save_file(request, 'file', '/app/skytron_api/static/notice') 
+            if not f: 
+                    return Response({'error': "Invalid file." }, status=400)
     
             man.file = ":2000/static/notice/"+f.split("/")[-1],
         man.createdby = createdby
