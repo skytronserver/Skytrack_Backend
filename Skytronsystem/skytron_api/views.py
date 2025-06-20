@@ -2809,7 +2809,7 @@ def send_usercreation_otp(user,new_password,type):
         send_mail(
                 type+' Account Created',text
                 #f'Temporery password is : {new_password}'
-                ,'test@dev.skytron.in',
+                ,'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
                 ) 
@@ -4988,7 +4988,7 @@ def CancelTagDevice2Vehicle(request ):
             send_mail(
                 'Login OTP',
                 text,
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
             )
@@ -5068,7 +5068,7 @@ def TagDevice2Vehicle(request ):
             send_mail(
                 'Login OTP',
                 text,
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
             )
@@ -5567,7 +5567,7 @@ def TagSendOwnerOtp(request ):
     send_mail(
                 'Login OTP',
                 text,
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
     )
@@ -5605,7 +5605,7 @@ def TagSendOwnerOtpFinal(request ):
     send_mail(
                 'Login OTP',
                 text,
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
     )
@@ -6686,7 +6686,7 @@ def COPCreate(request ):
             send_mail(
                 'Login OTP',
                 "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
             )
@@ -6747,7 +6747,7 @@ def COPSendStateAdminOtp(request ):
     send_mail(
         'Login OTP',
         "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-        'test@dev.skytron.in',
+        'noreply@skytron.in',
         [user.email],
         fail_silently=False,
     )
@@ -6929,7 +6929,7 @@ def DeviceSendStateAdminOtp(request ):
     send_mail(
                 'Login OTP',
                 "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
     )
@@ -8647,7 +8647,7 @@ def create_device_model(request ):
             send_mail(
                 'Login OTP',
                 "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
             )
@@ -8785,7 +8785,7 @@ def send_email_confirmation(request ):
         send_mail(
             'Email Confirmation',
             f'Click the link to confirm your email: {url}',
-            'from@example.com',
+            'noreply@skytron.in',
             [user.email],
             fail_silently=False,
         )
@@ -8852,7 +8852,7 @@ def send_pwrst_confirmation(request ):
         send_mail(
             'Email Confirmation',
             f'Click the link to confirm your email: http://yourdomain.com/confirm-email/{confirmation_token}',
-            'from@example.com',
+            'noreply@skytron.in',
             [user.email],
             fail_silently=False,
         )
@@ -8919,7 +8919,7 @@ def send_sms_confirmation(request ):
         send_mail(
             'Email Confirmation',
             f'Click the link to confirm your email: http://yourdomain.com/confirm-email/{confirmation_token}',
-            'from@example.com',
+            'noreply@skytron.in',
             [user.email],
             fail_silently=False,
         )
@@ -8971,7 +8971,7 @@ def create_user(request ):
             send_mail(
                 'Account Created',
                 f'Temporery password is : {new_password}',
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [data['email']],
                 fail_silently=False,
             ) 
@@ -9229,7 +9229,7 @@ def send_sms_otp(request ):
             send_mail(
                 'Login OTP',
                 "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp),
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
             ) 
@@ -9291,7 +9291,7 @@ def reset_password(request ):
             send_mail( 
                     'Password Reset',
                     text,
-                    'test@dev.skytron.in',
+                    'noreply@skytron.in',
                     [email],
                     fail_silently=False,
             ) 
@@ -9391,7 +9391,7 @@ def user_login(request ):
             send_mail(
                 'Login OTP',
                 "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
             )  
@@ -9431,7 +9431,7 @@ def temp_user_login(request ):
             #send_mail(
             #    'Login OTP',
             #    "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-            #    'test@dev.skytron.in',
+            #    'noreply@skytron.in',
             #    ["kishalaychakraborty1@gmail.com"],
             #    fail_silently=False,
             #)  
@@ -9469,7 +9469,7 @@ def temp_user_resendOTP(request ):
             #send_mail(
             #    'Login OTP',
             #    "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-            #    'test@dev.skytron.in',
+            #    'noreply@skytron.in',
             #    ["kishalaychakraborty1@gmail.com"],
             #    fail_silently=False,
             #)  
@@ -9704,7 +9704,7 @@ def temp_user_logout(request ):
             send_mail(
                 'Login OTP',
                 "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
             )  
@@ -9809,7 +9809,7 @@ def user_login_app(request ):
             send_mail(
                 'Login OTP',
                 "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'test@dev.skytron.in',
+                'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
             )  
