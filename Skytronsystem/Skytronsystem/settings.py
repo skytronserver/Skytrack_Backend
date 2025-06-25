@@ -193,6 +193,15 @@ USE_I18N = True
 
 USE_TZ = True
 
+CORS_ALLOW_METHODS = [
+    "GET",
+    "POST",
+]
+CORS_ALLOW_HEADERS = [
+    "content-type",
+    "authorization",
+    "x-csrftoken",
+]
 CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     "http://localhost:3000",  
     "https://localhost:3000", 
@@ -205,6 +214,9 @@ CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     'https://api.skytron.in',
     'https://skytron.in',
     'https://dev-api.skytron.in',
+    'http://dev-api.skytron.in',
+    'https://dev.skytron.in/',
+    'http://dev.skytron.in',
     'https://dev.skytron.in',
     "https://dev.skytrack.tech",  # Add your frontend domain(s) here
     #"https://yourfrontenddomain.com",
@@ -259,12 +271,13 @@ CACHES = {
 }
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True  
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'default-email@gmail.com')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'default-password')
-
+EMAIL_HOST = 'smtp.titan.email'  # Use your email provider's SMTP server
+EMAIL_PORT = 465
+EMAIL_USE_SSL = True
+EMAIL_USE_TLS = False
+EMAIL_HOST_USER = "noreply@skytron.in" # os.environ.get('EMAIL_HOST_USER', 'default-email@gmail.com')
+EMAIL_HOST_PASSWORD = "Developer@18062025" #os.environ.get('EMAIL_HOST_PASSWORD', 'default-password')
+ 
 
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',

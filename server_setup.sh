@@ -1,7 +1,11 @@
 sudo apt-get update
 
 sudo apt-get install nginx  mosquitto   mosquitto-clients   openssl  postgresql-contrib   git -y
+sudo apt-get install nginx-extras
 
+sudo nano /etc/nginx/nginx.conf
+uncomment the line 
+server_tokens off;
 ###pgsql setup 
 sudo systemctl start postgresql
 sudo systemctl enable postgresql
@@ -101,7 +105,9 @@ sudo ln -s /etc/nginx/sites-available/www.conf /etc/nginx/sites-enabled/
 sudo nano  /etc/nginx/sites-available/api.conf 
 
 
+sudo rm /etc/nginx/sites-enabled/www.conf 
 sudo rm /etc/nginx/sites-enabled/api.conf 
+sudo ln -s /etc/nginx/sites-available/www.conf /etc/nginx/sites-enabled/
 sudo ln -s /etc/nginx/sites-available/api.conf /etc/nginx/sites-enabled/
 
 sudo nginx -t
@@ -166,14 +172,19 @@ openssl rsa -noout -modulus -in /var/www/html/Skytrack_Backend/Skytronsystem/key
 
 
 sudo docker build -t skytron-backend-api -f dockerfile.api .
+ 
 sudo docker run -d  --restart=always -p 2000:2000  -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
 
+ 
+sudo docker run -d  --restart=always -p 2000:2000    -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
+sudo docker run -d  --restart=always -p 2000:2000    -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
+ 
 
 
 sudo docker build -t skytron-backend-mqtt -f dockerfile.mqtt .
 sudo docker run -d  --restart=always -p 2000:2000  -f dockerfile.mqtt -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-mqtt-container skytron-backend-mqtt 
 
-
+ 
 
 mosquitto_sub -h '216.10.244.243' -p 8883 -t 'gps' --cafile /etc/mosquitto/ca_certificates/ca.crt --cert /etc/mosquitto/certs/client.crt --key /etc/mosquitto/certs/client.key
 
@@ -183,3 +194,7 @@ sudo docker build -t skytron-backend-api -f dockerfile.api .
 sudo docker stop skytron-backend-api-container
 sudo docker rm skytron-backend-api-container
 sudo docker run -d  --restart=always -p 2000:2000  -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
+ 
+sudo docker build -t skytron-backend-gps -f dockerfile.gps .
+sudo docker run -d  --restart=always -p 6000:6000   -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-gps skytron-backend-gps
+ 

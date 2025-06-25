@@ -37,11 +37,52 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
+from django.db import models, IntegrityError
+from rest_framework.response import Response
+from rest_framework import status
+
+
+
+class SafeCreateManager(models.Manager):
+    def safe_create(self, **kwargs):
+        """
+        A utility function to safely create a model instance and handle IntegrityError.
+        Returns the created object or a Response with a standardized error message.
+        """
+        try:
+            # Check if all foreign key fields reference valid objects
+            for field in self.model._meta.fields:
+                if isinstance(field, models.ForeignKey):
+                    related_field_name = field.name
+                    related_model = field.related_model
+                    related_id = kwargs.get(related_field_name + "_id")
+                    if related_id and not related_model.objects.filter(id=related_id).exists():
+                        return None, Response(
+                            {'error': f"Invalid {related_field_name}_id: {related_id} does not exist."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+            
+            # Attempt to create the object
+            return self.create(**kwargs), None
+        except IntegrityError as e:
+            # Extract the field name causing the IntegrityError
+            error_message = str(e)
+            for field in kwargs.keys():
+                if field in error_message:
+                    return None, Response({'error': f"{field} is invalid or already exists."}, status=status.HTTP_400_BAD_REQUEST)
+            # Generic error for unknown fields
+            return None, Response({'error': "A database integrity error occurred."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            # Handle other exceptions
+            return None, Response({'error': f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
 
 class Captcha(models.Model):
+    objects = SafeCreateManager()
     key = models.CharField(max_length=32, unique=True, default=uuid.uuid4().hex)
     answer = models.IntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
+     
 
     def is_valid(self):
         return timezone.now() < self.created_at + timedelta(minutes=3)
@@ -65,6 +106,8 @@ class Help(models.Model):
 
 """
 class RequestLog(models.Model):
+    
+    objects = SafeCreateManager()
     timestamp = models.DateTimeField(auto_now_add=True)
     ip_address = models.CharField(max_length=70)  # Supports IPv6
     system_info = models.TextField()
@@ -207,6 +250,9 @@ class EmergencyCall_assignment(models.Model):
 
 
 class CustomUserManager(BaseUserManager):
+     
+    objects = SafeCreateManager()
+    
     def create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError('The Email field must be set')
@@ -225,6 +271,7 @@ class CustomUserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    objects = SafeCreateManager()
     name = models.CharField(max_length=255, verbose_name="Name",null=False,blank=False) 
     #companyName=models.CharField(max_length=255, default='',verbose_name="companyName") 
     #username = models.EmailField(unique=True, verbose_name="Username")
@@ -251,6 +298,8 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['name' ]
+    
+    objects = SafeCreateManager()
 
     def __str__(self):
         return self.email
@@ -284,6 +333,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 class TempUser(models.Model):
+    objects = SafeCreateManager()
     name = models.CharField(max_length=255, verbose_name="Name")  
     #email = models.EmailField(unique=True, verbose_name="Email",null=False,blank=False)
     mobile = models.CharField(max_length=15,   verbose_name="Mobile") 
@@ -302,8 +352,10 @@ class TempUser(models.Model):
     em_lon = models.FloatField(blank=True, null=True, verbose_name="em_lon") 
     em_msg=models.TextField(blank=True, null=True, verbose_name="em_msg") 
     em_time= models.DateTimeField(blank=True, null=True)
+    
       
 class Confirmation(models.Model):
+    objects = SafeCreateManager()
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     token = models.CharField(max_length=32, unique=True)
     created_at = models.DateTimeField(default=timezone.now)
@@ -317,6 +369,7 @@ class Confirmation(models.Model):
         
 
 class Manufacturer(models.Model):
+    objects = SafeCreateManager()
     company_name = models.CharField(max_length=255, verbose_name="Company Name")
     gstnnumber = models.CharField(max_length=20, blank=True, null=True)
     users = models.ManyToManyField('User', related_name='manufacturers_user')
@@ -343,6 +396,7 @@ class Manufacturer(models.Model):
     status = models.CharField(max_length=20, choices=status_choices)
 
 class eSimProvider(models.Model):
+    objects = SafeCreateManager()
     company_name = models.CharField(max_length=255, verbose_name="Company Name")
     gstnnumber = models.CharField(max_length=20, blank=True, null=True)
     users = models.ManyToManyField('User', related_name='eSimProvider_User')
@@ -367,6 +421,7 @@ class eSimProvider(models.Model):
     status = models.CharField(max_length=20, choices=status_choices)
          
 class Retailer(models.Model):
+    objects = SafeCreateManager()
     company_name = models.CharField(max_length=255, verbose_name="Company Name")
     gstnnumber = models.CharField(max_length=20, blank=True, null=True)
     users = models.ManyToManyField('User', related_name='Retailer_user')
@@ -391,6 +446,7 @@ class Retailer(models.Model):
     status = models.CharField(max_length=20, choices=status_choices)
     
 class VehicleOwner(models.Model):
+    objects = SafeCreateManager()
     company_name = models.CharField(max_length=255, blank=True, null=True,verbose_name="Company Name")
     users = models.ManyToManyField(User, related_name='manufacturers')
     created = models.DateField(auto_now_add=True)
@@ -423,6 +479,7 @@ class MediaFile(models.Model):
     
 
 class StateAdmin(models.Model):
+    objects = SafeCreateManager()
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     users = models.ManyToManyField('User', related_name='stateadmin_User')
     created = models.DateField(auto_now_add=True)
@@ -439,16 +496,19 @@ class StateAdmin(models.Model):
             ('Discontinued', 'Discontinued'),
         ]
     status = models.CharField(max_length=20, choices=status_choices)
+     
 
 
 
 class sms_in(models.Model):     
+    objects = SafeCreateManager()
     sms_text = models.CharField(max_length=500)
     no = models.CharField(max_length=20 )
     status = models.CharField(max_length=20, choices=[('Received','Received'),("Processed","Processed"),("Error","Error")])
     created = models.DateField(auto_now_add=True)
     
-class sms_out(models.Model):     
+class sms_out(models.Model):   
+    objects = SafeCreateManager()  
     sms_text = models.CharField(max_length=500)
     no = models.CharField(max_length=20 )
     status = models.CharField(max_length=20, choices=[('Queue','Queue'),("Sent","Sent"),("Error","Error")])
@@ -456,6 +516,7 @@ class sms_out(models.Model):
     
     
 class dto_rto(models.Model):
+    objects = SafeCreateManager()
     dto_rto=   models.CharField(max_length=20, choices=[('DTO','DTO'),("RTO","RTO")])
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     district =models.CharField(max_length=255, blank=True, null=True)#models.ForeignKey('Settings_District', on_delete=models.CASCADE)
@@ -477,6 +538,7 @@ class dto_rto(models.Model):
     status = models.CharField(max_length=20, choices=status_choices)
           
 class EM_ex(models.Model): 
+    objects = SafeCreateManager()
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     district =models.CharField(max_length=255, blank=True, null=True)#models.ForeignKey('Settings_District', on_delete=models.CASCADE)
     users = models.ManyToManyField('User', related_name='SOS_ex_user')
@@ -523,6 +585,7 @@ class SOS_user(models.Model):
 """
 
 class EM_admin(models.Model): 
+    objects = SafeCreateManager()
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     
     #district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
@@ -545,17 +608,20 @@ class EM_admin(models.Model):
 
 
 class Settings_State(models.Model): 
+    objects = SafeCreateManager()
     state=models.CharField(max_length=50,unique=True)
     status = models.CharField(max_length=20, choices=[('active','active'),('discontinued','discontinued')])
 
 
 class Settings_VehicleCategory(models.Model): 
+    objects = SafeCreateManager()
     category=models.CharField(max_length=50,unique=True)
     maxSpeed=models.CharField(max_length=5)
     warnSpeed=models.CharField(max_length=5)
      
 
 class Settings_District(models.Model):  
+    objects = SafeCreateManager()
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     district =models.CharField(max_length=50,unique=True)  
     district_code =models.CharField(max_length=8,unique=True)    
@@ -580,6 +646,7 @@ class SOS_team(models.Model):
 
 
 class Device(models.Model):
+    objects = SafeCreateManager()
     deviceModel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE)
     status_choices = [
         ('Created', 'Created'),
@@ -601,6 +668,7 @@ class Device(models.Model):
 
 
 class Route(models.Model): 
+    objects = SafeCreateManager()
     status_choices = [
         ('Active', 'Active'),
         ('Deleted', 'Deleted'), 
@@ -618,6 +686,7 @@ class Route(models.Model):
 
 
 class DeviceModel(models.Model):
+    objects = SafeCreateManager()
     STATUS_CHOICES = [
         ('Manufacturer_OTP_Sent', 'Manufacturer OTP Sent'),
         ('Manufacturer_OTP_Verified', 'Manufacturer OTP Verified'),
@@ -640,7 +709,8 @@ class DeviceModel(models.Model):
     otp = models.CharField(max_length=6 )
 
 
-class Settings_firmware(models.Model): 
+class Settings_firmware(models.Model):
+    objects = SafeCreateManager() 
     devicemodel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE)
     created = models.DateField(auto_now_add=True)
     firmware_vertion = models.CharField(max_length=255, blank=True, null=True)
@@ -649,6 +719,7 @@ class Settings_firmware(models.Model):
      
 
 class Settings_hp_freq(models.Model): 
+    objects = SafeCreateManager()
     devicemodel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE)
     created = models.DateField(auto_now_add=True)
     freq = models.CharField(max_length=255, blank=True, null=True)
@@ -656,6 +727,7 @@ class Settings_hp_freq(models.Model):
      
   
 class Settings_ip3(models.Model): 
+    objects = SafeCreateManager()
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE, null=True)
     devicemodel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE, null=True)
     created = models.DateField(auto_now_add=True)
@@ -672,6 +744,7 @@ class Settings_ip3(models.Model):
      
 
 class Settings_ip(models.Model): 
+    objects = SafeCreateManager()
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE, null=True)
     devicemodel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE, null=True)
     created = models.DateField(auto_now_add=True)
@@ -689,6 +762,7 @@ class Settings_ip(models.Model):
 
 
 class DeviceStock(models.Model):
+    objects = SafeCreateManager()
     model = models.ForeignKey(DeviceModel, on_delete=models.CASCADE)
     device_esn = models.CharField(max_length=55,unique=True)
     iccid = models.CharField(max_length=55,unique=True)
@@ -733,6 +807,7 @@ class DeviceStock(models.Model):
         return f"{self.model} - ESN: {self.device_esn}"
     
 class DeviceCOP(models.Model):
+    objects = SafeCreateManager()
     STATUS_CHOICES = [
         ('Manufacturer_OTP_Sent', 'Manufacturer OTP Sent'),
         ('Manufacturer_OTP_Verified', 'Manufacturer OTP Verified'),
@@ -781,6 +856,7 @@ class StockAssignment(models.Model):
 
 
 class Driver(models.Model): 
+    objects = SafeCreateManager()
 
     created = models.DateTimeField(auto_now_add=True,)
     created_by = models.ForeignKey('User', on_delete=models.CASCADE,related_name="createby_USERdriver")
@@ -794,6 +870,7 @@ class Driver(models.Model):
         return self.name
     
 class DeviceTag(models.Model):
+    objects = SafeCreateManager()
     STATUS_CHOICES = [
         ('Dealer_OTP_Sent', 'Dealer OTP Sent'),
         ('Dealer_OTP_Verified', 'Dealer_OTP_Verified'),
@@ -870,6 +947,7 @@ class Holiday(models.Model):
 
        
 class EMGPSLocation(models.Model): #imergency tracking data
+    objects = SafeCreateManager()
     message_type = models.CharField(max_length=3)  # EMR or SEM
     device_imei = models.CharField(max_length=15)
     packet_status = models.CharField(max_length=2)  # NM or SP
@@ -949,6 +1027,7 @@ class EMGPSLocation(models.Model): #imergency tracking data
 
 @receiver(post_save, sender=EMGPSLocation)
 def create_emergency_call(sender, instance, created, **kwargs):
+    
     if created :#and instance.status == 'Complete':
      
         # Check if an EmergencyCall entry already exists for the given vehicle and IMEI
@@ -1034,6 +1113,7 @@ def create_emergency_call(sender, instance, created, **kwargs):
 
 
 class IPList(models.Model):
+    objects = SafeCreateManager()
     STATUS_CHOICES = [
         ('Valid', 'Valid'),
         # Add other status options
@@ -1052,6 +1132,7 @@ class IPList(models.Model):
     
 
 class FOTA(models.Model):
+    objects = SafeCreateManager()
     deviceMode = models.IntegerField(verbose_name="Device Mode")
     status = models.CharField(max_length=10, choices=[("active", "Active"), ("notactive", "Not Active")], verbose_name="Status")
     softwareVersion = models.CharField(max_length=255, verbose_name="Software Version")
@@ -1097,6 +1178,7 @@ class CustomToken(Token):
 
 '''
 class Session(models.Model):
+    objects = SafeCreateManager()
     loginTime = models.DateTimeField(default=timezone.now, verbose_name="Login Time")
     user = models.ForeignKey(User, on_delete=models.CASCADE)# models.IntegerField(verbose_name="User")
     token = models.CharField(max_length=255, blank=True, null=True, verbose_name="Token")
@@ -1109,6 +1191,7 @@ class Session(models.Model):
         return f"Session {self.id}"
 
 class OTPRequest(models.Model):
+    objects = SafeCreateManager()
     otpTime = models.DateTimeField(auto_now_add=True, verbose_name="OTP Time")
     type = models.CharField(max_length=5, choices=[("email", "Email"), ("sms", "SMS")], verbose_name="Type")
     user = models.IntegerField(verbose_name="User")
@@ -1119,6 +1202,7 @@ class OTPRequest(models.Model):
         return f"OTPRequest {self.id}"
 
 class esimActivationRequest(models.Model):
+    objects = SafeCreateManager()
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="creates_at")
     ceated_by=models.ForeignKey(Retailer, on_delete=models.CASCADE)
     eSim_provider=models.ForeignKey(eSimProvider, on_delete=models.CASCADE)
@@ -1132,6 +1216,7 @@ class esimActivationRequest(models.Model):
         return f"esimActivationRequest {self.id}"
 
 class EditRequest(models.Model):
+    objects = SafeCreateManager()
     time = models.DateTimeField(auto_now_add=True, verbose_name="Time")
     type = models.CharField(max_length=20, choices=[("owner", "Owner"), ("device", "Device"), ("vehicle", "Vehicle"), ("devicemodel", "Device Model"), ("retailer", "Retailer"), ("manufacturer", "Manufacturer")], verbose_name="Type")
     from_user = models.IntegerField(verbose_name="From User")
@@ -1146,6 +1231,7 @@ class EditRequest(models.Model):
  
 
 class Settings(models.Model):
+    objects = SafeCreateManager()
     velid_time = models.DateTimeField(auto_now_add=True, verbose_name="Valid Time")
     type = models.CharField(max_length=255, verbose_name="Type")
     createdby = models.CharField(max_length=255, verbose_name="Created By")
@@ -1157,6 +1243,7 @@ class Settings(models.Model):
         return f"Settings {self.id}"
 
 class GPSData(models.Model):
+    objects = SafeCreateManager()
     entry_time = models.DateTimeField(auto_now_add=True)
     #start_character = models.CharField(max_length=1)
     #header = models.CharField(max_length=1)
@@ -1213,15 +1300,18 @@ class GPSData(models.Model):
     device_tag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE,null=True, blank=True)
 
 class GPSDataLog(models.Model):
+    objects = SafeCreateManager()
     timestamp = models.DateTimeField(auto_now_add=True)
     raw_data = models.TextField()
 
 class GPSemDataLog(models.Model):
+    objects = SafeCreateManager()
     timestamp = models.DateTimeField(auto_now_add=True)
     raw_data = models.TextField()
 
   
 class AlertsLog(models.Model):
+    objects = SafeCreateManager()
     TYPE_CHOICES = [
         ('Route', 'Route'), 
         ('Em', 'Em'), 
@@ -1256,6 +1346,7 @@ class AlertsLog(models.Model):
     
 
 class Notice(models.Model): 
+    objects = SafeCreateManager()
     created = models.DateField(auto_now_add=True)  
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
     file = models.CharField(max_length=255, blank=True, null=True)
@@ -1267,6 +1358,7 @@ class Notice(models.Model):
 
 
 class EMTeams(models.Model): 
+    objects = SafeCreateManager()
     choices=[("NotActive", "NotActive"), ("Active", "Active"), ("Removed", "Removed")] 
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     teamlead =models.ForeignKey(EM_ex, on_delete=models.CASCADE)
@@ -1283,6 +1375,7 @@ class EMTeams(models.Model):
 
 
 class EMCall(models.Model): 
+    objects = SafeCreateManager()
     choices=[("pending", "pending"), ("desk_ex_assigned", "desk_ex_assigned"), ("broadcast_pending", "broadcast_pending"), ("field_ex_aproaching", "field_ex_aproaching"), ("field_ex_arrived", "field_ex_arrived"), ("closed_false_allert", "closed_false_allert"), ("closed", "closed")]
     team  = models.ForeignKey(EMTeams, null=True,  on_delete=models.CASCADE,related_name='EMTeams_id')
     device = models.ForeignKey(DeviceTag,  on_delete=models.CASCADE,related_name='DeviceTag_id')
@@ -1297,7 +1390,8 @@ class EMCall(models.Model):
 
 
 
-class EMCallAssignment(models.Model): 
+class EMCallAssignment(models.Model):
+    objects = SafeCreateManager() 
     status=[("pending", "pending"), ("accepted", "accepted"), ("rejected", "rejected"), ("arriving", "arriving"), ("arrived", "arrived"), ("closed_false_allert", "closed_false_allert"), ("closed", "closed")]
     types=[("teamlead", "teamlead"), ("desk_ex", "desk_ex"), ("police_ex", "police_ex"), ("ambulance_ex", "ambulance_ex") , ("pcr", "pcr") , ("acr", "acr") ]
     admin = models.ForeignKey(EM_admin,  on_delete=models.CASCADE,related_name='emcalladmin')
@@ -1316,6 +1410,7 @@ class EMCallAssignment(models.Model):
         return f"EMCall {self.id}"
 
 class EMCallBroadcast(models.Model): 
+    objects = SafeCreateManager()
     status=[("pending", "pending"), ("accepted", "accepted"), ("timeout", "timeout"), ("canceled", "canceled")]
     types=[("police_ex", "police_ex"), ("ambulance_ex", "ambulance_ex") , ("pcr", "pcr") , ("acr", "acr") ]
     admin = models.ForeignKey(EM_admin,  on_delete=models.CASCADE,related_name='emcalladminb')
@@ -1334,6 +1429,7 @@ class EMCallBroadcast(models.Model):
 
 
 class EMCallMessages(models.Model): 
+    objects = SafeCreateManager()
     call = models.ForeignKey(EMCall,  on_delete=models.CASCADE,related_name='EMCa111ll_id111')
     assignment = models.ForeignKey(EMCallAssignment,  on_delete=models.CASCADE,related_name='EMCallAssignm11ent111_id')
     time =   models.DateTimeField(auto_now_add=True, verbose_name="time")  
@@ -1343,6 +1439,7 @@ class EMCallMessages(models.Model):
 
 
 class EMCallBackupRequest(models.Model): 
+    objects = SafeCreateManager()
     types=[ ("police_ex", "police_ex"), ("ambulance_ex", "ambulance_ex") ]
     call = models.ForeignKey(EMCall,  on_delete=models.CASCADE,related_name='EMCall_id111')
     assignment = models.ForeignKey(EMCallAssignment,  on_delete=models.CASCADE,related_name='EMCallAssignment111_id')
@@ -1355,6 +1452,7 @@ class EMCallBackupRequest(models.Model):
         return f"EMCall {self.id}"
 
 class EMUserLocation(models.Model): 
+    objects = SafeCreateManager()
     field_ex = models.ForeignKey(EM_ex,  null=True,on_delete=models.CASCADE,related_name='field_executive1_id_location')# models.CharField(max_length=50, unique=True)
     em_lat = models.FloatField(blank=True, null=True, verbose_name="em_lat") 
     em_lon = models.FloatField(blank=True, null=True, verbose_name="em_lon") 

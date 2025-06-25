@@ -8,10 +8,19 @@ from .models import Confirmation
 from .models import DeviceStock,DeviceTag
 from .models import *
 
+import bleach
 from .models import VehicleOwner
 
+
+class SanitizingModelSerializer(serializers.ModelSerializer ):
+    def validate(self, data):
+        # Sanitize all fields
+        for key, value in data.items():
+            if isinstance(value, str):
+                data[key] = bleach.clean(value)
+        return data
         
-class Settings_StateSerializer(serializers.ModelSerializer):
+class Settings_StateSerializer(SanitizingModelSerializer):
     #state_info = DeviceModelSerializer(source='devicemodel', read_only=True)
     #devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
     #createdby_info = UserSerializer(source='createdby', read_only=True)
@@ -20,7 +29,7 @@ class Settings_StateSerializer(serializers.ModelSerializer):
         model = Settings_State
         fields = '__all__'
 
-class DriverSerializer(serializers.ModelSerializer):
+class DriverSerializer(SanitizingModelSerializer):
     #state_info = DeviceModelSerializer(source='devicemodel', read_only=True)
     #devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
     #createdby_info = UserSerializer(source='createdby', read_only=True)
@@ -30,17 +39,17 @@ class DriverSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class DeviceStockSerializer(serializers.ModelSerializer):
+class DeviceStockSerializer(SanitizingModelSerializer):
     class Meta:
         model = DeviceStock
         fields = '__all__'   
 
-class RetailerSerializer(serializers.ModelSerializer):
+class RetailerSerializer(SanitizingModelSerializer):
     class Meta:
         model = Retailer
         fields = '__all__'  
 
-class DeviceTagSerializer(serializers.ModelSerializer):
+class DeviceTagSerializer(SanitizingModelSerializer):
     class Meta:
         model =DeviceTag        
         exclude = ['otp','otp_time'] 
@@ -51,7 +60,7 @@ class MediaFileSerializer(serializers.ModelSerializer):
         fields = ['device_tag', 'camera_id', 'start_time', 'end_time', 'media_type', 'media_link', 'duration_ms', 'alert_type', 'message']
         
 
-class UserSerializer(serializers.ModelSerializer):
+class UserSerializer(SanitizingModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = User
@@ -68,19 +77,19 @@ class UserSerializer(serializers.ModelSerializer):
                 return ''  
         return ''
 
-class VehicleOwnerSerializer(serializers.ModelSerializer):
+class VehicleOwnerSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     class Meta:
         model = VehicleOwner 
         fields = '__all__'
-class DriverSerializer(serializers.ModelSerializer):
+class DriverSerializer(SanitizingModelSerializer):
     class Meta:
         model = Driver 
         fields = '__all__'
 
 
 
-class VahanSerializer(serializers.ModelSerializer):
+class VahanSerializer(SanitizingModelSerializer):
     device = DeviceStockSerializer(many=False, read_only=True) 
     vehicle_owner =VehicleOwnerSerializer(many=False, read_only=True)
    
@@ -91,21 +100,21 @@ class VahanSerializer(serializers.ModelSerializer):
         
 
 '''
-class StockAssignmentSerializer(serializers.ModelSerializer):
+class StockAssignmentSerializer(SanitizingModelSerializer):
     device = DeviceStockSerializer()  # Nested serializer for 'device' field
     dealer = RetailerSerializer()  
     class Meta:
         model = StockAssignment
         fields = ['device', 'dealer', 'assigned_by', 'assigned', 'shipping_remark', 'stock_status']
 
-class StockAssignmentSerializer2(serializers.ModelSerializer):
+class StockAssignmentSerializer2(SanitizingModelSerializer):
     device = DeviceStockSerializer()  # Nested serializer for 'device' field
     dealer = RetailerSerializer()  
     class Meta:
         model = StockAssignment
         fields = ['device_id', 'dealer_id', 'assigned_by', 'assigned', 'shipping_remark', 'stock_status']
 '''
-class AlertsLogSerializer(serializers.ModelSerializer):
+class AlertsLogSerializer(SanitizingModelSerializer):
     class Meta:
         model = AlertsLog
         fields = '__all__'
@@ -138,7 +147,7 @@ class DeviceModelFilterSerializer(serializers.Serializer):
     created_by_id = serializers.IntegerField(required=False)
     created = serializers.DateField(required=False)
     status = serializers.CharField(required=False)
-class DeviceCOPSerializer(serializers.ModelSerializer):
+class DeviceCOPSerializer(SanitizingModelSerializer):
     class Meta:
         model = DeviceCOP
         #exclude = ['otp','otp_time'] 
@@ -147,19 +156,19 @@ class DeviceCOPSerializer(serializers.ModelSerializer):
 
  
 
-class UserSerializer2(serializers.ModelSerializer):
+class UserSerializer2(SanitizingModelSerializer):
     class Meta:
         model = User
         fields = ["id","last_login","is_superuser","name","email", "mobile","role", "usertype","date_joined", "created","Access","is_active",  "address",   "address_pin",  "address_State",  "dob",  "status", "groups",  "user_permissions"]#'__all__'    #, deleting, list view of all , detail view.
 
 
 
-class eSimProviderSerializer(serializers.ModelSerializer):
+class eSimProviderSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     class Meta:
         model = eSimProvider
         fields = '__all__'
-class ManufacturerSerializer(serializers.ModelSerializer):
+class ManufacturerSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     state = Settings_StateSerializer(many=False, read_only=True)
     esim_provider = eSimProviderSerializer( many=True, read_only=True)
@@ -167,12 +176,12 @@ class ManufacturerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Manufacturer
         fields = '__all__'
-class NoticeSerializer(serializers.ModelSerializer): 
+class NoticeSerializer(SanitizingModelSerializer): 
     class Meta:
         model = Notice
         fields = '__all__'
 
-class RetailerSerializer(serializers.ModelSerializer):
+class RetailerSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     manufacturer=ManufacturerSerializer(many=False, read_only=True)
     class Meta:
@@ -181,17 +190,17 @@ class RetailerSerializer(serializers.ModelSerializer):
 
 
 
-class DeviceSerializer(serializers.ModelSerializer):
+class DeviceSerializer(SanitizingModelSerializer):
     class Meta:
         model = Device
         fields = '__all__'
 
 
-class DeviceModelSerializer(serializers.ModelSerializer):
+class DeviceModelSerializer(SanitizingModelSerializer):
     class Meta:
         model = DeviceModel
         fields = '__all__'
-class DeviceStockSerializer2(serializers.ModelSerializer):
+class DeviceStockSerializer2(SanitizingModelSerializer):
     #created_by_name = serializers.SerializerMethodField()
     model = DeviceModelSerializer(many=False, read_only=True)
     dealer  = RetailerSerializer(many=False, read_only=True)
@@ -208,19 +217,19 @@ class DeviceStockSerializer2(serializers.ModelSerializer):
     #    return obj.model.model_name if obj.created_by else ''
 
 
-class FOTASerializer(serializers.ModelSerializer):
+class FOTASerializer(SanitizingModelSerializer):
     class Meta:
         model = FOTA
         fields = '__all__'
 
 
-class EsimActivationRequestSerializer(serializers.ModelSerializer):
+class EsimActivationRequestSerializer(SanitizingModelSerializer):
     class Meta:
         model = esimActivationRequest
         fields = '__all__'
  
  
-class EsimActivationRequestSerializer_R(serializers.ModelSerializer):
+class EsimActivationRequestSerializer_R(SanitizingModelSerializer):
     ceated_by = RetailerSerializer(read_only=True)
     eSim_provider=eSimProviderSerializer(read_only=True)
     device=DeviceStockSerializer(read_only=True)
@@ -230,26 +239,26 @@ class EsimActivationRequestSerializer_R(serializers.ModelSerializer):
  
     
 
-class SessionSerializer(serializers.ModelSerializer):
+class SessionSerializer(SanitizingModelSerializer):
     class Meta:
         model = Session
         fields = '__all__'
 
-class OTPRequestSerializer(serializers.ModelSerializer):
+class OTPRequestSerializer(SanitizingModelSerializer):
     class Meta:
         model = OTPRequest
         fields = '__all__'
 
-class EditRequestSerializer(serializers.ModelSerializer):
+class EditRequestSerializer(SanitizingModelSerializer):
     class Meta:
         model = EditRequest
         fields = '__all__'
 
-class SettingsSerializer(serializers.ModelSerializer):
+class SettingsSerializer(SanitizingModelSerializer):
     class Meta:
         model = Settings
         fields = '__all__'
-class ConfirmationSerializer(serializers.ModelSerializer):
+class ConfirmationSerializer(SanitizingModelSerializer):
     class Meta:
         model = Confirmation
         fields = '__all__'
@@ -257,20 +266,20 @@ class ConfirmationSerializer(serializers.ModelSerializer):
 
   
 
-class DeviceSerializer(serializers.ModelSerializer):
+class DeviceSerializer(SanitizingModelSerializer):
     class Meta:
         model = Device
         fields = '__all__'
 
 
-class DeviceModelSerializer(serializers.ModelSerializer):
+class DeviceModelSerializer(SanitizingModelSerializer):
     eSimProviders = serializers.PrimaryKeyRelatedField(many=True, queryset=eSimProvider.objects.all())
     #eSimProviders = eSimProviderSerializer( many=True, read_only=True)
 
     class Meta:
         model = DeviceModel
         fields = '__all__'
-class DeviceModelSerializer_disp(serializers.ModelSerializer):
+class DeviceModelSerializer_disp(SanitizingModelSerializer):
     #eSimProviders = serializers.PrimaryKeyRelatedField(many=True, queryset=eSimProvider.objects.all())
     eSimProviders = eSimProviderSerializer( many=True, read_only=True)
     created_by=UserSerializer( read_only=True)
@@ -279,7 +288,7 @@ class DeviceModelSerializer_disp(serializers.ModelSerializer):
         model = DeviceModel
         fields = '__all__'
 
-class Settings_hp_freqSerializer(serializers.ModelSerializer):
+class Settings_hp_freqSerializer(SanitizingModelSerializer):
     devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
 
@@ -289,7 +298,7 @@ class Settings_hp_freqSerializer(serializers.ModelSerializer):
 
         
        
-class Settings_firmwareSerializer(serializers.ModelSerializer):
+class Settings_firmwareSerializer(SanitizingModelSerializer):
     #state_info = DeviceModelSerializer(source='devicemodel', read_only=True)
     devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
@@ -299,7 +308,7 @@ class Settings_firmwareSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class Settings_DistrictSerializer(serializers.ModelSerializer):
+class Settings_DistrictSerializer(SanitizingModelSerializer):
     state_info = Settings_StateSerializer(source='state', read_only=True)
     devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
@@ -308,7 +317,7 @@ class Settings_DistrictSerializer(serializers.ModelSerializer):
         model = Settings_District
         fields = '__all__'
 
-class Settings_VehicleCategorySerializer(serializers.ModelSerializer):
+class Settings_VehicleCategorySerializer(SanitizingModelSerializer):
     #state_info = Settings_StateSerializer(source='state', read_only=True)
     #devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
     #createdby_info = UserSerializer(source='createdby', read_only=True)
@@ -319,7 +328,7 @@ class Settings_VehicleCategorySerializer(serializers.ModelSerializer):
 
 
     
-class Settings_ipSerializer(serializers.ModelSerializer):
+class Settings_ipSerializer(SanitizingModelSerializer):
     state_info = Settings_StateSerializer(source='state', read_only=True)
     devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
@@ -329,7 +338,7 @@ class Settings_ipSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class DeviceModelFileUploadSerializer(serializers.ModelSerializer):
+class DeviceModelFileUploadSerializer(SanitizingModelSerializer):
     tac_doc_path = serializers.FileField(write_only=True)
 
     class Meta:
@@ -338,7 +347,7 @@ class DeviceModelFileUploadSerializer(serializers.ModelSerializer):
 
 
 
-class GPSData_Serializer(serializers.ModelSerializer):
+class GPSData_Serializer(SanitizingModelSerializer):
     entry_time = serializers.DateTimeField()
     packet_status = serializers.CharField( )
     #imei = serializers.CharField()
@@ -411,7 +420,7 @@ class GPSData_Serializer(serializers.ModelSerializer):
                   'digitalInputStatus',
                   'digitalOutputStatus', 'frameNumber', 'odometer']'''
 
-class GPSData_modSerializer(serializers.ModelSerializer):
+class GPSData_modSerializer(SanitizingModelSerializer):
     et = serializers.DateTimeField(source='entry_time')
     ps = serializers.CharField(source='packet_status')
     #imei = serializers.CharField()
@@ -476,11 +485,11 @@ class GPSData_modSerializer(serializers.ModelSerializer):
                   'digitalInputStatus',
                   'digitalOutputStatus', 'frameNumber', 'odometer']'''
 
-class GPSdata_vehIdentitySerializer(serializers.ModelSerializer):
+class GPSdata_vehIdentitySerializer(SanitizingModelSerializer):
     class Meta:
         model = GPSData
         fields = ('vehicle_registration_number', 'imei') 
-class StateadminSerializer(serializers.ModelSerializer):
+class StateadminSerializer(SanitizingModelSerializer):
     
     users = UserSerializer(many=True, read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
@@ -489,12 +498,12 @@ class StateadminSerializer(serializers.ModelSerializer):
     class Meta:
         model = StateAdmin
         fields = '__all__'
-class routeSerializer(serializers.ModelSerializer):
+class routeSerializer(SanitizingModelSerializer):
     class Meta:
         model = Route
         fields = ("id" ,"device_id","createdby_id","route","routepoints")
 
-class dto_rtoSerializer(serializers.ModelSerializer):
+class dto_rtoSerializer(SanitizingModelSerializer):
     
     users = UserSerializer(many=True, read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
@@ -506,7 +515,7 @@ class dto_rtoSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class EM_exSerializer(serializers.ModelSerializer):
+class EM_exSerializer(SanitizingModelSerializer):
     
     users = UserSerializer(many=True, read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
@@ -519,7 +528,7 @@ class EM_exSerializer(serializers.ModelSerializer):
 
 
  
-class EMTeamSerializer(serializers.ModelSerializer):
+class EMTeamSerializer(SanitizingModelSerializer):
     
     #admin = SOS_AdminSerializer(many=True, read_only=True)
     createdby_info = UserSerializer(source='created_by', read_only=True)
@@ -533,7 +542,7 @@ class EMTeamSerializer(serializers.ModelSerializer):
  
 
         
-class EM_adminSerializer(serializers.ModelSerializer):
+class EM_adminSerializer(SanitizingModelSerializer):
     
     users = UserSerializer(many=True, read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
@@ -545,12 +554,12 @@ class EM_adminSerializer(serializers.ModelSerializer):
         fields = '__all__' 
 
 
-class EMGPSLocationSerializer11(serializers.ModelSerializer):
+class EMGPSLocationSerializer11(SanitizingModelSerializer):
     class Meta:
         model = EMGPSLocation
         fields ='__all__'    # Specify relevant fields
 
-class DeviceTagSerializer2(serializers.ModelSerializer):
+class DeviceTagSerializer2(SanitizingModelSerializer):
     device = DeviceStockSerializer2(many=False, read_only=True)
     vehicle_owner = VehicleOwnerSerializer(many=False, read_only=True)
     drivers = DriverSerializer(many=True, read_only=True)
@@ -568,7 +577,7 @@ class DeviceTagSerializer2(serializers.ModelSerializer):
 
 
 
-class EMTeamsSerializer(serializers.ModelSerializer):  
+class EMTeamsSerializer(SanitizingModelSerializer):  
     state = Settings_StateSerializer( read_only=True)
     teamlead =EM_exSerializer(  read_only=True)
     members=EM_exSerializer(  many=True,read_only=True)
@@ -580,7 +589,7 @@ class EMTeamsSerializer(serializers.ModelSerializer):
  
 
 
-class EMCallSerializer(serializers.ModelSerializer):  
+class EMCallSerializer(SanitizingModelSerializer):  
     team  = EMTeamsSerializer(  read_only=True)
     device = DeviceTagSerializer2( read_only=True) 
 
@@ -590,7 +599,7 @@ class EMCallSerializer(serializers.ModelSerializer):
 
 
 
-class EMCallAssignmentSerializer(serializers.ModelSerializer):  
+class EMCallAssignmentSerializer(SanitizingModelSerializer):  
     admin = EM_adminSerializer(  read_only=True)
     ex =EM_exSerializer(  read_only=True)
     call=EMCallSerializer(  read_only=True) 
@@ -600,7 +609,7 @@ class EMCallAssignmentSerializer(serializers.ModelSerializer):
 
 
 
-class EMCallMessagesSerializer(serializers.ModelSerializer):  
+class EMCallMessagesSerializer(SanitizingModelSerializer):  
     assignment =EMCallAssignmentSerializer( read_only=True)
     call=EMCallSerializer(  read_only=True) 
     class Meta:
@@ -609,14 +618,14 @@ class EMCallMessagesSerializer(serializers.ModelSerializer):
 
 
  
-class EMCallBackupRequestSerializer(serializers.ModelSerializer):  
+class EMCallBackupRequestSerializer(SanitizingModelSerializer):  
     assignment =EMCallAssignmentSerializer(source='ex', read_only=True)
     call=EMCallSerializer( read_only=True) 
     class Meta:
         model = EMCallBackupRequest
         fields = '__all__'  
 
-class EMCallBroadcastSerializer(serializers.ModelSerializer):   
+class EMCallBroadcastSerializer(SanitizingModelSerializer):   
     call=EMCallSerializer(  read_only=True) 
     class Meta:
         model = EMCallBroadcast
@@ -624,7 +633,7 @@ class EMCallBroadcastSerializer(serializers.ModelSerializer):
 
 
  
-class EMUserLocationSerializer(serializers.ModelSerializer):  
+class EMUserLocationSerializer(SanitizingModelSerializer):  
     field_ex =EM_exSerializer( read_only=True)
     call=EMCallSerializer( read_only=True) 
     class Meta:
@@ -634,7 +643,7 @@ class EMUserLocationSerializer(serializers.ModelSerializer):
 
  
 
-class AlertsLogSerializer(serializers.ModelSerializer):
+class AlertsLogSerializer(SanitizingModelSerializer):
 
     gps_ref=GPSData_Serializer(read_only=True)
     route_ref=routeSerializer(read_only=True)
