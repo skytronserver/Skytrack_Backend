@@ -19,9 +19,9 @@ gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.ws
 
 tmux new -s run_gps
 cd Skytronsystem/
- python3 manage.py tcp_server 
+ python3 manage.py tcp_serverd 
 
-
+source ../venv/bin/activate
 tmux new -s run_em
 cd Skytronsystem/
 python3 em_server.py
@@ -87,3 +87,36 @@ createdb skytrondb;
 skytron_main_db
 GRANT ALL PRIVILEGES ON DATABASE skytrondb TO dbadmin;
 GRANT ALL PRIVILEGES ON DATABASE skytron_main_db TO dbadmin;
+
+
+python3  manage.py migrate
+
+
+
+
+
+216.10.244.243   lask1028zmnx
+pg_dump -U dbadmin -h 216.10.244.243 -p 5432 -F c -b -v -f skytrondbnew2_backup.dump skytrondbnew2
+pg_dump -U dbadmin -h 216.10.244.243 -p 5432 -F c -b -v -f  skytron_main_db_backup.dump  skytron_main_db
+pg_dump -U dbadmin -h 216.10.244.243 -p 5432 -F c -b -v -f  skytrondbnew_backup.dump  skytrondbnew
+pg_dump -U dbadmin -h 216.10.244.243 -p 5432 -F c -b -v -f skytrondb_backup.dump skytrondb 
+
+
+
+CREATE DATABASE skytron_main_db;
+GRANT ALL PRIVILEGES ON DATABASE skytron_main_db TO dbadmin;
+
+CREATE DATABASE skytrondbnew2;
+GRANT ALL PRIVILEGES ON DATABASE skytrondbnew2 TO dbadmin;
+
+CREATE DATABASE skytrondb;
+GRANT ALL PRIVILEGES ON DATABASE skytrondb TO dbadmin;
+CREATE DATABASE skytrondbnew;
+GRANT ALL PRIVILEGES ON DATABASE skytrondbnew TO dbadmin;
+\q
+
+lask1028zmnx
+pg_restore -U dbadmin -h localhost -p 5432 -d skytrondb -v skytrondb_backup.dump
+pg_restore -U dbadmin -h localhost -p 5432 -d skytrondbnew -v skytrondbnew_backup.dump
+pg_restore -U dbadmin -h localhost -p 5432 -d skytrondbnew2 -v skytrondbnew2_backup.dump
+pg_restore -U dbadmin -h localhost -p 5432 -d skytron_main_db -v skytron_main_db_backup.dump

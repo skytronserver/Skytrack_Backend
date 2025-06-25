@@ -7,6 +7,7 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 import secrets
 import string
 from django.core.serializers import serialize
+from django.core.paginator import Paginator
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import authenticate,logout,login 
 from rest_framework.response import Response
@@ -318,7 +319,7 @@ def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,A
  
 
 def load_private_key():
-    private_key_path = '/app/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
+    private_key_path = '/home/azureuser/Skytrack_Backend/Skytronsystem/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
     with open(private_key_path, 'rb') as key_file:
         private_key = RSA.import_key(key_file.read()) 
     with open(private_key_path, 'rb') as key_file: 
@@ -4814,6 +4815,122 @@ def arriving_EMassignment(request ):
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def create_poi(request):
+    try:
+        data = request.data
+        poi = pointofinterests.objects.create(
+            status=data.get('status'),
+            mark_type=data.get('mark_type'),
+            use_type=data.get('use_type'),
+            location=data.get('location'),
+            radius=data.get('radius'),
+            name=data.get('name'),
+            description=data.get('description'),
+            created_by=request.user,
+            updated_by=request.user
+        )
+        return Response({'message': 'poi created successfully', 'data': model_to_dict(poi)}, status=201)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def update_poi(request):
+    try:
+        poi_id = request.data.get('poi_id')
+        poi = pointofinterests.objects.get(id=poi_id)
+        data = request.data
+        poi.status = data.get('status', poi.status)
+        poi.mark_type = data.get('mark_type', poi.mark_type)
+        poi.use_type = data.get('use_type', poi.use_type)
+        poi.location = data.get('location', poi.location)
+        poi.radius = data.get('radius', poi.radius)
+        poi.name = data.get('name', poi.name)
+        poi.description = data.get('description', poi.description)
+        poi.updated_by = request.user
+        poi.save()
+        return Response({'message': 'poi updated successfully', 'data': model_to_dict(poi)}, status=200)
+    except poi.DoesNotExist:
+        return Response({'error': 'poi not found'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+     
+ 
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def delete_poi(request):
+    try:
+        poi_id = request.data.get('poi_id')
+        poi = pointofinterests.objects.get(id=poi_id)
+        poi.delete()
+        return Response({'message': 'poi deleted successfully'}, status=200)
+    except poi.DoesNotExist:
+        return Response({'error': 'poi not found'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def list_pois(request):
+    try:
+        pois = pointofinterests.objects.all()
+        data = list(pois.values())
+        return Response({'data': data}, status=200)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+    
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+def search_request_logs(request):
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="superadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
+    
+    query = request.GET.get('q', '')  # Get the search query from the request
+    page = request.GET.get('page', 1)  # Get the page number from the request
+    per_page = request.GET.get('per_page', 10)  # Number of items per page (default: 10)
+
+    # Filter the RequestLog model based on the search query
+    logs = RequestLog.objects.filter(
+        Q(ip_address__icontains=query) |
+        Q(system_info__icontains=query) |
+        Q(request_url__icontains=query) |
+        Q(request_type__icontains=query) |
+        Q(headers__icontains=query) |
+        Q(incoming_data__icontains=query) |
+        Q(response_type__icontains=query) |
+        Q(error_code__icontains=query)
+    ).order_by('-timestamp')  # Order by timestamp (descending)
+
+    # Paginate the results
+    paginator = Paginator(logs, per_page)
+    paginated_logs = paginator.get_page(page)
+
+    # Prepare the response data
+    data = {
+        'results': list(paginated_logs.object_list.values()),
+        'page': paginated_logs.number,
+        'total_pages': paginator.num_pages,
+        'total_results': paginator.count,
+    }
+
+    return JsonResponse(data)
   
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -5348,7 +5465,7 @@ def driver_add(request ):
         try:
             uploaded_file = request.FILES.get('photo')
             if uploaded_file:
-                file_path = 'fileuploads/driver/' + str(device_tag.id) + '_' + uploaded_file.name
+                file_path = 'fileuploads/driver_' + str(device_tag.id) + '_' + uploaded_file.name
                 with open(file_path, 'wb') as file:
                     for chunk in uploaded_file.chunks():
                         file.write(chunk)
@@ -9334,12 +9451,14 @@ def user_login(request ):
         
         if not username or not password:
             return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
-        user = User.objects.filter(mobile=username).last() #or User.objects.filter(mobile=username).first()
+        user = User.objects.filter(mobile=username,is_active=True).last() #or User.objects.filter(mobile=username).first()
+
         if not user or not  check_password(password, user.password):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         
 
         user.is_active=True
+        user.login=True
         user.save()
         existing_session = Session.objects.filter(user=user.id, status='login').last()
         #if existing_session:
@@ -9398,6 +9517,126 @@ def user_login(request ):
             return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Failed to create session'}, status=400)
+
+
+
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle]) 
+def get_settings(request): 
+    data={'mqtt_ip': "135.235.166.209", 'mqtt_port': "8883","mqtt_ca_cart":"""-----BEGIN CERTIFICATE-----
+MIIDrDCCApSgAwIBAgITFfcYWF9ArRO7Qli8ksgfR1OEOjANBgkqhkiG9w0BAQsF
+ADBmMQswCQYDVQQGEwJVUzEOMAwGA1UECAwFU3RhdGUxDTALBgNVBAcMBENpdHkx
+FTATBgNVBAoMDE9yZ2FuaXphdGlvbjEQMA4GA1UECwwHT3JnVW5pdDEPMA0GA1UE
+AwwGWW91ckNBMB4XDTI1MDUwOTEyMTY1NVoXDTM1MDUwNzEyMTY1NVowZjELMAkG
+A1UEBhMCVVMxDjAMBgNVBAgMBVN0YXRlMQ0wCwYDVQQHDARDaXR5MRUwEwYDVQQK
+DAxPcmdhbml6YXRpb24xEDAOBgNVBAsMB09yZ1VuaXQxDzANBgNVBAMMBllvdXJD
+QTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANobRTTC3d2QotD45ky9
+2dHaC/ZJEeogqV1MVKYVZe3n1xJF8FOFhH72OEZRyW9HRByjdYCuB7Ygp3HW25Ru
+SGO0f8DNqHSCVPzOw/87dF+ierZ2HVisy0XqP3k6hkFgg5JSJLNkUlQKGQBuReH1
+U+pGHnMreMHh81wTuafX2SdnfyM/CKB+g79LDSxrRwqOOkG1xqszaIeQkOG1tbPQ
+SvW23GcbqPxnoxfq0dUgrkYWYsh44D4KIET0VtqoxV7nczFJrQS0i2FcSLh+iPtO
+W+QYbNXuesy8uXIJebycngLm8DcwE/B3NKyes5rgjcBWZGs2U+1fAtLAVYb+0GZK
+TOUCAwEAAaNTMFEwHQYDVR0OBBYEFL1YNcA0yJEK5+/dAqx171nFaI/4MB8GA1Ud
+IwQYMBaAFL1YNcA0yJEK5+/dAqx171nFaI/4MA8GA1UdEwEB/wQFMAMBAf8wDQYJ
+KoZIhvcNAQELBQADggEBAAjmbnXhtFLppjl3YlbXUebmqkKsIDAyQbyoN4WzlAfY
+uAgSAn93D7ygJG0h88SrFHGJ7JIisWoYBBwX1fD9EeWrArc5yKK/yYH2o5qcmKTB
+8BYqIzWqkkIdUFZwMKrxk+KAyHnXxqwwdQ8mfmQbvFoHj5494y6L7uCTjOsHF13+
+UelnNEA3Oj9JhUEGrRXrza+ZY7dxovIkEiUhise/1gkOJ6XijQGYD23eaSBnVvxV
+Qq4rx+09PjwkQInk5yVt0JiikPuoyo2pi1dDnGOEa3Po5puISufraVrYPt4fbkW7
+wwB/9mlr921t0usT5JPoTFREz0Z4UuZRIuaM+fUOaIU=
+-----END CERTIFICATE-----""","mqtt_key":"""-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDXaKxddiNsh3gU
+MZhojcn4xCulkastkylyQHKj9kG+hAFpR2L/DV9W8H/B5ElaIOdXOWTYLN4SOMlW
+OoaogVW/7FfDr51ObV0yb/mUKNTKHTz1ksWSoSMh2SNWHlaP1ATVmg/ms2qILKf5
+ajLxvq276I9eAcnRWYLo9VqX8hRFehb7CNn5mzPbyLjOt7ED2ltBIRadVl33b3h3
+BYMdMGgUUKRmEAP++pLjfDUTA58/faMjy0gjXUGlGLwB9t/mBjgn1eISN0pZSVNM
+2H281QnBmfH28TuhFVrYLE5IzWRNp5K8g6b528HuI5yGaJ4OF671Hv2WqD+RSqTU
+//K6Al+fAgMBAAECggEACSuVmuz6mRYzUHjECj9vB74iNYw8A1aufwSrXLuRFPE9
+tiOp3T3Ofz8B0VlMnh+keZwh5OoUEiaEu70GGopXAjKnkdcaFUqmmw0VTO9oD6qq
++7Fh49okSr6ZuILWII1gH0/NuX6N3Ho6NG4G+S+q6cL+x3vAAb+TySMY1jsiDcsO
+y/r5wODUAIUzCj2zO/YtYebH1RxdTOqdgSMIjC75csDD0etCfS/Spc6YgPv5sOpU
+mhtII9xxY75u4SFR86oLEDaMbyKDmANT0Uiqi56hvWIcPezw+cFfjjfcuDiK+cV7
+V+UQ9nfMRMXl5rBTtqUKeTZhtJSYRYkeVmRQ0vPjkQKBgQDvNnHVPwX6cTjKJglX
+hnPwCWnGTuLhLbKzeV75kdbwWb9ImO8M0DVZ6lFOAnVf/cTlQwHt+G5eaUlDRrDt
+1yhWOKph9iOICK2IVH3FpDyZ71He2UmCYbTCn9OifCPPBybegI6FZhXAY9C1P58K
+db3ASO4LfRYB2APCr5JfzSrxXQKBgQDmhpVkKzTMpzHUpscsAoArtw8OnnHMUKB4
+TinHF8fK4o3RvLJ0HR/kl2zBTLQsFvYURbqmCXr5+Ng5F77H8YFTUk1kD7HhR7cm
+2pS5ibb1astSDq6dSiwsWiqF/P5wi0cpjlEs/2zvUfhesHg+WywilVtvt7tFDWGw
+F5rKOsTZKwKBgFL2Nep4LhGafNCW+nxxc/oWual+KG9iEuzttgOmEb5P0ehSqe1u
+tGIXwtTkQ2LkNwowABZRJ630o+UCOlByY1nr0yOgYthF8jEq5GfMOvxEJMe94iGm
+0zMAjTx4A09EsrVOLp+TNQ4BUBvcEcNl7EYoxO4VFrHTAhLeI0y4ciE9AoGATyaK
+iLglCtelTmRtInlBVMEn1Fcmr4ZHcsczpP5PRSQAmbD2fNO7LZuoZb5WZoUDvPYs
+HfJHXSjJ5OB4SuJrCxbJJ8ATzUv4YMjQI9xbC2y9ntEXtz3OaPQUgajaG/5WUrhg
+utiAqLM2WhyxTIe1YbJykKs/C3iKwBF6vlDrYb0CgYAPsmbNx0SWs2zcynxnP0bt
+3vpPBiEyO8XnBXs1U86WufN7EuIe6poO5pV5B6TlLZxSNMs1LZOG6vsubf8Ie/mc
+6TMYuEA3wWFOmbdqzzTmZFaNnp9xmH512dOGYnCKfTNE6tlXBoC9zRJBbJfR9N51
+9HiJVQkH3UauquM0gRrBhg==
+-----END PRIVATE KEY-----""","mqtt_cart":"""-----BEGIN CERTIFICATE-----
+MIIDVzCCAj8CFAl+hCw6eE5wlZl/YRRGDfAfYYyIMA0GCSqGSIb3DQEBCwUAMGYx
+CzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVTdGF0ZTENMAsGA1UEBwwEQ2l0eTEVMBMG
+A1UECgwMT3JnYW5pemF0aW9uMRAwDgYDVQQLDAdPcmdVbml0MQ8wDQYDVQQDDAZZ
+b3VyQ0EwHhcNMjUwNTA5MTIxOTE0WhcNMzUwNTA3MTIxOTE0WjBqMQswCQYDVQQG
+EwJVUzEOMAwGA1UECAwFU3RhdGUxDTALBgNVBAcMBENpdHkxFTATBgNVBAoMDE9y
+Z2FuaXphdGlvbjEQMA4GA1UECwwHT3JnVW5pdDETMBEGA1UEAwwKQ2xpZW50TmFt
+ZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANdorF12I2yHeBQxmGiN
+yfjEK6WRqy2TKXJAcqP2Qb6EAWlHYv8NX1bwf8HkSVog51c5ZNgs3hI4yVY6hqiB
+Vb/sV8OvnU5tXTJv+ZQo1ModPPWSxZKhIyHZI1YeVo/UBNWaD+azaogsp/lqMvG+
+rbvoj14BydFZguj1WpfyFEV6FvsI2fmbM9vIuM63sQPaW0EhFp1WXfdveHcFgx0w
+aBRQpGYQA/76kuN8NRMDnz99oyPLSCNdQaUYvAH23+YGOCfV4hI3SllJU0zYfbzV
+CcGZ8fbxO6EVWtgsTkjNZE2nkryDpvnbwe4jnIZong4XrvUe/ZaoP5FKpNT/8roC
+X58CAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAUvwHyIpIxM+MVFL6E/6Ag5LhCBAs
+5Ed9LX8+SjFHKeeugWqb3iVaPqBcZJ86XlJ49pEMOwBtGJpbLUPBNpr8t+QXmnl/
+wEH7xzNmvODJ/1DVLsCn0kL8ycohwEapQGkH5H+/Rp7+JvNZVHDkVGuu3PzXTjxd
+2nlVhUciOC7kSBBRZO7mAOFMCPfYcSYKQfsF9Pirsb7rQdSRhp6thURpKJCS2SyV
+wBk8bKkg4AOXs7ujsUfUiSFEjTqUjVkzxoAUdhljHGMyMWfUELtUcHTSmGcbdA90
+IjBsK1eaOD7wUP3fdubAc1dUScYK4zwmnFfDP3fwwU0qC8eal+4by5Zi1Q==
+-----END CERTIFICATE-----"""}
+
+    return JsonResponse(data)
+
+
+def DEx_getMedia(request):
+    if request.method != 'POST':
+        return Response({"error": "Invalid request method."}, status=status.HTTP_400_BAD_REQUEST)
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)  
+    
+    
+
+    assignment =request.data.get("assignment_id")  
+    assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=["accepted"]).last()
+    if not assignment:
+            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+    
+    device_tag = assignment.call.device
+    if not device_tag:
+        return Response({"error": "device_tag is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+       
+    media_items = MediaFile.objects.filter(device_tag=device_tag).order_by('-start_time')[:100]
+    
+    media_dict = {}
+    for item in media_items:
+        camera_id = item.camera_id
+        if camera_id not in media_dict:
+            media_dict[camera_id] = []
+        media_dict[camera_id].append({
+            "start_time": item.start_time,
+            "end_time": item.end_time,
+            "media_type": item.media_type,
+            "media_link": item.media_link,
+            "duration_ms": item.duration_ms,
+            "alert_type": item.alert_type,
+            "message": item.message,
+        })
+
+    return Response({"media": media_dict}, status=status.HTTP_200_OK)
 
 
 
@@ -9900,7 +10139,103 @@ def validate_otp(request ):
                 return Response({'error': "Unable to process request."+eeeeeee}, status=400)
         else:
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)
-            
+      
+      
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def deactivate_user(request):
+    # Ensure only superadmin can access this API
+    if request.user.role != "superadmin":
+        return Response({"error": "Access denied. Only superadmins can perform this action."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Get the user ID from the request
+    user_id = request.data.get('userid')
+    if not user_id:
+        return Response({"error": "User ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        # Fetch the user and deactivate them
+        user = User.objects.get(id=user_id)
+        user.is_active = False
+        user.save()
+        return Response({"message": f"User with ID {user_id} has been deactivated successfully."}, status=status.HTTP_200_OK)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def create_holiday(request):
+    try:
+        data = request.data
+        vehicles = data.get('vehicles', [])
+        holiday = Holiday.objects.create(
+            holiday_name=data.get('holidayName'),
+            start_date=data.get('startDate'),
+            end_date=data.get('endDate'),
+            description=data.get('description'),
+            status=data.get('status', 'Active'),
+            holiday_type=data.get('holidayType'),
+            created_by=request.user
+        )
+        holiday.vehicles.set(DeviceTag.objects.filter(id__in=vehicles))
+        holiday.save()
+        return Response({'message': 'Holiday created successfully', 'data': model_to_dict(holiday)}, status=201)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def update_holiday(request, holiday_id):
+    try:
+        holiday = Holiday.objects.get(id=holiday_id, created_by=request.user)
+        data = request.data
+        vehicles = data.get('vehicles', [])
+        holiday.holiday_name = data.get('holidayName', holiday.holiday_name)
+        holiday.start_date = data.get('startDate', holiday.start_date)
+        holiday.end_date = data.get('endDate', holiday.end_date)
+        holiday.description = data.get('description', holiday.description)
+        holiday.status = data.get('status', holiday.status)
+        holiday.holiday_type = data.get('holidayType', holiday.holiday_type)
+        holiday.vehicles.set(DeviceTag.objects.filter(id__in=vehicles))
+        holiday.save()
+        return Response({'message': 'Holiday updated successfully', 'data': model_to_dict(holiday)}, status=200)
+    except Holiday.DoesNotExist:
+        return Response({'error': 'Holiday not found or access denied'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def delete_holiday(request, holiday_id):
+    try:
+        holiday = Holiday.objects.get(id=holiday_id, created_by=request.user)
+        holiday.delete()
+        return Response({'message': 'Holiday deleted successfully'}, status=200)
+    except Holiday.DoesNotExist:
+        return Response({'error': 'Holiday not found or access denied'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def list_holidays(request):
+    try:
+        holidays = Holiday.objects.filter(created_by=request.user)
+        data = list(holidays.values())
+        return Response({'data': data}, status=200)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+    
+          
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

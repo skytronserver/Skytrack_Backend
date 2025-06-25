@@ -1,0 +1,277 @@
+sudo apt install git
+git clone https://github.com/skytronserver/Dwarpal_deployhttps://github.com/skytronserver/Dwarpal_deployhttps://github.com/skytronserver/Dwarpal_deployhttps://github.com/skytronserver/Dwarpal_deploy
+git clone d
+git clone https://github.com/skytronserver/Dwarpal_deploy
+sudo git clone https://github.com/skytronserver/Dwarpal_deploy
+mkdir actions-runner && cd actions-runner
+curl -o actions-runner-linux-x64-2.323.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.323.0/actions-runner-linux-x64-2.323.0.tar.gz
+echo "0dbc9bf5a58620fc52cb6cc0448abcca964a8d74b5f39773b7afcad9ab691e19  actions-runner-linux-x64-2.323.0.tar.gz" | shasum -a 256 -c
+tar xzf ./actions-runner-linux-x64-2.323.0.tar.gz
+   ./config.sh --url https://github.com/skytronserver/Dwarpal_deploy --token ABUS7ASTV65MGR2ZMODTZJDIB5B4M
+   sudo apt-get update
+   sudo apt-get upgrade
+   sudo apt-get install nginx     mosquitto  mosquitto-clients   openssl  postgresql postgresql-contrib   git -y
+   sudo apt-get install ca-certificates curl gnupg lsb-release
+   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+   sudo apt-get update
+   sudo apt-get install docker-ce docker-ce-cli containerd.io -y
+   sudo docker run hello-world
+   docker run hello-world
+   sudo apt-get install docker-ce docker-ce-cli containerd.io -y
+   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+   sudo apt-get update
+   sudo apt-get install docker-ce docker-ce-cli containerd.io -y
+   sudo apt-get remove docker docker-engine docker.io containerd runc
+   sudo apt-get update
+   sudo apt-get install -y ca-certificates curl gnupg lsb-release
+   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+   echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+   sudo apt-get update
+   sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+   sudo docker run hello-world
+   sudo systemctl start postgresql
+   sudo systemctl enable postgresql
+   sudo -i -u postgres
+   sudo nano /etc/postgresql/12/main/pg_hba.conf
+   sudo nano /etc/postgresql/16/main/pg_hba.conf 
+   sudo nano /etc/postgresql/16/main/postgresql.conf 
+   sudo systemctl restart postgresql
+   psql -U dbadmin -d skytrondbnew2 -h localhost -W
+   cd actions-runner
+   ./config.sh --url https://github.com/skytronserver/Dwarpal_deploy --token ABUS7ASTV65MGR2ZMODTZJDIB5B4M
+   cd ../
+   sudo rm actions-runner/ -r
+   mkdir actions-runner && cd actions-runner
+   45  curl -o actions-runner-linux-x64-2.323.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.323.0/actions-runner-linux-x64-2.323.0.tar.gz
+   46  echo "0dbc9bf5a58620fc52cb6cc0448abcca964a8d74b5f39773b7afcad9ab691e19  actions-runner-linux-x64-2.323.0.tar.gz" | shasum -a 256 -c
+   47  tar xzf ./actions-runner-linux-x64-2.323.0.tar.gz
+   48  ./config.sh --url https://github.com/skytronserver/Dwarpal_deploy --token ABUS7ASTV65MGR2ZMODTZJDIB5B4M
+   49  ./config.sh --url https://github.com/skytronserver/Dwarpal_deploy --token ABUS7ATMIQLWKMAEWHRD62DIB5N4G
+   50  ./run.sh
+   51  sudo git clone
+   52  sudo git clone https://github.com/skytronserver/Dwarpal_deploy
+   53  docker build -t dwarpal_app .
+   54  sudo docker build -t dwarpal_app .
+   55  sudo docker run -p 8001:8000 dwarpal_app
+   56  docker run -d --restart always -p 8001:8000 dwarpal_app
+   57  sudo docker run -d --restart always -p 8001:8000 dwarpal_app
+   58  sudo ufw allow 8000
+   59  sudo ufw allow 8001
+   60  sudo docker stop dwarpal_app
+   61  sudo docker ps 
+   62  sudo docker rm cranky_germain
+   63  sudo docker stop cranky_germain
+   64  sudo docker rm cranky_germain
+   65  sudo docker build -t dwarpal_app .
+   66  sudo docker run -d --restart always -p 8001:8000 dwarpal_app -name dwarpa_app
+   67  sudo docker ps 
+   68  sudo docker run -d --restart always -p 8001:8000 dwarpal_app -n dwarpa_app
+   69  sudo docker run -d --restart always -p 8001:8000 dwarpal_app --name dwarpa_app
+   70  docker run -d --name dwarpal_container --restart always -p 8000:8000 dwarpal_app
+   71  sudo docker run -d --name dwarpal_container --restart always -p 8000:8000 dwarpal_app
+   72  sudo dockerstop dwarpal_app
+   73  sudo docker stop dwarpal_app
+   74  sudo docker stop dwarpal_container
+   75  sudo docker rm dwarpal_container
+   76  sudo docker run -d --name dwarpal_container --restart always -p 8001:8000 dwarpal_app
+   77  sudo docker rm dwarpal_container
+   78  sudo docker stop dwarpal_container
+   79  sudo docker rm dwarpal_container
+   80  sudo docker build -t dwarpal_app .
+   81  sudo docker run -d --name dwarpal_container --restart always -p 8001:8000 dwarpal_app
+   82  git config --global user.name "kishalaychakraborty1@gmail.com"
+   83  git config --global user.email "kishalaychakraborty1@gmail.com"
+   84  cd ..
+   85  pg_dump -U dbadmin -h 216.10.244.243 -p 5432 -F c -b -v -f skytrondbnew2_backup.dump skytrondbnew2
+   86  pg_dump -U dbadmin -h 216.10.244.243 -p 5432 -F c -b -v -f  skytron_main_db_backup.dump  skytron_main_db
+   87  pg_dump -U dbadmin -h 216.10.244.243 -p 5432 -F c -b -v -f  skytrondbnew_backup.dump  skytrondbnew
+   88  pg_dump -U dbadmin -h 216.10.244.243 -p 5432 -F c -b -v -f skytrondb_backup.dump skytrondb 
+   89  sudo -u postgres psql
+   90  pg_restore -U dbadmin -h localhost -p 5432 -d skytrondb -v skytrondb_backup.dump
+   91  pg_restore -U dbadmin -h localhost -p 5432 -d skytrondbnew -v skytrondbnew_backup.dump
+   92  pg_restore -U dbadmin -h localhost -p 5432 -d skytrondbnew2 -v skytrondbnew2_backup.dump
+   93  pg_restore -U dbadmin -h localhost -p 5432 -d skytron_main_db -v skytron_main_db_backup.dump
+   94  sudo docker build -t skytron-backend-api -f dockerfile.api .
+   95  ls
+   96  cd Skytronsystem/
+   97  sudo docker build -t skytron-backend-api -f dockerfile.api .
+   98  sudo docker run -d  --restart=always -p 2000:2000  -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
+   99  mkdir projects
+  100  cd projects
+  101  git clone https://github.com/skytronserver/Dwarpal_Frontend.git
+  102  cd Dwarpal_Frontend
+  103  sudo netstat -tulpn | grep LISTEN
+  104  docker-compose up --build -d
+  105  sudo apt update
+  106  sudo apt install docker-compose
+  107  docker-compose --version
+  108  docker-compose up --build -d
+  109  sudo systemctl status docker
+  110  clear
+  111  sudo docker-compose up --build -d
+  112  docker-compose logs -f
+  113  sudo docker-compose logs -f
+  114  sudo docker-compose down
+  115  docker ps
+  116  sudo docker ps
+  117  mkdir -p ssl
+  118  cd ssl
+  119  sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048   -keyout key.pem -out cert.pem   -subj "/C=US/ST=State/L=City/O=Organization/CN=135.235.166.209"
+  120  openssl x509 -in ~/projects/Dwarpal_Frontend/ssl/cert.pem -text -noout
+  121  cd ..
+  122  sudo docker-compose up --build -d
+  123  sudo docker-compose logs -f
+  124  sudo docker-compose down
+  125  sudo docker-compose up --build -d --no-cache
+  126  sudo docker-compose up --build -d
+  127  sudo docker-compose logs -f
+  128  sudo docker ps
+  129  sudo docker-compose logs -f
+  130  dir
+  131  cd projects
+  132  ls
+  133  dir
+  134  clear
+  135  git clone https://github.com/skytronserver/Dwarpal_Frontend.git
+  136  sudo docker-compose up --build -d
+  137  cd Dwarpal_Frontend
+  138  sudo docker-compose up --build -d
+  139  sudo docker-compose --version
+  140  sudo docker ps
+  141  sudo docker volume ls
+  142  azureuser@Skytrack:~/projects/Dwarpal_Frontend$ sudo docker volume ls
+  143  DRIVER    VOLUME NAME
+  144  local     c0c6a27498175a198b28f996f0cd0ecb007463068398ac135fc517e05df67965
+  145  local     c77cc954dd20c7c12a47477cdeafbe7af7d61c1764fba4f9cf8bf59f228213ae
+  146  local     db2ed5a83cd90f19e829695f26a37a3ba91b6747a502132041272edc93baf0ad
+  147  sudo docker volume inspect c0c6a27498175a198b28f996f0cd0ecb007463068398ac135fc517e05df67965
+  148  sudo docker-compose up --build -d
+  149  cd projects>Dwarpal_Frontend
+  150  cd Dwarpal_Frontend
+  151  sudo apt-get remove docker-compose
+  152  sudo apt update
+  153  sudo apt install docker-compose
+  154  sudo docker-compose down
+  155  sudo docker-compose up --build -d
+  156  sudo docker-compose logs -f
+  157  sudo docker-compose down
+  158  sudo docker-compose build --no-cache
+  159  sudo dokcer-compose up -d
+  160  sudo docker-compose up -d
+  161  sudo docker-compose logs -f
+  162  sudo netstat -tulpn | grep 5173
+  163  sudo apt-get update
+  164  sudo apt-get install net-tools
+  165  sudo netstat -tulpn | grep 5173
+  166  docker ps | grep dwarpal_frontend
+  167  sudo docker ps | grep dwarpal_frontend
+  168  sudo ufw status | grep 5173
+  169  sudo ufw status
+  170  curl http://135.235.166.209:5173/
+  171  sudo docker-compose down
+  172  sudo docker-compose build --no-cache
+  173  sudo docker-compose up -d
+  174  sudo docker-compose logs -f
+  175  docker inspect dwarpal_frontend_app_1 -f '{{json .NetworkSettings.Ports}}'
+  176  sudo docker inspect dwarpal_frontend_app_1 -f '{{json .NetworkSettings.Ports}}'
+  177  sudo docker-compose down
+  178  sudo docker-compose up -d
+  179  sudo docker-compose down
+  180  sudo docker-compose build --no-cache
+  181  sudo docker-compose up -d
+  182  curl -v localhost:5173
+  183  http://135.235.166.209:5173/
+  184  curl -v http://135.235.166.209:5173/
+  185  sudo systemctl status nginx
+  186  ls -l /etc/nginx/sites-enabled/
+  187  sudo nano /etc/nginx/sites-available/default
+  188  clear
+  189  vite --host
+  190  curl -v http://135.235.166.209:5173
+  191  sudo lsof -i :5173
+  192  clear
+  export DB_NAME=skytrondbnew2
+  export DB_USER=dbadmin
+  export DB_PASSWORD=lask1028zmnx
+  export DB_HOST=localhost
+  export DB_PORT=5432
+  export MAIL_ID=testskytrack@gmail.com
+  export MAIL_PW=zmzmexdnrlmsqrlr
+  export DEBUG=False
+  export SECRET_KEY=django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
+  export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+  export EMAIL_HOST_USER=testskytrack@gmail.com
+  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+  export ALLOWED_HOSTS="api.skytron.in, skytron.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+  export DB_NAME=skytrondbnew2
+  export DB_USER=dbadmin
+  export DB_PASSWORD=lask1028zmnx
+  export DB_HOST=localhost
+  export DB_PORT=5432
+  export MAIL_ID=testskytrack@gmail.com
+  export MAIL_PW=zmzmexdnrlmsqrlr
+  export DEBUG=False
+  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+  export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+  export EMAIL_HOST_USER=testskytrack@gmail.com
+  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+  export ALLOWED_HOSTS="api.skytron.in, skytron.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+  219  cd Skytronsystem/
+  220  python3 manage.py tcp_server 
+  221  sudo apt install python 
+  222  sudo apt install python 3
+  223  sudo apt install python3
+  224  python manage.py tcp_server 
+  225  sudo python manage.py tcp_server 
+  226  sudo python 
+  227  sudo python3
+  228  sudo python3 manage.py tcp_server 
+  229  apt-get update && apt-get install -y --no-install-recommends     wkhtmltopdf \          
+  230  sudo apt-get update && apt-get install -y --no-install-recommends     wkhtmltopdf \          
+  231  sudo python3 -m pip install --upgrade pip
+  232  sudo apt install python3-pip
+  233  sudo python3 -m pip install --upgrade pip
+  234  sudo python3 -m pip install     django     djangorestframework     markdown     django-filter     django-bootstrap4     django-bootstrap-datepicker-plus     drf_spectacular     django-cors-headers     django-extensions     psycopg2-binary     pandas     django-environ     scipy     pillow     pycrypto     django-csp \ 
+  235  sudo apt install gunicorn
+  236  sudo python3 -m pip install     django     djangorestframework     markdown     django-filter     django-bootstrap4     django-bootstrap-datepicker-plus     drf_spectacular     django-cors-headers     django-extensions     psycopg2-binary     pandas     django-environ     scipy     pillow     pycrypto     django-csp 
+  237  source ../../venv/bin/activate
+  238  python3 manage.py tcp_server 
+  239  python3 -m pip install geopy
+  240  python3 manage.py tcp_server 
+  241  history 
+  242  history HisT_gps.txt
+  243  history> HisT_gps.txt
+
+
+
+
+source ../../venv/bin/activate
+
+
+  export DB_NAME=skytrondbnew2
+  export DB_USER=dbadmin
+  export DB_PASSWORD=lask1028zmnx
+  export DB_HOST=localhost
+  export DB_PORT=5432
+  export MAIL_ID=testskytrack@gmail.com
+  export MAIL_PW=zmzmexdnrlmsqrlr
+  export DEBUG=False
+  export SECRET_KEY=django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
+  export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+  export EMAIL_HOST_USER=testskytrack@gmail.com
+  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+  export ALLOWED_HOSTS="api.skytron.in, skytron.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+  export DB_NAME=skytrondbnew2
+  export DB_USER=dbadmin
+  export DB_PASSWORD=lask1028zmnx
+  export DB_HOST=localhost
+  export DB_PORT=5432
+  export MAIL_ID=testskytrack@gmail.com
+  export MAIL_PW=zmzmexdnrlmsqrlr
+  export DEBUG=False
+  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+  export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+  export EMAIL_HOST_USER=testskytrack@gmail.com
+  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+  export ALLOWED_HOSTS="api.skytron.in, skytron.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 
