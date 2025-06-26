@@ -1,0 +1,93 @@
+# Start from an official Python image
+FROM python:3.9-slim-buster
+
+# Install required system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wkhtmltopdf \          
+    # for pdfkit
+    #
+    libssl-dev \          
+    # often needed by cryptography/pycryptodome
+    libffi-dev \    
+    # often needed by cryptography/pycryptodome
+    build-essential \     
+    # for compiling numpy/scipy if needed
+    #git \                  # if needed
+    #nodejs \               # if needed
+    #npm \                  # if needed
+    # libreoffice          # uncomment if you need LibreOffice
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip install --upgrade pip
+RUN pip install \
+    geopy \
+    django \
+    djangorestframework \
+    markdown \
+    django-filter \
+    django-bootstrap4 \
+    django-bootstrap-datepicker-plus \
+    drf_spectacular \
+    django-cors-headers \
+    django-extensions \
+    psycopg2-binary \
+    pandas \
+    django-environ \
+    scipy \
+    pillow \
+    pycrypto \
+    django-csp \ 
+    python-docx \
+    pdfkit \
+    whitenoise \
+    paho-mqtt  \
+    gunicorn \
+    django \
+    djangorestframework \
+    requests \
+    numpy \
+    pandas \
+    scipy \
+    pycryptodome \
+    python-docx \
+    pdfkit \
+    docx2pdf \ 
+    django-filter \
+    django-cors-headers \ 
+    gunicorn
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy your Django project files into the container (including cert.pem & key.pem if needed)
+COPY . /app
+
+# (Optional) If you need to collect static files, uncomment the line below:
+RUN python manage.py collectstatic --noinput
+
+# Expose port 2000
+EXPOSE 6000
+
+# Option A: Set environment variables in the Dockerfile (not recommended for secrets)
+ENV MAIL_ID=noreply@skytron.in
+ENV MAIL_PW=Developer@18062025
+ENV DEBUG=True
+ENV SECRET_KEY=django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
+#ENV DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+
+ENV EMAIL_HOST_USER=noreply@skytron.in
+ENV EMAIL_HOST_PASSWORD=Developer@18062025
+ENV ALLOWED_HOSTS="gromed.in,api.gromed.in,api.skytron.in,skytron.in,dev.skytron.in,api-dev.skytron.in,skytrack.tech,localhost"
+
+ENV DB_NAME=skytrondbnew2
+ENV DB_USER=dbadmin
+ENV DB_PASSWORD=lask1028zmnx
+ENV DB_HOST=40.81.241.29
+#host.docker.internal
+ENV DB_PORT=5432
+# 
+
+
+# Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key
+CMD ["python", "manage.py","tcp_server"]

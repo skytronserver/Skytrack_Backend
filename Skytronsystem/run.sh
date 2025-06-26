@@ -19,9 +19,9 @@ gunicorn --certfile=cert.pem  --keyfile=key.pem -b 0.0.0.0:2000 Skytronsystem.ws
 
 tmux new -s run_gps
 cd Skytronsystem/
- python3 manage.py tcp_server 
+ python3 manage.py tcp_serverd 
 
-
+source ../venv/bin/activate
 tmux new -s run_em
 cd Skytronsystem/
 python3 em_server.py
@@ -90,6 +90,7 @@ GRANT ALL PRIVILEGES ON DATABASE skytron_main_db TO dbadmin;
 
 
 python3  manage.py migrate
+
 
 
 

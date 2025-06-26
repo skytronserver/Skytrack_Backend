@@ -1,0 +1,293 @@
+{
+  "info": {
+    "name": "Skytron Frontend APIs",
+    "description": "API documentation for Skytron Frontend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "StateAdmin Filter",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/StateAdmin/filter_StateAdmin/",
+          "path": [
+            "api",
+            "StateAdmin",
+            "filter_StateAdmin"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Tag Awaiting Owner Approval Final",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/tag/TagAwaitingOwnerApprovalFinal/",
+          "path": [
+            "api",
+            "tag",
+            "TagAwaitingOwnerApprovalFinal"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Tag Awaiting Owner Approval",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/tag/TagAwaitingOwnerApproval/",
+          "path": [
+            "api",
+            "tag",
+            "TagAwaitingOwnerApproval"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Tag Awaiting Activate Tag",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/tag/TagAwaitingActivateTag/",
+          "path": [
+            "api",
+            "tag",
+            "TagAwaitingActivateTag"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Device Model List",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/devicemodel/devicemodelList/",
+          "path": [
+            "api",
+            "devicemodel",
+            "devicemodelList"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Device Model Awaiting State Approval",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/devicemodel/devicemodelAwaitingStateApproval/",
+          "path": [
+            "api",
+            "devicemodel",
+            "devicemodelAwaitingStateApproval"
+          ]
+        }
+      }
+    },
+    {
+      "name": "COP Awaiting State Approval",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/devicemodel/COPAwaitingStateApproval/",
+          "path": [
+            "api",
+            "devicemodel",
+            "COPAwaitingStateApproval"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get List",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/get_list/",
+          "path": [
+            "api",
+            "get_list"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Details",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/get_details/${userId}",
+          "path": [
+            "api",
+            "get_details",
+            "${userId}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "SOSAdmin Filter",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/SOSAdmin/filter_SOSAdmin/",
+          "path": [
+            "api",
+            "SOSAdmin",
+            "filter_SOSAdmin"
+          ]
+        }
+      }
+    },
+    {
+      "name": "SOSUser Filter",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/SOSuser/filter_SOSuser/",
+          "path": [
+            "api",
+            "SOSuser",
+            "filter_SOSuser"
+          ]
+        }
+      }
+    },
+    {
+      "name": "DTO_RTO Filter",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/DTO_RTO/filter_DTO_RTO/",
+          "path": [
+            "api",
+            "DTO_RTO",
+            "filter_DTO_RTO"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Homepage StateAdmin",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/homepageandstat/homepage_stateAdmin/",
+          "path": [
+            "api",
+            "homepageandstat",
+            "homepage_stateAdmin"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Homepage Dealer",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/homepageandstat/homepage_Dealer/",
+          "path": [
+            "api",
+            "homepageandstat",
+            "homepage_Dealer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Homepage Manufacturer",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/homepageandstat/homepage_Manufacturer/",
+          "path": [
+            "api",
+            "homepageandstat",
+            "homepage_Manufacturer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Homepage VehicleOwner",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/homepageandstat/homepage_VehicleOwner/",
+          "path": [
+            "api",
+            "homepageandstat",
+            "homepage_VehicleOwner"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ESIM Provider List",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/devicestock/esim_provider_list/",
+          "path": [
+            "api",
+            "devicestock",
+            "esim_provider_list"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Tag Owner List",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/tag/tag_ownerlist/",
+          "path": [
+            "api",
+            "tag",
+            "tag_ownerlist"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Tag Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "/api/tag/tag_status/",
+          "path": [
+            "api",
+            "tag",
+            "tag_status"
+          ]
+        }
+      }
+    }
+  ]
+}

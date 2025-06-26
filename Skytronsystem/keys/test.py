@@ -49,7 +49,7 @@ UwIDAQAB
 public_key = RSA.import_key(public_key_pem)
 
 # Encrypt the password
-password = "123456789".encode()
+password = "User@1234".encode()
 cipher = PKCS1_OAEP.new(public_key)
 encrypted_password = cipher.encrypt(password)
 
@@ -58,7 +58,7 @@ encrypted_password_base64 = base64.b64encode(encrypted_password).decode('utf-8')
 
 print("Encrypted password (base64):", encrypted_password_base64)
 
-private_key_path = '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
+private_key_path = '/home/azureuser/Skytrack_Backend/Skytronsystem/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
 with open(private_key_path, 'rb') as key_file:
     private_key = RSA.import_key(key_file.read()) 
 
@@ -67,5 +67,9 @@ enc=base64.b64decode(encrypted_password_base64)
 print(enc)
 decrypted_data = cipher.decrypt(enc)
 print(decrypted_data)
+
+
+
+
 
 '''oBl2W1rlX5kZ+eGDjzRO8ClLOIMRIE36suwaeTipFJzQXDsDMH6tA6uJ3SfFTPXdCqYHQDb2VFoYtNMdzoIxTJ6yimHzetInljZUdhQdvfOfa534l02xuevVUwSPka6OvBI7HYaPtfkO7iQ9voUtKpYdV/RUwX8uJld6nuf00d5ekZIG0WbKnNhfUMPj4F8CFoEVrzxGBERT0cBs+gVEPHIk8KlS5rRSreaASBe0IMFq+tCg72r7UOJrTkDidsQbagzEj3JKFBV2abUy2/1cHR2owfBZwXpcZMpY85jFthJJ7FA1LrD3O9NknONaAVRm9RKLOtLdDBg3f3bEjTDuNg=='''

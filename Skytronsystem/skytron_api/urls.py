@@ -9,6 +9,11 @@ from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 urlpatterns = [
     path('get_settings/', get_settings, name='settings'),
+<<<<<<< gromed2
+=======
+    
+    path('EM/DEx/get-media/', DEx_getMedia, name='get_media'),
+>>>>>>> skytronV2_toNIC
     path('generate-captcha/', generate_captcha_api, name='generate_captcha'),
     path('verify-captcha/', verify_captcha_api, name='verify_captcha'),
 
@@ -336,69 +341,7 @@ urlpatterns = [
     path('notice/list/', list_notice, name='list_notice'),
     
 
-]
-'''
-    path('vehicles/', list_vehicles, name='list_vehicles'),
-    path('vehicles/create/', create_vehicle, name='create_vehicle'),
-    path('vehicles/<int:vehicle_id>/', vehicle_details, name='vehicle_details'),
-    path('vehicles/<int:vehicle_id>/update/', update_vehicle, name='update_vehicle'),
-    path('vehicles/<int:vehicle_id>/delete/', delete_vehicle, name='delete_vehicle'),
-
-    path('manufacturer_details/<int:manufacturer_id>/', manufacturer_details, name='manufacturer_details'),
-    path('retailer_details/<int:retailer_id>/', retailer_details, name='retailer_details'),
-    path('device_details/<int:device_id>/', device_details, name='device_details'),
-    path('device_model_details/<int:device_model_id>/', device_model_details, name='device_model_details'),
-    
-    path('list_manufacturers/', list_manufacturers, name='list_manufacturers'),
-    path('list_retailers/', list_retailers, name='list_retailers'),
-    path('list_devices/', list_devices, name='list_devices'),
-    path('list_device_models/', list_device_models, name='list_device_models'),
-   
-    path('delete_manufacturer/<int:pk>/', delete_manufacturer, name='delete_manufacturer'),
-    path('delete_retailer/<int:pk>/', delete_retailer, name='delete_retailer'),
-    path('delete_device/<int:pk>/', delete_device, name='delete_device'),
-    path('delete_device_model/<int:pk>/', delete_device_model, name='delete_device_model'),
-   
-    path('update_manufacturer/<int:pk>/', update_manufacturer, name='update_manufacturer'),
-    path('update_retailer/<int:pk>/', update_retailer, name='update_retailer'),
-    path('update_device/<int:pk>/', update_device, name='update_device'),
-    path('update_device_model/<int:pk>/', update_device_model, name='update_device_model'),
-  
-    path('create_manufacturer/', create_manufacturer, name='create_manufacturer'),
-    path('create_retailer/', create_retailer, name='create_retailer'),
-    path('create_device/', create_device, name='create_device'),
-    path('create_device_model/', create_device_model, name='create_device_model'),
-'''
-"""
-    path('latest/', latest_gps, name='latest_gps'),
-
-    #emergency_call_listener_admin
-    path('emergency-call-listener-admin/',emergency_call_listener_admin, name='emergency-call-listener-admin'), 
-    path('emergency-call-listener-team-lead/',emergency_call_listener_admin, name='emergency-call-listener-team-lead'), 
-    path('emergency-call-listener/', emergency_call_listener, name='emergency_call_listener'),
-    path('emergency-call-listener-field/', emergency_call_listener_field, name='emergency_call_listener_field'),
-    path('emergency-call-details-google/<int:emergency_call_id>/', emergency_call_details, name='emergency_call_details'),
-    path('emergency-call-details/<int:emergency_call_id>/', map2, name='emergency_call_details'),
-    path('emergency-call-details-field/<int:emergency_call_id>/', emergency_call_details_field, name='emergency_call_details_field'),
-    path('get-latest-gps-location/<int:emergency_call_id>/', get_latest_gps_location, name='get_latest_gps_location'),
-    path('get-live-call/', get_live_call, name='get_live_call'),
-    path('get-all-call/', get_all_call, name='get_all_call'),
-    path('get-live-call-field/', get_live_call_field, name='get_live_call_field'),
-    path('update-location/', update_location, name='update_location'),
-    path('update-field-status/<str:field_ex>/', update_status, name='update_field_status'),
-    path('broadcast-help/', Broadcast_help, name='assign_help'),
-    path('submit_status/', SubmitStatus, name='SubmitStatus'),
-    #path('login/', CustomLoginView.as_view(), name='login'),
-    #path('login2/', Login2, name='login2'), 
-    #path('loginAndroid/', LoginAndroid, name='loginandroid'),
-    path('map2/<int:emergency_call_id>/',  map2, name='map2'),
-    #path('', CustomLoginView.as_view(), name='login'),
-    
-    path('logout/', CustomLogoutView.as_view(), name='logout'),
-    """
-
-    # Add other paths for the remaining APIs
- 
+]  
 
 
 

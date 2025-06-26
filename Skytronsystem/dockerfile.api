@@ -1,7 +1,7 @@
 # Start from an official Python image
 FROM python:3.9-slim-buster
 
-# Install required system dependencies
+# Install required system dependenciessudo apt-get install libmagic1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wkhtmltopdf \          
     # for pdfkit
@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \          
     # often needed by cryptography/pycryptodome
     libffi-dev \    
+    libmagic1 \
     # often needed by cryptography/pycryptodome
     build-essential \     
     # for compiling numpy/scipy if needed
@@ -22,6 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --upgrade pip
 RUN pip install \
     django \
+    bleach \
+    openpyxl \
     djangorestframework \
     markdown \
     django-filter \
@@ -29,6 +32,7 @@ RUN pip install \
     django-bootstrap-datepicker-plus \
     drf_spectacular \
     django-cors-headers \
+    python-magic \
     django-extensions \
     psycopg2-binary \
     pandas \
@@ -50,9 +54,9 @@ RUN pip install \
     pycryptodome \
     python-docx \
     pdfkit \
-    docx2pdf \ 
+    docx2pdf \
     django-filter \
-    django-cors-headers \ 
+    django-cors-headers \
     gunicorn
 
 # Set the working directory in the container
@@ -68,28 +72,40 @@ RUN python manage.py collectstatic --noinput
 EXPOSE 2000
 
 # Option A: Set environment variables in the Dockerfile (not recommended for secrets)
+
+
+
 ENV MAIL_ID=noreply@skytron.in
 ENV MAIL_PW=Developer@18062025
 ENV DEBUG=True
 ENV SECRET_KEY=django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
 #ENV DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
 
+ 
+ 
 ENV EMAIL_HOST_USER=noreply@skytron.in
 ENV EMAIL_HOST_PASSWORD=Developer@18062025
-ENV ALLOWED_HOSTS="gromed.in,api.gromed.in,api.skytron.in,skytron.in,dev.skytron.in,api-dev.skytron.in,skytrack.tech,localhost"
+ENV ALLOWED_HOSTS="gromed.in,api.gromed.in,api.skytron.in,skytron.in,dev.skytron.in,api-dev.skytron.in,skytrack.tech,dev-api.skytron.in,localhost"
+ 
+ 
 
 ENV DB_NAME=skytrondbnew2
 ENV DB_USER=dbadmin
 ENV DB_PASSWORD=lask1028zmnx
 ENV DB_HOST=135.235.166.209
+ 
+#ENV DB_HOST=40.81.241.29
+#135.235.166.209
+#40.81.241.29 
+#216.10.244.243
 #host.docker.internal
 ENV DB_PORT=5432
 # 
-#RUN python manage.py migrate --fake-initial
-#RUN python manage.py migrate skytron_api --fake
 RUN python manage.py makemigrations
-#RUN python manage.py migrate --fake-initial
-#RUN python manage.py migrate
+RUN python manage.py migrate --fake-initial
+RUN python manage.py migrate
+ 
+
 
 # Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key
 #CMD ["python3 manage.py runserver_plus --cert-file cert_old.pem --key-file key_old.pem 0.0.0.0:2000"]

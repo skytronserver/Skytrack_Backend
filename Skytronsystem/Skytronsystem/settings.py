@@ -89,6 +89,7 @@ MIDDLEWARE = [
 
 
 # Content Security Policy settings
+"""
 CSP_DEFAULT_SRC = ("'self'",)  # Default source for all content types
 CSP_SCRIPT_SRC = ("'self'", )  # For JavaScript
 CSP_STYLE_SRC = ("'self'",)  # For CSS
@@ -102,6 +103,7 @@ CSP_MEDIA_SRC = ("'self'",)  # For media like audio and video
 # Optionally report violations
 CSP_REPORT_ONLY = False  # Set to True to test the policy without enforcing
 CSP_REPORT_URI = 'https://'
+"""
 
  
 # Security settings
@@ -191,6 +193,15 @@ USE_I18N = True
 
 USE_TZ = True
 
+CORS_ALLOW_METHODS = [
+    "GET",
+    "POST",
+]
+CORS_ALLOW_HEADERS = [
+    "content-type",
+    "authorization",
+    "x-csrftoken",
+]
 CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     "http://localhost:3000",  
     "https://localhost:3000", 
@@ -203,6 +214,9 @@ CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     'https://api.skytron.in',
     'https://skytron.in',
     'https://dev-api.skytron.in',
+    'http://dev-api.skytron.in',
+    'https://dev.skytron.in/',
+    'http://dev.skytron.in',
     'https://dev.skytron.in',
     "https://dev.skytrack.tech",  # Add your frontend domain(s) here
     #"https://yourfrontenddomain.com",
@@ -263,7 +277,11 @@ EMAIL_USE_SSL = True
 EMAIL_USE_TLS = False
 EMAIL_HOST_USER = "noreply@skytron.in" # os.environ.get('EMAIL_HOST_USER', 'default-email@gmail.com')
 EMAIL_HOST_PASSWORD = "Developer@18062025" #os.environ.get('EMAIL_HOST_PASSWORD', 'default-password')
+<<<<<<< gromed2
 
+=======
+ 
+>>>>>>> skytronV2_toNIC
 
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
