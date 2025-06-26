@@ -20,7 +20,12 @@ import random
 from itertools import islice 
 from django.utils import timezone     
 from django.contrib.auth.hashers import check_password, make_password
-from django.core.mail import send_mail
+#from django.core.mail import send_mail
+def send_mail( subject, message, from_email, recipient_list, fail_silently=False, auth_user=None, auth_password=None, connection=None, html_message=None):
+    pass
+
+
+               
 from django.utils.crypto import get_random_string   
 import sys
 from django.forms.models import model_to_dict
