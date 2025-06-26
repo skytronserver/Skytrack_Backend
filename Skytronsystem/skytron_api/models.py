@@ -119,6 +119,85 @@ class RequestLog(models.Model):
     error_code = models.IntegerField(null=True, blank=True)
     def __str__(self):
         return self.ip_address
+    
+    
+    
+class Media_File1(models.Model):
+    device_tag = models.ForeignKey('DeviceTag', on_delete=models.CASCADE)
+    camera_id = models.CharField(max_length=255)
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    media_type = models.CharField(max_length=50, choices=[('audio', 'Audio'), ('video', 'Video'), ('image', 'Image')])
+    media_link = models.URLField()
+    duration_ms = models.IntegerField()
+    alert_type = models.CharField(max_length=255)
+    message = models.TextField()
+
+    def __str__(self):
+        return f"{self.media_type} from {self.camera_id} at {self.start_time}"
+    
+    
+class RequestLogaaaaa(models.Model):
+    timestamp = models.DateTimeField(auto_now_add=True)
+    ip_address = models.CharField(max_length=70)  # Supports IPv6
+    system_info = models.TextField()
+    request_url = models.URLField()
+    request_type = models.CharField(max_length=100)
+    headers = models.TextField()
+    incoming_data = models.TextField()
+    response_type = models.CharField(max_length=100)
+    error_code = models.IntegerField(null=True, blank=True)
+    def __str__(self):
+        return self.ip_address
+
+class pointofinterests(models.Model): 
+    status_choices = [
+            ('Active', 'Active'),
+            ('NotActive', 'NotActive'),
+            ('Deleted', 'Deleted'),  
+            ('Deleted2', 'Deleted2'),  
+        ]
+    
+    status2 = models.CharField(max_length=20, choices=status_choices)
+    status = models.CharField(max_length=20, choices=status_choices)
+    mark_type_choices = [
+            ('Point', 'Point'),
+            ('Road', 'Road'),
+            ('Circle', 'Circle'), 
+            ('Polygon', 'Polygon'), 
+        ]
+    mark_type = models.CharField(max_length=20, choices=mark_type_choices)
+    use_type_choices = [
+            ('StateBoundary', 'StateBoundary'),
+            ( 'DistrictBoundary', 'DistrictBoundary'),
+            ( 'CityBoundary',  'CityBoundary'), 
+            ( 'VillageBoundary',  'VillageBoundary'), 
+            ( 'PermitRoute',  'PermitRoute'), 
+            ( 'School',  'School'), 
+            ( 'Hospital',  'Hospital'), 
+            ( 'PoliceStation',  'PoliceStation'), 
+            ( 'BusStop',  'BusStop'),  
+            ( 'RailwayStation',  'RailwayStation'), 
+            ( 'Airport',  'Airport'), 
+            ( 'FuelStation',  'FuelStation'), 
+            ( 'TollGate',  'TollGate'), 
+            ( 'Other',  'Other'),
+            ( 'Personal',  'Personal'),
+            
+        ]
+    use_type = models.CharField(max_length=20, choices=use_type_choices)
+    location = models.TextField()
+    radius = models.FloatField(blank=True, null=True)
+    name = models.CharField(max_length=50, unique=True)
+    description = models.TextField()
+    created_by = models.ForeignKey('User', on_delete=models.CASCADE,related_name='POI_created_by')
+    updated_by = models.ForeignKey('User', on_delete=models.CASCADE,related_name='POI_updated_by')
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        return self.name
+    
+     
 
     
 def get_logged_in_users_with_min_assignments(): 
@@ -291,7 +370,6 @@ class TempUser(models.Model):
     em_time= models.DateTimeField(blank=True, null=True)
     
       
-
 class Confirmation(models.Model):
     objects = SafeCreateManager()
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -399,6 +477,21 @@ class VehicleOwner(models.Model):
         ('Discontinued', 'Discontinued'),
     ]
     status = models.CharField(max_length=20, choices=status_choices)
+    
+
+class MediaFile(models.Model):
+    device_tag = models.ForeignKey('Device', on_delete=models.CASCADE)
+    camera_id = models.CharField(max_length=255)
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    media_type = models.CharField(max_length=50, choices=[('audio', 'Audio'), ('video', 'Video'), ('image', 'Image')])
+    media_link = models.URLField()
+    duration_ms = models.IntegerField()
+    alert_type = models.CharField(max_length=255)
+    message = models.TextField()
+
+    def __str__(self):
+        return f"{self.media_type} from {self.camera_id} at {self.start_time}"
     
 
 class StateAdmin(models.Model):
@@ -833,6 +926,37 @@ class DeviceTag(models.Model):
         return self.vehicle_reg_no
 
 
+
+
+
+
+
+class Holiday(models.Model):
+    STATUS_CHOICES = [
+        ('Active', 'Active'),
+        ('Inactive', 'Inactive'),
+    ]
+
+    HOLIDAY_TYPE_CHOICES = [
+        ('Public', 'Public'),
+        ('Private', 'Private'),
+    ]
+
+    holiday_name = models.CharField(max_length=255, verbose_name="Holiday Name")
+    start_date = models.DateField(verbose_name="Start Date")
+    end_date = models.DateField(verbose_name="End Date")
+    description = models.TextField(blank=True, null=True, verbose_name="Description")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Active', verbose_name="Status")
+    holiday_type = models.CharField(max_length=20, choices=HOLIDAY_TYPE_CHOICES, verbose_name="Holiday Type")
+    vehicles = models.ManyToManyField(DeviceTag, related_name="holiday_vehicles", verbose_name="Vehicle List")
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="holiday_created_by", verbose_name="Created By")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Created At")
+
+    def __str__(self):
+        return self.holiday_name
+    
+    
+    
 ##unused
 
 

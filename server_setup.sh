@@ -121,15 +121,15 @@ sudo systemctl enable mosquitto
 sudo mkdir /etc/mosquitto/certs /etc/mosquitto/ca_certificates
 
 openssl genpkey -algorithm RSA -out ca.key
-openssl req -new -x509 -days 3650 -key ca.key -out ca.crt -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=YourCA"
+openssl req -new -x509 -days 36500 -key ca.key -out ca.crt -subj "/C=IN/ST=Assam/L=Guwahati/O=Skytron/OU=OrgUnit/"
 openssl genpkey -algorithm RSA -out server.key
-openssl req -new -key server.key -out server.csr -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=216.10.247.182"
+openssl req -new -key server.key -out server.csr -subj "/C=IN/ST=Assam/L=Guwahati/O=Skytron/OU=OrgUnit/CN=4.240.90.1"
 
 
-openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650
+openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 36500
 openssl genpkey -algorithm RSA -out client.key
-openssl req -new -key client.key -out client.csr -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=ClientName"
-openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt -days 3650
+openssl req -new -key client.key -out client.csr -subj "/C=IN/ST=Assam/L=Guwahati/O=Skytron/OU=OrgUnit/"
+openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt -days 36500
 sudo cp ca.crt /etc/mosquitto/ca_certificates/
 sudo cp server.crt /etc/mosquitto/certs/
 sudo cp server.key /etc/mosquitto/certs/
@@ -167,20 +167,38 @@ openssl x509 -noout -modulus -in  /var/www/html/Skytrack_Backend/Skytronsystem/c
 openssl rsa -noout -modulus -in /var/www/html/Skytrack_Backend/Skytronsystem/key.pem | openssl md5
 
 
- 
-!pe)dP7+,VB0
 
 
 
 
 sudo docker build -t skytron-backend-api -f dockerfile.api .
+ 
+sudo docker run -d  --restart=always -p 2000:2000  -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
+
+ 
 sudo docker run -d  --restart=always -p 2000:2000    -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
 sudo docker run -d  --restart=always -p 2000:2000    -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
+ 
 
 
 sudo docker build -t skytron-backend-mqtt -f dockerfile.mqtt .
 sudo docker run -d  --restart=always -p 2000:2000  -f dockerfile.mqtt -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-mqtt-container skytron-backend-mqtt 
 
+ 
 
+mosquitto_sub -h '216.10.244.243' -p 8883 -t 'gps' --cafile /etc/mosquitto/ca_certificates/ca.crt --cert /etc/mosquitto/certs/client.crt --key /etc/mosquitto/certs/client.key
+
+mosquitto_sub -h '4.240.90.1' -p 8883 -t 'gps' --cafile /etc/mosquitto/ca_certificates/ca.crt --cert /etc/mosquitto/certs/client.crt --key /etc/mosquitto/certs/client.key
+
+sudo docker build -t skytron-backend-api -f dockerfile.api .
+sudo docker stop skytron-backend-api-container
+sudo docker rm skytron-backend-api-container
+sudo docker run -d  --restart=always -p 2000:2000  -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-api-container skytron-backend-api 
+<<<<<<< gromed2
+
+=======
+ 
 sudo docker build -t skytron-backend-gps -f dockerfile.gps .
 sudo docker run -d  --restart=always -p 6000:6000   -e  MAIL_ID=testskytrack@gmail.com  -e  MAIL_PW=zmzmexdnrlmsqrlr  --name skytron-backend-gps skytron-backend-gps
+ 
+>>>>>>> skytronV2_toNIC

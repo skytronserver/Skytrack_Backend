@@ -19,6 +19,7 @@ class SanitizingModelSerializer(serializers.ModelSerializer ):
             if isinstance(value, str):
                 data[key] = bleach.clean(value)
         return data
+
         
 class Settings_StateSerializer(SanitizingModelSerializer):
     #state_info = DeviceModelSerializer(source='devicemodel', read_only=True)
@@ -54,7 +55,11 @@ class DeviceTagSerializer(SanitizingModelSerializer):
         model =DeviceTag        
         exclude = ['otp','otp_time'] 
 
-
+class MediaFileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MediaFile
+        fields = ['device_tag', 'camera_id', 'start_time', 'end_time', 'media_type', 'media_link', 'duration_ms', 'alert_type', 'message']
+        
 
 class UserSerializer(SanitizingModelSerializer):
     created_by_name = serializers.SerializerMethodField()

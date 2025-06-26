@@ -86,6 +86,23 @@ MIDDLEWARE = [
     'csp.middleware.CSPMiddleware',
     'skytron_api.middleware.RequestLoggerMiddleware'     
 ]
+ 
+# Content Security Policy settings
+"""
+CSP_DEFAULT_SRC = ("'self'",)  # Default source for all content types
+CSP_SCRIPT_SRC = ("'self'", )  # For JavaScript
+CSP_STYLE_SRC = ("'self'",)  # For CSS
+CSP_IMG_SRC = ("'self'",)  # For images
+CSP_FONT_SRC = ("'self'",)  # For fonts
+CSP_CONNECT_SRC = ("'self'", )  # For AJAX, WebSockets
+CSP_OBJECT_SRC = ("'none'",)  # Disallow plugins like Flash
+CSP_FRAME_SRC = ("'self'",)  # Allowed iframes
+CSP_MEDIA_SRC = ("'self'",)  # For media like audio and video
+
+# Optionally report violations
+CSP_REPORT_ONLY = False  # Set to True to test the policy without enforcing
+CSP_REPORT_URI = 'https://'
+"""
 
   
 # Security settings
@@ -259,7 +276,7 @@ EMAIL_USE_SSL = True
 EMAIL_USE_TLS = False
 EMAIL_HOST_USER = "noreply@skytron.in" # os.environ.get('EMAIL_HOST_USER', 'default-email@gmail.com')
 EMAIL_HOST_PASSWORD = "Developer@18062025" #os.environ.get('EMAIL_HOST_PASSWORD', 'default-password')
- 
+
 
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',

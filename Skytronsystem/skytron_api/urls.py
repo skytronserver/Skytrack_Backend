@@ -8,6 +8,12 @@ from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 
 urlpatterns = [
+    path('get_settings/', get_settings, name='settings'),
+<<<<<<< gromed2
+=======
+    
+    path('EM/DEx/get-media/', DEx_getMedia, name='get_media'),
+>>>>>>> skytronV2_toNIC
     path('generate-captcha/', generate_captcha_api, name='generate_captcha'),
     path('verify-captcha/', verify_captcha_api, name='verify_captcha'),
 
@@ -19,6 +25,7 @@ urlpatterns = [
     path('user_login_app/', user_login_app, name='user_login_app'),
     path('reset_password_request/', reset_password, name='reset_password'),
      
+    path('deactivateUser/', deactivate_user, name='user_dactivate'),
     path('user_logout/', user_logout, name='user_logout'),
     #path('user_get_parent/<int:user_id>/', user_get_parent, name='user_get_parent'),
     path('get_list/', get_list, name='get_list'),
@@ -37,10 +44,23 @@ urlpatterns = [
     path('eSimProvider/delete_eSimProvider/<int:esimProvider_id>/', delete_eSimProvider, name='delete_eSimProvider'),
     path('VehicleOwner/delete_VehicleOwner/<int:vo_id>/', delete_VehicleOwner, name='delete_VehicleOwner'),
     
+    path('holiday/create/', create_holiday, name='create_holiday'),
+    path('holiday/update/<int:holiday_id>/', update_holiday, name='update_holiday'),
+    path('holiday/delete/<int:holiday_id>/', delete_holiday, name='delete_holiday'),
+    path('holiday/list/', list_holidays, name='list_holidays'),
 
+
+    path('apiLog/', search_request_logs, name='apilog'),
+    
     path('driver/add_driver/', driver_add, name='add_driver'),
     path('driver/remove_driver/', driver_remove, name='remove_driver'),
 
+    path('poi/create/', create_poi, name='create_poi'),
+    path('poi/update/', update_poi, name='update_poi'),
+    path('poi/delete/', delete_poi, name='delete_poi'),
+    path('poi/list/', list_pois, name='list_pois'),
+
+    
     path('manufacturer/create_manufacturer/', create_manufacturer, name='create_manufacturer'),
     path('manufacturer/update_manufacturer/', update_manufacturer, name='update_manufacturer'),
     path('manufacturer/filter_manufacturers/', filter_manufacturers, name='filter_manufacturers'),
@@ -136,8 +156,13 @@ urlpatterns = [
     path('EM/DEx/rcvMsg/', DEx_rcvMsg, name='DEx_rcvMsg'),
     path('EM/DEx/commentFE/', DEx_commentFE, name='DEx_commentFE'),
     path('EM/DEx/getCallAllLoc/', DEx_getloc, name='DEx_getCallAllLoc'),
+    path('EM/DEx/get-media/', DEx_getMedia, name='get_media'),
+   
 
-
+    path('api/device_media_upload', upload_media_file, name='upload_media_file'),
+    path('api/dummy-insert-data', dummy_insert_data, name='dummy_insert_data'),
+    
+    
     path('EM/FEx/listBroadcast/', FEx_broadcastlist, name='FEx_broadcastlist'),
     path('EM/FEx/acceptBroadcast/', FEx_broadcastaccept, name='FEx_broadcastaccept'),
     path('EM/FEx/sendMsg/', DEx_sendMsg, name='FEx_sendMsg'),

@@ -202,6 +202,7 @@ def Process_sosEx_Data(msg,topic_parts):
 
                 if user_auth_tuple is None:
                     client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error1", "message": "Invalid token."}))
+ 
                
                     raise AuthenticationFailed("Invalid token.")
 
@@ -276,8 +277,10 @@ def Process_sosEx_Data(msg,topic_parts):
                 client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
         
         else:
+ 
             print("Invalid token in message payload")
             #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error2", "message": "Invalid token."}))
+
                
     except Exception as e:
             client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": "Something went wrong."}))
@@ -489,9 +492,15 @@ client = mqtt.Client()
 
 
 
+ 
+#client.tls_set(ca_certs="/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt",
+#               certfile="/home/azureuser/Skytrack_Backend/Skytronsystem/client.crt",
+#               keyfile="/home/azureuser/Skytrack_Backend/Skytronsystem/client.key")
+ 
 client.tls_set(ca_certs="/app/ca.crt",
                certfile="/app/client.crt",
                keyfile="/app/client.key")
+ 
 
 client.on_connect = on_connect
 client.on_message = on_message
