@@ -201,7 +201,8 @@ def Process_sosEx_Data(msg,topic_parts):
                 user_auth_tuple = authenticator.authenticate(fake_request)
 
                 if user_auth_tuple is None:
-                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": "Invalid token."}))
+                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error1", "message": "Invalid token."}))
+ 
                
                     raise AuthenticationFailed("Invalid token.")
 
@@ -209,7 +210,7 @@ def Process_sosEx_Data(msg,topic_parts):
             except AuthenticationFailed as e:
                 error_message = f"Authentication error: {str(e)}"
                 print(error_message)
-                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+                #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
                 return
 
             # Get user object and validate roles
@@ -276,7 +277,10 @@ def Process_sosEx_Data(msg,topic_parts):
                 client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
         
         else:
-            client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": "Invalid token."}))
+ 
+            print("Invalid token in message payload")
+            #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error2", "message": "Invalid token."}))
+
                
     except Exception as e:
             client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": "Something went wrong."}))
@@ -393,6 +397,7 @@ def on_message(client, userdata, msg):
             print(f"Message received for user ID: {user_id}")
             ###Process_Device_Data(msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'sosEx':
+            print("message payload decode" ,msg.payload.decode())
             Process_sosEx_Data(msg,topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'owner':
             Process_owner_Data(msg,topic_parts)
@@ -487,9 +492,15 @@ client = mqtt.Client()
 
 
 
-client.tls_set(ca_certs="/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt",
-               certfile="/home/azureuser/Skytrack_Backend/Skytronsystem/client.crt",
-               keyfile="/home/azureuser/Skytrack_Backend/Skytronsystem/client.key")
+ 
+#client.tls_set(ca_certs="/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt",
+#               certfile="/home/azureuser/Skytrack_Backend/Skytronsystem/client.crt",
+#               keyfile="/home/azureuser/Skytrack_Backend/Skytronsystem/client.key")
+ 
+client.tls_set(ca_certs="/app/ca.crt",
+               certfile="/app/client.crt",
+               keyfile="/app/client.key")
+ 
 
 client.on_connect = on_connect
 client.on_message = on_message

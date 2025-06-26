@@ -3,7 +3,7 @@ FROM python:3.9-slim-buster
 
 # Install required system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wkhtmltopdf \          
+    wkhtmltopdf libmagic1 \          
     # for pdfkit
     #
     libssl-dev \          
@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python dependencies
 RUN pip install --upgrade pip
 RUN pip install \
+    geopy \
     django \
     djangorestframework \
     markdown \
@@ -53,7 +54,7 @@ RUN pip install \
     pdfkit \
     docx2pdf \ 
     django-filter \
-    django-cors-headers \ 
+    django-cors-headers bleach python-magic\ 
     gunicorn
 
 # Set the working directory in the container
@@ -66,27 +67,27 @@ COPY . /app
 RUN python manage.py collectstatic --noinput
 
 # Expose port 2000
-EXPOSE 2000
+EXPOSE 5001  
 
 # Option A: Set environment variables in the Dockerfile (not recommended for secrets)
-ENV MAIL_ID=testskytrack@gmail.com
-ENV MAIL_PW=zmzmexdnrlmsqrlr
+ENV MAIL_ID=noreply@skytron.in
+ENV MAIL_PW=Developer@18062025
 ENV DEBUG=True
 ENV SECRET_KEY=django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
 #ENV DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
 
-ENV EMAIL_HOST_USER=testskytrack@gmail.com
-ENV EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ENV EMAIL_HOST_USER=noreply@skytron.in
+ENV EMAIL_HOST_PASSWORD=Developer@18062025
 ENV ALLOWED_HOSTS="gromed.in,api.gromed.in,api.skytron.in,skytron.in,dev.skytron.in,api-dev.skytron.in,skytrack.tech,localhost"
- 
+
 ENV DB_NAME=skytrondbnew2
 ENV DB_USER=dbadmin
 ENV DB_PASSWORD=lask1028zmnx
-ENV DB_HOST=4.240.90.1
+ENV DB_HOST=40.81.241.29
 #host.docker.internal
 ENV DB_PORT=5432
- # 
- 
+# 
+
 
 # Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key
 CMD ["python", "mqttClienttrack.py"]

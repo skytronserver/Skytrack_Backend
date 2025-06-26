@@ -55,8 +55,8 @@ RUN pip install \
     python-docx \
     pdfkit \
     docx2pdf \
-    django-filter \
-    django-cors-headers \
+    django-filter \ 
+    django-cors-headers bleach\  
     gunicorn
 
 # Set the working directory in the container

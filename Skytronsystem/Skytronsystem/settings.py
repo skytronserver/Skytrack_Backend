@@ -86,8 +86,7 @@ MIDDLEWARE = [
     'csp.middleware.CSPMiddleware',
     'skytron_api.middleware.RequestLoggerMiddleware'     
 ]
-
-
+ 
 # Content Security Policy settings
 """
 CSP_DEFAULT_SRC = ("'self'",)  # Default source for all content types
@@ -105,7 +104,7 @@ CSP_REPORT_ONLY = False  # Set to True to test the policy without enforcing
 CSP_REPORT_URI = 'https://'
 """
 
- 
+  
 # Security settings
 SECURE_CONTENT_TYPE_NOSNIFF = True  # Prevents the browser from guessing the content type
 SECURE_BROWSER_XSS_FILTER = True   # Enables XSS protection in browsers that support it
@@ -215,7 +214,7 @@ CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     'https://skytron.in',
     'https://dev-api.skytron.in',
     'http://dev-api.skytron.in',
-    'https://dev.skytron.in/',
+    'https://dev.skytron.in',
     'http://dev.skytron.in',
     'https://dev.skytron.in',
     "https://dev.skytrack.tech",  # Add your frontend domain(s) here
@@ -277,11 +276,7 @@ EMAIL_USE_SSL = True
 EMAIL_USE_TLS = False
 EMAIL_HOST_USER = "noreply@skytron.in" # os.environ.get('EMAIL_HOST_USER', 'default-email@gmail.com')
 EMAIL_HOST_PASSWORD = "Developer@18062025" #os.environ.get('EMAIL_HOST_PASSWORD', 'default-password')
-<<<<<<< gromed2
 
-=======
- 
->>>>>>> skytronV2_toNIC
 
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
