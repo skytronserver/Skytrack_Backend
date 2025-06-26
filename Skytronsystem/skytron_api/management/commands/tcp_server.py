@@ -514,7 +514,7 @@ def process_gps_data(data_str):
         if len(groups)==52:
             if groups[0]=='$' and groups[1]=='T' and groups[-1]=='*' : 
                 # Combine date and time strings and convert to a datetime object
-                gmt_datetime_str = f'{groups[10]} {groups[11]}'
+                gmt_datetime_str = f'23062025 {groups[11]}'   #f'{groups[10]} {groups[11]}'
                 gmt_datetime = datetime.strptime(gmt_datetime_str, '%d%m%Y %H%M%S')
                 ist_datetime = gmt_timezone.localize(gmt_datetime).astimezone(ist_timezone)
                 # Separate date and time components

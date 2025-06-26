@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 RUN pip install --upgrade pip
-RUN pip install  \
+RUN pip install \
     geopy \
     django \
     djangorestframework \
@@ -67,7 +67,7 @@ COPY . /app
 RUN python manage.py collectstatic --noinput
 
 # Expose port 2000
-EXPOSE 6000
+EXPOSE 5001  
 
 # Option A: Set environment variables in the Dockerfile (not recommended for secrets)
 ENV MAIL_ID=noreply@skytron.in
@@ -86,8 +86,8 @@ ENV DB_PASSWORD=lask1028zmnx
 ENV DB_HOST=40.81.241.29
 #host.docker.internal
 ENV DB_PORT=5432
-# ¸¸
+# 
 
 
 # Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key
-CMD ["python", "manage.py","tcp_server"]
+CMD ["python", "em_server.py"]

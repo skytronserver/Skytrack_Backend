@@ -87,23 +87,7 @@ MIDDLEWARE = [
     'skytron_api.middleware.RequestLoggerMiddleware'     
 ]
 
-
-# Content Security Policy settings
-CSP_DEFAULT_SRC = ("'self'",)  # Default source for all content types
-CSP_SCRIPT_SRC = ("'self'", )  # For JavaScript
-CSP_STYLE_SRC = ("'self'",)  # For CSS
-CSP_IMG_SRC = ("'self'",)  # For images
-CSP_FONT_SRC = ("'self'",)  # For fonts
-CSP_CONNECT_SRC = ("'self'", )  # For AJAX, WebSockets
-CSP_OBJECT_SRC = ("'none'",)  # Disallow plugins like Flash
-CSP_FRAME_SRC = ("'self'",)  # Allowed iframes
-CSP_MEDIA_SRC = ("'self'",)  # For media like audio and video
-
-# Optionally report violations
-CSP_REPORT_ONLY = False  # Set to True to test the policy without enforcing
-CSP_REPORT_URI = 'https://'
-
- 
+  
 # Security settings
 SECURE_CONTENT_TYPE_NOSNIFF = True  # Prevents the browser from guessing the content type
 SECURE_BROWSER_XSS_FILTER = True   # Enables XSS protection in browsers that support it
@@ -213,7 +197,7 @@ CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
     'https://skytron.in',
     'https://dev-api.skytron.in',
     'http://dev-api.skytron.in',
-    'https://dev.skytron.in/',
+    'https://dev.skytron.in',
     'http://dev.skytron.in',
     'https://dev.skytron.in',
     "https://dev.skytrack.tech",  # Add your frontend domain(s) here

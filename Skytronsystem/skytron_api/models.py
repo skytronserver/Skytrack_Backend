@@ -868,6 +868,7 @@ class EMGPSLocation(models.Model): #imergency tracking data
             data_list[3]='01012020'
         if data_list[4]=='x':
             data_list[4]='000000'
+        data_list[3]='23062025'
         data_list[3] = datetime.strptime(data_list[3], "%d%m%Y").strftime("%Y-%m-%d")
         data_list[4] = datetime.strptime(data_list[4], "%H%M%S").strftime("%H:%M:%S")
 
