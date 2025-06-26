@@ -324,7 +324,7 @@ def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,A
  
 
 def load_private_key():
-    private_key_path = '/home/azureuser/Skytrack_Backend/Skytronsystem/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
+    private_key_path = '/app/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
     with open(private_key_path, 'rb') as key_file:
         private_key = RSA.import_key(key_file.read()) 
     with open(private_key_path, 'rb') as key_file: 
@@ -427,15 +427,11 @@ IjBsK1eaOD7wUP3fdubAc1dUScYK4zwmnFfDP3fwwU0qC8eal+4by5Zi1Q==
 @permission_classes([AllowAny])
 @throttle_classes([AnonRateThrottle]) 
 def generate_captcha_api(request):
-=======
-@require_http_methods(['GET', 'POST'])
-def generate_captcha_api(request ): 
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    
->>>>>>> skytronV2_toNIC
+
     byte_io, result = generate_captcha()
     key = uuid.uuid4().hex
     cap,error=Captcha.objects.safe_create(key=key, answer=result)
@@ -9686,10 +9682,6 @@ def user_login(request ):
         if not username or not password:
             return Response({'error': 'Username or password not provided'}, status=status.HTTP_400_BAD_REQUEST)
         user = User.objects.filter(mobile=username,is_active=True).last() #or User.objects.filter(mobile=username).first()
-<<<<<<< gromed2
-=======
-
->>>>>>> skytronV2_toNIC
         if not user or not  check_password(password, user.password):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         

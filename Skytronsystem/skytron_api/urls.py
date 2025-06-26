@@ -9,11 +9,8 @@ from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 urlpatterns = [
     path('get_settings/', get_settings, name='settings'),
-<<<<<<< gromed2
-=======
     
     path('EM/DEx/get-media/', DEx_getMedia, name='get_media'),
->>>>>>> skytronV2_toNIC
     path('generate-captcha/', generate_captcha_api, name='generate_captcha'),
     path('verify-captcha/', verify_captcha_api, name='verify_captcha'),
 
