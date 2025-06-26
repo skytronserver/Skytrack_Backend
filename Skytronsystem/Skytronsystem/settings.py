@@ -277,7 +277,11 @@ EMAIL_USE_SSL = True
 EMAIL_USE_TLS = False
 EMAIL_HOST_USER = "noreply@skytron.in" # os.environ.get('EMAIL_HOST_USER', 'default-email@gmail.com')
 EMAIL_HOST_PASSWORD = "Developer@18062025" #os.environ.get('EMAIL_HOST_PASSWORD', 'default-password')
+<<<<<<< gromed2
+
+=======
  
+>>>>>>> skytronV2_toNIC
 
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',

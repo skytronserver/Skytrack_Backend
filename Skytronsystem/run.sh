@@ -94,7 +94,6 @@ python3  manage.py migrate
 
 
 
-
 216.10.244.243   lask1028zmnx
 pg_dump -U dbadmin -h 216.10.244.243 -p 5432 -F c -b -v -f skytrondbnew2_backup.dump skytrondbnew2
 pg_dump -U dbadmin -h 216.10.244.243 -p 5432 -F c -b -v -f  skytron_main_db_backup.dump  skytron_main_db

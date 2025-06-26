@@ -19,6 +19,7 @@ class SanitizingModelSerializer(serializers.ModelSerializer ):
             if isinstance(value, str):
                 data[key] = bleach.clean(value)
         return data
+
         
 class Settings_StateSerializer(SanitizingModelSerializer):
     #state_info = DeviceModelSerializer(source='devicemodel', read_only=True)

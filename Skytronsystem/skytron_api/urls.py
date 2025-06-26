@@ -9,8 +9,11 @@ from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 urlpatterns = [
     path('get_settings/', get_settings, name='settings'),
+<<<<<<< gromed2
+=======
     
     path('EM/DEx/get-media/', DEx_getMedia, name='get_media'),
+>>>>>>> skytronV2_toNIC
     path('generate-captcha/', generate_captcha_api, name='generate_captcha'),
     path('verify-captcha/', verify_captcha_api, name='verify_captcha'),
 
@@ -153,8 +156,13 @@ urlpatterns = [
     path('EM/DEx/rcvMsg/', DEx_rcvMsg, name='DEx_rcvMsg'),
     path('EM/DEx/commentFE/', DEx_commentFE, name='DEx_commentFE'),
     path('EM/DEx/getCallAllLoc/', DEx_getloc, name='DEx_getCallAllLoc'),
+    path('EM/DEx/get-media/', DEx_getMedia, name='get_media'),
+   
 
-
+    path('api/device_media_upload', upload_media_file, name='upload_media_file'),
+    path('api/dummy-insert-data', dummy_insert_data, name='dummy_insert_data'),
+    
+    
     path('EM/FEx/listBroadcast/', FEx_broadcastlist, name='FEx_broadcastlist'),
     path('EM/FEx/acceptBroadcast/', FEx_broadcastaccept, name='FEx_broadcastaccept'),
     path('EM/FEx/sendMsg/', DEx_sendMsg, name='FEx_sendMsg'),

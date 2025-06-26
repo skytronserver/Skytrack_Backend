@@ -66,8 +66,12 @@ Skytronsystem/skytron_api/static/notice/*.png
 Skytronsystem/FOTAFiles/*.bin
 Skytronsystem/logs/errors.log
 Skytronsystem/venv/*
+<<<<<<< gromed2
+Skytronsystem/fileuploads/media/video.mp4
+=======
 Skytronsystem/skytron_api/__pycache__/models.cpython-312.pyc
 Skytronsystem/skytron_api/__pycache__/serializers.cpython-312.pyc
 Skytronsystem/skytron_api/__pycache__/views.cpython-312.pyc
 Skytronsystem/skytron_api/migrations/0001_initial.py
 Skytronsystem/skytron_api/migrations/*.py
+>>>>>>> skytronV2_toNIC
