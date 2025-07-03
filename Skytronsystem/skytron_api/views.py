@@ -23,6 +23,13 @@ from itertools import islice
 from django.utils import timezone     
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail
+
+import os 
+import magic
+import glob
+# Define the path on the host machine where files will be stored
+# This directory should be mounted as a volume in Docker
+HOST_STORAGE_PATH = '/host_storage'  # This should match the volume mount point in Docker
 #def send_mail( subject, message, from_email, recipient_list, fail_silently=False, auth_user=None, auth_password=None, connection=None, html_message=None):
 #    pass
 
@@ -481,6 +488,7 @@ from rest_framework.response import Response
 def save_file(request, tag, path):
     uploaded_file = request.FILES.get(tag)
     if not uploaded_file:
+        return None 
         return Response({'error': f"File not found"}, status=400)
     #Response({'error': f"Invalid file type. Allowed types are:"}, status=400)
 
@@ -520,40 +528,101 @@ def save_file(request, tag, path):
             return None 
         #return Response({'error': "Invalid file detected. Upload denied."}, status=400)
     
+    # Create the directory in the host storage path if it doesn't exist
+    if not path.startswith('fileuploads/') and path != 'fileuploads' and not path.startswith('./fileuploads/'):
+        # Prepend fileuploads/ to ensure consistent path structure
+        host_path = os.path.join(HOST_STORAGE_PATH, 'fileuploads', path.lstrip('./'))
+    else:
+        host_path = os.path.join(HOST_STORAGE_PATH, path.lstrip('./'))
+    
+    os.makedirs(host_path, exist_ok=True)
+    
     file_extension = valid_mime_types[mime_type]
-    file_path = os.path.join(path, ''.join(random.choices('0123456789', k=40)) + "." + file_extension)
+    file_name = ''.join(random.choices('0123456789', k=40)) + "." + file_extension
+    file_path = os.path.join(host_path, file_name)
+    
     with open(file_path, 'wb') as file:
+        uploaded_file.seek(0)  # Reset file pointer to the beginning
         for chunk in uploaded_file.chunks():
             file.write(chunk)
 
-    return file_path
+    # Return the path that will be stored in the database and used for retrieval
+    if not path.startswith('fileuploads/') and path != 'fileuploads' and not path.startswith('./fileuploads/'):
+        # Return path with folder name included, e.g., "notice/filename.jpg"
+        return os.path.join(path.lstrip('./'), file_name)
+    else:
+        # Path already has structure, just return it
+        return os.path.join(path.lstrip('./'), file_name)
 
 
 
 def find_file_in_folders(filename, folders):
-    for folder in folders: 
-        filename=filename.replace("%20", " ")
-        pattern = folder+filename
+    # First try with the original path which might include directories
+    
+    
+    filename=os.path.join(HOST_STORAGE_PATH, filename)
+    if os.path.isfile(filename):
+        return filename
+                
+    return None
+    for folder in folders:
+        filename_clean = filename.replace("%20", " ")
+        
+        # Case 1: If filename already contains path components like 'notice/file.jpg'
+        if '/' in filename_clean:
+            # Try direct path
+            potential_path = os.path.join(folder, filename_clean)
+            if os.path.isfile(potential_path):
+                return potential_path
+                
+            # Try with fileuploads prefix if not already there
+            if not filename_clean.startswith('fileuploads/'):
+                potential_path = os.path.join(folder, 'fileuploads', filename_clean)
+                if os.path.isfile(potential_path):
+                    return potential_path
+        
+        # Case 2: Simple filename without directory
+        else:
+            # Try direct path for simple filename
+            potential_path = os.path.join(folder, filename_clean)
+            if os.path.isfile(potential_path):
+                return potential_path
+            
+            # Try common subdirectories for files
+            for subdir in ['', 'notice', 'fileuploads/notice']:
+                potential_path = os.path.join(folder, subdir, filename_clean)
+                if os.path.isfile(potential_path):
+                    return potential_path
 
-        #print("pattern",pattern,folder)
-        for file_path in glob.iglob(pattern, recursive=True):
-            #print("filepath",file_path)
-            if os.path.isfile(file_path):
-                return file_path
+    # Use glob as a fallback for more flexible matching
+    for folder in folders:
+        # Try to find by filename only, anywhere under the folder
+        pattern = os.path.join(folder, '**', os.path.basename(filename.replace("%20", " ")))
+        matches = glob.glob(pattern, recursive=True)
+        if matches and os.path.isfile(matches[0]):
+            return matches[0]
+            
     return None
 folders = [
-    './',
-    './fileuploads/',
-    'fileuploads/tac_docs/',
-    'fileuploads/Receipt_files/',
-    'fileuploads/kyc_files/',
-    'fileuploads/cop_files/',
-    'fileuploads/file_bin/',
-    'fileuploads/man/',
-    'fileuploads/media/',
-    'fileuploads/driver/',
+    os.path.join(HOST_STORAGE_PATH, ''),
+    os.path.join(HOST_STORAGE_PATH, 'fileuploads/'),
+    os.path.join(HOST_STORAGE_PATH, 'fileuploads/tac_docs/'),
+    os.path.join(HOST_STORAGE_PATH, 'fileuploads/Receipt_files/'),
+    os.path.join(HOST_STORAGE_PATH, 'fileuploads/kyc_files/'),
+    os.path.join(HOST_STORAGE_PATH, 'fileuploads/cop_files/'),
+    os.path.join(HOST_STORAGE_PATH, 'fileuploads/file_bin/'),
+    os.path.join(HOST_STORAGE_PATH, 'fileuploads/man/'),
+    os.path.join(HOST_STORAGE_PATH, 'fileuploads/media/'),
+    os.path.join(HOST_STORAGE_PATH, 'fileuploads/notice/'),
+    os.path.join(HOST_STORAGE_PATH, 'fileuploads/driver/'),
     # Add more folders as needed
 ]
+
+# Ensure directories exist
+for folder in folders:
+    os.makedirs(folder, exist_ok=True)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])  # Apply throttling here
@@ -572,17 +641,26 @@ def downloadfile(request):
 
         if not file_path:
             return JsonResponse({'error': 'file_path is required'}, status=400) 
-        try: 
-            file_path=file_path.split('/')[-1]
-            name=file_path
-            file_path=find_file_in_folders(file_path, folders) 
-            if not file_path:
-                return JsonResponse({'error': 'file not found'+name}, status=400) 
+        try:
+            # Extract just the filename for the response header
+            filename = os.path.basename(file_path)
+            
+            # Try to find the file first with the full path
+            full_path = find_file_in_folders(file_path, folders)
+            
+            # If that fails, try with just the filename
+            if not full_path:
+                filename_only = os.path.basename(file_path)
+                full_path = find_file_in_folders(filename_only, folders)
+                
+            if not full_path:
+                return JsonResponse({'error': f'file not found: {file_path}'}, status=400) 
+                
             try:                
-                with open(file_path,'rb') as file:
+                with open(full_path, 'rb') as file:
                     response = HttpResponse(file.read(), content_type='application/octet-stream')
-                    response['Content-Disposition'] = f'attachment; filename="{name}"'
-                    #response['Content-Type'] = f'attachment; extension="{file_path.split('.')[-1]}"'
+                    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                    return response
                     return response
             except FileNotFoundError:
                 return HttpResponse("File not found.", status=404) 
@@ -3635,7 +3713,7 @@ def create_SOS_admin(request ):
                 user.delete()
                 return Response({'error': "Unable to process request."+eeeeeee}, status=400)
             retailer.users.add(user) 
-            send_usercreation_otp(user,new_password,'State Admin ')
+            send_usercreation_otp(user,new_password,'SOS Admin ')
              
             return Response(EM_adminSerializer(retailer).data)
         else:
@@ -4483,6 +4561,53 @@ def DEx_commentFE(request ):
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
 
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def check_file_paths(request):
+    """
+    Debugging endpoint to check if a file exists in various potential locations
+    """
+    file_path = request.data.get('file_path')
+    if not file_path:
+        return JsonResponse({'error': 'file_path is required'}, status=400)
+    
+    filename = os.path.basename(file_path)
+    directory = os.path.dirname(file_path)
+    
+    # Locations to check
+    potential_locations = []
+    
+    # Build list of places to check
+    for folder in folders:
+        # Original path
+        potential_locations.append(os.path.join(folder, file_path))
+        
+        # Just the filename in the root folder
+        potential_locations.append(os.path.join(folder, filename))
+        
+        # Filename in possible subdirectories
+        if directory:
+            potential_locations.append(os.path.join(folder, directory, filename))
+            
+   
+    
+    # Check each location
+    results = {}
+    for location in potential_locations:
+        exists = os.path.isfile(location)
+        results[location] = {
+            'exists': exists,
+            'size': os.path.getsize(location) if exists else 0
+        }
+    
+    return JsonResponse({
+        'requested_file': file_path,
+        'filename': filename,
+        'directory': directory,
+        'locations_checked': results,
+        'folders_configuration': folders
+    })
 
 @api_view(['POST'])
 @permission_classes([AllowAny]) 
@@ -10922,13 +11047,13 @@ def create_notice(request ):
                 return Response({'error': "detail should contain only alphanumeric and spaces."}, status=400)
           
         try:
-            file  = save_file(request, 'file', '/app/skytron_api/static/notice')  
+            file  = save_file(request, 'file', 'fileuploads/notice')  
             if not file: 
                     return Response({'error': "Invalid file." }, status=400)
             notice ,error= Notice.objects.safe_create(
                     title=title,
                     detail=detail,
-                    file="dev-api.skytron.in/static/notice/"+file.split("/")[-1],
+                    file=file,
                     createdby=createdby,
                     status=status,
             )

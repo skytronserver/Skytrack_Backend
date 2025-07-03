@@ -337,6 +337,8 @@ urlpatterns = [
     
     path('notice/list/', list_notice, name='list_notice'),
     
+    # Debug endpoint for checking file paths
+    path('debug/check_file_paths/', check_file_paths, name='check_file_paths'),
 
 ]  
 
