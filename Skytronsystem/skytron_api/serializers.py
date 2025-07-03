@@ -288,6 +288,20 @@ class DeviceModelSerializer_disp(SanitizingModelSerializer):
     class Meta:
         model = DeviceModel
         fields = '__all__'
+        
+    def __init__(self, *args, **kwargs):
+        # Only include necessary fields based on context
+        super(DeviceModelSerializer_disp, self).__init__(*args, **kwargs)
+        
+        # Optional optimization: If a fields parameter is passed, only serialize those fields
+        request = self.context.get('request')
+        if request and request.query_params.get('fields'):
+            fields = request.query_params.get('fields').split(',')
+            allowed = set(fields)
+            existing = set(self.fields)
+            for field_name in existing - allowed:
+                self.fields.pop(field_name)
+                
 
 class Settings_hp_freqSerializer(SanitizingModelSerializer):
     devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)

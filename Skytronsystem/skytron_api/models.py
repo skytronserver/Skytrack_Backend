@@ -604,7 +604,7 @@ class EM_admin(models.Model):
     objects = SafeCreateManager()
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     
-    #district =models.ForeignKey('Settings_District', on_delete=models.CASCADE)
+    #district = models.ForeignKey('Settings_District', on_delete=models.CASCADE)
     users = models.ManyToManyField('User', related_name='EM_admin')
     created = models.DateField(auto_now_add=True)
     expirydate = models.DateField(auto_now_add=True)
@@ -710,19 +710,27 @@ class DeviceModel(models.Model):
         ('StateAdminApproved', 'State Admin Approved'),
     ]
 
-    model_name = models.CharField(max_length=255)
-    test_agency = models.CharField(max_length=255)
-    vendor_id = models.CharField(max_length=255)
-    tac_no = models.CharField(max_length=255)
-    tac_validity = models.DateField()
+    model_name = models.CharField(max_length=255, db_index=True)
+    test_agency = models.CharField(max_length=255, db_index=True)
+    vendor_id = models.CharField(max_length=255, db_index=True)
+    tac_no = models.CharField(max_length=255, db_index=True)
+    tac_validity = models.DateField(db_index=True)
     eSimProviders = models.ManyToManyField(eSimProvider, related_name='eSimProvider_devicemodle',  blank=True)
     otp_time=models.DateTimeField()
-    hardware_version = models.CharField(max_length=255)
-    created_by = models.ForeignKey('User', on_delete=models.CASCADE)
-    created = models.DateTimeField()
-    status = models.CharField(max_length=255, choices=STATUS_CHOICES)
+    hardware_version = models.CharField(max_length=255, db_index=True)
+    created_by = models.ForeignKey('User', on_delete=models.CASCADE, db_index=True)
+    created = models.DateTimeField(db_index=True)
+    status = models.CharField(max_length=255, choices=STATUS_CHOICES, db_index=True)
     tac_doc_path = models.FileField(upload_to='tac_docs/', null=True, blank=True)
     otp = models.CharField(max_length=6 )
+
+    class Meta:
+        # Composite index for common filtering combinations
+        indexes = [
+            models.Index(fields=['created_by', 'status']),
+            models.Index(fields=['model_name', 'vendor_id']),
+            models.Index(fields=['tac_no', 'tac_validity']),
+        ]
 
 
 class Settings_firmware(models.Model):

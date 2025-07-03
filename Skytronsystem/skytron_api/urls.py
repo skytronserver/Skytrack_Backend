@@ -278,6 +278,7 @@ urlpatterns = [
     path('devicestock/deviceStockCreateBulk/', deviceStockCreateBulk, name='deviceStockCreateBulk'),
     path('devicestock/deviceStockFilter/', deviceStockFilter, name='deviceStockFilter'),
     path('devicestock/StockAssignToRetailer/', StockAssignToRetailer, name='StockAssignToRetailer'),
+    path('devicestock/combined/', combined_device_stock, name='combined_device_stock'),
     
     #sell
     ## path('sell/SellFitDevice/', SellFitDevice, name='SellFitDevice'),
