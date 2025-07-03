@@ -27,12 +27,14 @@ BROKER_URL ="135.235.166.209"
 BROKER_PORT = 8883  # Use SSL/TLS port
 TOPIC = "field_ex/location_update"
 
-# Paths to certificates
-ROOT_CA = "/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt"
-CLIENT_CERT = "/home/azureuser/Skytrack_Backend/Skytronsystem/client.crt"
-CLIENT_KEY = "/home/azureuser/Skytrack_Backend/Skytronsystem/client.key"
-
-#mosquitto_sub -h '135.235.166.209' -p 8883 -t '#' --cafile /home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt --cert /home/azureuser/Skytrack_Backend/Skytronsystem/client.crt --key /home/azureuser/Skytrack_Backend/Skytronsystem/client.key -d
+# Paths to certificates - using container paths
+ROOT_CA = "/app/ca.crt"
+CLIENT_CERT = "/app/client.crt"
+CLIENT_KEY = "/app/client.key"
+#ROOT_CA = "/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt"
+#CLIENT_CERT = "/home/azureuser/Skytrack_Backend/Skytronsystem/client.crt"
+#CLIENT_KEY = "/home/azureuser/Skytrack_Backend/Skytronsystem/client.key"
+#mosquitto_sub -h '135.235.166.209' -p 8883 -t '#' --cafile /app/ca.crt --cert /app/client.crt --key /app/client.key -d
 
 
 

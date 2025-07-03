@@ -60,14 +60,24 @@ RUN pip install \
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy your Django project files into the container (including cert.pem & key.pem if needed)
+# Copy certificate files first - they are required for the MQTT client
+COPY Skytronsystem/ca.crt /app/ca.crt
+COPY Skytronsystem/client.crt /app/client.crt
+COPY Skytronsystem/client.key /app/client.key
+
+# Create keys directory and copy keys
+RUN mkdir -p /app/keys
+COPY Skytronsystem/keys/private_key.pem /app/keys/private_key.pem
+COPY Skytronsystem/keys/public_key.pem /app/keys/public_key.pem
+
+# Copy your Django project files into the container
 COPY . /app
 
 # (Optional) If you need to collect static files, uncomment the line below:
-RUN python manage.py collectstatic --noinput
+#RUN python manage.py collectstatic --noinput
 
 # Expose port 2000
-EXPOSE 5001  
+#EXPOSE 5001  
 
 # Option A: Set environment variables in the Dockerfile (not recommended for secrets)
 ENV MAIL_ID=noreply@skytron.in
@@ -83,11 +93,11 @@ ENV ALLOWED_HOSTS="gromed.in,api.gromed.in,api.skytron.in,skytron.in,dev.skytron
 ENV DB_NAME=skytrondbnew2
 ENV DB_USER=dbadmin
 ENV DB_PASSWORD=lask1028zmnx
-ENV DB_HOST=40.81.241.29
+ENV DB_HOST=135.235.166.209
 #host.docker.internal
 ENV DB_PORT=5432
 # 
 
 
-# Run gunicorn, binding to 0.0.0.0:2000, and using SSL cert/key
-CMD ["python", "mqttClienttrack.py"]
+# Run the MQTT client
+CMD ["python", "Skytronsystem/mqttClienttrack.py"]

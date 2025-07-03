@@ -65,7 +65,7 @@ class UserSerializer(SanitizingModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     class Meta:
         model = User
-        exclude = ['password'] 
+        exclude = ['password','dob'] 
         #fields = '__all__'    
     def get_created_by_name(self, obj):
         if obj.createdby:

@@ -22,9 +22,9 @@ import random
 from itertools import islice 
 from django.utils import timezone     
 from django.contrib.auth.hashers import check_password, make_password
-#from django.core.mail import send_mail
-def send_mail( subject, message, from_email, recipient_list, fail_silently=False, auth_user=None, auth_password=None, connection=None, html_message=None):
-    pass
+from django.core.mail import send_mail
+#def send_mail( subject, message, from_email, recipient_list, fail_silently=False, auth_user=None, auth_password=None, connection=None, html_message=None):
+#    pass
 
 
                
@@ -2885,8 +2885,8 @@ def send_usercreation_otp(user,new_password,type):
     try:
         tpid ="1007387007813205696" #1007274756418421381"
         #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-        #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://dev.skytron.in/new/{#var#} The link will expire in 5 minutes.-SkyTron
-        text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://dev.skytron.in/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
+        #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://gromed.in/new/{#var#} The link will expire in 5 minutes.-SkyTron
+        text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://gromed.in/new/'+str(new_password)+' The link will expire in 5 minutes.-SkyTron'
         send_SMS(user.mobile,text,tpid) 
         send_mail(
                 type+' Account Created',text
@@ -7027,12 +7027,12 @@ def COPCreate(request ):
             device_cop_instance.cop_file = file_path
             device_cop_instance.save()
                     
-            text="Dear User, Your  OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+            text="Dear User, Your  OTP to validate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             #send_SMS(stateadmin.users.last().mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                "Dear User, Your OTP to validate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
@@ -7088,12 +7088,12 @@ def COPSendStateAdminOtp(request ):
     device_model.otp = otp
     device_model.status = 'StateAdminOTPSend'
     device_model.save()
-    text="Dear User, Your  OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+    text="Dear User, Your  OTP to validate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
     tpid="1007536593942813283"
     #send_SMS(stateadmin.users.last().mobile,text,tpid) 
     send_mail(
         'Login OTP',
-        "Dear User, Your OTP to velidate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+        "Dear User, Your OTP to validate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
         'noreply@skytron.in',
         [user.email],
         fail_silently=False,
@@ -7270,12 +7270,12 @@ def DeviceSendStateAdminOtp(request ):
     device_model.otp = otp
     device_model.status = 'StateAdminOTPSend'
     device_model.save()
-    text="Dear User, Your  OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+    text="Dear User, Your  OTP to validate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
     tpid="1007536593942813283"
     #send_SMS(stateadmin.users.last().mobile,text,tpid) 
     send_mail(
                 'Login OTP',
-                "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                "Dear User, Your OTP to validate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
@@ -8988,12 +8988,12 @@ def create_device_model(request ):
             # Update the tac_doc_path field in the DeviceModel instance
             device_model_instance.tac_doc_path = file_path
             device_model_instance.save()
-            text="Dear User, Your  OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+            text="Dear User, Your  OTP to validate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             #send_SMS(stateadmin.users.last().mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your OTP to velidate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                "Dear User, Your OTP to validate device model creation in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
@@ -9356,7 +9356,7 @@ import re
 
 def is_valid_string(s):
     # Check the length
-    if len(s) < 9 or len(s) > 25:
+    if len(s) < 8 or len(s) > 25:
         return False
     
     # Define regular expressions for the criteria
@@ -9396,8 +9396,15 @@ def password_reset(request ):
             return Response({'error': 'Mobile no not provided'}, status=status.HTTP_400_BAD_REQUEST)
         if not new_password:
             return Response({'error': 'Password not provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        
+        # Generate a random password, set and hash it
+        new_password = decrypt_field(new_password,PRIVATE_KEY)  
+        if not new_password:
+            return Response({'error': 'Invalid Password Encription','message': 'Invalid password'}, status=status.HTTP_404_NOT_FOUND)
+
         if not is_valid_string(new_password):
-            return Response({'error': 'Password must contain at least one Capital, Small, Numaric, and Special Charecter'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': new_password+'Password must contain at least one Capital, Small, Numaric, and Special Charecter'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user =  User.objects.filter( 
@@ -9405,18 +9412,25 @@ def password_reset(request ):
                 mobile=mobile 
                 ).last()
             
-            try:
-                if user.id != request.user.id:
-                    user=None
-            except:
-                user=None
-                return Response({'error': 'Invalid Token'}, status=status.HTTP_400_BAD_REQUEST)
-                
-            
-            valid=True
             if not user:
                 return Response({'error': 'user information missmatch'}, status=status.HTTP_400_BAD_REQUEST)
 
+            
+            # During password reset, we don't need to check request.user.id 
+            # The token validation is handled by the Token authentication system
+            # Let's verify the token directly
+            token_key = request.data.get('token', None)
+            if token_key:
+                try:
+                    token = Token.objects.get(key=token_key, user=user)
+                except Token.DoesNotExist:
+                    return Response({'error': 'Invalid Token'}, status=status.HTTP_400_BAD_REQUEST)
+            # If no token provided, this might be a direct password reset from an authorized user
+            elif not request.user.is_authenticated:
+                return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+                
+            
+            valid=True
             if user.role == "superadmin":
                 pass   
             elif user.role ==  "dtorto":
@@ -9494,13 +9508,10 @@ def password_reset(request ):
         if not user:
             return Response({'error': 'User not matched with details'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Generate a random password, set and hash it
-        new_password = decrypt_field(new_password,PRIVATE_KEY)  
-        if not new_password:
-            return Response({'message': 'Invalid password'})
         hashed_password = make_password(new_password)
         user.password = hashed_password
         user.status='active'
+        user.is_active = True
         user.save()
 
         return Response({'message': 'Password reset successfully'})
@@ -9614,24 +9625,24 @@ def reset_password(request ):
         ).last()
         if not user:
             return Response({'error': "Invalid email and mobile no"}, status=400)
-        user.password  = hashed_password
+        #user.password  = hashed_password
         user.status='pwreset'
         user.save()
         
         # Save the User instance
         
         Token.objects.filter(user=user).delete()
-        token,error=Token.objects.safe_create(user=user,key=new_password) 
+        token=Token.objects.create(user=user,key=new_password) 
         
-        if error:  # Rollback user creation if retailer creation fails
-                    return error  # Return the Response object from safe_create
+        #if error:  # Rollback user creation if retailer creation fails
+        #            return error  # Return the Response object from safe_create
 
 
         try:
             tpid ="1007214796274246200"#"1007387007813205696" #1007274756418421381"
             #text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {}.Valid for 5 minutes. Please do not share.-SkyTron".format(new_password)
-            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://dev.skytron.in/new/{#var#} The link will expire in 5 minutes.-SkyTron
-            text='Dear User, To  reset your password for SkyTron platform, please click at the following link and validate the registration request- https://dev.skytron.in/reset-password/'+str(new_password)+' .The link will expire in 5 minutes.-SkyTron'
+            #Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://gromed.in/new/{#var#} The link will expire in 5 minutes.-SkyTron
+            text='Dear User, To  reset your password for SkyTron platform, please click at the following link and validate the registration request- https://gromed.in/reset-password/'+str(new_password)+' .The link will expire in 5 minutes.-SkyTron'
 
             
             send_SMS(user.mobile,text,tpid)             
@@ -9643,9 +9654,9 @@ def reset_password(request ):
                     fail_silently=False,
             ) 
             return Response({'Success': "Password reset email sent"}, status=200)
-        except: 
-            return Response({'error': "Error in sendig sms/email"}, status=400)
-    except:
+        except Exception as e: 
+            return Response({'error': "Error in sendig sms/email "+str(e)}, status=400)
+    except Exception as e:
         return Response({'error': "Something went wrong."}, status=400)
                
 
@@ -9663,19 +9674,35 @@ def user_login(request ):
     if request.method == 'POST':
         username = request.data.get('username', None)
         password=request.data.get('password', None)
-        #key = request.data.get('captcha_key', None)
-        #user_input = request.data.get('captcha_reply', None)
+        key = request.data.get('captcha_key', None)
+        user_input = request.data.get('captcha_reply', None)
         if not username or not password :#or not key or not user_input:
             return Response({'error': 'Incomplete credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         
         password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
         
         captchaSuccess=False
-        #try:
-        #    user_input=int(user_input)
-        #except:
-        #    return JsonResponse({'success': False, 'error': 'Invalid Captcha Input. Only integers allowed'})
-
+        try:
+            user_input=int(user_input)
+        except:
+            return JsonResponse({'success': False, 'error': 'Invalid Captcha Input. Only integers allowed'})
+        try:
+            captcha = Captcha.objects.filter(key=key).last() 
+            if not captcha.is_valid():
+                captcha.delete()  # Optionally, delete the expired captcha
+                return JsonResponse({'success': False, 'error': 'Captcha expired'}) 
+            if int(user_input) == int(captcha.answer):
+                captcha.delete()  # Optionally, delete the captcha after successful verification
+                captchaSuccess=True
+            else:
+                return JsonResponse({'success': False, 'error': 'Invalid captcha'})
+        except Captcha.DoesNotExist: 
+            return JsonResponse({'success': False, 'error': 'Captcha not found'})
+        except Exception as e: #Captcha.DoesNotExist: 
+            print('error',e)
+            return JsonResponse({'success': False, 'error': 'Captcha not found'})
+         
+    
           
     
         
@@ -9707,7 +9734,7 @@ def user_login(request ):
             'user': user.id,
             'token': str(token),
             'otp': otp,
-            'status': 'login',
+            'status': 'otpsent',
             'login_time': timezone.now(),
         } 
         session_serializer = SessionSerializer(data=session_data)  
@@ -9726,7 +9753,7 @@ def user_login(request ):
                     uu = recursive_model_to_dict(uu,["users","esim_provider"])
 
   
-                return Response({'status':'Login Successful','token': str(token),'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
+                #return Response({'status':'Login Successful','token': str(token),'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
 
             except:
                 return Response({'error': 'Failed to create session'}, status=400)
