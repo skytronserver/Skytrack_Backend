@@ -48,7 +48,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.parsers import MultiPartParser,FileUploadParser
 import time 
 import pandas as pd 
-from rest_framework.views import APIView 
+import calendar 
 
 from rest_framework import generics,filters  
 
@@ -12705,6 +12705,424 @@ def get_device_tags(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def activated_device_list(request):
+    """
+    Get list of activated devices with comprehensive information for super admin, state admin, and DTO users.
+    Returns: FITMENT DATE, fitment status, eSIM validity, reg no, DTO district code, 
+    vehicle owner, device model number, manufacturer, dealer
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = request.user
+        
+        # Check user role and permissions
+        allowed_roles = ['superadmin', 'stateadmin', 'dtorto']
+        if user.role not in allowed_roles:
+            return Response({
+                "error": f"Access denied. This endpoint is only accessible by {', '.join(allowed_roles)}."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Base query for activated devices (Device Active status)
+        activated_devices = DeviceTag.objects.filter(
+            status='Device_Active'
+        ).select_related(
+            'device',
+            'device__model',
+            'device__model__created_by',
+            'device__dealer',
+            'device__dealer__manufacturer',
+            'device__dealer__district',
+            'device__dealer__district__state',
+            'vehicle_owner'
+        ).prefetch_related(
+            'device__model__created_by',
+            'device__dealer__manufacturer__users',
+            'device__dealer__users',
+            'vehicle_owner__users'
+        )
+
+        # Apply role-based filtering
+        if user.role == 'stateadmin':
+            # State admin can only see devices in their state
+            state_admin = get_user_object(user, "stateadmin")
+            if state_admin:
+                activated_devices = activated_devices.filter(
+                    device__dealer__district__state=state_admin.state
+                )
+            else:
+                return Response({
+                    "error": "State admin profile not found"
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        elif user.role == 'dtorto':
+            # DTO can only see devices in their district(s)
+            dto_admin = get_user_object(user, "dtorto")
+            if dto_admin:
+                activated_devices = activated_devices.filter(
+                    device__dealer__district=dto_admin.district
+                )
+            else:
+                return Response({
+                    "error": "DTO profile not found"
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Apply additional filters from request
+        device_esn = request.data.get('device_esn', '')
+        vehicle_reg_no = request.data.get('vehicle_reg_no', '')
+        manufacturer_name = request.data.get('manufacturer_name', '')
+        dealer_name = request.data.get('dealer_name', '')
+        district_code = request.data.get('district_code', '')
+        state_id = request.data.get('state_id', '')
+        date_from = request.data.get('date_from', '')
+        date_to = request.data.get('date_to', '')
+        
+        if device_esn:
+            activated_devices = activated_devices.filter(device__device_esn__icontains=device_esn)
+        
+        if vehicle_reg_no:
+            activated_devices = activated_devices.filter(vehicle_reg_no__icontains=vehicle_reg_no)
+            
+        if manufacturer_name:
+            activated_devices = activated_devices.filter(
+                device__dealer__manufacturer__company_name__icontains=manufacturer_name
+            )
+            
+        if dealer_name:
+            activated_devices = activated_devices.filter(
+                device__dealer__company_name__icontains=dealer_name
+            )
+            
+        if district_code:
+            activated_devices = activated_devices.filter(
+                device__dealer__district__district_code__icontains=district_code
+            )
+            
+        if state_id:
+            activated_devices = activated_devices.filter(
+                device__dealer__district__state__id=state_id
+            )
+            
+        if date_from:
+            try:
+                from_date = datetime.strptime(date_from, '%Y-%m-%d').date()
+                activated_devices = activated_devices.filter(tagged__date__gte=from_date)
+            except ValueError:
+                pass
+                
+        if date_to:
+            try:
+                to_date = datetime.strptime(date_to, '%Y-%m-%d').date()
+                activated_devices = activated_devices.filter(tagged__date__lte=to_date)
+            except ValueError:
+                pass
+
+        # Prepare response data
+        device_list = []
+        for device_tag in activated_devices:
+            try:
+                # Get manufacturer information
+                manufacturer = device_tag.device.dealer.manufacturer if device_tag.device.dealer else None
+                manufacturer_name = manufacturer.company_name if manufacturer else 'N/A'
+                manufacturer_users = list(manufacturer.users.all()) if manufacturer else []
+                manufacturer_user_name = manufacturer_users[0].name if manufacturer_users else 'N/A'
+                
+                # Get dealer information
+                dealer = device_tag.device.dealer
+                dealer_name = dealer.company_name if dealer else 'N/A'
+                dealer_users = list(dealer.users.all()) if dealer else []
+                dealer_user_name = dealer_users[0].name if dealer_users else 'N/A'
+                
+                # Get district information
+                district = dealer.district if dealer else None
+                district_name = district.district if district else 'N/A'
+                district_code = district.district_code if district else 'N/A'
+                state_name = district.state.state if district and district.state else 'N/A'
+                
+                # Get vehicle owner information
+                vehicle_owner = device_tag.vehicle_owner
+                owner_users = list(vehicle_owner.users.all()) if vehicle_owner else []
+                owner_name = owner_users[0].name if owner_users else 'N/A'
+                owner_company = vehicle_owner.company_name if vehicle_owner else 'N/A'
+                
+                # Get device information
+                device = device_tag.device
+                device_model = device.model
+                
+                device_data = {
+                    'id': device_tag.id,
+                    'device_esn': device.device_esn,
+                    'imei': device.imei,
+                    'iccid': device.iccid,
+                    'msisdn1': device.msisdn1,
+                    'msisdn2': device.msisdn2 or 'N/A',
+                    
+                    # Fitment information
+                    'fitment_date': device_tag.tagged.strftime('%Y-%m-%d %H:%M:%S') if device_tag.tagged else 'N/A',
+                    'fitment_status': device_tag.status,
+                    
+                    # eSIM information
+                    'esim_validity': device.esim_validity.strftime('%Y-%m-%d') if device.esim_validity else 'N/A',
+                    'telecom_provider1': device.telecom_provider1,
+                    'telecom_provider2': device.telecom_provider2 or 'N/A',
+                    'stock_status': device.stock_status,
+                    'esim_status': device.esim_status,
+                    
+                    # Vehicle information
+                    'vehicle_reg_no': device_tag.vehicle_reg_no,
+                    'engine_no': device_tag.engine_no,
+                    'chassis_no': device_tag.chassis_no,
+                    'vehicle_make': device_tag.vehicle_make,
+                    'vehicle_model': device_tag.vehicle_model,
+                    'vehicle_category': device_tag.category,
+                    
+                    # District and state information
+                    'dto_district_code': district_code,
+                    'district_name': district_name,
+                    'state_name': state_name,
+                    
+                    # Vehicle owner information
+                    'vehicle_owner_name': owner_name,
+                    'vehicle_owner_company': owner_company,
+                    'vehicle_owner_id': vehicle_owner.id if vehicle_owner else None,
+                    
+                    # Device model information
+                    'device_model_name': device_model.model_name,
+                    'device_model_id': device_model.id,
+                    'hardware_version': device_model.hardware_version,
+                    'vendor_id': device_model.vendor_id,
+                    'tac_no': device_model.tac_no,
+                    
+                    # Manufacturer information
+                    'manufacturer_name': manufacturer_name,
+                    'manufacturer_id': manufacturer.id if manufacturer else None,
+                    'manufacturer_user_name': manufacturer_user_name,
+                    'manufacturer_state': manufacturer.state.state if manufacturer and manufacturer.state else 'N/A',
+                    
+                    # Dealer information
+                    'dealer_name': dealer_name,
+                    'dealer_id': dealer.id if dealer else None,
+                    'dealer_user_name': dealer_user_name,
+                    
+                    # Tagged by information
+                    'tagged_by_name': device_tag.tagged_by.name if device_tag.tagged_by else 'N/A',
+                    'tagged_by_email': device_tag.tagged_by.email if device_tag.tagged_by else 'N/A',
+                    
+                    # Additional device information
+                    'created_date': device.created.strftime('%Y-%m-%d %H:%M:%S') if device.created else 'N/A',
+                    'device_assigned_date': device.assigned.strftime('%Y-%m-%d %H:%M:%S') if device.assigned else 'N/A',
+                }
+                
+                device_list.append(device_data)
+                
+            except Exception as e:
+                # Log individual device errors but continue processing
+                continue
+
+        # Pagination
+        page = int(request.data.get('page', 1))
+        page_size = int(request.data.get('page_size', 50))
+        
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        paginated_devices = device_list[start_index:end_index]
+        
+        response_data = {
+            'status': 'success',
+            'data': {
+                'devices': paginated_devices,
+                'total_count': len(device_list),
+                'page': page,
+                'page_size': page_size,
+                'total_pages': (len(device_list) + page_size - 1) // page_size
+            },
+            'message': 'Activated devices retrieved successfully'
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'status': 'error', 
+            'message': f'An error occurred while retrieving activated devices: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
+def dealer_check_esim_status(request):
+    """
+    API for dealers to check eSIM activation status and validity for their devices
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Check if user is a dealer
+    role = "dealer"
+    user = request.user
+    dealer = get_user_object(user, role)
+    if not dealer:
+        return Response({"error": "Request must be from dealer."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Get filter parameters
+        device_esn = request.data.get('device_esn', '')
+        imei = request.data.get('imei', '')
+        msisdn1 = request.data.get('msisdn1', '')
+        esim_status_filter = request.data.get('esim_status', '')
+        from datetime import datetime, timedelta
+        from django.utils import timezone
+        
+        # Current time for validity checks
+        now = timezone.now()
+        
+        # Base query for devices assigned to this dealer
+        devices = DeviceStock.objects.filter(dealer=dealer)
+        
+        # Apply filters if provided
+        if device_esn:
+            devices = devices.filter(device_esn__icontains=device_esn)
+        
+        if imei:
+            devices = devices.filter(imei__icontains=imei)
+            
+        if msisdn1:
+            devices = devices.filter(msisdn1__icontains=msisdn1)
+            
+        if esim_status_filter:
+            devices = devices.filter(esim_status=esim_status_filter)
+        
+        # Get devices with related data
+        devices = devices.select_related('model', 'dealer', 'created_by').prefetch_related('esim_provider')
+        
+        # Process results and add validity information
+        result_data = []
+        for device in devices:
+            # Check if eSIM is expired
+            is_expired = device.esim_validity and device.esim_validity <= now
+            
+            # Calculate days until expiry
+            days_until_expiry = None
+            if device.esim_validity:
+                time_diff = device.esim_validity - now
+                days_until_expiry = time_diff.days if time_diff.days > 0 else 0
+            
+            # Determine expiry status
+            expiry_status = "Active"
+            if is_expired:
+                expiry_status = "Expired"
+            elif days_until_expiry is not None and days_until_expiry <= 30:
+                expiry_status = "Expiring Soon"
+            
+            # Get eSIM providers
+            esim_providers = [{"id": provider.id, "company_name": provider.company_name} 
+                             for provider in device.esim_provider.all()]
+            
+            # Get any pending activation requests
+            activation_requests = esimActivationRequest.objects.filter(
+                device=device,
+                ceated_by=dealer
+            ).order_by('-created_at')
+            
+            latest_request = None
+            if activation_requests.exists():
+                latest_activation = activation_requests.first()
+                latest_request = {
+                    "id": latest_activation.id,
+                    "status": latest_activation.status,
+                    "created_at": latest_activation.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                    "eSim_provider": latest_activation.eSim_provider.company_name if latest_activation.eSim_provider else None,
+                    "valid_from": latest_activation.valid_from.strftime('%Y-%m-%d %H:%M:%S') if latest_activation.valid_from else None,
+                    "valid_upto": latest_activation.valid_upto.strftime('%Y-%m-%d %H:%M:%S') if latest_activation.valid_upto else None,
+                    "accepted_at": latest_activation.accepted_at.strftime('%Y-%m-%d %H:%M:%S') if latest_activation.accepted_at else None
+                }
+            
+            device_info = {
+                "device_id": device.id,
+                "device_esn": device.device_esn,
+                "imei": device.imei,
+                "iccid": device.iccid,
+                "msisdn1": device.msisdn1,
+                "msisdn2": device.msisdn2,
+                "telecom_provider1": device.telecom_provider1,
+                "telecom_provider2": device.telecom_provider2,
+                
+                # Device model information
+                "device_model": {
+                    "id": device.model.id,
+                    "model_name": device.model.model_name,
+                    "vendor_id": device.model.vendor_id
+                },
+                
+                # eSIM status and validity information
+                "esim_status": device.esim_status,
+                "stock_status": device.stock_status,
+                "esim_validity": device.esim_validity.strftime('%Y-%m-%d %H:%M:%S') if device.esim_validity else None,
+                "days_until_expiry": days_until_expiry,
+                "expiry_status": expiry_status,
+                "is_expired": is_expired,
+                
+                # eSIM provider information
+                "esim_providers": esim_providers,
+                
+                # Latest activation request information
+                "latest_activation_request": latest_request,
+                
+                # Additional device information
+                "assigned_date": device.assigned.strftime('%Y-%m-%d %H:%M:%S') if device.assigned else None,
+                "created_date": device.created.strftime('%Y-%m-%d %H:%M:%S'),
+                "remarks": device.remarks
+            }
+            
+            result_data.append(device_info)
+        
+        # Summary statistics
+        total_devices = len(result_data)
+        active_esims = len([d for d in result_data if d['expiry_status'] == 'Active'])
+        expired_esims = len([d for d in result_data if d['expiry_status'] == 'Expired'])
+        expiring_soon = len([d for d in result_data if d['expiry_status'] == 'Expiring Soon'])
+        
+        # Count by eSIM status
+        status_counts = {}
+        for device in result_data:
+            status = device['esim_status']
+            status_counts[status] = status_counts.get(status, 0) + 1
+        
+        summary = {
+            "total_devices": total_devices,
+            "esim_validity_summary": {
+                "active": active_esims,
+                "expired": expired_esims,
+                "expiring_soon": expiring_soon
+            },
+            "esim_status_counts": status_counts,
+            "dealer_info": {
+                "id": dealer.id,
+                "company_name": dealer.company_name,
+                "district": dealer.district.district if dealer.district else None,
+                "state": dealer.manufacturer.state.state if dealer.manufacturer and dealer.manufacturer.state else None
+            }
+        }
+        
+        return Response({
+            "summary": summary,
+            "devices": result_data
+        }, status=200)
+        
+    except Exception as e:
+        return Response({'error': "Unable to process request. " + str(e)}, status=400)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
 def homepage_esimProvider(request):
@@ -12816,3 +13234,866 @@ def homepage_esimProvider(request):
             'status': 'error',
             'message': f'An error occurred: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def state_admin_approved_models_report(request):
+    """
+    API for state admin to get report of approved device models.
+    Returns comprehensive information about approved device models including manufacturer details.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = request.user
+        
+        # Check if user is a state admin
+        if user.role != 'stateadmin':
+            return Response({
+                "error": "Access denied. This endpoint is only accessible by state admins."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Get state admin profile
+        state_admin = get_user_object(user, "stateadmin")
+        if not state_admin:
+            return Response({
+                "error": "State admin profile not found"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Base query for approved device models
+        approved_models = DeviceModel.objects.filter(
+            status='StateAdminApproved'
+        ).select_related(
+            'created_by'
+        ).prefetch_related(
+            'eSimProviders',
+            'created_by__manufacturers_user'
+        )
+
+        # Apply filters from request
+        model_name = request.data.get('model_name', '')
+        vendor_id = request.data.get('vendor_id', '')
+        tac_no = request.data.get('tac_no', '')
+        manufacturer_name = request.data.get('manufacturer_name', '')
+        test_agency = request.data.get('test_agency', '')
+        date_from = request.data.get('date_from', '')
+        date_to = request.data.get('date_to', '')
+        
+        if model_name:
+            approved_models = approved_models.filter(model_name__icontains=model_name)
+        
+        if vendor_id:
+            approved_models = approved_models.filter(vendor_id__icontains=vendor_id)
+            
+        if tac_no:
+            approved_models = approved_models.filter(tac_no__icontains=tac_no)
+            
+        if test_agency:
+            approved_models = approved_models.filter(test_agency__icontains=test_agency)
+            
+        if manufacturer_name:
+            approved_models = approved_models.filter(
+                created_by__manufacturers_user__company_name__icontains=manufacturer_name
+            )
+            
+        if date_from:
+            try:
+                from_date = datetime.strptime(date_from, '%Y-%m-%d').date()
+                approved_models = approved_models.filter(created__date__gte=from_date)
+            except ValueError:
+                pass
+                
+        if date_to:
+            try:
+                to_date = datetime.strptime(date_to, '%Y-%m-%d').date()
+                approved_models = approved_models.filter(created__date__lte=to_date)
+            except ValueError:
+                pass
+
+        # Prepare response data
+        models_list = []
+        for model in approved_models:
+            try:
+                # Get manufacturer information
+                manufacturer = model.created_by.manufacturers_user.first() if model.created_by.manufacturers_user.exists() else None
+                manufacturer_name = manufacturer.company_name if manufacturer else 'N/A'
+                manufacturer_state = manufacturer.state.state if manufacturer and manufacturer.state else 'N/A'
+                
+                # Get eSIM providers
+                esim_providers = []
+                for provider in model.eSimProviders.all():
+                    esim_providers.append({
+                        'id': provider.id,
+                        'company_name': provider.company_name,
+                        'state': provider.state.state if provider.state else 'N/A'
+                    })
+                
+                model_data = {
+                    'id': model.id,
+                    'model_name': model.model_name,
+                    'test_agency': model.test_agency,
+                    'vendor_id': model.vendor_id,
+                    'tac_no': model.tac_no,
+                    'tac_validity': model.tac_validity.strftime('%Y-%m-%d') if model.tac_validity else 'N/A',
+                    'hardware_version': model.hardware_version,
+                    'status': model.status,
+                    'created_date': model.created.strftime('%Y-%m-%d %H:%M:%S') if model.created else 'N/A',
+                    'approved_date': model.created.strftime('%Y-%m-%d %H:%M:%S') if model.created else 'N/A',  # Approval date same as creation for approved models
+                    
+                    # Manufacturer information
+                    'manufacturer_name': manufacturer_name,
+                    'manufacturer_id': manufacturer.id if manufacturer else None,
+                    'manufacturer_state': manufacturer_state,
+                    'manufacturer_gst_no': manufacturer.gstno if manufacturer else 'N/A',
+                    'manufacturer_created_date': manufacturer.created.strftime('%Y-%m-%d') if manufacturer and manufacturer.created else 'N/A',
+                    
+                    # Creator information
+                    'created_by_name': model.created_by.name if model.created_by else 'N/A',
+                    'created_by_email': model.created_by.email if model.created_by else 'N/A',
+                    'created_by_mobile': model.created_by.mobile if model.created_by else 'N/A',
+                    
+                    # eSIM providers
+                    'esim_providers': esim_providers,
+                    'esim_providers_count': len(esim_providers),
+                    
+                    # File information
+                    'tac_doc_available': bool(model.tac_doc_path),
+                    'tac_doc_path': model.tac_doc_path.url if model.tac_doc_path else None,
+                }
+                
+                models_list.append(model_data)
+                
+            except Exception as e:
+                # Log individual model errors but continue processing
+                continue
+
+        # Pagination
+        page = int(request.data.get('page', 1))
+        page_size = int(request.data.get('page_size', 50))
+        
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        paginated_models = models_list[start_index:end_index]
+        
+        # Generate summary statistics
+        total_models = len(models_list)
+        unique_manufacturers = len(set([model['manufacturer_id'] for model in models_list if model['manufacturer_id']]))
+        models_with_esim = len([model for model in models_list if model['esim_providers_count'] > 0])
+        
+        # Count by test agencies
+        test_agencies = {}
+        for model in models_list:
+            agency = model['test_agency']
+            test_agencies[agency] = test_agencies.get(agency, 0) + 1
+        
+        summary = {
+            'total_approved_models': total_models,
+            'unique_manufacturers': unique_manufacturers,
+            'models_with_esim_providers': models_with_esim,
+            'models_without_esim_providers': total_models - models_with_esim,
+            'test_agencies_breakdown': test_agencies,
+            'state_admin_info': {
+                'id': state_admin.id,
+                'state': state_admin.state.state if state_admin.state else 'N/A',
+                'created_date': state_admin.created.strftime('%Y-%m-%d') if state_admin.created else 'N/A'
+            }
+        }
+        
+        response_data = {
+            'status': 'success',
+            'data': {
+                'summary': summary,
+                'models': paginated_models,
+                'total_count': total_models,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': (total_models + page_size - 1) // page_size
+            },
+            'message': 'Approved device models report retrieved successfully'
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'status': 'error', 
+            'message': f'An error occurred while retrieving approved models report: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def state_admin_approved_cops_report(request):
+    """
+    API for state admin to get report of approved COPs (Certificate of Performance).
+    Returns comprehensive information about approved COPs including device model and manufacturer details.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = request.user
+        
+        # Check if user is a state admin
+        if user.role != 'stateadmin':
+            return Response({
+                "error": "Access denied. This endpoint is only accessible by state admins."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Get state admin profile
+        state_admin = get_user_object(user, "stateadmin")
+        if not state_admin:
+            return Response({
+                "error": "State admin profile not found"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Base query for approved COPs
+        approved_cops = DeviceCOP.objects.filter(
+            status='StateAdminApproved'
+        ).select_related(
+            'device_model',
+            'device_model__created_by',
+            'created_by'
+        ).prefetch_related(
+            'device_model__eSimProviders',
+            'created_by__manufacturers_user'
+        )
+
+        # Apply filters from request
+        cop_no = request.data.get('cop_no', '')
+        model_name = request.data.get('model_name', '')
+        vendor_id = request.data.get('vendor_id', '')
+        manufacturer_name = request.data.get('manufacturer_name', '')
+        date_from = request.data.get('date_from', '')
+        date_to = request.data.get('date_to', '')
+        validity_from = request.data.get('validity_from', '')
+        validity_to = request.data.get('validity_to', '')
+        
+        if cop_no:
+            approved_cops = approved_cops.filter(cop_no__icontains=cop_no)
+        
+        if model_name:
+            approved_cops = approved_cops.filter(device_model__model_name__icontains=model_name)
+            
+        if vendor_id:
+            approved_cops = approved_cops.filter(device_model__vendor_id__icontains=vendor_id)
+            
+        if manufacturer_name:
+            approved_cops = approved_cops.filter(
+                created_by__manufacturers_user__company_name__icontains=manufacturer_name
+            )
+            
+        if date_from:
+            try:
+                from_date = datetime.strptime(date_from, '%Y-%m-%d').date()
+                approved_cops = approved_cops.filter(created__date__gte=from_date)
+            except ValueError:
+                pass
+                
+        if date_to:
+            try:
+                to_date = datetime.strptime(date_to, '%Y-%m-%d').date()
+                approved_cops = approved_cops.filter(created__date__lte=to_date)
+            except ValueError:
+                pass
+                
+        if validity_from:
+            try:
+                from_date = datetime.strptime(validity_from, '%Y-%m-%d').date()
+                approved_cops = approved_cops.filter(cop_validity__gte=from_date)
+            except ValueError:
+                pass
+                
+        if validity_to:
+            try:
+                to_date = datetime.strptime(validity_to, '%Y-%m-%d').date()
+                approved_cops = approved_cops.filter(cop_validity__lte=to_date)
+            except ValueError:
+                pass
+
+        # Prepare response data
+        cops_list = []
+        for cop in approved_cops:
+            try:
+                # Get manufacturer information
+                manufacturer = cop.created_by.manufacturers_user.first() if cop.created_by.manufacturers_user.exists() else None
+                manufacturer_name = manufacturer.company_name if manufacturer else 'N/A'
+                manufacturer_state = manufacturer.state.state if manufacturer and manufacturer.state else 'N/A'
+                
+                # Get device model information
+                device_model = cop.device_model
+                
+                # Get eSIM providers for the device model
+                esim_providers = []
+                for provider in device_model.eSimProviders.all():
+                    esim_providers.append({
+                        'id': provider.id,
+                        'company_name': provider.company_name,
+                        'state': provider.state.state if provider.state else 'N/A'
+                    })
+                
+                # Check if COP is expired
+                is_expired = cop.cop_validity and cop.cop_validity < timezone.now().date()
+                
+                # Calculate days until expiry
+                days_until_expiry = None
+                if cop.cop_validity:
+                    time_diff = cop.cop_validity - timezone.now().date()
+                    days_until_expiry = time_diff.days if time_diff.days > 0 else 0
+                
+                cop_data = {
+                    'id': cop.id,
+                    'cop_no': cop.cop_no,
+                    'cop_validity': cop.cop_validity.strftime('%Y-%m-%d') if cop.cop_validity else 'N/A',
+                    'status': cop.status,
+                    'valid': cop.valid,
+                    'latest': cop.latest,
+                    'created_date': cop.created.strftime('%Y-%m-%d %H:%M:%S') if cop.created else 'N/A',
+                    'is_expired': is_expired,
+                    'days_until_expiry': days_until_expiry,
+                    'expiry_status': 'Expired' if is_expired else ('Expiring Soon' if days_until_expiry is not None and days_until_expiry <= 30 else 'Active'),
+                    
+                    # Device model information
+                    'device_model_id': device_model.id,
+                    'device_model_name': device_model.model_name,
+                    'device_model_vendor_id': device_model.vendor_id,
+                    'device_model_tac_no': device_model.tac_no,
+                    'device_model_tac_validity': device_model.tac_validity.strftime('%Y-%m-%d') if device_model.tac_validity else 'N/A',
+                    'device_model_hardware_version': device_model.hardware_version,
+                    'device_model_test_agency': device_model.test_agency,
+                    'device_model_status': device_model.status,
+                    
+                    # Manufacturer information
+                    'manufacturer_name': manufacturer_name,
+                    'manufacturer_id': manufacturer.id if manufacturer else None,
+                    'manufacturer_state': manufacturer_state,
+                    'manufacturer_gst_no': manufacturer.gstno if manufacturer else 'N/A',
+                    'manufacturer_created_date': manufacturer.created.strftime('%Y-%m-%d') if manufacturer and manufacturer.created else 'N/A',
+                    
+                    # Creator information
+                    'created_by_name': cop.created_by.name if cop.created_by else 'N/A',
+                    'created_by_email': cop.created_by.email if cop.created_by else 'N/A',
+                    'created_by_mobile': cop.created_by.mobile if cop.created_by else 'N/A',
+                    
+                    # eSIM providers for the device model
+                    'esim_providers': esim_providers,
+                    'esim_providers_count': len(esim_providers),
+                    
+                    # File information
+                    'cop_file_available': bool(cop.cop_file),
+                    'cop_file_path': cop.cop_file.url if cop.cop_file else None,
+                }
+                
+                cops_list.append(cop_data)
+                
+            except Exception as e:
+                # Log individual COP errors but continue processing
+                continue
+
+        # Pagination
+        page = int(request.data.get('page', 1))
+        page_size = int(request.data.get('page_size', 50))
+        
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        paginated_cops = cops_list[start_index:end_index]
+        
+        # Generate summary statistics
+        total_cops = len(cops_list)
+        unique_manufacturers = len(set([cop['manufacturer_id'] for cop in cops_list if cop['manufacturer_id']]))
+        unique_device_models = len(set([cop['device_model_id'] for cop in cops_list]))
+        expired_cops = len([cop for cop in cops_list if cop['is_expired']])
+        expiring_soon_cops = len([cop for cop in cops_list if cop['expiry_status'] == 'Expiring Soon'])
+        active_cops = len([cop for cop in cops_list if cop['expiry_status'] == 'Active'])
+        
+        # Count by test agencies
+        test_agencies = {}
+        for cop in cops_list:
+            agency = cop['device_model_test_agency']
+            test_agencies[agency] = test_agencies.get(agency, 0) + 1
+        
+        # Count by validity years
+        validity_years = {}
+        for cop in cops_list:
+            if cop['cop_validity'] != 'N/A':
+                year = cop['cop_validity'][:4]  # Extract year from YYYY-MM-DD format
+                validity_years[year] = validity_years.get(year, 0) + 1
+        
+        summary = {
+            'total_approved_cops': total_cops,
+            'unique_manufacturers': unique_manufacturers,
+            'unique_device_models': unique_device_models,
+            'active_cops': active_cops,
+            'expired_cops': expired_cops,
+            'expiring_soon_cops': expiring_soon_cops,
+            'test_agencies_breakdown': test_agencies,
+            'validity_years_breakdown': validity_years,
+            'state_admin_info': {
+                'id': state_admin.id,
+                'state': state_admin.state.state if state_admin.state else 'N/A',
+                'created_date': state_admin.created.strftime('%Y-%m-%d') if state_admin.created else 'N/A'
+            }
+        }
+        
+        response_data = {
+            'status': 'success',
+            'data': {
+                'summary': summary,
+                'cops': paginated_cops,
+                'total_count': total_cops,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': (total_cops + page_size - 1) // page_size
+            },
+            'message': 'Approved COPs report retrieved successfully'
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'status': 'error', 
+            'message': f'An error occurred while retrieving approved COPs report: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def state_admin_combined_approval_report(request):
+    """
+    API for state admin to get combined report of approved device models and COPs.
+    Returns summary statistics and overview of both approved models and COPs.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = request.user
+        
+        # Check if user is a state admin
+        if user.role != 'stateadmin':
+            return Response({
+                "error": "Access denied. This endpoint is only accessible by state admins."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Get state admin profile
+        state_admin = get_user_object(user, "stateadmin")
+        if not state_admin:
+            return Response({
+                "error": "State admin profile not found"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get date range from request
+        date_from = request.data.get('date_from', '')
+        date_to = request.data.get('date_to', '')
+        
+        # Base queries for approved models and COPs
+        approved_models_query = DeviceModel.objects.filter(status='StateAdminApproved')
+        approved_cops_query = DeviceCOP.objects.filter(status='StateAdminApproved')
+        
+        # Apply date filters if provided
+        if date_from:
+            try:
+                from_date = datetime.strptime(date_from, '%Y-%m-%d').date()
+                approved_models_query = approved_models_query.filter(created__date__gte=from_date)
+                approved_cops_query = approved_cops_query.filter(created__date__gte=from_date)
+            except ValueError:
+                pass
+                
+        if date_to:
+            try:
+                to_date = datetime.strptime(date_to, '%Y-%m-%d').date()
+                approved_models_query = approved_models_query.filter(created__date__lte=to_date)
+                approved_cops_query = approved_cops_query.filter(created__date__lte=to_date)
+            except ValueError:
+                pass
+
+        # Get counts and statistics
+        total_approved_models = approved_models_query.count()
+        total_approved_cops = approved_cops_query.count()
+        
+        # Get unique manufacturers count
+        model_manufacturers = set(approved_models_query.values_list('created_by', flat=True))
+        cop_manufacturers = set(approved_cops_query.values_list('created_by', flat=True))
+        unique_manufacturers = len(model_manufacturers.union(cop_manufacturers))
+        
+        # Get current date for expiry calculations
+        now = timezone.now().date()
+        
+        # Count expired and expiring COPs
+        expired_cops = approved_cops_query.filter(cop_validity__lt=now).count()
+        expiring_soon_cops = approved_cops_query.filter(
+            cop_validity__gte=now,
+            cop_validity__lte=now + timedelta(days=30)
+        ).count()
+        
+        # Count expired and expiring TAC validities in models
+        expired_tac = approved_models_query.filter(tac_validity__lt=now).count()
+        expiring_soon_tac = approved_models_query.filter(
+            tac_validity__gte=now,
+            tac_validity__lte=now + timedelta(days=30)
+        ).count()
+        
+        # Get recent approvals (last 30 days)
+        thirty_days_ago = now - timedelta(days=30)
+        recent_models = approved_models_query.filter(created__date__gte=thirty_days_ago).count()
+        recent_cops = approved_cops_query.filter(created__date__gte=thirty_days_ago).count()
+        
+        # Get monthly breakdown for current year
+        current_year = now.year
+        monthly_stats = {}
+        for month in range(1, 13):
+            month_models = approved_models_query.filter(
+                created__year=current_year,
+                created__month=month
+            ).count()
+            month_cops = approved_cops_query.filter(
+                created__year=current_year,
+                created__month=month
+            ).count()
+            month_name = calendar.month_name[month]
+            monthly_stats[month_name] = {
+                'models': month_models,
+                'cops': month_cops,
+                'total': month_models + month_cops
+            }
+        
+        # Get top manufacturers by approvals
+        from collections import defaultdict
+        manufacturer_stats = defaultdict(lambda: {'models': 0, 'cops': 0, 'name': 'Unknown'})
+        
+        # Count models by manufacturer
+        for model in approved_models_query.select_related('created_by').prefetch_related('created_by__manufacturers_user'):
+            manufacturer = model.created_by.manufacturers_user.first() if model.created_by.manufacturers_user.exists() else None
+            if manufacturer:
+                manufacturer_stats[manufacturer.id]['models'] += 1
+                manufacturer_stats[manufacturer.id]['name'] = manufacturer.company_name
+        
+        # Count COPs by manufacturer  
+        for cop in approved_cops_query.select_related('created_by').prefetch_related('created_by__manufacturers_user'):
+            manufacturer = cop.created_by.manufacturers_user.first() if cop.created_by.manufacturers_user.exists() else None
+            if manufacturer:
+                manufacturer_stats[manufacturer.id]['cops'] += 1
+                manufacturer_stats[manufacturer.id]['name'] = manufacturer.company_name
+        
+        # Convert to list and sort by total approvals
+        top_manufacturers = []
+        for manufacturer_id, stats in manufacturer_stats.items():
+            total_approvals = stats['models'] + stats['cops']
+            top_manufacturers.append({
+                'manufacturer_id': manufacturer_id,
+                'manufacturer_name': stats['name'],
+                'approved_models': stats['models'],
+                'approved_cops': stats['cops'],
+                'total_approvals': total_approvals
+            })
+        
+        top_manufacturers.sort(key=lambda x: x['total_approvals'], reverse=True)
+        top_manufacturers = top_manufacturers[:10]  # Top 10 manufacturers
+        
+        # Prepare comprehensive summary
+        summary = {
+            'overall_statistics': {
+                'total_approved_models': total_approved_models,
+                'total_approved_cops': total_approved_cops,
+                'total_approvals': total_approved_models + total_approved_cops,
+                'unique_manufacturers': unique_manufacturers,
+                'recent_approvals_30_days': {
+                    'models': recent_models,
+                    'cops': recent_cops,
+                    'total': recent_models + recent_cops
+                }
+            },
+            'expiry_alerts': {
+                'expired_cops': expired_cops,
+                'expiring_soon_cops': expiring_soon_cops,
+                'expired_tac_validities': expired_tac,
+                'expiring_soon_tac_validities': expiring_soon_tac,
+                'total_expiry_alerts': expired_cops + expiring_soon_cops + expired_tac + expiring_soon_tac
+            },
+            'monthly_breakdown_current_year': monthly_stats,
+            'top_manufacturers': top_manufacturers,
+            'state_admin_info': {
+                'id': state_admin.id,
+                'state': state_admin.state.state if state_admin.state else 'N/A',
+                'created_date': state_admin.created.strftime('%Y-%m-%d') if state_admin.created else 'N/A'
+            },
+            'report_generated_at': timezone.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'date_range_applied': {
+                'from': date_from if date_from else 'All time',
+                'to': date_to if date_to else 'Present'
+            }
+        }
+        
+        response_data = {
+            'status': 'success',
+            'data': summary,
+            'message': 'Combined approval report retrieved successfully'
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'status': 'error', 
+            'message': f'An error occurred while retrieving combined approval report: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    """
+    Homepage API for esim Provider role showing eSIM related statistics
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_device_trip_details(request):
+    """
+    API to get trip details for a device tag
+    
+    Parameters:
+    - device_tag_id: ID of the device tag (required)
+    - start_datetime: Start datetime for trip search (optional, default: 24 hours ago)
+    - end_datetime: End datetime for trip search (optional, default: now)
+    
+    Returns list of trips with details including:
+    - Trip duration, distance, average speed
+    - Start/end locations
+    - Alerts during trip
+    """
+    try:
+        from datetime import datetime, timedelta
+        from django.db.models import Q, Min, Max
+        import math
+        
+        def calculate_distance(lat1, lon1, lat2, lon2):
+            """
+            Calculate the great circle distance between two points 
+            on the earth (specified in decimal degrees)
+            Returns distance in kilometers
+            """
+            # Convert decimal degrees to radians
+            lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+            
+            # Haversine formula
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+            c = 2 * math.asin(math.sqrt(a))
+            r = 6371  # Radius of earth in kilometers
+            return c * r
+        
+        # Get parameters
+        device_tag_id = request.GET.get('device_tag_id')
+        start_datetime = request.GET.get('start_datetime')
+        end_datetime = request.GET.get('end_datetime')
+        
+        # Validate device_tag_id
+        if not device_tag_id:
+            return Response({
+                'status': 'error',
+                'message': 'device_tag_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            device_tag = DeviceTag.objects.get(id=device_tag_id)
+        except DeviceTag.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': 'Device tag not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Set default time range (last 24 hours)
+        now = timezone.now()
+        if not end_datetime:
+            end_dt = now
+        else:
+            try:
+                end_dt = datetime.fromisoformat(end_datetime.replace('Z', '+00:00'))
+            except ValueError:
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid end_datetime format. Use ISO format: YYYY-MM-DDTHH:MM:SS'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not start_datetime:
+            start_dt = end_dt - timedelta(hours=24)
+        else:
+            try:
+                start_dt = datetime.fromisoformat(start_datetime.replace('Z', '+00:00'))
+            except ValueError:
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid start_datetime format. Use ISO format: YYYY-MM-DDTHH:MM:SS'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get GPS data for the device tag within time range
+        gps_data = GPSData.objects.filter(
+            device_tag=device_tag,
+            entry_time__gte=start_dt,
+            entry_time__lte=end_dt
+        ).order_by('entry_time')
+        
+        if not gps_data.exists():
+            return Response({
+                'device_tag_id': device_tag_id,
+                'vehicle_reg_no': device_tag.vehicle_reg_no,
+                'query_start_time': start_dt,
+                'query_end_time': end_dt,
+                'total_trips': 0,
+                'total_distance_km': 0.0,
+                'total_duration_minutes': 0.0,
+                'trips': []
+            })
+        
+        # Process trips based on ignition status
+        trips = []
+        current_trip = None
+        trip_id = 1
+        
+        for gps_point in gps_data:
+            ignition_on = gps_point.ignition_status == '1'
+            
+            if ignition_on and current_trip is None:
+                # Start new trip
+                current_trip = {
+                    'trip_id': trip_id,
+                    'start_time': gps_point.entry_time,
+                    'start_location': {
+                        'latitude': gps_point.latitude,
+                        'longitude': gps_point.longitude,
+                        'address': f"{gps_point.latitude}, {gps_point.longitude}"
+                    },
+                    'gps_points': [gps_point],
+                    'last_ignition_off_time': None
+                }
+            elif current_trip is not None:
+                current_trip['gps_points'].append(gps_point)
+                
+                if not ignition_on:
+                    current_trip['last_ignition_off_time'] = gps_point.entry_time
+                else:
+                    current_trip['last_ignition_off_time'] = None
+        
+        # Check if current trip should end (ignition off for more than 30 minutes)
+        if current_trip is not None:
+            if current_trip['last_ignition_off_time']:
+                time_since_ignition_off = now - current_trip['last_ignition_off_time']
+                if time_since_ignition_off.total_seconds() > 30 * 60:  # 30 minutes
+                    # End current trip
+                    trips.append(current_trip)
+                    current_trip = None
+            else:
+                # Trip is still ongoing, include it
+                trips.append(current_trip)
+        
+        # Process each completed trip
+        processed_trips = []
+        total_distance = 0.0
+        total_duration = 0.0
+        
+        for trip in trips:
+            if len(trip['gps_points']) < 2:
+                continue
+                
+            gps_points = trip['gps_points']
+            
+            # Calculate trip metrics
+            trip_distance = 0.0
+            speeds = []
+            
+            for i in range(1, len(gps_points)):
+                prev_point = gps_points[i-1]
+                curr_point = gps_points[i]
+                
+                # Calculate distance between points
+                if prev_point.latitude and prev_point.longitude and curr_point.latitude and curr_point.longitude:
+                    try:
+                        point_distance = calculate_distance(
+                            prev_point.latitude, prev_point.longitude,
+                            curr_point.latitude, curr_point.longitude
+                        )
+                        trip_distance += point_distance
+                    except:
+                        pass
+                
+                # Collect speed data
+                if curr_point.speed:
+                    speeds.append(curr_point.speed)
+            
+            # Calculate duration
+            end_time = trip['last_ignition_off_time'] or gps_points[-1].entry_time
+            duration = (end_time - trip['start_time']).total_seconds() / 60  # minutes
+            
+            # Calculate average and max speed
+            avg_speed = sum(speeds) / len(speeds) if speeds else 0.0
+            max_speed = max(speeds) if speeds else 0.0
+            
+            # Get alerts during trip
+            trip_alerts = AlertsLog.objects.filter(
+                deviceTag=device_tag,
+                timestamp__gte=trip['start_time'],
+                timestamp__lte=end_time
+            ).values('type', 'status', 'timestamp')
+            
+            # End location
+            last_point = gps_points[-1]
+            end_location = {
+                'latitude': last_point.latitude,
+                'longitude': last_point.longitude,
+                'address': f"{last_point.latitude}, {last_point.longitude}"
+            }
+            
+            processed_trip = {
+                'trip_id': trip['trip_id'],
+                'start_time': trip['start_time'],
+                'end_time': end_time,
+                'duration_minutes': round(duration, 2),
+                'distance_km': round(trip_distance, 2),
+                'average_speed_kmh': round(avg_speed, 2),
+                'max_speed_kmh': round(max_speed, 2),
+                'start_location': trip['start_location'],
+                'end_location': end_location,
+                'alerts': list(trip_alerts),
+                'total_data_points': len(gps_points)
+            }
+            
+            processed_trips.append(processed_trip)
+            total_distance += trip_distance
+            total_duration += duration
+            trip_id += 1
+        
+        # Prepare response
+        response_data = {
+            'device_tag_id': int(device_tag_id),
+            'vehicle_reg_no': device_tag.vehicle_reg_no,
+            'query_start_time': start_dt,
+            'query_end_time': end_dt,
+            'total_trips': len(processed_trips),
+            'total_distance_km': round(total_distance, 2),
+            'total_duration_minutes': round(total_duration, 2),
+            'trips': processed_trips
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred while retrieving trip details: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    

@@ -689,3 +689,26 @@ class AlertsLogSerializer(SanitizingModelSerializer):
         model = AlertsLog
         fields = '__all__'
 
+class TripDetailSerializer(serializers.Serializer):
+    trip_id = serializers.IntegerField()
+    start_time = serializers.DateTimeField()
+    end_time = serializers.DateTimeField()
+    duration_minutes = serializers.FloatField()
+    distance_km = serializers.FloatField()
+    average_speed_kmh = serializers.FloatField()
+    max_speed_kmh = serializers.FloatField()
+    start_location = serializers.DictField()
+    end_location = serializers.DictField()
+    alerts = serializers.ListField()
+    total_data_points = serializers.IntegerField()
+
+class TripListResponseSerializer(serializers.Serializer):
+    device_tag_id = serializers.IntegerField()
+    vehicle_reg_no = serializers.CharField()
+    query_start_time = serializers.DateTimeField()
+    query_end_time = serializers.DateTimeField()
+    total_trips = serializers.IntegerField()
+    total_distance_km = serializers.FloatField()
+    total_duration_minutes = serializers.FloatField()
+    trips = TripDetailSerializer(many=True)
+

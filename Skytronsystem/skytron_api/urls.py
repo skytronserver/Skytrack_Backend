@@ -142,6 +142,10 @@ urlpatterns = [
     path('EM/edit_EMteam/', edit_EM_team, name='edit_EM_team'),
     path('EM/get_EMteam/', get_EM_team, name='get_EM_team'),
     path('EM/list_EMteam/', list_EM_team, name='list_EM_team'),
+    
+    # Activated Device List
+    path('device/activated_device_list/', activated_device_list, name='activated_device_list'),
+
     path('EM/DEx/getPendingCallList/', DEx_getPendingCallList, name='DEx_getPendingCallList'),
     path('EM/DEx/getLiveCallList/', DEx_getLiveCallList, name='DEx_getLiveCallList'),
     path('EM/DEx/replyCall/', DEx_replyCall, name='DEx_replyCall'),
@@ -295,6 +299,9 @@ urlpatterns = [
     path('sell/mark_device_defective/', MarkDeviceDefective, name='mark_device_defective'),
     path('sell/return_to_manufacturer/', ReturnToDeviceManufacturer, name='return_to_manufacturer'),
     
+    # Dealer eSIM status check
+    path('dealer/check_esim_status/', dealer_check_esim_status, name='dealer_check_esim_status'),
+    
     #Devicetag
     path('tag/TagDevice2Vehicle/', TagDevice2Vehicle, name='TagDevice2Vehicle'),
     path('tag/cancelTagDevice2Vehicle/', deleteTagDevice2Vehicle, name='cancelTagDevice2Vehicle'),
@@ -346,7 +353,11 @@ urlpatterns = [
     # Debug endpoint for checking file paths
     path('debug/check_file_paths/', check_file_paths, name='check_file_paths'),
     
-    
+    # State Admin Reports APIs
+    path('stateadmin/reports/approved-models/', state_admin_approved_models_report, name='state_admin_approved_models_report'),
+    path('stateadmin/reports/approved-cops/', state_admin_approved_cops_report, name='state_admin_approved_cops_report'),
+    path('stateadmin/reports/combined-approval/', state_admin_combined_approval_report, name='state_admin_combined_approval_report'),
+    path('device-trip-details/', get_device_trip_details, name='get_device_trip_details'),
 
 ]  
 
