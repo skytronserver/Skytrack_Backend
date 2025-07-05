@@ -95,9 +95,7 @@ from django.utils.timezone import now
 #sudo apt-get install wkhtmltopdf
 #sudo apt-get update
 #sudo apt-get install libreoffice
-
 eeeeeee=""
-
 import io
 from docx import Document
 import pdfkit
@@ -1801,7 +1799,7 @@ def create_VehicleOwner(request ):
 
             except Exception as e:
                 user.delete()
-                return Response({'error': "Unable to process request."+eeeeeee}, status=400)
+                return Response({'error': "Unable to process request."+str(e)}, status=400)
             retailer.users.add(user) 
             send_usercreation_otp(user,new_password,'Vehicle Owner ')
              
@@ -1810,7 +1808,7 @@ def create_VehicleOwner(request ):
             return Response(error, status=400)        
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
+        return Response({'error': "Unable to process request."+str(e)}, status=400)
 
 
 
@@ -8253,33 +8251,104 @@ def homepage_Manufacturer(request ):
         filters = {}
         # Add ID filter if provided
         if profile:
-            mod=DeviceModel.objects.filter(created_by=profile.users.last())
-            deler=Retailer.objects.filter(manufacturer =profile)
-            stock=DeviceStock.objects.filter(created_by=profile.users.last()) 
+            from django.db.models import Sum, Q, Count, Avg
+            from datetime import datetime, timedelta
+            from django.utils import timezone
+            
+            # Current time for calculations
+            now = timezone.now()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            week_ago = now - timedelta(days=7)
+            
+            # Get manufacturer profile user
+            manufacturer_user = profile.users.last()
+            
+            # Basic manufacturer statistics
+            mod = DeviceModel.objects.filter(created_by=manufacturer_user)
+            dealers = Retailer.objects.filter(manufacturer=profile)
+            stock = DeviceStock.objects.filter(created_by=manufacturer_user)
+            
+            # Calculate activations (devices that are actually activated/tagged)
+            total_activations = DeviceTag.objects.filter(
+                device__created_by=manufacturer_user,
+                status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed']
+            ).count()
+            
+            # Calculate eSIM statistics
+            esim_activation_requests = stock.filter(
+                esim_status='ESIM_Active_Req_Sent'
+            ).count()
+            
+            # Calculate renewal requests based on eSIM validity dates
+            one_year_renewals = stock.filter(
+                esim_validity__lte=now + timedelta(days=365),
+                esim_validity__gt=now + timedelta(days=180)
+            ).count()
+            
+            two_year_renewals = stock.filter(
+                esim_validity__lte=now + timedelta(days=730),
+                esim_validity__gt=now + timedelta(days=365)
+            ).count()
+            
+            # Calculate device connectivity statistics
+            # Get all devices manufactured by this manufacturer
+            manufacturer_devices = DeviceTag.objects.filter(device__created_by=manufacturer_user)
+            activated_devices = manufacturer_devices.filter(status="Device_Active")
+            
+            online_devices = 0
+            offline_today = 0
+            offline_7day = 0
+            offline_30day = 0
+            expired_devices = 0
+            
+            for device in activated_devices:
+                latest_gps = GPSData.objects.filter(device_tag=device).order_by('-entry_time').first()
+                if latest_gps:
+                    # Check if device is online (data received within last 30 minutes)
+                    if latest_gps.entry_time >= now - timedelta(minutes=30):
+                        online_devices += 1
+                    
+                    # Check offline periods
+                    if latest_gps.entry_time < today_start:
+                        offline_today += 1
+                    if latest_gps.entry_time < week_ago:
+                        offline_7day += 1
+                    if latest_gps.entry_time < now - timedelta(days=30):
+                        offline_30day += 1
+                else:
+                    # No GPS data means offline for all periods
+                    offline_today += 1
+                    offline_7day += 1
+                    offline_30day += 1
+                
+                # Check for expired devices (based on eSIM validity)
+                if device.device:
+                    device_stock = DeviceStock.objects.filter(
+                        device_esn=device.device.device_esn
+                    ).first()
+                    if device_stock and device_stock.esim_validity < now:
+                        expired_devices += 1
+            
             count_dict = {
-                 
-'Total_Model':mod.count(),
-'Total_M2M_linked':profile.esim_provider.count() ,
-
-'Total_Dealer':deler.count(),
-'Total_Stock_Created':stock.count(),	
-'Total_Stock_Allocated':stock.filter(assigned__isnull=False).count(),	
-'Total_Activation':0,
-
-'Total_esim_activation_request':0,
-'Total_1year_renewal_request':0,
-'Total_2year_renewal_request':0,
-
-
-'Total_Online_Device':0,
-'Total_Offline_Device_today':0,
-'Total_Offline_Device_7day':0,
-'Total_Offline_Device_30day':0,
-
-'Total_expired_device':0
-
-
-             
+                'Total_Model': mod.count(),
+                'Total_M2M_linked': profile.esim_provider.count(),
+                
+                'Total_Dealer': dealers.count(),
+                'Total_Stock_Created': stock.count(),
+                'Total_Stock_Allocated': stock.filter(assigned__isnull=False).count(),
+                'Total_Activation': total_activations,
+                
+                'Total_esim_activation_request': esim_activation_requests,
+                'Total_1year_renewal_request': one_year_renewals,
+                'Total_2year_renewal_request': two_year_renewals,
+                
+                'Total_Online_Device': online_devices,
+                'Total_Offline_Device_today': offline_today,
+                'Total_Offline_Device_7day': offline_7day,
+                'Total_Offline_Device_30day': offline_30day,
+                
+                'Total_expired_device': expired_devices
             }
             # Return the serialized data as JSON response
             return Response(count_dict)
@@ -8317,33 +8386,135 @@ def homepage_DTO(request ):
         filters = {}
         # Add ID filter if provided
         if profile:
+            from django.db.models import Sum, Q, Count, Avg
+            from datetime import datetime, timedelta
+            from django.utils import timezone
+            
+            # Current time for calculations
+            now = timezone.now()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            week_ago = now - timedelta(days=7)
+            
+            # Get all devices in DTO's jurisdiction (state/district)
+            # For DTO, we filter by devices in their state and optionally district
+            jurisdiction_filter = Q()
+            
+            # Filter by state
+            if hasattr(profile, 'state') and profile.state:
+                # Get all device tags in this state
+                devices_in_state = DeviceTag.objects.filter(
+                    device__dealer__manufacturer__state=profile.state
+                )
+                
+                # If DTO has specific district, filter further
+                if hasattr(profile, 'district') and profile.district:
+                    devices_in_state = devices_in_state.filter(
+                        device__dealer__district__district=profile.district
+                    )
+            else:
+                # Fallback: get all devices (for testing)
+                devices_in_state = DeviceTag.objects.all()
+            
+            # Calculate device and vehicle statistics
+            total_devices_activated = devices_in_state.filter(
+                status="Device_Active"
+            ).count()
+            
+            total_vehicles = devices_in_state.count()
+            
+            # Calculate online/offline device statistics
+            online_devices = 0
+            offline_today = 0
+            offline_7day = 0
+            offline_30day = 0
+            
+            activated_devices = devices_in_state.filter(status="Device_Active")
+            
+            for device in activated_devices:
+                latest_gps = GPSData.objects.filter(device_tag=device).order_by('-entry_time').first()
+                if latest_gps:
+                    # Check if device is online (data received within last 30 minutes)
+                    if latest_gps.entry_time >= now - timedelta(minutes=30):
+                        online_devices += 1
+                    
+                    # Check offline periods
+                    if latest_gps.entry_time < today_start:
+                        offline_today += 1
+                    if latest_gps.entry_time < week_ago:
+                        offline_7day += 1
+                    if latest_gps.entry_time < now - timedelta(days=30):
+                        offline_30day += 1
+                else:
+                    # No GPS data means offline for all periods
+                    offline_today += 1
+                    offline_7day += 1
+                    offline_30day += 1
+            
+            # Calculate alert statistics for the jurisdiction
+            total_alerts = AlertsLog.objects.filter(
+                deviceTag__in=devices_in_state
+            ).count()
+            
+            alerts_month = AlertsLog.objects.filter(
+                deviceTag__in=devices_in_state,
+                timestamp__gte=month_start
+            ).count()
+            
+            alerts_today = AlertsLog.objects.filter(
+                deviceTag__in=devices_in_state,
+                timestamp__gte=today_start
+            ).count()
+            
+            # Calculate activation statistics (device tagging/activation)
+            total_activations = devices_in_state.filter(
+                status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed']
+            ).count()
+            
+            activations_month = devices_in_state.filter(
+                status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed'],
+                tagged__gte=month_start
+            ).count()
+            
+            activations_today = devices_in_state.filter(
+                status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed'],
+                tagged__gte=today_start
+            ).count()
+            
+            # Calculate SOS call statistics for the jurisdiction
+            total_sos = EMCall.objects.filter(
+                device__in=devices_in_state
+            ).count()
+            
+            genuine_sos = EMCall.objects.filter(
+                device__in=devices_in_state,
+                status__in=['closed', 'field_ex_arrived']
+            ).count()
+            
+            fake_sos = EMCall.objects.filter(
+                device__in=devices_in_state,
+                status='closed_false_allert'
+            ).count()
+            
             count_dict = {
-                 
-
-
-'Total_Device_Activated':0,
-'Total_Vehicles':0,
-'Total_Online_Device':0,
-'Total_Offline_Device_today':0,
-'Total_Offline_Device_7day':0,
-'Total_Offline_Device_30day':0,
-
-  
-
-'Total_Alert':0,
-'Alert_month':0,
-'Alert_today':0,
-
-'Total_activations':0,
-'Activations_month':0,
-'Activations_today':0,
- 
-'Total_SOS_calls':0,
-'Genuine_calls':0,
-'Fake_calls':0
-
-
-             
+                'Total_Device_Activated': total_devices_activated,
+                'Total_Vehicles': total_vehicles,
+                'Total_Online_Device': online_devices,
+                'Total_Offline_Device_today': offline_today,
+                'Total_Offline_Device_7day': offline_7day,
+                'Total_Offline_Device_30day': offline_30day,
+                
+                'Total_Alert': total_alerts,
+                'Alert_month': alerts_month,
+                'Alert_today': alerts_today,
+                
+                'Total_activations': total_activations,
+                'Activations_month': activations_month,
+                'Activations_today': activations_today,
+                
+                'Total_SOS_calls': total_sos,
+                'Genuine_calls': genuine_sos,
+                'Fake_calls': fake_sos
             }
             # Return the serialized data as JSON response
             return Response(count_dict)
@@ -8351,7 +8522,7 @@ def homepage_DTO(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
+        return Response({'error': f"Unable to process request: {str(e)}"}, status=400)
 
 
 
@@ -8377,40 +8548,155 @@ def homepage_VehicleOwner(request ):
         filters = {}
         # Add ID filter if provided
         if profile:
+            from django.db.models import Sum, Q, Count, Avg
+            from datetime import datetime, timedelta
+            from django.utils import timezone
+            
+            # Get all devices owned by this vehicle owner
+            owned_devices = DeviceTag.objects.filter(vehicle_owner=profile)
+            activated_devices = owned_devices.filter(status="Device_Active")
+            
+            # Current time for calculations
+            now = timezone.now()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            week_ago = now - timedelta(days=7)
+            
+            # Calculate vehicle movement status based on latest GPS data
+            moving_count = 0
+            stopped_count = 0
+            idle_count = 0
+            online_count = 0
+            
+            for device in activated_devices:
+                # Get latest GPS data for this device
+                latest_gps = GPSData.objects.filter(device_tag=device).order_by('-entry_time').first()
+                if latest_gps:
+                    # Check if device is online (data received within last 30 minutes)
+                    if latest_gps.entry_time >= now - timedelta(minutes=30):
+                        online_count += 1
+                        
+                        # Determine movement status
+                        if latest_gps.speed > 5:  # Moving if speed > 5 km/h
+                            moving_count += 1
+                        elif latest_gps.ignition_status == "1":  # Idle if ignition on but not moving
+                            idle_count += 1
+                        else:  # Stopped if ignition off
+                            stopped_count += 1
+                    else:
+                        stopped_count += 1  # Consider offline devices as stopped
+                else:
+                    stopped_count += 1  # No GPS data means stopped
+            
+            # Calculate offline devices for different periods
+            offline_today = activated_devices.count() - GPSData.objects.filter(
+                device_tag__in=activated_devices,
+                entry_time__gte=today_start
+            ).values('device_tag').distinct().count()
+            
+            offline_7day = activated_devices.count() - GPSData.objects.filter(
+                device_tag__in=activated_devices,
+                entry_time__gte=week_ago
+            ).values('device_tag').distinct().count()
+            
+            offline_30day = activated_devices.count() - GPSData.objects.filter(
+                device_tag__in=activated_devices,
+                entry_time__gte=now - timedelta(days=30)
+            ).values('device_tag').distinct().count()
+            
+            # Calculate total travel distance from odometer
+            total_distance = 0
+            for device in activated_devices:
+                latest_gps = GPSData.objects.filter(device_tag=device).order_by('-entry_time').first()
+                if latest_gps and latest_gps.odometer:
+                    total_distance += latest_gps.odometer
+            
+            # Calculate alert statistics
+            total_alerts = AlertsLog.objects.filter(deviceTag__in=owned_devices).count()
+            alerts_month = AlertsLog.objects.filter(
+                deviceTag__in=owned_devices,
+                timestamp__gte=month_start
+            ).count()
+            alerts_today = AlertsLog.objects.filter(
+                deviceTag__in=owned_devices,
+                timestamp__gte=today_start
+            ).count()
+            
+            # Calculate specific alert types
+            harsh_braking = AlertsLog.objects.filter(
+                deviceTag__in=owned_devices,
+                type='HarshBreak'
+            ).count()
+            
+            harsh_turn = AlertsLog.objects.filter(
+                deviceTag__in=owned_devices,
+                type='HarshTurn'
+            ).count()
+            
+            overspeeding = AlertsLog.objects.filter(
+                deviceTag__in=owned_devices,
+                type='OverSpeed'
+            ).count()
+            
+            # Calculate SOS calls
+            total_sos = EMCall.objects.filter(device__in=owned_devices).count()
+            genuine_sos = EMCall.objects.filter(
+                device__in=owned_devices,
+                status__in=['closed', 'field_ex_arrived']
+            ).count()
+            fake_sos = EMCall.objects.filter(
+                device__in=owned_devices,
+                status='closed_false_allert'
+            ).count()
+            
+            # Get recent alerts for alert list
+            recent_alerts = AlertsLog.objects.filter(
+                deviceTag__in=owned_devices
+            ).select_related('gps_ref', 'deviceTag').order_by('-timestamp')[:10]
+            
+            alert_list = []
+            for alert in recent_alerts:
+                alert_data = {
+                    'type': alert.get_type_display() if alert.type else 'Unknown',
+                    'id': alert.id,
+                    'TriggerTime': alert.timestamp.isoformat(),
+                    'Status': alert.status if alert.status else 'Active',
+                    'VehicleRegNo': alert.deviceTag.vehicle_reg_no if alert.deviceTag else 'Unknown',
+                    'TriggerLocation': {
+                        'latitude': float(alert.gps_ref.latitude) if alert.gps_ref else 0,
+                        'latitude_dir': alert.gps_ref.latitude_dir if alert.gps_ref else 'N',
+                        'longitude': float(alert.gps_ref.longitude) if alert.gps_ref else 0,
+                        'longitude_dir': alert.gps_ref.longitude_dir if alert.gps_ref else 'E'
+                    }
+                }
+                alert_list.append(alert_data)
+            
             count_dict = {
-                 
-
-
-'Total_Vehicles':DeviceTag.objects.filter(vehicle_owner=profile).count(),
-'Total_Device_Activated':DeviceTag.objects.filter(vehicle_owner=profile,status="Owner_Final_OTP_Verified").count(),
-'Total_Moving_Vehicles':DeviceTag.objects.filter(vehicle_owner=profile,status="Owner_Final_OTP_Verified").count(),
-'Total_Stopped_Vehicles':DeviceTag.objects.filter(vehicle_owner=profile,status="Owner_Final_OTP_Verified").count(),
-'Total_Idle_Vehicles':DeviceTag.objects.filter(vehicle_owner=profile,status="Owner_Final_OTP_Verified").count(),
-
-'Total_Online_Device':DeviceTag.objects.filter(vehicle_owner=profile,status="Owner_Final_OTP_Verified").count(),
-'Total_Offline_Device_today':0,
-'Total_Offline_Device_7day':0,
-'Total_Offline_Device_30day':0,
-
-'Total_Travel_Distance_km':0,
-
-
-
-'Total_Alert':1,
-'Alert_month':1,
-'Alert_today':1,
-
-'Total_Harshbraking':0,
-'Total_suddenturn':0,
-'Total_overspeeding':0,
-
-'Total_SOS_calls':0,
-'Genuine_calls':0,
-'Fake_calls':0,
-'Alert_list':[{'type':'Box Tampering','id':1,'TriggerTime':"2024-08-26T05:37:20.752645Z",'Status':'Active','TriggerLocation':{'latitude':26.117945,'latitude_dir':"N",'longitude':91.614571,'longitude_dir':"E"}}]
-
-
-             
+                'Total_Vehicles': owned_devices.count(),
+                'Total_Device_Activated': activated_devices.count(),
+                'Total_Moving_Vehicles': moving_count,
+                'Total_Stopped_Vehicles': stopped_count,
+                'Total_Idle_Vehicles': idle_count,
+                
+                'Total_Online_Device': online_count,
+                'Total_Offline_Device_today': offline_today,
+                'Total_Offline_Device_7day': offline_7day,
+                'Total_Offline_Device_30day': offline_30day,
+                
+                'Total_Travel_Distance_km': round(total_distance, 2),
+                
+                'Total_Alert': total_alerts,
+                'Alert_month': alerts_month,
+                'Alert_today': alerts_today,
+                
+                'Total_Harshbraking': harsh_braking,
+                'Total_suddenturn': harsh_turn,
+                'Total_overspeeding': overspeeding,
+                
+                'Total_SOS_calls': total_sos,
+                'Genuine_calls': genuine_sos,
+                'Fake_calls': fake_sos,
+                'Alert_list': alert_list
             }
             # Return the serialized data as JSON response
             return Response(count_dict)
@@ -8418,7 +8704,7 @@ def homepage_VehicleOwner(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
+        return Response({'error': f"Unable to process request: {str(e)}"}, status=400)
 
 
 
@@ -8522,27 +8808,115 @@ def homepage_Dealer(request ):
         filters = {}
         # Add ID filter if provided
         if profile:
+            from django.db.models import Sum, Q, Count, Avg
+            from datetime import datetime, timedelta
+            from django.utils import timezone
+            
+            # Current time for calculations
+            now = timezone.now()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            week_ago = now - timedelta(days=7)
+            
+            # Get all device stock assigned to this dealer
+            dealer_devices = DeviceStock.objects.filter(dealer=profile)
+            
+            # Calculate fitment statistics
+            total_fitments = DeviceTag.objects.filter(
+                device__dealer=profile,
+                status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed']
+            ).count()
+            
+            fitments_month = DeviceTag.objects.filter(
+                device__dealer=profile,
+                tagged__gte=month_start,
+                status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed']
+            ).count()
+            
+            fitments_today = DeviceTag.objects.filter(
+                device__dealer=profile,
+                tagged__gte=today_start,
+                status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed']
+            ).count()
+            
+            # Calculate device stock statistics
+            total_assigned = dealer_devices.count()
+            total_returned = dealer_devices.filter(stock_status='Returned_to_manufacturer').count()
+            current_stock = dealer_devices.filter(stock_status='Available_for_fitting').count()
+            current_faulty = dealer_devices.filter(stock_status='Device_Defective').count()
+            available_free = dealer_devices.filter(
+                stock_status='Available_for_fitting'
+            ).exclude(
+                devicetag__isnull=False  # Exclude devices that are already tagged
+            ).count()
+            
+            # Calculate eSIM activation requests
+            esim_activation_requests = dealer_devices.filter(
+                esim_status='ESIM_Active_Req_Sent'
+            ).count()
+            
+            # Calculate renewal requests (based on eSIM validity - these are approximations)
+            one_year_renewals = dealer_devices.filter(
+                esim_validity__lte=now + timedelta(days=365),
+                esim_validity__gt=now + timedelta(days=180)
+            ).count()
+            
+            two_year_renewals = dealer_devices.filter(
+                esim_validity__lte=now + timedelta(days=730),
+                esim_validity__gt=now + timedelta(days=365)
+            ).count()
+            
+            # Calculate online/offline device statistics
+            # Get devices that are tagged (fitted) by this dealer
+            tagged_devices = DeviceTag.objects.filter(device__dealer=profile)
+            
+            # Online devices (with GPS data in last 30 minutes)
+            online_now = 0
+            online_today = 0
+            offline_7days = 0
+            offline_30days = 0
+            
+            for device in tagged_devices:
+                latest_gps = GPSData.objects.filter(device_tag=device).order_by('-entry_time').first()
+                if latest_gps:
+                    # Check if online now (last 30 minutes)
+                    if latest_gps.entry_time >= now - timedelta(minutes=30):
+                        online_now += 1
+                    
+                    # Check if online today
+                    if latest_gps.entry_time >= today_start:
+                        online_today += 1
+                    
+                    # Check if offline for 7 days
+                    if latest_gps.entry_time < now - timedelta(days=7):
+                        offline_7days += 1
+                    
+                    # Check if offline for 30 days
+                    if latest_gps.entry_time < now - timedelta(days=30):
+                        offline_30days += 1
+                else:
+                    # No GPS data means offline
+                    offline_7days += 1
+                    offline_30days += 1
+            
             count_dict = {
-                 
-
-'Total_Fitment_done':0,
-'Fitment_month':0,
-'Fitment_today':0,
-
-'Total_Device_Assigned':0,
-'Total_Device_Returned':0,
-'Current_Device_stock':0,
-'Current_Device_faulty':0,
-'Available_Free_Device':0,
-'Total_esim_activation_request':0,
-'Total_1_year_renewal_request':0,
-'Total_2_year_renewal_request':0,
-
-'Total_Online_now':0,
-'Total_Online_today':0,
-'Total_Offline_7_days':0,
-'Total_Offline_30_days':0
-             
+                'Total_Fitment_done': total_fitments,
+                'Fitment_month': fitments_month,
+                'Fitment_today': fitments_today,
+                
+                'Total_Device_Assigned': total_assigned,
+                'Total_Device_Returned': total_returned,
+                'Current_Device_stock': current_stock,
+                'Current_Device_faulty': current_faulty,
+                'Available_Free_Device': available_free,
+                'Total_esim_activation_request': esim_activation_requests,
+                'Total_1_year_renewal_request': one_year_renewals,
+                'Total_2_year_renewal_request': two_year_renewals,
+                
+                'Total_Online_now': online_now,
+                'Total_Online_today': online_today,
+                'Total_Offline_7_days': offline_7days,
+                'Total_Offline_30_days': offline_30days
             }
             # Return the serialized data as JSON response
             return Response(count_dict)
@@ -8550,7 +8924,7 @@ def homepage_Dealer(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
+        return Response({'error': f"Unable to process request: {str(e)}"}, status=400)
 
 
 @api_view(['GET'])
@@ -9273,11 +9647,14 @@ def create_device_model(request ):
         uploaded_file = request.FILES.get('tac_doc_path')
         if uploaded_file:
             # Save the file to a specific location
-            file_path = 'fileuploads/tac_docs/' + str(device_model_instance.id) + '_' + uploaded_file.name
+            
+            file_path = save_file(request, 'tac_doc_path', 'fileuploads/tac_docs')  
+            
+            """file_path = 'fileuploads/tac_docs/' + str(device_model_instance.id) + '_' + uploaded_file.name
             with open(file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
-            stateadmin=StateAdmin.objects.last()
+            stateadmin=StateAdmin.objects.last()"""
             
             # Update the tac_doc_path field in the DeviceModel instance
             device_model_instance.tac_doc_path = file_path
