@@ -436,11 +436,11 @@ class eSimProvider(models.Model):
         ]
     status = models.CharField(max_length=20, choices=status_choices)
          
-class Retailer(models.Model):
+class Dealer(models.Model):
     objects = SafeCreateManager()
     company_name = models.CharField(max_length=255, verbose_name="Company Name")
     gstnnumber = models.CharField(max_length=20, blank=True, null=True)
-    users = models.ManyToManyField('User', related_name='Retailer_user')
+    users = models.ManyToManyField('User', related_name='Dealer_user')
     created = models.DateField(auto_now_add=True)
     expirydate = models.DateField(auto_now_add=True)
     gstno = models.CharField(max_length=255, blank=True, null=True)
@@ -667,7 +667,7 @@ class Device(models.Model):
     status_choices = [
         ('Created', 'Created'),
         ('FactoryTestOK', 'FactoryTestOK'),
-        ('ShipedtoRetailer', 'ShipedtoRetailer'),
+        ('ShipedtoDealer', 'ShipedtoDealer'),
         ('Sold', 'Sold'),
         ('Installed', 'Installed'),
         ('Active', 'Active'),
@@ -821,7 +821,7 @@ class DeviceStock(models.Model):
         ('Returned_to_manufacturer', 'Returned to Manufacturer'),
     ]
  
-    dealer =  models.ForeignKey(Retailer, on_delete=models.CASCADE,null=True,blank=True)
+    dealer =  models.ForeignKey(Dealer, on_delete=models.CASCADE,null=True,blank=True)
     assigned_by = models.ForeignKey(User, on_delete=models.CASCADE,null=True,blank=True)   
     assigned = models.DateTimeField(null=True,blank=True)
     shipping_remark = models.TextField(null=True,blank=True)
@@ -871,7 +871,7 @@ class StockAssignment(models.Model):
     ]
 
     device = models.ForeignKey(DeviceStock, on_delete=models.CASCADE)
-    dealer =  models.ForeignKey(Retailer, on_delete=models.CASCADE)
+    dealer =  models.ForeignKey(Dealer, on_delete=models.CASCADE)
     assigned_by = models.ForeignKey(User, on_delete=models.CASCADE)   
     assigned = models.DateTimeField()
     shipping_remark = models.TextField()
@@ -1229,7 +1229,7 @@ class OTPRequest(models.Model):
 class esimActivationRequest(models.Model):
     objects = SafeCreateManager()
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="creates_at")
-    ceated_by=models.ForeignKey(Retailer, on_delete=models.CASCADE)
+    ceated_by=models.ForeignKey(Dealer, on_delete=models.CASCADE)
     eSim_provider=models.ForeignKey(eSimProvider, on_delete=models.CASCADE)
     valid_from = models.DateTimeField(null=True)
     valid_upto = models.DateTimeField(null=True)
@@ -1243,7 +1243,7 @@ class esimActivationRequest(models.Model):
 class EditRequest(models.Model):
     objects = SafeCreateManager()
     time = models.DateTimeField(auto_now_add=True, verbose_name="Time")
-    type = models.CharField(max_length=20, choices=[("owner", "Owner"), ("device", "Device"), ("vehicle", "Vehicle"), ("devicemodel", "Device Model"), ("dealer", "Retailer"), ("manufacturer", "Manufacturer")], verbose_name="Type")
+    type = models.CharField(max_length=20, choices=[("owner", "Owner"), ("device", "Device"), ("vehicle", "Vehicle"), ("devicemodel", "Device Model"), ("dealer", "Dealer"), ("manufacturer", "Manufacturer")], verbose_name="Type")
     from_user = models.IntegerField(verbose_name="From User")
     to_user = models.IntegerField(verbose_name="To User")
     otp = models.IntegerField(verbose_name="OTP")

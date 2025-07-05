@@ -1914,7 +1914,7 @@ def delete_dealer(request, dealer_id):
      
     try:
         # Get the Manufacturer instance or return a 404 response
-        dealer = get_object_or_404(Retailer, id=dealer_id)
+        dealer = get_object_or_404(Dealer, id=dealer_id)
 
         # Delete the associated user
         user =dealer.users.first()  # Assuming there is only one associated user
@@ -2468,7 +2468,7 @@ def update_dealer(request ):
     
     try:
         id = request.data.get('dealer_id')
-        dealer = Retailer.objects.filter(id=id).last()
+        dealer = Dealer.objects.filter(id=id).last()
         if not dealer:
             return Response({'error': "Invalid dealer id"}, status=400)
         if dealer.createdby != request.user:
@@ -2537,7 +2537,7 @@ def update_dealer(request ):
         dealer.user.save()
         dealer.save()
         send_usercreation_otp(dealer.user, new_password, 'Dealer')
-        return Response(RetailerSerializer(dealer).data)
+        return Response(DealerSerializer(dealer).data)
 
 
     except Exception as e:
@@ -2594,7 +2594,7 @@ def create_dealer(request ):
                 
 
 
-                dealer ,error= Retailer.objects.safe_create(
+                dealer ,error= Dealer.objects.safe_create(
                     company_name=company_name,
                     gstnnumber=gstnnumber,
                     created=created,
@@ -2620,7 +2620,7 @@ def create_dealer(request ):
                 return Response({'error': "Unable to process request."+eeeeeee}, status=400) 
             dealer.users.add(user)
             send_usercreation_otp(user,new_password,'Dealer ')             
-            return Response(RetailerSerializer(dealer).data)
+            return Response(DealerSerializer(dealer).data)
         else:
             return Response(error, status=400)
 
@@ -2657,7 +2657,7 @@ def filter_dealer(request ):
         district_filter = request.data.get('district', '')
 
         # Start with base query including related fields for better performance
-        manufacturers = Retailer.objects.select_related('manufacturer__state', 'district__state')
+        manufacturers = Dealer.objects.select_related('manufacturer__state', 'district__state')
         
         # Apply filters based on user role and input parameters
         if uo:  # Device manufacturer user
@@ -2690,7 +2690,7 @@ def filter_dealer(request ):
         manufacturers = manufacturers.distinct()
 
         # Serialize the queryset
-        dealer_serializer = RetailerSerializer(manufacturers, many=True)
+        dealer_serializer = DealerSerializer(manufacturers, many=True)
 
         # Return the serialized data as JSON response
         return Response(dealer_serializer.data)
@@ -7024,7 +7024,7 @@ def SellFitDevice(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
-def StockAssignToRetailer(request ): 
+def StockAssignToDealer(request ): 
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -7042,7 +7042,7 @@ def StockAssignToRetailer(request ):
     stock_status = "Available_for_fitting"
     dealer_id =  data.get('dealer') 
     device_ids = ast.literal_eval(str(data.get('device')))
-    dealer = Retailer.objects.filter(id=dealer_id).last()#,manufacturer=man
+    dealer = Dealer.objects.filter(id=dealer_id).last()#,manufacturer=man
     if not dealer:
         return JsonResponse({'error':"invalid dealer" }, status=400)
     
@@ -7075,7 +7075,7 @@ def StockAssignToRetailer(request ):
         return JsonResponse({'data': stock_assignments,'error':error  , 'message': 'Stock Partially assigned.'}, status=201)
     
     
-'''def StockAssignToRetailer3333(request ): 
+'''def StockAssignToDealer3333(request ): 
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -8197,7 +8197,7 @@ def homepage(request ):
             count_dict = {
             'Manufacture': Manufacturer.objects.count(),
             'eSimProvider': eSimProvider.objects.count(),
-            'Retailer': Retailer.objects.count(),
+            'Dealer': Dealer.objects.count(),
             'VehicleOwner': VehicleOwner.objects.count(),
             'dto_rto': dto_rto.objects.count(),
             'SOS_ex': EM_ex.objects.count(),
@@ -8462,7 +8462,7 @@ def homepage_Manufacturer(request ):
             
             # Basic manufacturer statistics
             mod = DeviceModel.objects.filter(created_by=manufacturer_user)
-            dealers = Retailer.objects.filter(manufacturer=profile)
+            dealers = Dealer.objects.filter(manufacturer=profile)
             stock = DeviceStock.objects.filter(created_by=manufacturer_user)
             
             # Calculate activations (devices that are actually activated/tagged)
@@ -9378,7 +9378,7 @@ def homepage_stateAdmin(request ):
         if profile:
             count_dict = {
 
-                'Total_Dealer_available':Retailer.objects.count(),
+                'Total_Dealer_available':Dealer.objects.count(),
                 'Total_Manufacture_available':Manufacturer.objects.filter(state=profile.state).count(),
                 'Total_DTO_available':dto_rto.objects.filter(state=profile.state).count(),
                 'Total_Vehicle_Owner_available':VehicleOwner.objects.count(),
@@ -9451,7 +9451,7 @@ def homepage_user1(request ):
             'manufacturer_admin': Manufacturer.objects.count(),
             'dtorto_admin': dto_rto.objects.count(),
             'eSimProvider': eSimProvider.objects.count(),
-            'Retailer': Retailer.objects.count(),
+            'Dealer': Dealer.objects.count(),
             'VehicleOwner': VehicleOwner.objects.count(),  
             'SOS_ex': EM_ex.objects.count(),
             'SOS_user': EM_ex.objects.count(),
@@ -9484,7 +9484,7 @@ def homepage_user2(request ):
              
             'dtorto_admin': dto_rto.objects.count(),
             'eSimProvider': eSimProvider.objects.count(),
-            'Retailer': Retailer.objects.count(),
+            'Dealer': Dealer.objects.count(),
             'VehicleOwner': VehicleOwner.objects.count(), 
             'SOS_ex': EM_ex.objects.count(),
             'SOS_user': EM_ex.objects.count(),
@@ -9782,7 +9782,7 @@ def get_user_object(user,role):
     if role=="dtorto":
         ret=dto_rto.objects.filter(users=user).last() 
     if role=="dealer":
-        ret=Retailer.objects.filter(users=user).last() 
+        ret=Dealer.objects.filter(users=user).last() 
     if role=="owner":
         ret=VehicleOwner.objects.filter(users=user).last() 
     if role=="esimprovider":
@@ -10322,7 +10322,7 @@ def password_reset(request ):
                 if id_no != prof.idProofno[-4:]:
                     user=None
             elif user.role ==  "dealer":
-                prof=Retailer.objects.filter( 
+                prof=Dealer.objects.filter( 
                 users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
@@ -10340,7 +10340,7 @@ def password_reset(request ):
                 if id_no != prof.idProofno[-4:]:
                     user=None
             elif user.role ==  "filment":
-                prof=Retailer.objects.filter( 
+                prof=Dealer.objects.filter( 
                 users=user, 
                 ).last()
                 if id_no != prof.idProofno[-4:]:
@@ -11652,11 +11652,11 @@ def manufacturer_details(request, manufacturer_id):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def dealer_details(request, dealer_id):
     try:
-        dealer = Retailer.objects.get(pk=dealer_id)
-    except Retailer.DoesNotExist:
-        return Response({'error': 'Retailer not found'}, status=status.HTTP_404_NOT_FOUND)
+        dealer = Dealer.objects.get(pk=dealer_id)
+    except Dealer.DoesNotExist:
+        return Response({'error': 'Dealer not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    serializer = RetailerSerializer(dealer)
+    serializer = DealerSerializer(dealer)
     return Response(serializer.data)
 
 @api_view(['GET'])
@@ -11708,8 +11708,8 @@ def list_dealers(request ):
 
     
     name = request.query_params.get('name', '')
-    dealers = Retailer.objects.filter(name__icontains=name)
-    serializer = RetailerSerializer(dealers, many=True)
+    dealers = Dealer.objects.filter(name__icontains=name)
+    serializer = DealerSerializer(dealers, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
@@ -11746,7 +11746,7 @@ def list_device_models(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def delete_dealer(request, pk):
-    dealer = Retailer.objects.get(pk=pk)
+    dealer = Dealer.objects.get(pk=pk)
     dealer.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -11782,8 +11782,8 @@ def update_manufacturer(request, pk):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def update_dealer(request, pk):
-    dealer = Retailer.objects.get(pk=pk)
-    serializer = RetailerSerializer(dealer, data=request.data)
+    dealer = Dealer.objects.get(pk=pk)
+    serializer = DealerSerializer(dealer, data=request.data)
     if serializer.is_valid():
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -11835,7 +11835,7 @@ def create_dealer(request ):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     
-    serializer = RetailerSerializer(data=request.data)
+    serializer = DealerSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save(createdby=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -12189,7 +12189,7 @@ def StateAdmin_view_all_tagging(request):
             # Filter by dealer
             dealer_id = request.data.get('dealer_id')
             if dealer_id:
-                device_tags = device_tags.filter(tagged_by__retailer_user__id=dealer_id)
+                device_tags = device_tags.filter(tagged_by__dealer_user__id=dealer_id)
             
             # Filter by vehicle make
             vehicle_make = request.data.get('vehicle_make')
