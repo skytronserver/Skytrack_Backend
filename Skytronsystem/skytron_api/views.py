@@ -2900,12 +2900,22 @@ def filter_manufacturers(request ):
         phone_no = request.data.get('phone_no', '')
         address = request.data.get('address', '')
 
-        # Create a dictionary to hold the filter parameters
-        filters = {}
+        # Check user role and apply appropriate filtering
+        user = request.user
+        
+        # Check if user is an eSIM provider
+        esim_provider_obj = get_user_object(user, "esimprovider")
+        
+        # Start with base queryset
+        manufacturers = Manufacturer.objects.all()
+        
+        # If user is an eSIM provider, only show manufacturers assigned to them
+        if esim_provider_obj:
+            manufacturers = manufacturers.filter(esim_provider=esim_provider_obj)
 
         # Add ID filter if provided
-        if manufacturer_id :
-            manufacturers = Manufacturer.objects.filter(
+        if manufacturer_id:
+            manufacturers = manufacturers.filter(
                 id=manufacturer_id,
                 users__email__icontains=email,
                 company_name__icontains=company_name,
@@ -2913,8 +2923,7 @@ def filter_manufacturers(request ):
                 users__mobile__icontains=phone_no, 
             ).distinct()
         else:
-            manufacturers = Manufacturer.objects.filter(
-                #id=manufacturer_id,
+            manufacturers = manufacturers.filter(
                 users__status='active',
                 users__email__icontains=email,
                 company_name__icontains=company_name,
