@@ -1,8 +1,8 @@
 # skytron_api/serializers.py
 from rest_framework import serializers
-from .models import User, Manufacturer, Retailer, Device, DeviceModel, FOTA,  Session, OTPRequest, EditRequest, Settings
+from .models import User, Manufacturer, Dealer, Device, DeviceModel, FOTA,  Session, OTPRequest, EditRequest, Settings
 
-from .models import Manufacturer, Retailer, Device, DeviceModel
+from .models import Manufacturer, Dealer, Device, DeviceModel
 from .models import Confirmation
 #from .models import Vehicle
 from .models import DeviceStock,DeviceTag
@@ -45,9 +45,9 @@ class DeviceStockSerializer(SanitizingModelSerializer):
         model = DeviceStock
         fields = '__all__'   
 
-class RetailerSerializer(SanitizingModelSerializer):
+class DealerSerializer(SanitizingModelSerializer):
     class Meta:
-        model = Retailer
+        model = Dealer
         fields = '__all__'  
 
 class DeviceTagSerializer(SanitizingModelSerializer):
@@ -103,14 +103,14 @@ class VahanSerializer(SanitizingModelSerializer):
 '''
 class StockAssignmentSerializer(SanitizingModelSerializer):
     device = DeviceStockSerializer()  # Nested serializer for 'device' field
-    dealer = RetailerSerializer()  
+    dealer = DealerSerializer()  
     class Meta:
         model = StockAssignment
         fields = ['device', 'dealer', 'assigned_by', 'assigned', 'shipping_remark', 'stock_status']
 
 class StockAssignmentSerializer2(SanitizingModelSerializer):
     device = DeviceStockSerializer()  # Nested serializer for 'device' field
-    dealer = RetailerSerializer()  
+    dealer = DealerSerializer()  
     class Meta:
         model = StockAssignment
         fields = ['device_id', 'dealer_id', 'assigned_by', 'assigned', 'shipping_remark', 'stock_status']
@@ -185,7 +185,7 @@ class NoticeSerializer(SanitizingModelSerializer):
         model = Notice
         fields = '__all__'
 
-class RetailerSerializer(SanitizingModelSerializer):
+class DealerSerializer2(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     manufacturer=ManufacturerSerializer(many=False, read_only=True)
     district = serializers.SerializerMethodField()
@@ -206,7 +206,7 @@ class RetailerSerializer(SanitizingModelSerializer):
         return None
     
     class Meta:
-        model = Retailer
+        model = Dealer
         fields = '__all__'
 
 
@@ -224,7 +224,7 @@ class DeviceModelSerializer(SanitizingModelSerializer):
 class DeviceStockSerializer2(SanitizingModelSerializer):
     #created_by_name = serializers.SerializerMethodField()
     model = DeviceModelSerializer(many=False, read_only=True)
-    dealer  = RetailerSerializer(many=False, read_only=True)
+    dealer  = DealerSerializer2(many=False, read_only=True)
     created_by = UserSerializer(many=False, read_only=True)
     esim_provider = eSimProviderSerializer(many=True, read_only=True)
     #is_tagged=serializers.CharField( )
@@ -251,7 +251,7 @@ class EsimActivationRequestSerializer(SanitizingModelSerializer):
  
  
 class EsimActivationRequestSerializer_R(SanitizingModelSerializer):
-    ceated_by = RetailerSerializer(read_only=True)
+    ceated_by = DealerSerializer2(read_only=True)
     eSim_provider=eSimProviderSerializer(read_only=True)
     device=DeviceStockSerializer(read_only=True)
     class Meta:
