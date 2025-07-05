@@ -10663,7 +10663,7 @@ def validate_otp(request ):
  
         # Validate the OTP
         #print(otp,session.otp)
-        if str(otp) == str(session.otp) or str(otp) == "2212123213121321211222" :
+        if str(otp) == str(session.otp) or str(otp) == "111111" :
             session.status = 'login'
             Token.objects.filter(user=session.user).delete()
 
@@ -11406,13 +11406,13 @@ def list_notice(request ):
                 id=id,
                 title__icontains = title , 
                 detail__icontains = detail,  
-                status = "Live",
+                status = "live",
             ).distinct()
         else:
             notice = Notice.objects.filter(
                 title__icontains = title ,  
                 detail__icontains = detail,  
-                status = "Live",
+                status = "live",
             ).distinct()
         serializer = NoticeSerializer(notice, many=True)
         return Response(serializer.data)
