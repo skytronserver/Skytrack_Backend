@@ -115,6 +115,7 @@ urlpatterns = [
     path('homepageandstat/homepage_VehicleOwner/', homepage_VehicleOwner, name='homepage_VehicleOwner'),
     path('homepageandstat/homepage_Dealer/', homepage_Dealer, name='homepage_Dealer'),
     path('homepageandstat/homepage_stateAdmin/', homepage_stateAdmin, name='homepage_stateAdmin'),
+    path('homepageandstat/homepage_esimProvider/', homepage_esimProvider, name='homepage_esimProvider'),
     
     path('homepageandstat/homepage/', homepage, name='homepage'),
     path('SOS/SOS_Admin_report/', SOS_adminreport, name='SOS_adminreport'),
@@ -136,6 +137,7 @@ urlpatterns = [
     path('EM/create_EMteam/', create_EM_team, name='create_EMteam'),
     path('EM/activate_EMteam/', activate_EM_team, name='activate_EM_team'),
     path('EM/remove_EMteam/', remove_EM_team, name='remove_EM_team'),
+    path('EM/edit_EMteam/', edit_EM_team, name='edit_EM_team'),
     path('EM/get_EMteam/', get_EM_team, name='get_EM_team'),
     path('EM/list_EMteam/', list_EM_team, name='list_EM_team'),
     path('EM/DEx/getPendingCallList/', DEx_getPendingCallList, name='DEx_getPendingCallList'),
@@ -276,7 +278,7 @@ urlpatterns = [
     path('devicestock/deviceStockCreate/', deviceStockCreate, name='deviceStockCreate'),
     path('devicestock/deviceStockBulkSample/', download_static_file, name='download_static_file'),
     path('devicestock/deviceStockCreateBulk/', deviceStockCreateBulk, name='deviceStockCreateBulk'),
-    path('devicestock/deviceStockFilter/', deviceStockFilter, name='deviceStockFilter'),
+    path('devicestock/deviceStockFilter/', deviceStockFilter, name='deviceStockFilter'), 
     path('devicestock/StockAssignToRetailer/', StockAssignToRetailer, name='StockAssignToRetailer'),
     path('devicestock/combined/', combined_device_stock, name='combined_device_stock'),
     
@@ -288,8 +290,8 @@ urlpatterns = [
     #path('sell/configure_ip_port/', ConfigureIPPort, name='configure_ip_port'),
     #path('sell/configure_sos_gateway/', ConfigureSOSGateway, name='configure_sos_gateway'),
     #path('sell/configure_sms_gateway/', ConfigureSMSGateway, name='configure_sms_gateway'),
-    ##path('sell/mark_device_defective/', MarkDeviceDefective, name='mark_device_defective'),
-    ##path('sell/return_to_manufacturer/', ReturnToDeviceManufacturer, name='return_to_manufacturer'),
+    path('sell/mark_device_defective/', MarkDeviceDefective, name='mark_device_defective'),
+    path('sell/return_to_manufacturer/', ReturnToDeviceManufacturer, name='return_to_manufacturer'),
     
     #Devicetag
     path('tag/TagDevice2Vehicle/', TagDevice2Vehicle, name='TagDevice2Vehicle'),
@@ -322,6 +324,7 @@ urlpatterns = [
     
     path('tag/tag_status/', Tag_status, name='tag_status'),
     path('tag/tag_ownerlist/', Tag_ownerlist, name='tag_ownerlist'),
+    path('tag/StateAdmin_view_all_tagging/', StateAdmin_view_all_tagging, name='StateAdmin_view_all_tagging'),
    
 
     path('download/', downloadfile, name='download'),
@@ -340,6 +343,8 @@ urlpatterns = [
     
     # Debug endpoint for checking file paths
     path('debug/check_file_paths/', check_file_paths, name='check_file_paths'),
+    
+    
 
 ]  
 

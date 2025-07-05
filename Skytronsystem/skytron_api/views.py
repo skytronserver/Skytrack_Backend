@@ -4058,6 +4058,92 @@ def remove_EM_team(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+def edit_EM_team(request): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'+str(user.role)}, status=400)
+    
+    try:
+        team_id = request.data.get('team_id')
+        if not team_id:
+            return Response({"error": "Team ID is required."}, status=400)
+        
+        # Get the team to edit
+        team = EMTeams.objects.filter(id=team_id, state=uo.state).last()
+        if not team:
+            return Response({"error": "Team not found."}, status=400)
+        
+        # Only allow editing if team is NotActive or Active (not Removed)
+        if team.status == "Removed":
+            return Response({"error": "Cannot edit a removed team."}, status=400)
+        
+        state = request.data.get('state', team.state.id)
+        if uo.state.id != state:
+            return Response({"error":"Unauthorised State" }, status=400)
+
+        # Get optional new teamlead
+        teamlead_id = request.data.get('teamlead')
+        if teamlead_id:
+            teamlead = EM_ex.objects.filter(id=teamlead_id, state=state, users__status='active', user_type='teamlead').last()
+            if not teamlead:
+                return Response({"error": "Team lead not found."}, status=400)
+            
+            # Check if the new teamlead is part of any other active team (excluding current team)
+            if EMTeams.objects.filter(teamlead=teamlead, status="Active").exclude(id=team_id).exists():
+                return Response({"error": "The selected teamlead is already part of another active team."}, status=400)
+        else:
+            teamlead = team.teamlead
+
+        # Get optional new members
+        member_ids = request.data.get('members')
+        if member_ids is not None:
+            if member_ids:  # If not empty list
+                members = EM_ex.objects.filter(id__in=member_ids, state=state, users__status='active', user_type='desk_ex').all()
+                if len(members) != len(member_ids):
+                    return Response({"error": "All Members not found."}, status=400)
+                
+                # Check if any of the new members are part of any other active team (excluding current team)
+                active_team_members = EMTeams.objects.filter(status="Active", members__in=members).exclude(id=team_id).distinct()
+                if active_team_members.exists():
+                    return Response({"error": "One or more selected members are already part of another active team."}, status=400)
+            else:
+                members = []
+        else:
+            members = team.members.all()
+
+        # Get optional new name and detail
+        name = request.data.get('name', team.name)
+        detail = request.data.get('detail', team.detail)
+
+        # Update the team
+        team.teamlead = teamlead
+        team.name = name
+        team.detail = detail
+        team.save()
+        
+        # Update members if provided
+        if member_ids is not None:
+            team.members.set(members)
+        
+        return Response({'status': 'Team Updated Successfully', "team": EMTeamsSerializer(team).data}, status=200)
+
+    except Exception as e:
+        return Response({'error': "Unable to process request."+str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
 def get_EM_team(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -6987,6 +7073,8 @@ def StockAssignToRetailer(request ):
         return JsonResponse({'data': stock_assignments , 'message': 'Stock assigned successfully.'}, status=201)
     else:
         return JsonResponse({'data': stock_assignments,'error':error  , 'message': 'Stock Partially assigned.'}, status=201)
+    
+    
 '''def StockAssignToRetailer3333(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12045,3 +12133,258 @@ def upload_media_file(request):
         return JsonResponse({"error": str(e)}, status=500)
     
     
+    
+    
+    
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
+def StateAdmin_view_all_tagging(request):
+    """
+    API for state admin to view all tagging done in their state
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = request.user
+        role = "stateadmin"
+        state_admin = get_user_object(user, role)
+        
+        if not state_admin:
+            return Response({"error": "Request must be from stateadmin."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get the state admin's state
+        admin_state = state_admin.state
+        
+        if not admin_state:
+            return Response({"error": "State admin state not found."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get all DeviceTag entries where the vehicle owner's state matches the state admin's state
+        # We need to filter based on vehicle owner's address_State field
+        device_tags = DeviceTag.objects.filter(
+            vehicle_owner__users__address_State=admin_state.state
+        ).order_by('-tagged')
+        
+        # Apply additional filters if provided in request
+        if request.method == 'POST':
+            # Filter by vehicle registration number
+            reg_no = request.data.get('vehicle_reg_no')
+            if reg_no:
+                device_tags = device_tags.filter(vehicle_reg_no__icontains=reg_no)
+            
+            # Filter by status
+            tag_status = request.data.get('status')
+            if tag_status:
+                device_tags = device_tags.filter(status=tag_status)
+            
+            # Filter by device IMEI
+            imei = request.data.get('imei')
+            if imei:
+                device_tags = device_tags.filter(device__imei__icontains=imei)
+            
+            # Filter by dealer
+            dealer_id = request.data.get('dealer_id')
+            if dealer_id:
+                device_tags = device_tags.filter(tagged_by__retailer_user__id=dealer_id)
+            
+            # Filter by vehicle make
+            vehicle_make = request.data.get('vehicle_make')
+            if vehicle_make:
+                device_tags = device_tags.filter(vehicle_make__icontains=vehicle_make)
+            
+            # Filter by vehicle model
+            vehicle_model = request.data.get('vehicle_model')
+            if vehicle_model:
+                device_tags = device_tags.filter(vehicle_model__icontains=vehicle_model)
+            
+            # Filter by date range
+            from_date = request.data.get('from_date')
+            to_date = request.data.get('to_date')
+            if from_date:
+                device_tags = device_tags.filter(tagged__gte=from_date)
+            if to_date:
+                device_tags = device_tags.filter(tagged__lte=to_date)
+            
+            # Filter by vehicle category
+            category = request.data.get('category')
+            if category:
+                device_tags = device_tags.filter(category__icontains=category)
+        
+        # Paginate results
+        page_size = request.data.get('page_size', 50)  # Default 50 records per page
+        page_number = request.data.get('page', 1)
+        
+        try:
+            page_size = int(page_size)
+            page_number = int(page_number)
+        except (ValueError, TypeError):
+            page_size = 50
+            page_number = 1
+        
+        # Ensure reasonable limits
+        if page_size > 500:
+            page_size = 500
+        if page_size < 1:
+            page_size = 50
+        if page_number < 1:
+            page_number = 1
+        
+        # Calculate pagination
+        total_count = device_tags.count()
+        start_index = (page_number - 1) * page_size
+        end_index = start_index + page_size
+        
+        paginated_tags = device_tags[start_index:end_index]
+        
+        # Serialize the data
+        serializer = DeviceTagSerializer2(paginated_tags, many=True)
+        
+        # Calculate pagination info
+        total_pages = (total_count + page_size - 1) // page_size
+        has_next = page_number < total_pages
+        has_previous = page_number > 1
+        
+        response_data = {
+            'success': True,
+            'message': f'Found {total_count} tagging records in {admin_state.state} state.',
+            'data': serializer.data,
+            'pagination': {
+                'current_page': page_number,
+                'page_size': page_size,
+                'total_pages': total_pages,
+                'total_count': total_count,
+                'has_next': has_next,
+                'has_previous': has_previous,
+            },
+            'state_info': {
+                'state_id': admin_state.id,
+                'state_name': admin_state.state
+            }
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'error': f"Unable to process request. {str(e)}"
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+ 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
+def homepage_esimProvider(request):
+    """
+    Homepage API for esim Provider role showing eSIM related statistics
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        role = "esimprovider"
+        user = request.user
+        profile = get_user_object(user, role)
+        if not profile:
+            return Response({"error": "Request must be from " + role + '.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        
+        if profile:
+            from django.db.models import Sum, Q, Count, Avg
+            from datetime import datetime, timedelta
+            from django.utils import timezone
+            
+            # Current time for calculations
+            now = timezone.now()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            week_ago = now - timedelta(days=7)
+            
+            # Get all device stocks associated with this eSIM provider
+            device_stocks = DeviceStock.objects.filter(esim_provider=profile)
+            
+            # Total devices with this eSIM provider
+            total_devices = device_stocks.count()
+            
+            # eSIM activation request statistics
+            esim_activation_requests = esimActivationRequest.objects.filter(eSim_provider=profile)
+            
+            # Count different statuses of eSIM activation requests
+            esim_pending = esim_activation_requests.filter(status="pending").count()
+            esim_validated = esim_activation_requests.filter(status="valid").count()
+            esim_invalid = esim_activation_requests.filter(status="invalid").count()
+            
+            # Count eSIM validity status based on device stock
+            esim_active = device_stocks.filter(
+                esim_validity__gt=now,  # Valid eSIMs (not expired)
+                stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
+            ).count()
+            
+            esim_expired = device_stocks.filter(
+                esim_validity__lte=now  # Expired eSIMs
+            ).count()
+            
+            # Additional statistics
+            esim_activation_req_sent = device_stocks.filter(
+                stock_status='ESIM_Active_Req_Sent'
+            ).count()
+            
+            esim_activation_confirmed = device_stocks.filter(
+                stock_status='ESIM_Active_Confirmed'
+            ).count()
+            
+            esim_activation_rejected = device_stocks.filter(
+                stock_status='ESIM_Active_Rejected'
+            ).count()
+            
+            # Time-based statistics
+            today_requests = esim_activation_requests.filter(created_at__gte=today_start).count()
+            this_month_requests = esim_activation_requests.filter(created_at__gte=month_start).count()
+            this_week_requests = esim_activation_requests.filter(created_at__gte=week_ago).count()
+            
+            # Expiring soon (within 30 days)
+            esim_expiring_soon = device_stocks.filter(
+                esim_validity__gt=now,
+                esim_validity__lte=now + timedelta(days=30)
+            ).count()
+            
+            count_dict = {
+                'Total_Devices_With_ESim': total_devices,
+                'ESim_Validated': esim_validated,
+                'ESim_Expired': esim_expired,
+                'ESim_Active': esim_active,
+                'ESim_Pending': esim_pending,
+                'ESim_Invalid': esim_invalid,
+                'ESim_Activation_Req_Sent': esim_activation_req_sent,
+                'ESim_Activation_Confirmed': esim_activation_confirmed,
+                'ESim_Activation_Rejected': esim_activation_rejected,
+                'ESim_Expiring_Soon_30_Days': esim_expiring_soon,
+                'Today_Activation_Requests': today_requests,
+                'This_Week_Activation_Requests': this_week_requests,
+                'This_Month_Activation_Requests': this_month_requests,
+                'Provider_Company_Name': profile.company_name,
+                'Provider_State': profile.state.state if profile.state else None,
+                'Provider_Status': profile.status,
+                'Provider_Created_Date': profile.created.strftime('%Y-%m-%d') if profile.created else None,
+                'Provider_Expiry_Date': profile.expirydate.strftime('%Y-%m-%d') if profile.expirydate else None,
+            }
+            
+            return Response({
+                'status': 'success',
+                'data': count_dict,
+                'message': 'esim Provider homepage data retrieved successfully'
+            }, status=status.HTTP_200_OK)
+            
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
