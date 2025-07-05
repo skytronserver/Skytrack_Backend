@@ -12277,6 +12277,434 @@ def StateAdmin_view_all_tagging(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+def get_device_tag_alerts(request):
+    """
+    Get alerts for specific device tags with user-based filtering:
+    - Super Admin: Can see all alerts
+    - State Admin: Can see alerts for devices in their state only  
+    - DTO/RTO: Can see alerts for devices in their district only
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = request.user
+        
+        # Get filtering parameters
+        vehicle_reg_no = request.data.get('vehicle_reg_no', '')
+        device_tag_id = request.data.get('device_tag_id', '')
+        start_datetime = request.data.get('start_datetime')
+        end_datetime = request.data.get('end_datetime')
+        alert_type = request.data.get('alert_type', '')
+        
+        # Base queryset for alerts
+        alerts_queryset = AlertsLog.objects.all().select_related(
+            'deviceTag', 'deviceTag__device', 'deviceTag__vehicle_owner', 
+            'state', 'gps_ref'
+        )
+        
+        # Apply user-based filtering based on role
+        if user.role == "superadmin":
+            # Super admin can see all alerts - no additional filtering needed
+            pass
+            
+        elif user.role == "stateadmin":
+            # State admin can only see alerts for devices in their state
+            state_admin = get_user_object(user, "stateadmin")
+            if not state_admin:
+                return Response({"error": "Invalid state admin user"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            alerts_queryset = alerts_queryset.filter(state=state_admin.state)
+            
+        elif user.role == "dtorto":
+            # DTO/RTO can only see alerts for devices in their district
+            dto_rto_obj = get_user_object(user, "dtorto")
+            if not dto_rto_obj:
+                return Response({"error": "Invalid DTO/RTO user"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Filter by state and district
+            alerts_queryset = alerts_queryset.filter(
+                state=dto_rto_obj.state,
+                deviceTag__vehicle_owner__address_State=dto_rto_obj.state.name,
+                deviceTag__vehicle_owner__address__icontains=dto_rto_obj.district
+            )
+            
+        else:
+            return Response({"error": "Unauthorized role. Only superadmin, stateadmin, and dtorto can access this endpoint."}, 
+                          status=status.HTTP_403_FORBIDDEN)
+        
+        # Apply additional filters based on request parameters
+        if vehicle_reg_no:
+            alerts_queryset = alerts_queryset.filter(
+                deviceTag__vehicle_reg_no__icontains=vehicle_reg_no
+            )
+            
+        if device_tag_id:
+            alerts_queryset = alerts_queryset.filter(deviceTag__id=device_tag_id)
+            
+        if start_datetime:
+            alerts_queryset = alerts_queryset.filter(timestamp__gte=start_datetime)
+            
+        if end_datetime:
+            alerts_queryset = alerts_queryset.filter(timestamp__lte=end_datetime)
+            
+        if alert_type:
+            alerts_queryset = alerts_queryset.filter(type=alert_type)
+        
+        # Order by timestamp (newest first)
+        alerts_queryset = alerts_queryset.order_by('-timestamp')
+        
+        # Pagination
+        page_number = request.data.get('page', 1)
+        page_size = request.data.get('page_size', 50)
+        
+        paginator = Paginator(alerts_queryset, page_size)
+        page_obj = paginator.get_page(page_number)
+        
+        # Serialize the alerts data
+        alerts_data = []
+        for alert in page_obj:
+            alert_data = {
+                'id': alert.id,
+                'type': alert.type,
+                'status': alert.status,
+                'timestamp': alert.timestamp.isoformat(),
+                'device_tag': {
+                    'id': alert.deviceTag.id,
+                    'vehicle_reg_no': alert.deviceTag.vehicle_reg_no,
+                    'vehicle_make': alert.deviceTag.vehicle_make,
+                    'vehicle_model': alert.deviceTag.vehicle_model,
+                    'category': alert.deviceTag.category,
+                    'status': alert.deviceTag.status,
+                    'device_esn': alert.deviceTag.device.device_esn if alert.deviceTag.device else None,
+                    'owner_name': alert.deviceTag.vehicle_owner.name if alert.deviceTag.vehicle_owner else None,
+                    'owner_mobile': alert.deviceTag.vehicle_owner.mobile if alert.deviceTag.vehicle_owner else None
+                },
+                'state': {
+                    'id': alert.state.id,
+                    'name': alert.state.name
+                } if alert.state else None,
+                'gps_data': {
+                    'latitude': alert.gps_ref.latitude if alert.gps_ref else None,
+                    'longitude': alert.gps_ref.longitude if alert.gps_ref else None,
+                    'speed': alert.gps_ref.speed if alert.gps_ref else None,
+                    'timestamp': alert.gps_ref.timestamp.isoformat() if alert.gps_ref and alert.gps_ref.timestamp else None
+                } if alert.gps_ref else None,
+                'route_info': {
+                    'id': alert.route_ref.id,
+                    'name': alert.route_ref.name
+                } if alert.route_ref else None,
+                'emergency_call': {
+                    'id': alert.em_ref.id,
+                    'status': alert.em_ref.status
+                } if alert.em_ref else None
+            }
+            alerts_data.append(alert_data)
+        
+        # Summary statistics
+        total_alerts = alerts_queryset.count()
+        alert_type_counts = {}
+        for choice in AlertsLog.TYPE_CHOICES:
+            alert_type = choice[0]
+            count = alerts_queryset.filter(type=alert_type).count()
+            alert_type_counts[alert_type] = count
+        
+        response_data = {
+            'success': True,
+            'user_role': user.role,
+            'total_alerts': total_alerts,
+            'current_page': page_obj.number,
+            'total_pages': paginator.num_pages,
+            'page_size': page_size,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous(),
+            'alert_type_counts': alert_type_counts,
+            'alerts': alerts_data,
+            'available_alert_types': dict(AlertsLog.TYPE_CHOICES)
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': f'An error occurred while fetching alerts: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# ...existing code...
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+def get_device_tags(request):
+    """
+    Get device tags with search functionality and user-based filtering:
+    - Super Admin: Can see all device tags
+    - State Admin: Can see device tags for their state only  
+    - DTO/RTO: Can see device tags for their district only
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = request.user
+        
+        # Get filtering parameters
+        vehicle_reg_no = request.data.get('vehicle_reg_no', '')
+        vehicle_make = request.data.get('vehicle_make', '')
+        vehicle_model = request.data.get('vehicle_model', '')
+        category = request.data.get('category', '')
+        status_filter = request.data.get('status', '')
+        owner_name = request.data.get('owner_name', '')
+        owner_mobile = request.data.get('owner_mobile', '')
+        device_esn = request.data.get('device_esn', '')
+        engine_no = request.data.get('engine_no', '')
+        chassis_no = request.data.get('chassis_no', '')
+        tagged_from = request.data.get('tagged_from')
+        tagged_to = request.data.get('tagged_to')
+        
+        # Base queryset for device tags
+        device_tags_queryset = DeviceTag.objects.all().select_related(
+            'device', 'device__model', 'vehicle_owner', 'tagged_by'
+        ).prefetch_related(
+            'vehicle_owner__users', 'drivers'
+        )
+        
+        # Apply user-based filtering based on role
+        if user.role == "superadmin":
+            # Super admin can see all device tags - no additional filtering needed
+            pass
+            
+        elif user.role == "stateadmin":
+            # State admin can only see device tags for vehicles in their state
+            state_admin = get_user_object(user, "stateadmin")
+            if not state_admin:
+                return Response({"error": "Invalid state admin user"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Filter by state - assuming vehicle owners have state information
+            device_tags_queryset = device_tags_queryset.filter(
+                vehicle_owner__users__address_State=state_admin.state.name
+            )
+            
+        elif user.role == "dtorto":
+            # DTO/RTO can only see device tags for vehicles in their district
+            dto_rto_obj = get_user_object(user, "dtorto")
+            if not dto_rto_obj:
+                return Response({"error": "Invalid DTO/RTO user"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Filter by state and district
+            device_tags_queryset = device_tags_queryset.filter(
+                vehicle_owner__users__address_State=dto_rto_obj.state.name,
+                vehicle_owner__users__address__icontains=dto_rto_obj.district
+            )
+            
+        else:
+            return Response({"error": "Unauthorized role. Only superadmin, stateadmin, and dtorto can access this endpoint."}, 
+                          status=status.HTTP_403_FORBIDDEN)
+        
+        # Apply search filters
+        if vehicle_reg_no:
+            device_tags_queryset = device_tags_queryset.filter(
+                vehicle_reg_no__icontains=vehicle_reg_no
+            )
+            
+        if vehicle_make:
+            device_tags_queryset = device_tags_queryset.filter(
+                vehicle_make__icontains=vehicle_make
+            )
+            
+        if vehicle_model:
+            device_tags_queryset = device_tags_queryset.filter(
+                vehicle_model__icontains=vehicle_model
+            )
+            
+        if category:
+            device_tags_queryset = device_tags_queryset.filter(
+                category__icontains=category
+            )
+            
+        if status_filter:
+            device_tags_queryset = device_tags_queryset.filter(status=status_filter)
+            
+        if owner_name:
+            device_tags_queryset = device_tags_queryset.filter(
+                vehicle_owner__users__name__icontains=owner_name
+            )
+            
+        if owner_mobile:
+            device_tags_queryset = device_tags_queryset.filter(
+                vehicle_owner__users__mobile__icontains=owner_mobile
+            )
+            
+        if device_esn:
+            device_tags_queryset = device_tags_queryset.filter(
+                device__device_esn__icontains=device_esn
+            )
+            
+        if engine_no:
+            device_tags_queryset = device_tags_queryset.filter(
+                engine_no__icontains=engine_no
+            )
+            
+        if chassis_no:
+            device_tags_queryset = device_tags_queryset.filter(
+                chassis_no__icontains=chassis_no
+            )
+            
+        if tagged_from:
+            device_tags_queryset = device_tags_queryset.filter(tagged__gte=tagged_from)
+            
+        if tagged_to:
+            device_tags_queryset = device_tags_queryset.filter(tagged__lte=tagged_to)
+        
+        # Order by tagged date (newest first)
+        device_tags_queryset = device_tags_queryset.order_by('-tagged')
+        
+        # Pagination
+        page_number = request.data.get('page', 1)
+        page_size = request.data.get('page_size', 50)
+        
+        # Ensure reasonable pagination limits
+        try:
+            page_number = int(page_number)
+            page_size = int(page_size)
+        except (ValueError, TypeError):
+            page_number = 1
+            page_size = 50
+            
+        if page_size > 500:
+            page_size = 500
+        if page_size < 1:
+            page_size = 50
+        if page_number < 1:
+            page_number = 1
+        
+        paginator = Paginator(device_tags_queryset, page_size)
+        page_obj = paginator.get_page(page_number)
+        
+        # Serialize the device tags data
+        device_tags_data = []
+        for device_tag in page_obj:
+            # Get the primary vehicle owner user
+            primary_owner_user = device_tag.vehicle_owner.users.first() if device_tag.vehicle_owner else None
+            
+            # Get driver information
+            drivers_info = []
+            for driver in device_tag.drivers.all():
+                drivers_info.append({
+                    'id': driver.id,
+                    'name': driver.name,
+                    'mobile': driver.mobile,
+                    'license_no': driver.license_no
+                })
+            
+            device_tag_data = {
+                'id': device_tag.id,
+                'vehicle_reg_no': device_tag.vehicle_reg_no,
+                'engine_no': device_tag.engine_no,
+                'chassis_no': device_tag.chassis_no,
+                'vehicle_make': device_tag.vehicle_make,
+                'vehicle_model': device_tag.vehicle_model,
+                'category': device_tag.category,
+                'status': device_tag.status,
+                'tagged': device_tag.tagged.isoformat() if device_tag.tagged else None,
+                'rc_file': device_tag.rc_file,
+                'receipt_file_or': device_tag.receipt_file_or,
+                'receipt_file_ul': device_tag.receipt_file_ul,
+                'device': {
+                    'id': device_tag.device.id,
+                    'device_esn': device_tag.device.device_esn,
+                    'imei': device_tag.device.imei,
+                    'iccid': device_tag.device.iccid,
+                    'msisdn1': device_tag.device.msisdn1,
+                    'msisdn2': device_tag.device.msisdn2,
+                    'model': {
+                        'id': device_tag.device.model.id,
+                        'model_name': device_tag.device.model.model_name,
+                        'vendor_id': device_tag.device.model.vendor_id
+                    } if device_tag.device.model else None
+                } if device_tag.device else None,
+                'vehicle_owner': {
+                    'id': device_tag.vehicle_owner.id,
+                    'name': primary_owner_user.name if primary_owner_user else None,
+                    'email': primary_owner_user.email if primary_owner_user else None,
+                    'mobile': primary_owner_user.mobile if primary_owner_user else None,
+                    'address': primary_owner_user.address if primary_owner_user else None,
+                    'address_state': primary_owner_user.address_State if primary_owner_user else None,
+                    'address_pin': primary_owner_user.address_pin if primary_owner_user else None
+                } if device_tag.vehicle_owner else None,
+                'tagged_by': {
+                    'id': device_tag.tagged_by.id,
+                    'name': device_tag.tagged_by.name,
+                    'email': device_tag.tagged_by.email,
+                    'role': device_tag.tagged_by.role
+                } if device_tag.tagged_by else None,
+                'drivers': drivers_info
+            }
+            device_tags_data.append(device_tag_data)
+        
+        # Get status statistics
+        total_device_tags = device_tags_queryset.count()
+        status_counts = {}
+        for choice in DeviceTag.STATUS_CHOICES:
+            status_value = choice[0]
+            count = device_tags_queryset.filter(status=status_value).count()
+            status_counts[status_value] = count
+        
+        # Get category statistics
+        category_counts = {}
+        categories = device_tags_queryset.values_list('category', flat=True).distinct()
+        for category_name in categories:
+            if category_name:
+                count = device_tags_queryset.filter(category=category_name).count()
+                category_counts[category_name] = count
+        
+        response_data = {
+            'success': True,
+            'user_role': user.role,
+            'total_device_tags': total_device_tags,
+            'current_page': page_obj.number,
+            'total_pages': paginator.num_pages,
+            'page_size': page_size,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous(),
+            'status_counts': status_counts,
+            'category_counts': category_counts,
+            'device_tags': device_tags_data,
+            'available_statuses': dict(DeviceTag.STATUS_CHOICES),
+            'search_filters_applied': {
+                'vehicle_reg_no': vehicle_reg_no,
+                'vehicle_make': vehicle_make,
+                'vehicle_model': vehicle_model,
+                'category': category,
+                'status': status_filter,
+                'owner_name': owner_name,
+                'owner_mobile': owner_mobile,
+                'device_esn': device_esn,
+                'engine_no': engine_no,
+                'chassis_no': chassis_no,
+                'tagged_from': tagged_from,
+                'tagged_to': tagged_to
+            }
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': f'An error occurred while fetching device tags: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# ...existing code...
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
 def homepage_esimProvider(request):

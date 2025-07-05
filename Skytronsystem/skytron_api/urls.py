@@ -131,6 +131,8 @@ urlpatterns = [
     path('homepageandstat/homepage_alart/', homepage_alart, name='homepage_alart'),
     path('homepageandstat/homepage_state/', homepage_state, name='homepage_state'),
     path('alart_list/',alart_list, name='alart_list'),
+    path('device_tag_alerts/', get_device_tag_alerts, name='get_device_tag_alerts'),
+    path('device_tags_search/', get_device_tags, name='get_device_tags'),
 
 
 
