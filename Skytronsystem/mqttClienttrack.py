@@ -28,9 +28,9 @@ BROKER_PORT = 8883  # Use SSL/TLS port
 TOPIC = "field_ex/location_update"
 
 # Paths to certificates - using container paths
-ROOT_CA = "/app/ca.crt"
-CLIENT_CERT = "/app/client.crt"
-CLIENT_KEY = "/app/client.key"
+ROOT_CA = "/app/mqttKeys/ca.crt"
+CLIENT_CERT = "/app/mqttKeys/client.crt"
+CLIENT_KEY = "/app/mqttKeys/client.key"
 #ROOT_CA = "/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt"
 #CLIENT_CERT = "/home/azureuser/Skytrack_Backend/Skytronsystem/client.crt"
 #CLIENT_KEY = "/home/azureuser/Skytrack_Backend/Skytronsystem/client.key"
