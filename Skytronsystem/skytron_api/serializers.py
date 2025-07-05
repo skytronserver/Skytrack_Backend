@@ -166,6 +166,7 @@ class UserSerializer2(SanitizingModelSerializer):
 
 class eSimProviderSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
+    state = Settings_StateSerializer(many=False, read_only=True)
     class Meta:
         model = eSimProvider
         fields = '__all__'
@@ -185,6 +186,23 @@ class NoticeSerializer(SanitizingModelSerializer):
 class RetailerSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     manufacturer=ManufacturerSerializer(many=False, read_only=True)
+    district = serializers.SerializerMethodField()
+    
+    def get_district(self, obj):
+        if obj.district:
+            return {
+                'id': obj.district.id,
+                'district': obj.district.district,
+                'district_code': obj.district.district_code,
+                'status': obj.district.status,
+                'state': {
+                    'id': obj.district.state.id,
+                    'state': obj.district.state.state,
+                    'status': obj.district.state.status,
+                } if obj.district.state else None
+            }
+        return None
+    
     class Meta:
         model = Retailer
         fields = '__all__'

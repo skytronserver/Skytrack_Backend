@@ -807,11 +807,68 @@ def gps_track_data_api(request ):
             regno = request.GET.get('regno')
         except:
             pass
-        distinct_registration_numbers = GPSData.objects.exclude(device_tag=None).values('device_tag').distinct() #vehicle_registration_number
+        
+        # Get base queryset
+        gps_queryset = GPSData.objects.exclude(device_tag=None)
+        
+        # Apply role-based filtering
+        if request.user.is_authenticated:
+            user_role = request.user.role
+            
+            if user_role == 'superadmin':
+                # Superadmin sees all data - no additional filtering
+                pass
+            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive']:
+                # Get user's state(s) based on role
+                user_states = []
+                
+                if user_role == 'stateadmin':
+                    # Get states from StateAdmin relationship
+                    state_admins = StateAdmin.objects.filter(users=request.user, status='UserVerified')
+                    user_states = [sa.state.id for sa in state_admins]
+                elif user_role == 'sosadmin':
+                    # Get states from EM_admin relationship  
+                    em_admins = EM_admin.objects.filter(users=request.user, status='StateAdminVerified')
+                    user_states = [ea.state.id for ea in em_admins]
+                elif user_role == 'sosexecutive':
+                    # Get states from EM_ex relationship
+                    em_exs = EM_ex.objects.filter(users=request.user, status='StateAdminVerified')
+                    user_states = [ee.state.id for ee in em_exs]
+                
+                if user_states:
+                    # Filter GPSData for vehicles belonging to owners in user's states
+                    # This requires checking the state through the device owner's address_State
+                    gps_queryset = gps_queryset.filter(
+                        device_tag__vehicle_owner__users__address_State__in=[
+                            Settings_State.objects.get(id=state_id).state for state_id in user_states
+                        ]
+                    )
+                else:
+                    # If no states found, return empty queryset
+                    gps_queryset = GPSData.objects.none()
+                    
+            elif user_role == 'owner':
+                # Get vehicles owned by this user
+                vehicle_owners = VehicleOwner.objects.filter(users=request.user, status='UserVerified')
+                if vehicle_owners.exists():
+                    # Get device tags for vehicles owned by this user
+                    owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners)
+                    gps_queryset = gps_queryset.filter(device_tag__in=owned_device_tags)
+                else:
+                    # If user is not associated with any vehicles, return empty queryset
+                    gps_queryset = GPSData.objects.none()
+            else:
+                # For other roles, return empty queryset for security
+                gps_queryset = GPSData.objects.none()
+        else:
+            # If user is not authenticated, return empty queryset
+            gps_queryset = GPSData.objects.none()
+        
+        distinct_registration_numbers = gps_queryset.values('device_tag').distinct() #vehicle_registration_number
         data = []
 
         for x in distinct_registration_numbers:
-            latest_entry = GPSData.objects.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time') 
+            latest_entry = gps_queryset.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time') 
             
             #if regno:
             #    if regno!="None":
@@ -2329,38 +2386,36 @@ def filter_eSimProvider(request ):
         name = request.data.get('name', '')
         phone_no = request.data.get('phone_no', '')
         address = request.data.get('address', '')
-        state = request.data.get('state', '')
+        state_filter = request.data.get('state', '')
 
-     
-        if dealer_id :
-            manufacturers = eSimProvider.objects.filter(
-                id=dealer_id ,
-                users__email__icontains=email,
-                company_name__icontains=company_name,
-                users__name__icontains=name,
-                users__mobile__icontains=phone_no, 
-                #state__id=state, 
-            ).distinct()
-        else:
-            manufacturers = eSimProvider.objects.filter(
-                #id=manufacturer_id,
-                users__status='active',
-                users__email__icontains=email,
-                company_name__icontains=company_name,
-                users__name__icontains=name,
-                users__mobile__icontains=phone_no, 
-                #state__id=state, 
-            ).distinct()
-        manufacturers = eSimProvider.objects.filter(
-                #id=manufacturer_id,
-                users__status='active', 
-            ).all()
-        if not uo:
-            pass
-            #return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            state=uo
-            manufacturers=manufacturers.filter(state=uo.state)
+        # Start with base query
+        manufacturers = eSimProvider.objects.filter(users__status='active')
+        
+        # Apply filters based on input parameters
+        if dealer_id:
+            manufacturers = manufacturers.filter(id=dealer_id)
+        
+        if email:
+            manufacturers = manufacturers.filter(users__email__icontains=email)
+            
+        if company_name:
+            manufacturers = manufacturers.filter(company_name__icontains=company_name)
+            
+        if name:
+            manufacturers = manufacturers.filter(users__name__icontains=name)
+            
+        if phone_no:
+            manufacturers = manufacturers.filter(users__mobile__icontains=phone_no)
+            
+        if state_filter:
+            manufacturers = manufacturers.filter(state__id=state_filter)
+
+        # Apply state-based filtering for state admin users
+        if uo:  # If user is a state admin
+            manufacturers = manufacturers.filter(state=uo.state)
+
+        # Get distinct results and include state information
+        manufacturers = manufacturers.select_related('state').distinct()
 
         # Serialize the queryset
         retailer_serializer = eSimProviderSerializer(manufacturers, many=True)
@@ -2370,7 +2425,7 @@ def filter_eSimProvider(request ):
 
     except Exception as e:
         
-        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
+        return Response({'error': "Unable to process request." + str(e)}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -2571,6 +2626,7 @@ def filter_dealer(request ):
         uo=get_user_object(user,role)
         role="stateadmin" 
         suo=get_user_object(user,role)
+        
         # Get filter parameters from the request
         dealer_id = request.data.get('dealer_id', None)
         email = request.data.get('email', '')
@@ -2578,70 +2634,40 @@ def filter_dealer(request ):
         name = request.data.get('name', '')
         phone_no = request.data.get('phone_no', '')
         address = request.data.get('address', '')
+        district_filter = request.data.get('district', '')
 
-        # Create a dictionary to hold the filter parameters
-        filters = {}
-        if  uo:
-                
-            if dealer_id :
-                manufacturers = Retailer.objects.filter(
-                    id=dealer_id ,
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no, 
-                    manufacturer=uo,
-                ).distinct()
-            else:
-                manufacturers = Retailer.objects.filter(
-                    #id=manufacturer_id,
-                    users__status='active',
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no, 
-                    manufacturer=uo,
-                ).distinct()
-        elif  suo:
-                
-            if dealer_id :
-                manufacturers = Retailer.objects.filter(
-                    id=dealer_id ,
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no, 
-                    manufacturer__state=suo.state,
-                ).distinct()
-            else:
-                manufacturers = Retailer.objects.filter(
-                    #id=manufacturer_id,
-                    users__status='active',
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no, 
-                    manufacturer__state=suo.state,
-                ).distinct()
+        # Start with base query including related fields for better performance
+        manufacturers = Retailer.objects.select_related('manufacturer__state', 'district__state')
         
+        # Apply filters based on user role and input parameters
+        if uo:  # Device manufacturer user
+            manufacturers = manufacturers.filter(manufacturer=uo)
+        elif suo:  # State admin user
+            manufacturers = manufacturers.filter(manufacturer__state=suo.state)
+        
+        # Apply additional filters
+        if dealer_id:
+            manufacturers = manufacturers.filter(id=dealer_id)
         else:
-            if dealer_id :
-                manufacturers = Retailer.objects.filter(
-                    id=dealer_id ,
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no,  
-                ).distinct()
-            else:
-                manufacturers = Retailer.objects.filter(
-                    #id=manufacturer_id,
-                    users__status='active',
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no,  
-                ).distinct()
+            manufacturers = manufacturers.filter(users__status='active')
+            
+        if email:
+            manufacturers = manufacturers.filter(users__email__icontains=email)
+            
+        if company_name:
+            manufacturers = manufacturers.filter(company_name__icontains=company_name)
+            
+        if name:
+            manufacturers = manufacturers.filter(users__name__icontains=name)
+            
+        if phone_no:
+            manufacturers = manufacturers.filter(users__mobile__icontains=phone_no)
+            
+        if district_filter:
+            manufacturers = manufacturers.filter(district__id=district_filter)
+
+        # Get distinct results
+        manufacturers = manufacturers.distinct()
 
         # Serialize the queryset
         retailer_serializer = RetailerSerializer(manufacturers, many=True)
@@ -2651,7 +2677,7 @@ def filter_dealer(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
+        return Response({'error': "Unable to process request." + str(e)}, status=400)
 
 
 
@@ -5928,28 +5954,63 @@ def Tag_ownerlist(request ):
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-     
-    # user_id = request.user.id
-    # Retrieve device models with status "Manufacturer_OTP_Verified"
-    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    role="owner"
-    user=request.user
-    uo=get_user_object(user,role)
-    role2="superadmin" 
-    sa=get_user_object(user,role2)
-    role3="stateadmin" 
-    sta=get_user_object(user,role3)
-    if not (uo or sa or sta):
-        return Response({"error":"Request must be from  "+role+',' +role2+',or' +role3+'.'}, status=status.HTTP_400_BAD_REQUEST)
     if request.method == 'POST': 
-        if uo:
-            devices = DeviceTag.objects.filter(vehicle_owner=uo, status="Owner_Final_OTP_Verified")#created_by=user_id,  
-        elif sa:
-            devices = DeviceTag.objects.filter( status="Owner_Final_OTP_Verified")
-        elif sta:
-            devices = DeviceTag.objects.filter( device__esim_provider__state=sta.state, status="Owner_Final_OTP_Verified")
+        # Get base queryset
+        devices = DeviceTag.objects.filter(status="Owner_Final_OTP_Verified")
+        
+        # Apply role-based filtering
+        if request.user.is_authenticated:
+            user_role = request.user.role
+            
+            if user_role == 'superadmin':
+                # Superadmin sees all devices - no additional filtering
+                pass
+            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive']:
+                # Get user's state(s) based on role
+                user_states = []
+                
+                if user_role == 'stateadmin':
+                    # Get states from StateAdmin relationship
+                    state_admins = StateAdmin.objects.filter(users=request.user, status='UserVerified')
+                    user_states = [sa.state.id for sa in state_admins]
+                elif user_role == 'sosadmin':
+                    # Get states from EM_admin relationship  
+                    em_admins = EM_admin.objects.filter(users=request.user, status='StateAdminVerified')
+                    user_states = [ea.state.id for ea in em_admins]
+                elif user_role == 'sosexecutive':
+                    # Get states from EM_ex relationship
+                    em_exs = EM_ex.objects.filter(users=request.user, status='StateAdminVerified')
+                    user_states = [ee.state.id for ee in em_exs]
+                
+                if user_states:
+                    # Filter devices for vehicles belonging to owners in user's states
+                    # This requires checking the state through the device owner's address_State
+                    devices = devices.filter(
+                        vehicle_owner__users__address_State__in=[
+                            Settings_State.objects.get(id=state_id).state for state_id in user_states
+                        ]
+                    )
+                else:
+                    # If no states found, return empty queryset
+                    devices = DeviceTag.objects.none()
+                    
+            elif user_role == 'owner':
+                # Get vehicles owned by this user
+                vehicle_owners = VehicleOwner.objects.filter(users=request.user, status='UserVerified')
+                if vehicle_owners.exists():
+                    # Filter devices for vehicles owned by this user
+                    devices = devices.filter(vehicle_owner__in=vehicle_owners)
+                else:
+                    # If user is not associated with any vehicles, return empty queryset
+                    devices = DeviceTag.objects.none()
+            else:
+                # For other roles, return empty queryset for security
+                devices = DeviceTag.objects.none()
+        else:
+            # If user is not authenticated, return empty queryset
+            devices = DeviceTag.objects.none()
 
-         
+        # Apply additional filters based on request parameters
         device_id = request.POST.get('device_id') 
         if device_id:
             devices = devices.filter(device=device_id)
