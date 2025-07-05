@@ -1243,7 +1243,7 @@ class esimActivationRequest(models.Model):
 class EditRequest(models.Model):
     objects = SafeCreateManager()
     time = models.DateTimeField(auto_now_add=True, verbose_name="Time")
-    type = models.CharField(max_length=20, choices=[("owner", "Owner"), ("device", "Device"), ("vehicle", "Vehicle"), ("devicemodel", "Device Model"), ("retailer", "Retailer"), ("manufacturer", "Manufacturer")], verbose_name="Type")
+    type = models.CharField(max_length=20, choices=[("owner", "Owner"), ("device", "Device"), ("vehicle", "Vehicle"), ("devicemodel", "Device Model"), ("dealer", "Retailer"), ("manufacturer", "Manufacturer")], verbose_name="Type")
     from_user = models.IntegerField(verbose_name="From User")
     to_user = models.IntegerField(verbose_name="To User")
     otp = models.IntegerField(verbose_name="OTP")

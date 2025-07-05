@@ -18,6 +18,7 @@ from .serializers import *
 import xml.etree.ElementTree as ET
 import json
 import html
+from django.db.models import Q
 import random
 from itertools import islice 
 from django.utils import timezone     
@@ -440,7 +441,7 @@ def generate_captcha_api(request):
     byte_io, result = generate_captcha()
     key = uuid.uuid4().hex
     cap,error=Captcha.objects.safe_create(key=key, answer=result)
-    if error:   # Rollback user creation if retailer creation fails
+    if error:   # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
 
@@ -1607,7 +1608,7 @@ def sms_send(no,text,tpid):
 
 def add_sms_queue(msg,no):
     sms_entry ,error= sms_out.objects.safe_create( sms_text=msg,no=no, status='Queue'  )
-    if error:  # Rollback user creation if retailer creation fails
+    if error:  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
 @csrf_exempt
@@ -1641,7 +1642,7 @@ def sms_received(request ):
         msg = request.data.get('msg', '')
 
         new_sms_in ,error= sms_in.objects.safe_create( sms_text=msg,no=no, status='Received'  )
-        if error:  # Rollback user creation if retailer creation fails
+        if error:  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
         return Response({'status':"Success"})
@@ -1840,7 +1841,7 @@ def create_VehicleOwner(request ):
                 if not file_idProof : 
                     user.delete()
                     return Response({'error': "Invalid file." }, status=400)
-                retailer ,error= VehicleOwner.objects.safe_create(
+                dealer ,error= VehicleOwner.objects.safe_create(
                     company_name=company_name, 
                     created=created,
                     expirydate=expirydate, 
@@ -1851,16 +1852,16 @@ def create_VehicleOwner(request ):
                 ) 
             
                 if error:
-                    user.delete()  # Rollback user creation if retailer creation fails
+                    user.delete()  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
             except Exception as e:
                 user.delete()
                 return Response({'error': "Unable to process request."+str(e)}, status=400)
-            retailer.users.add(user) 
+            dealer.users.add(user) 
             send_usercreation_otp(user,new_password,'Vehicle Owner ')
              
-            return Response(VehicleOwnerSerializer(retailer).data)
+            return Response(VehicleOwnerSerializer(dealer).data)
         else:
             return Response(error, status=400)        
 
@@ -2013,19 +2014,32 @@ def filter_VehicleOwner(request ):
         name = request.data.get('name', '')
         phone_no = request.data.get('phone_no', '')
         address = request.data.get('address', '') 
+        address_State = request.data.get('address_State', '')
         filters = {} 
-        if uo2: 
-            owners = DeviceTag.objects.filter(  status="Owner_Final_OTP_Verified").values("vehicle_owner").distinct()
-            manufacturers = VehicleOwner.objects.filter(
-                        id__in=owners,
-                        users__email__icontains=email,
-                        company_name__icontains=company_name,
-                        users__name__icontains=name,
-                        users__mobile__icontains=phone_no, 
-                    ).distinct()
+        
+        if uo2:  # Superadmin - should get all data
+            if obj_id:
+                manufacturers = VehicleOwner.objects.filter(
+                    id=obj_id,
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no,
+                    users__address__icontains=address,
+                    users__address_State__icontains=address_State,
+                ).distinct()
+            else:
+                manufacturers = VehicleOwner.objects.filter(
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no,
+                    users__address__icontains=address,
+                    users__address_State__icontains=address_State,
+                ).distinct()
         
         
-        elif uo:
+        elif uo:  # State admin - filter by state
             state=uo.state
             owners = DeviceTag.objects.filter( device__dealer_id__manufacturer_id__state=state, status="Owner_Final_OTP_Verified").values("vehicle_owner").distinct()
             manufacturers = VehicleOwner.objects.filter(
@@ -2033,19 +2047,23 @@ def filter_VehicleOwner(request ):
                         users__email__icontains=email,
                         company_name__icontains=company_name,
                         users__name__icontains=name,
-                        users__mobile__icontains=phone_no, 
+                        users__mobile__icontains=phone_no,
+                        users__address__icontains=address,
+                        users__address_State__icontains=address_State,
                     ).distinct()
         
         
-        else:
+        else:  # Other roles
             state = request.data.get('state', '')
             if obj_id :
                 manufacturers = VehicleOwner.objects.filter(
-                    id=obj_id ,
+                    id=obj_id,
                     users__email__icontains=email,
                     company_name__icontains=company_name,
                     users__name__icontains=name,
-                    users__mobile__icontains=phone_no, 
+                    users__mobile__icontains=phone_no,
+                    users__address__icontains=address,
+                    users__address_State__icontains=address_State,
                 ).distinct()
             else:
                 manufacturers = VehicleOwner.objects.filter(
@@ -2054,14 +2072,16 @@ def filter_VehicleOwner(request ):
                     users__email__icontains=email,
                     company_name__icontains=company_name,
                     users__name__icontains=name,
-                    users__mobile__icontains=phone_no, 
+                    users__mobile__icontains=phone_no,
+                    users__address__icontains=address,
+                    users__address_State__icontains=address_State,
                 ).distinct()
 
         # Serialize the queryset
-        retailer_serializer = VehicleOwnerSerializer(manufacturers, many=True)
+        dealer_serializer = VehicleOwnerSerializer(manufacturers, many=True)
 
         # Return the serialized data as JSON response
-        return Response(retailer_serializer.data)
+        return Response(dealer_serializer.data)
 
 
     except Exception as e:
@@ -2307,7 +2327,7 @@ def create_eSimProvider(request ):
             try:
                 try:
                     file_authLetter=save_file(request,'file_authLetter','fileuploads/man') 
-                    file_companRegCertificate=save_file(request,'file_dot_m2m_registration','fileuploads/man')
+                    file_companRegCertificate=save_file(request,'file_dot_esim_registration','fileuploads/man')
                     file_GSTCertificate=save_file(request,'file_GSTCertificate','fileuploads/man')
                     file_idProof = save_file(request,'file_idProof','fileuploads/man')
                     if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof:    
@@ -2320,7 +2340,7 @@ def create_eSimProvider(request ):
                     return Response({'error44': "Unable to process request."+eeeeeee}, status=400)
 
 
-                retailer ,error= eSimProvider.objects.safe_create(
+                dealer ,error= eSimProvider.objects.safe_create(
                     company_name=company_name,
                     gstnnumber=gstnnumber,
                     created=created,
@@ -2337,7 +2357,7 @@ def create_eSimProvider(request ):
                 )
                 
                 if error:
-                    user.delete()  # Rollback user creation if retailer creation fails
+                    user.delete()  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
             except Exception as e:
@@ -2345,10 +2365,10 @@ def create_eSimProvider(request ):
 
 
                 return Response({'error1': "Unable to process request."+eeeeeee}, status=400)
-            retailer.users.add(user)
+            dealer.users.add(user)
             send_usercreation_otp(user,new_password,'EsimProvider ')
              
-            return Response(eSimProviderSerializer(retailer).data)
+            return Response(eSimProviderSerializer(dealer).data)
         else:
             return Response({'error131': str(error)}, status=400)
 
@@ -2376,8 +2396,8 @@ def filter_eSimProvider(request ):
         um=get_user_object(user,role)
         if um:
             
-            retailer_serializer = eSimProviderSerializer(um.esim_provider, many=True)
-            return Response(retailer_serializer.data)
+            dealer_serializer = eSimProviderSerializer(um.esim_provider, many=True)
+            return Response(dealer_serializer.data)
         
         # Get filter parameters from the request
         dealer_id = request.data.get('eSimProvider_id', None)
@@ -2418,10 +2438,10 @@ def filter_eSimProvider(request ):
         manufacturers = manufacturers.select_related('state').distinct()
 
         # Serialize the queryset
-        retailer_serializer = eSimProviderSerializer(manufacturers, many=True)
+        dealer_serializer = eSimProviderSerializer(manufacturers, many=True)
 
         # Return the serialized data as JSON response
-        return Response(retailer_serializer.data)
+        return Response(dealer_serializer.data)
 
     except Exception as e:
         
@@ -2574,7 +2594,7 @@ def create_dealer(request ):
                 
 
 
-                retailer ,error= Retailer.objects.safe_create(
+                dealer ,error= Retailer.objects.safe_create(
                     company_name=company_name,
                     gstnnumber=gstnnumber,
                     created=created,
@@ -2592,15 +2612,15 @@ def create_dealer(request ):
                 )
                 
                 if error:
-                    user.delete()  # Rollback user creation if retailer creation fails
+                    user.delete()  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
             except Exception as e:
                 user.delete()
                 return Response({'error': "Unable to process request."+eeeeeee}, status=400) 
-            retailer.users.add(user)
+            dealer.users.add(user)
             send_usercreation_otp(user,new_password,'Dealer ')             
-            return Response(RetailerSerializer(retailer).data)
+            return Response(RetailerSerializer(dealer).data)
         else:
             return Response(error, status=400)
 
@@ -2670,10 +2690,10 @@ def filter_dealer(request ):
         manufacturers = manufacturers.distinct()
 
         # Serialize the queryset
-        retailer_serializer = RetailerSerializer(manufacturers, many=True)
+        dealer_serializer = RetailerSerializer(manufacturers, many=True)
 
         # Return the serialized data as JSON response
-        return Response(retailer_serializer.data)
+        return Response(dealer_serializer.data)
 
 
     except Exception as e:
@@ -2841,7 +2861,7 @@ def create_manufacturer(request ):
                     status="Created",
                 )
                 if error:
-                    user.delete()  # Rollback user creation if retailer creation fails
+                    user.delete()  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
                 
@@ -2857,12 +2877,12 @@ def create_manufacturer(request ):
                     else:
                         user.delete()
                         manufacturer.delete()
-                        return Response({'error': "State missmatch with M2M Provider"}, status=400)
+                        return Response({'error': "State missmatch with esim Provider"}, status=400)
                 if a==0:
 
                     user.delete()
                     manufacturer.delete()
-                    return Response({'error': "No valid M2M Provider"}, status=400)
+                    return Response({'error': "No valid esim Provider"}, status=400)
                 
 
 
@@ -2975,7 +2995,7 @@ def create_user(role, req):
             status=status,
             password=hashed_password
         )
-        if error:  # Rollback user creation if retailer creation fails
+        if error:  # Rollback user creation if dealer creation fails
             return [None, error.data , None] # Return the Response object from safe_create
 
         user.save()
@@ -3070,7 +3090,7 @@ def create_StateAdmin(request ):
                     return Response({'error': "Invalid file." }, status=400)
                 #user.delete()
                 
-                retailer, error = StateAdmin.objects.safe_create( 
+                dealer, error = StateAdmin.objects.safe_create( 
                     created=created,
                     state_id=state,
                     expirydate=expirydate, 
@@ -3082,7 +3102,7 @@ def create_StateAdmin(request ):
                 ) 
                 
                 if error:
-                    user.delete()  # Rollback user creation if retailer creation fails
+                    user.delete()  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
                  
@@ -3091,10 +3111,10 @@ def create_StateAdmin(request ):
             except Exception as e:
                 user.delete()
                 return Response({'error': "Unable to process request1."+str(e)}, status=400)
-            retailer.users.add(user)
+            dealer.users.add(user)
             send_usercreation_otp(user,new_password,'State Admin ')
              
-            return Response(StateadminSerializer(retailer).data)
+            return Response(StateadminSerializer(dealer).data)
         else:
             return Response(error, status=400)
 
@@ -3307,7 +3327,7 @@ def create_DTO_RTO(request ):
                      
                     return Response({'error': "Invalid file." }, status=400)
 
-                retailer,error = dto_rto.objects.safe_create( 
+                dealer,error = dto_rto.objects.safe_create( 
                     created=created,
                     state_id=state,
                     dto_rto=dto_rto1,
@@ -3321,16 +3341,16 @@ def create_DTO_RTO(request ):
                 ) 
                 
                 if error:
-                    user.delete()  # Rollback user creation if retailer creation fails
+                    user.delete()  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
             except Exception as e:
                 user.delete()
                 return Response({'error': "Unable to process request."+eeeeeee}, status=400)
-            retailer.users.add(user) 
+            dealer.users.add(user) 
             send_usercreation_otp(user,new_password,'DTO/RTO ')
              
-            return Response(dto_rtoSerializer(retailer).data)
+            return Response(dto_rtoSerializer(dealer).data)
         else:
             return Response(error, status=400)          
 
@@ -3578,7 +3598,7 @@ def create_SOS_user(request ):
                     return Response({'error': "Invalid file." }, status=400)
 
 
-                retailer,error = EM_ex.objects.safe_create( 
+                dealer,error = EM_ex.objects.safe_create( 
                     created=created,
                     state_id=state, 
                     #district_id=district,
@@ -3590,15 +3610,15 @@ def create_SOS_user(request ):
                     status="Created",
                 ) 
                 if error:
-                    user.delete()  # Rollback user creation if retailer creation fails
+                    user.delete()  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
             except Exception as e:
                 user.delete()
                 return Response({'error': "Unable to process request."+eeeeeee}, status=400)
-            retailer.users.add(user) 
+            dealer.users.add(user) 
             send_usercreation_otp(user,new_password,'SOS user ')             
-            return Response(EM_exSerializer(retailer).data)
+            return Response(EM_exSerializer(dealer).data)
         else:
             return Response(error, status=400)
 
@@ -3741,7 +3761,7 @@ def create_SOS_admin(request ):
                 if not file_idProof: 
                     user.delete()
                     return Response({'error': "Invalid file." }, status=400)
-                retailer,error = EM_admin.objects.safe_create( 
+                dealer,error = EM_admin.objects.safe_create( 
                     created=created,
                     state_id=state, 
                     #district_id=district,
@@ -3753,16 +3773,16 @@ def create_SOS_admin(request ):
                 ) 
                 
                 if error:
-                    user.delete()  # Rollback user creation if retailer creation fails
+                    user.delete()  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
             except Exception as e:
                 user.delete()
                 return Response({'error': "Unable to process request."+eeeeeee}, status=400)
-            retailer.users.add(user) 
+            dealer.users.add(user) 
             send_usercreation_otp(user,new_password,'SOS Admin ')
              
-            return Response(EM_adminSerializer(retailer).data)
+            return Response(EM_adminSerializer(dealer).data)
         else:
             return Response(error, status=400)
 
@@ -3957,13 +3977,13 @@ def create_EM_team(request ):
                     name = name,
                     detail = detail)
                 
-                if error: # Rollback user creation if retailer creation fails
+                if error: # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
                 ob.members.set(members) 
                 ob.save()
-                return Response({'status': str('Team Created Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to create team. Incomplete data.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+                return Response({'status': str('Team Created Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('Unable to create team. Incomplete data.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
 
     except Exception as e:
@@ -3997,8 +4017,8 @@ def activate_EM_team(request ):
             ob.status="Active"
             ob.activated_at= timezone.now()
             ob.save()
-            return Response({'status': str('Team Activated Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to activate team.  Team not found.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({'status': str('Team Activated Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('Unable to activate team.  Team not found.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4027,8 +4047,8 @@ def remove_EM_team(request ):
             ob.status="Removed"
             ob.activated_at= timezone.now()
             ob.save()
-            return Response({'status': str('Team Removed Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to remove team. Team not found.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({'status': str('Team Removed Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('Unable to remove team. Team not found.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4054,8 +4074,8 @@ def get_EM_team(request ):
         id = request.data.get('team_id') 
         ob=EMTeams.objects.filter(id = id ,state=uo.state).last()
         if ob: 
-            return Response({"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Team not found')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('Team not found')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4079,8 +4099,8 @@ def list_EM_team(request ):
     try: 
         ob=EMTeams.objects.filter( state=uo.state).all()
         if ob: 
-            return Response({ "teams":EMTeamsSerializer(ob,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Team not found')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "teams":EMTeamsSerializer(ob,many=True).data}, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('Team not found')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4112,8 +4132,8 @@ def TLEx_getPendingCallList(request ):
         ee=EMCallAssignment.objects.filter( call__team__teamlead= uo  ).all()
 
         if ee: 
-            return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'call': str('Not found')}, status=404)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'call': str('Not found')}, status=404)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4142,8 +4162,8 @@ def DEx_getPendingCallList(request ):
             ee=EMCallAssignment.objects.filter(  ex = uo  ).exclude(status="closed")  
 
         if ee: 
-            return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'call': str('Not found')}, status=200)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'call': str('Not found')}, status=200)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4168,8 +4188,8 @@ def DEx_getLiveCallList(request ):
         ee=EMCallAssignment.objects.filter( type = "desk_ex",  ex = uo  )  
 
         if ee: 
-            return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'call': str('Not found')}, status=200)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'call': str('Not found')}, status=200)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4214,8 +4234,8 @@ def DEx_replyCall(request ):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response( EMCallAssignmentSerializer(assignment,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response( EMCallAssignmentSerializer(assignment,many=False).data, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4266,11 +4286,11 @@ def DEx_broadcast(request ):
             status = "pending",
             type = typ)
         
-        if error: # Rollback user creation if retailer creation fails
+        if error: # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
         
-        return Response( EMCallBroadcastSerializer(ee,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response( EMCallBroadcastSerializer(ee,many=False).data, status=200)#Response(SOS_userSerializer(dealer).data)
         
 
     except Exception as e:
@@ -4304,7 +4324,7 @@ def DEx_broadcastlist(request ):
         ee=EMCallBroadcast.objects.filter(
             call = assignment.call).all()
         
-        return Response( EMCallBroadcastSerializer(ee,many=True).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response( EMCallBroadcastSerializer(ee,many=True).data, status=200)#Response(SOS_userSerializer(dealer).data)
         
 
     except Exception as e:
@@ -4334,7 +4354,7 @@ def FEx_broadcastlist(request ):
     try:  
         ee=EMCallBroadcast.objects.filter(  type=uo.user_type,status="pending").last()
         
-        return Response( EMCallBroadcastSerializer(ee,many=True).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response( EMCallBroadcastSerializer(ee,many=True).data, status=200)#Response(SOS_userSerializer(dealer).data)
         
 
     except Exception as e:
@@ -4387,12 +4407,12 @@ def TLEx_reassign(request ):
                         ex = ex 
                         ) 
             
-            if error:  # Rollback user creation if retailer creation fails
+            if error:  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
             ee.status="reassigned"
             ee.save()
-            return Response( EMCallAssignmentSerializer(assignment ,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
+            return Response( EMCallAssignmentSerializer(assignment ,many=False).data, status=200)#Response(SOS_userSerializer(dealer).data)
         else:
             return Response({"error":"Desk_ex is not a member of your team."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -4437,10 +4457,10 @@ def FEx_broadcastaccept(request ):
                     ex = uo 
                     )  
         
-        if error:  # Rollback user creation if retailer creation fails
+        if error:  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
-        return JsonResponse( {"assignment":EMCallAssignmentSerializer(assignment ,many=False).data}, status=200)#Response(SOS_userSerializer(retailer).data)
+        return JsonResponse( {"assignment":EMCallAssignmentSerializer(assignment ,many=False).data}, status=200)#Response(SOS_userSerializer(dealer).data)
         
     except Exception as e:
         return JsonResponse({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4483,7 +4503,7 @@ def  DEx_closeCase(request ):
         
 
         
-        return Response( EMCallSerializer(assignment.call,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response( EMCallSerializer(assignment.call,many=False).data, status=200)#Response(SOS_userSerializer(dealer).data)
         
 
     except Exception as e:
@@ -4516,15 +4536,15 @@ def DEx_sendMsg(request ):
         message=request.data.get("message") 
         ob,error=EMCallMessages.objects.safe_create(assignment=assignment,call=call,message=message)
         
-        if error:  # Rollback user creation if retailer creation fails
+        if error:  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
         if ob:
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response(EMCallMessagesSerializer(ob,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to send message. value error.')}, status=200)#Response(SOS_userSerializer(retailer).data)
+            return Response(EMCallMessagesSerializer(ob,many=False).data, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('Unable to send message. value error.')}, status=200)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4558,8 +4578,8 @@ def DEx_rcvMsg(request ):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response(EMCallMessagesSerializer(ob,many=True).data, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response([], status=200)#Response(SOS_userSerializer(retailer).data)
+            return Response(EMCallMessagesSerializer(ob,many=True).data, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response([], status=200)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4601,8 +4621,8 @@ def DEx_commentFE(request ):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response(EMCallAssignmentSerializer(assignment2,many=False).data, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to read message. value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response(EMCallAssignmentSerializer(assignment2,many=False).data, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('Unable to read message. value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4846,7 +4866,7 @@ def  DEx_getloc(request ):
         
 
         
-        return Response( {"target":deviceloc,"fieldEx":fieldEx}, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response( {"target":deviceloc,"fieldEx":fieldEx}, status=200)#Response(SOS_userSerializer(dealer).data)
         
 
     except Exception as e:
@@ -4879,7 +4899,7 @@ def  FEx_getloc(request ):
        
         deviceloc=list(EMGPSLocation.objects.filter(device_tag= assignment.call.device).order_by('-id')[:100].values())
         
-        return Response( {"target":deviceloc}, status=200)#Response(SOS_userSerializer(retailer).data)
+        return Response( {"target":deviceloc}, status=200)#Response(SOS_userSerializer(dealer).data)
         
 
     except Exception as e:
@@ -4907,15 +4927,15 @@ def FEx_updateLoc(request ):
         return Response({"error":"Request must be from   police_ex or  ambulance_ex ."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
         ob,error=EMUserLocation.objects.safe_create( field_ex = uo , em_lat = float(request.data.get("em_lat") ), em_lon = float(request.data.get("em_lon") ), speed= float(request.data.get("speed") ) )
-        if error:  # Rollback user creation if retailer creation fails
+        if error:  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
         if ob:
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response({ "loc":list(ob.values())}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Location not updated. value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "loc":list(ob.values())}, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('Location not updated. value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4953,8 +4973,8 @@ def FEx_updateStatus(request ):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return JsonResponse({"assignment": EMCallAssignmentSerializer( assignment,many=False).data}, status=200)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return JsonResponse({"assignment": EMCallAssignmentSerializer( assignment,many=False).data}, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
     except Exception as e:
         #raise e
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -4995,15 +5015,15 @@ def FEx_reqBackup(request ):
         accepted=False
 
         ob,error=EMCallBackupRequest.objects.safe_create(assignment=assignment,call=call,message=message,type=type,quantity=quantity)
-        if error:  # Rollback user creation if retailer creation fails
+        if error:  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
         if ob:
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response({ "loc":list(ob.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('Unable to send. value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "loc":list(ob.values())}, status=400)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('Unable to send. value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -5044,8 +5064,8 @@ def DEx_acceptBackup(request ):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response({ "loc":list(backup.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "loc":list(backup.values())}, status=400)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -5091,8 +5111,8 @@ def DEx_listBackup(request ):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response(EMCallBackupRequestSerializer( backup,many=True).data, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response(EMCallBackupRequestSerializer( backup,many=True).data, status=400)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -5138,8 +5158,8 @@ def accept_EMassignment(request ):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -5175,8 +5195,8 @@ def reject_EMassignment(request ):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -5211,8 +5231,8 @@ def arriving_EMassignment(request ):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -5365,8 +5385,8 @@ def arrived_EMassignment(request ):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -5407,8 +5427,8 @@ def close_EMassignment(request ):
             user.last_activity =  timezone.now()
             user.login=True
             user.save()
-            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(retailer).data)
-        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(retailer).data)
+            return Response({ "loc":list(assignment.values())}, status=400)#Response(SOS_userSerializer(dealer).data)
+        return Response({'error': str('value error.')}, status=400)#Response(SOS_userSerializer(dealer).data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400) 
@@ -5573,7 +5593,7 @@ def TagDevice2Vehicle(request ):
             otp= str(random.randint(100000, 999999)) ,
             otp_time=timezone.now() 
             )
-            if error:   # Rollback user creation if retailer creation fails
+            if error:   # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
             stock_assignment.stock_status= 'Fitted'
@@ -5860,7 +5880,7 @@ def driver_add(request ):
     created_by=user
                 )
         
-        if error: # Rollback user creation if retailer creation fails
+        if error: # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
                 
@@ -5974,7 +5994,7 @@ def Tag_ownerlist(request ):
             if user_role == 'superadmin':
                 # Superadmin sees all devices - no additional filtering
                 pass
-            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive']:
+            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive', 'dtorto']:
                 # Get user's state(s) based on role
                 user_states = []
                 
@@ -5990,8 +6010,26 @@ def Tag_ownerlist(request ):
                     # Get states from EM_ex relationship
                     em_exs = EM_ex.objects.filter(users=request.user, status='StateAdminVerified')
                     user_states = [ee.state.id for ee in em_exs]
+                elif user_role == 'dtorto':
+                    # Get districts from DTO/RTO relationship
+                    dto_rtos = dto_rto.objects.filter(users=request.user, status='UserVerified')
+                    user_districts = [dr.district for dr in dto_rtos if dr.district]
+                    
+                    if user_districts:
+                        # Filter devices for vehicles belonging to owners with registration in user's districts
+                        # Vehicle registration numbers typically contain district codes (e.g., AS01, AS02, etc.)
+                        district_q = Q()
+                        for district_code in user_districts:
+                            # Check if vehicle registration contains the district code
+                            district_q |= Q(vehicle_reg_no__icontains=district_code)
+                        
+                        devices = devices.filter(district_q)
+                    else:
+                        # If no districts found, return empty queryset
+                        devices = DeviceTag.objects.none()
                 
-                if user_states:
+                # Handle state-based filtering for other roles
+                if user_role in ['stateadmin', 'sosadmin', 'sosexecutive'] and user_states:
                     # Filter devices for vehicles belonging to owners in user's states
                     # This requires checking the state through the device owner's address_State
                     devices = devices.filter(
@@ -5999,7 +6037,7 @@ def Tag_ownerlist(request ):
                             Settings_State.objects.get(id=state_id).state for state_id in user_states
                         ]
                     )
-                else:
+                elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive'] and not user_states:
                     # If no states found, return empty queryset
                     devices = DeviceTag.objects.none()
                     
@@ -7760,9 +7798,9 @@ def filter_Settings_hp_freq(request ):
                  
             ).distinct()
         # Serialize the queryset
-        retailer_serializer = Settings_hp_freqSerializer(manufacturers, many=True)
+        dealer_serializer = Settings_hp_freqSerializer(manufacturers, many=True)
         # Return the serialized data as JSON response
-        return Response(retailer_serializer.data)
+        return Response(dealer_serializer.data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -7837,9 +7875,9 @@ def filter_Settings_District(request ):
         
             
         # Serialize the queryset
-        retailer_serializer = Settings_DistrictSerializer(manufacturers, many=True)
+        dealer_serializer = Settings_DistrictSerializer(manufacturers, many=True)
         # Return the serialized data as JSON response
-        return Response(retailer_serializer.data)
+        return Response(dealer_serializer.data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -7924,9 +7962,9 @@ def filter_Settings_firmware(request ):
                  
             ).distinct()
         # Serialize the queryset
-        retailer_serializer = Settings_firmwareSerializer(manufacturers, many=True)
+        dealer_serializer = Settings_firmwareSerializer(manufacturers, many=True)
         # Return the serialized data as JSON response
-        return Response(retailer_serializer.data)
+        return Response(dealer_serializer.data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -8006,9 +8044,9 @@ def filter_Settings_VehicleCategory(request ):
                  
             ).distinct()
         # Serialize the queryset
-        retailer_serializer = Settings_VehicleCategorySerializer(manufacturers, many=True)
+        dealer_serializer = Settings_VehicleCategorySerializer(manufacturers, many=True)
         # Return the serialized data as JSON response
-        return Response(retailer_serializer.data)
+        return Response(dealer_serializer.data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -8402,7 +8440,7 @@ def homepage_Manufacturer(request ):
             
             count_dict = {
                 'Total_Model': mod.count(),
-                'Total_M2M_linked': profile.esim_provider.count(),
+                'Total_esim_linked': profile.esim_provider.count(),
                 
                 'Total_Dealer': dealers.count(),
                 'Total_Stock_Created': stock.count(),
@@ -9403,9 +9441,9 @@ def filter_Settings_State(request ):
 
  
         # Serialize the queryset
-        retailer_serializer = Settings_StateSerializer(manufacturers, many=True)
+        dealer_serializer = Settings_StateSerializer(manufacturers, many=True)
         # Return the serialized data as JSON response
-        return Response(retailer_serializer.data)
+        return Response(dealer_serializer.data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -9470,9 +9508,9 @@ def filter_Settings_ip(request ):
                  
             ).distinct()
         # Serialize the queryset
-        retailer_serializer = Settings_ipSerializer(manufacturers, many=True)
+        dealer_serializer = Settings_ipSerializer(manufacturers, many=True)
         # Return the serialized data as JSON response
-        return Response(retailer_serializer.data)
+        return Response(dealer_serializer.data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+eeeeeee}, status=400)
@@ -9514,10 +9552,10 @@ def filter_VehicleOwner(request ):
             ).distinct()
 
         # Serialize the queryset
-        retailer_serializer = VehicleOwnerSerializer(manufacturers, many=True)
+        dealer_serializer = VehicleOwnerSerializer(manufacturers, many=True)
 
         # Return the serialized data as JSON response
-        return Response(retailer_serializer.data)
+        return Response(dealer_serializer.data)
 
 
     except Exception as e:
@@ -10376,7 +10414,7 @@ def reset_password(request ):
         Token.objects.filter(user=user).delete()
         token=Token.objects.create(user=user,key=new_password) 
         
-        #if error:  # Rollback user creation if retailer creation fails
+        #if error:  # Rollback user creation if dealer creation fails
         #            return error  # Return the Response object from safe_create
 
 
@@ -10656,7 +10694,7 @@ def temp_user_login(request ):
         otp_time=timezone.now()
         session_key=str(random.randint(1000000000000000, 99999999999999999))
         tempu,error=TempUser.objects.safe_create(mobile=mobile,name=name,em_contact=em_contact,ble_key=ble_key,otp=otp,otp_time=otp_time,session_key=session_key) 
-        if error:  # Rollback user creation if retailer creation fails
+        if error:  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
         
@@ -11524,13 +11562,13 @@ def manufacturer_details(request, manufacturer_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def retailer_details(request, retailer_id):
+def dealer_details(request, dealer_id):
     try:
-        retailer = Retailer.objects.get(pk=retailer_id)
+        dealer = Retailer.objects.get(pk=dealer_id)
     except Retailer.DoesNotExist:
         return Response({'error': 'Retailer not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    serializer = RetailerSerializer(retailer)
+    serializer = RetailerSerializer(dealer)
     return Response(serializer.data)
 
 @api_view(['GET'])
@@ -11575,15 +11613,15 @@ def list_manufacturers(request ):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def list_retailers(request ): 
+def list_dealers(request ): 
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     
     name = request.query_params.get('name', '')
-    retailers = Retailer.objects.filter(name__icontains=name)
-    serializer = RetailerSerializer(retailers, many=True)
+    dealers = Retailer.objects.filter(name__icontains=name)
+    serializer = RetailerSerializer(dealers, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
@@ -11619,9 +11657,9 @@ def list_device_models(request ):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def delete_retailer(request, pk):
-    retailer = Retailer.objects.get(pk=pk)
-    retailer.delete()
+def delete_dealer(request, pk):
+    dealer = Retailer.objects.get(pk=pk)
+    dealer.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 @api_view(['DELETE'])
@@ -11655,9 +11693,9 @@ def update_manufacturer(request, pk):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def update_retailer(request, pk):
-    retailer = Retailer.objects.get(pk=pk)
-    serializer = RetailerSerializer(retailer, data=request.data)
+def update_dealer(request, pk):
+    dealer = Retailer.objects.get(pk=pk)
+    serializer = RetailerSerializer(dealer, data=request.data)
     if serializer.is_valid():
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -11703,7 +11741,7 @@ def create_manufacturer(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-def create_retailer(request ): 
+def create_dealer(request ): 
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -11779,7 +11817,7 @@ def create_notice(request ):
                     createdby=createdby,
                     status=status,
             )
-            if error:  # Rollback user creation if retailer creation fails
+            if error:  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
             serializer = NoticeSerializer(notice)
