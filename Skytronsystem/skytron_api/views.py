@@ -12328,7 +12328,7 @@ def get_device_tag_alerts(request):
             # Filter by state and district
             alerts_queryset = alerts_queryset.filter(
                 state=dto_rto_obj.state,
-                deviceTag__vehicle_owner__address_State=dto_rto_obj.state.name,
+                deviceTag__vehicle_owner__address_State=dto_rto_obj.state.state,
                 deviceTag__vehicle_owner__address__icontains=dto_rto_obj.district
             )
             
@@ -12385,7 +12385,7 @@ def get_device_tag_alerts(request):
                 },
                 'state': {
                     'id': alert.state.id,
-                    'name': alert.state.name
+                    'name': alert.state.state
                 } if alert.state else None,
                 'gps_data': {
                     'latitude': alert.gps_ref.latitude if alert.gps_ref else None,
@@ -12395,7 +12395,7 @@ def get_device_tag_alerts(request):
                 } if alert.gps_ref else None,
                 'route_info': {
                     'id': alert.route_ref.id,
-                    'name': alert.route_ref.name
+                    'name': alert.route_ref.state
                 } if alert.route_ref else None,
                 'emergency_call': {
                     'id': alert.em_ref.id,
@@ -12488,7 +12488,7 @@ def get_device_tags(request):
             
             # Filter by state - assuming vehicle owners have state information
             device_tags_queryset = device_tags_queryset.filter(
-                vehicle_owner__users__address_State=state_admin.state.name
+                vehicle_owner__users__address_State=state_admin.state.state
             )
             
         elif user.role == "dtorto":
@@ -12499,7 +12499,7 @@ def get_device_tags(request):
             
             # Filter by state and district
             device_tags_queryset = device_tags_queryset.filter(
-                vehicle_owner__users__address_State=dto_rto_obj.state.name,
+                vehicle_owner__users__address_State=dto_rto_obj.state.state,
                 vehicle_owner__users__address__icontains=dto_rto_obj.district
             )
             

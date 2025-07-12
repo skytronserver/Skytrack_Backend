@@ -71,3 +71,6 @@ Skytronsystem/skytron_api/__pycache__/serializers.cpython-312.pyc
 Skytronsystem/skytron_api/__pycache__/views.cpython-312.pyc
 Skytronsystem/skytron_api/migrations/0001_initial.py
 Skytronsystem/skytron_api/migrations/*.py 
+skytrack_backup_20250712_051231.sql
+.gitignore
+skytrack_backup_20250712_051859.sql
