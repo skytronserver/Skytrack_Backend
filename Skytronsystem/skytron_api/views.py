@@ -30,9 +30,9 @@ import magic
 import glob
 # Define the path on the host machine where files will be stored
 # This directory should be mounted as a volume in Docker
-HOST_STORAGE_PATH = os.environ.get('HOST_STORAGE_PATH', '/tmp/skytrack_storage')  # This should match the volume mount point in Docker
+#HOST_STORAGE_PATH = os.environ.get('HOST_STORAGE_PATH', '/tmp/skytrack_storage')  # This should match the volume mount point in Docker
 
-#HOST_STORAGE_PATH = '/host_storage'   
+HOST_STORAGE_PATH = '/host_storage'   
                
 from django.utils.crypto import get_random_string   
 import sys
@@ -328,7 +328,7 @@ def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,A
  
 
 def load_private_key():
-    private_key_path = 'keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
+    private_key_path = '/app/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
     with open(private_key_path, 'rb') as key_file:
         private_key = RSA.import_key(key_file.read()) 
     with open(private_key_path, 'rb') as key_file: 
