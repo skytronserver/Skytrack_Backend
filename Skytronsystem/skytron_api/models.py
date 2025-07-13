@@ -42,6 +42,10 @@ from rest_framework.response import Response
 from rest_framework import status
 
 
+def generate_uuid_hex():
+    return uuid.uuid4().hex
+
+
 
 class SafeCreateManager(models.Manager):
     def safe_create(self, **kwargs):
@@ -79,7 +83,7 @@ class SafeCreateManager(models.Manager):
 
 class Captcha(models.Model):
     objects = SafeCreateManager()
-    key = models.CharField(max_length=32, unique=True, default=uuid.uuid4().hex)
+    key = models.CharField(max_length=32, unique=True, default=generate_uuid_hex)
     answer = models.IntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
      
@@ -451,7 +455,7 @@ class Dealer(models.Model):
     file_idProof = models.CharField(max_length=255, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
     manufacturer = models.ForeignKey(Manufacturer, on_delete=models.CASCADE)
-    district = models.ForeignKey('Settings_District', on_delete=models.CASCADE,blank=True, null=True)
+    districts = models.ManyToManyField('Settings_District', related_name='dealer_districts', blank=True)
     status_choices = [
             ('Created', 'Created'),
             ('UserVerified', 'UserVerified'),
@@ -463,6 +467,8 @@ class Dealer(models.Model):
     
     class Meta:
         db_table = 'skytron_api_retailer'  # Keep the old table name for now
+        # Explicitly set the many-to-many table name to match the expected name
+        # This ensures the districts relationship uses the correct table name
     
 class VehicleOwner(models.Model):
     objects = SafeCreateManager()

@@ -30,11 +30,9 @@ import magic
 import glob
 # Define the path on the host machine where files will be stored
 # This directory should be mounted as a volume in Docker
-HOST_STORAGE_PATH = '/host_storage'  # This should match the volume mount point in Docker
-#def send_mail( subject, message, from_email, recipient_list, fail_silently=False, auth_user=None, auth_password=None, connection=None, html_message=None):
-#    pass
+HOST_STORAGE_PATH = os.environ.get('HOST_STORAGE_PATH', '/tmp/skytrack_storage')  # This should match the volume mount point in Docker
 
-
+#HOST_STORAGE_PATH = '/host_storage'   
                
 from django.utils.crypto import get_random_string   
 import sys
@@ -330,7 +328,7 @@ def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,A
  
 
 def load_private_key():
-    private_key_path = '/app/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
+    private_key_path = 'keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
     with open(private_key_path, 'rb') as key_file:
         private_key = RSA.import_key(key_file.read()) 
     with open(private_key_path, 'rb') as key_file: 
@@ -2246,22 +2244,22 @@ def update_eSimProvider(request ):
             esimprovider.file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man')
             
             if not esimprovider.file_authLetter: 
-                    return Response({'error': "Invalid file." }, status=400)
+                    return Response({'error': "Invalid auth file." }, status=400)
         if file_companRegCertificate:
             esimprovider.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
         
             if not esimprovider.file_companRegCertificate: 
-                    return Response({'error': "Invalid file." }, status=400)
+                    return Response({'error': "Invalid reg cert file." }, status=400)
         if file_GSTCertificate:
             esimprovider.file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
         
             if not esimprovider.file_GSTCertificate:
-                    return Response({'error': "Invalid file." }, status=400)
+                    return Response({'error': "Invalid GST file." }, status=400)
         if file_idProof:
             esimprovider.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
             
             if not esimprovider.file_idProof: 
-                    return Response({'error': "Invalid file." }, status=400)
+                    return Response({'error': "Invalid id proof file." }, status=400)
 
         if email:
             esimprovider.user.email = email
@@ -2327,12 +2325,22 @@ def create_eSimProvider(request ):
             try:
                 try:
                     file_authLetter=save_file(request,'file_authLetter','fileuploads/man') 
-                    file_companRegCertificate=save_file(request,'file_dot_esim_registration','fileuploads/man')
+                    file_companRegCertificate=save_file(request,'file_companRegCertificate','fileuploads/man')
                     file_GSTCertificate=save_file(request,'file_GSTCertificate','fileuploads/man')
                     file_idProof = save_file(request,'file_idProof','fileuploads/man')
-                    if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof:    
+                    if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof: 
+                           
                         user.delete()
-                        return Response({'error': "Invalid file." }, status=400)
+                        if   not file_idProof: 
+                            return Response({'error': "Invalid id proof file." }, status=400)
+                        if  not file_GSTCertificate : 
+                            return Response({'error': "Invalid gst file." }, status=400)
+                        if  not file_companRegCertificate  : 
+                            return Response({'error': "Invalid CompReg file." }, status=400)
+                        if not file_authLetter  : 
+                            return Response({'error': "Invalid auth file." }, status=400)
+                        else: 
+                            return Response({'error': "Invalid file." }, status=400)
                 except Exception as e:
                     user.delete()
 
@@ -2485,7 +2493,7 @@ def update_dealer(request ):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
-        district = request.data.get('district')
+        districts = request.data.get('districts', [])  # Changed to list of district IDs
 
         email = request.data.get('email')
         mobile = request.data.get('mobile')
@@ -2516,8 +2524,16 @@ def update_dealer(request ):
             dealer.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
             if not dealer.file_idProof:
                     return Response({'error': "Invalid file." }, status=400)
-        if district:
-            dealer.district = district
+        
+        # Handle districts update
+        if districts and isinstance(districts, list):
+            dealer.districts.clear()  # Clear existing districts
+            for district_id in districts:
+                try:
+                    district_obj = Settings_District.objects.get(id=district_id)
+                    dealer.districts.add(district_obj)
+                except Settings_District.DoesNotExist:
+                    pass  # Skip invalid district IDs
 
         if email:
             dealer.user.email = email
@@ -2579,7 +2595,7 @@ def create_dealer(request ):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof') 
-        district = request.data.get('district') 
+        districts = request.data.get('districts', [])  # Changed to list of district IDs
         user,error,new_password=create_user('dealer',request)
         if user:         
             try:
@@ -2606,7 +2622,6 @@ def create_dealer(request ):
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
                     createdby=createdby,
-                    district=district,
                     manufacturer=man,
                     status="Created",
                 )
@@ -2614,12 +2629,22 @@ def create_dealer(request ):
                 if error:
                     user.delete()  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
+                
+                # Add districts to the dealer
+                if districts and isinstance(districts, list):
+                    for district_id in districts:
+                        try:
+                            district_obj = Settings_District.objects.get(id=district_id)
+                            dealer.districts.add(district_obj)
+                        except Settings_District.DoesNotExist:
+                            pass  # Skip invalid district IDs
 
             except Exception as e:
                 user.delete()
                 return Response({'error': "Unable to process request."+eeeeeee}, status=400) 
             dealer.users.add(user)
-            send_usercreation_otp(user,new_password,'Dealer ')             
+            send_usercreation_otp(user,new_password,'Dealer ')   
+            dealer.save()  # Save the dealer after adding users and districts          
             return Response(DealerSerializer(dealer).data)
         else:
             return Response(error, status=400)
@@ -2657,7 +2682,7 @@ def filter_dealer(request ):
         district_filter = request.data.get('district', '')
 
         # Start with base query including related fields for better performance
-        manufacturers = Dealer.objects.select_related('manufacturer__state', 'district__state')
+        manufacturers = Dealer.objects.select_related('manufacturer__state').prefetch_related('districts__state')
         
         # Apply filters based on user role and input parameters
         if uo:  # Device manufacturer user
@@ -2684,7 +2709,7 @@ def filter_dealer(request ):
             manufacturers = manufacturers.filter(users__mobile__icontains=phone_no)
             
         if district_filter:
-            manufacturers = manufacturers.filter(district__id=district_filter)
+            manufacturers = manufacturers.filter(districts__id=district_filter)
 
         # Get distinct results
         manufacturers = manufacturers.distinct()
@@ -12837,8 +12862,8 @@ def activated_device_list(request):
                 dealer_users = list(dealer.users.all()) if dealer else []
                 dealer_user_name = dealer_users[0].name if dealer_users else 'N/A'
                 
-                # Get district information
-                district = dealer.district if dealer else None
+                # Get district information (first district for backwards compatibility)
+                district = dealer.districts.first() if dealer else None
                 district_name = district.district if district else 'N/A'
                 district_code = district.district_code if district else 'N/A'
                 state_name = district.state.state if district and district.state else 'N/A'
@@ -13108,7 +13133,7 @@ def dealer_check_esim_status(request):
             "dealer_info": {
                 "id": dealer.id,
                 "company_name": dealer.company_name,
-                "district": dealer.district.district if dealer.district else None,
+                "district": dealer.districts.first().district if dealer.districts.exists() else None,
                 "state": dealer.manufacturer.state.state if dealer.manufacturer and dealer.manufacturer.state else None
             }
         }

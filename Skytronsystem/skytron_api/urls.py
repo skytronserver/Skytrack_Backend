@@ -1,7 +1,7 @@
 from django.urls import path
 
  
-from .views import *#SellFitDevice, ActivateESIMRequest, ConfirmESIMActivation, ConfigureIPPort, ConfigureSOSGateway, ConfigureSMSGateway, MarkDeviceDefective, ReturnToDeviceManufacturer
+from .views import * #SellFitDevice, ActivateESIMRequest, ConfirmESIMActivation, ConfigureIPPort, ConfigureSOSGateway, ConfigureSMSGateway, MarkDeviceDefective, ReturnToDeviceManufacturer
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 # ... the rest of your URLconf goes here ...

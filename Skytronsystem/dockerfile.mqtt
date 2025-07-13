@@ -77,25 +77,34 @@ COPY . /app
 #RUN python manage.py collectstatic --noinput
 
 # Expose port 2000
-#EXPOSE 5001  
+#EXPOSE 5001
 
-# Option A: Set environment variables in the Dockerfile (not recommended for secrets)
-ENV MAIL_ID=noreply@skytron.in
-ENV MAIL_PW=Developer@18062025
-ENV DEBUG=True
-ENV SECRET_KEY=django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql
-#ENV DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+# Environment variables will be passed from system environment
+ARG MAIL_ID
+ARG MAIL_PW
+ARG DEBUG
+ARG SECRET_KEY
+ARG EMAIL_HOST_USER
+ARG EMAIL_HOST_PASSWORD
+ARG ALLOWED_HOSTS
+ARG DB_NAME
+ARG DB_USER
+ARG DB_PASSWORD
+ARG DB_HOST
+ARG DB_PORT
 
-ENV EMAIL_HOST_USER=noreply@skytron.in
-ENV EMAIL_HOST_PASSWORD=Developer@18062025
-ENV ALLOWED_HOSTS="gromed.in,api.gromed.in,api.skytron.in,skytron.in,dev.skytron.in,api-dev.skytron.in,skytrack.tech,localhost"
-
-ENV DB_NAME=skytrondbnew2
-ENV DB_USER=dbadmin
-ENV DB_PASSWORD=lask1028zmnx
-ENV DB_HOST=135.235.166.209
-#host.docker.internal
-ENV DB_PORT=5432
+ENV MAIL_ID=${MAIL_ID}
+ENV MAIL_PW=${MAIL_PW}
+ENV DEBUG=${DEBUG}
+ENV SECRET_KEY=${SECRET_KEY}
+ENV EMAIL_HOST_USER=${EMAIL_HOST_USER}
+ENV EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+ENV ALLOWED_HOSTS=${ALLOWED_HOSTS}
+ENV DB_NAME=${DB_NAME}
+ENV DB_USER=${DB_USER}
+ENV DB_PASSWORD=${DB_PASSWORD}
+ENV DB_HOST=${DB_HOST}
+ENV DB_PORT=${DB_PORT}
 # 
 
 

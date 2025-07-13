@@ -45,10 +45,6 @@ class DeviceStockSerializer(SanitizingModelSerializer):
         model = DeviceStock
         fields = '__all__'   
 
-class DealerSerializer(SanitizingModelSerializer):
-    class Meta:
-        model = Dealer
-        fields = '__all__'  
 
 class DeviceTagSerializer(SanitizingModelSerializer):
     class Meta:
@@ -180,6 +176,7 @@ class ManufacturerSerializer(SanitizingModelSerializer):
     class Meta:
         model = Manufacturer
         fields = '__all__'
+        
 class NoticeSerializer(SanitizingModelSerializer): 
     class Meta:
         model = Notice
@@ -188,22 +185,23 @@ class NoticeSerializer(SanitizingModelSerializer):
 class DealerSerializer2(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     manufacturer=ManufacturerSerializer(many=False, read_only=True)
-    district = serializers.SerializerMethodField()
+    districts = serializers.SerializerMethodField()
     
-    def get_district(self, obj):
-        if obj.district:
-            return {
-                'id': obj.district.id,
-                'district': obj.district.district,
-                'district_code': obj.district.district_code,
-                'status': obj.district.status,
+    def get_districts(self, obj):
+        districts_data = []
+        for district in obj.districts.all():
+            districts_data.append({
+                'id': district.id,
+                'district': district.district,
+                'district_code': district.district_code,
+                'status': district.status,
                 'state': {
-                    'id': obj.district.state.id,
-                    'state': obj.district.state.state,
-                    'status': obj.district.state.status,
-                } if obj.district.state else None
-            }
-        return None
+                    'id': district.state.id,
+                    'state': district.state.state,
+                    'status': district.state.status,
+                } if district.state else None
+            })
+        return districts_data
     
     class Meta:
         model = Dealer
@@ -711,4 +709,14 @@ class TripListResponseSerializer(serializers.Serializer):
     total_distance_km = serializers.FloatField()
     total_duration_minutes = serializers.FloatField()
     trips = TripDetailSerializer(many=True)
+
+
+class DealerSerializer(SanitizingModelSerializer):
+    users = UserSerializer(many=True, read_only=True)
+    manufacturer = ManufacturerSerializer(many=False, read_only=True)
+    districts = Settings_DistrictSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Dealer
+        fields = '__all__'  
 
