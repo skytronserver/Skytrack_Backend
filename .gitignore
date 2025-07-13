@@ -74,3 +74,10 @@ Skytronsystem/skytron_api/migrations/*.py
 skytrack_backup_20250712_051231.sql
 .gitignore
 skytrack_backup_20250712_051859.sql
+migration_20250713_164252.log
+migration_20250713_173038.log
+migration_20250713_173931.log
+migration_20250713_174041.log
+migration_20250713_174327.log
+Skytronsystem/skytron_api/__pycache__/urls.cpython-312.pyc
+Skytronsystem/skytron_api/management/commands/__pycache__/migrate_data.cpython-312.pyc
