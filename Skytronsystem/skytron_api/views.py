@@ -2595,7 +2595,7 @@ def create_dealer(request ):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof') 
-        districts = request.data.get('districts', [])  # Changed to list of district IDs
+        districts = request.data.getlist('districts[]', []) # Changed to list of district IDs
         user,error,new_password=create_user('dealer',request)
         if user:         
             try:
@@ -2631,13 +2631,25 @@ def create_dealer(request ):
                     return error  # Return the Response object from safe_create
                 
                 # Add districts to the dealer
+                dis=False
+                user.save()
+                dealer.save()
                 if districts and isinstance(districts, list):
                     for district_id in districts:
                         try:
                             district_obj = Settings_District.objects.get(id=district_id)
                             dealer.districts.add(district_obj)
+                            dealer.save()
+                            dis=True
                         except Settings_District.DoesNotExist:
-                            pass  # Skip invalid district IDs
+                            user.delete()
+                            dealer.delete()  # Rollback dealer creation if district is invalid
+                            return Response({'error': "Invalid District." }, status=400) 
+                if not dis:
+                    user.delete()
+                    dealer.delete()
+                    return Response({'error': "No valid district."}, status=400) 
+     
 
             except Exception as e:
                 user.delete()
@@ -3648,7 +3660,7 @@ def create_SOS_user(request ):
             return Response(error, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+eeeeeee}, status=400)
+        return Response({'error': "Unable to process request."+e}, status=400)
 
 
 @api_view(['POST'])
@@ -6849,6 +6861,8 @@ def ConfirmESIMActivation(request ):
     return JsonResponse({'data': serializer.data, 'message': 'ESIM Active Confirmed successfully.'}, status=200)
 
 
+
+
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
@@ -8636,6 +8650,23 @@ def homepage_DTO(request ):
             else:
                 # Fallback: get all devices (for testing)
                 devices_in_state = DeviceTag.objects.all()
+                
+                if hasattr(profile, 'state') and profile.state:
+                    # Get all device tags in this state
+                    devices_in_state = DeviceTag.objects.filter(
+                        device__dealer__manufacturer__state=profile.state
+                    )
+                    
+                    # If DTO has specific district, filter further
+                    if hasattr(profile, 'district') and profile.district:
+                        # Since dealers have a many-to-many relationship with districts
+                        devices_in_state = devices_in_state.filter(
+                            device__dealer__districts__district_code=profile.district
+                        )
+                else:
+                    # Fallback: get all devices (for testing)
+                    devices_in_state = DeviceTag.objects.all()
+
             
             # Calculate device and vehicle statistics
             total_devices_activated = devices_in_state.filter(
@@ -11280,12 +11311,12 @@ def validate_otp(request ):
                 session.user.save()
                 uu=get_user_object(session.user,session.user.role)
                 if uu:
-                    uu = recursive_model_to_dict(uu,["users","esim_provider"])
+                    uu = recursive_model_to_dict(uu,["users","districts","esim_provider"])
 
   
                 return Response({'status':'Login Successful','token': session.token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
             except Exception as e:
-                return Response({'error': "Unable to process request."+eeeeeee}, status=400)
+                return Response({'error': "Unable to process request."+str(e)}, status=400)
         else:
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)
       
@@ -12726,8 +12757,7 @@ def get_device_tags(request):
             'error': f'An error occurred while fetching device tags: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# ...existing code...
-
+ 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
@@ -12776,8 +12806,9 @@ def activated_device_list(request):
             # State admin can only see devices in their state
             state_admin = get_user_object(user, "stateadmin")
             if state_admin:
+                # Fix: Filter by state name/string instead of state object
                 activated_devices = activated_devices.filter(
-                    device__dealer__district__state=state_admin.state
+                    device__dealer__manufacturer__state__state=state_admin.state.state
                 )
             else:
                 return Response({
@@ -12788,8 +12819,10 @@ def activated_device_list(request):
             # DTO can only see devices in their district(s)
             dto_admin = get_user_object(user, "dtorto")
             if dto_admin:
+                # Fix: Filter by state and district properly
                 activated_devices = activated_devices.filter(
-                    device__dealer__district=dto_admin.district
+                    device__dealer__manufacturer__state__state=dto_admin.state.state,
+                    device__dealer__district__district=dto_admin.district
                 )
             else:
                 return Response({
@@ -12829,7 +12862,7 @@ def activated_device_list(request):
             
         if state_id:
             activated_devices = activated_devices.filter(
-                device__dealer__district__state__id=state_id
+                device__dealer__manufacturer__state__id=state_id
             )
             
         if date_from:
@@ -12975,8 +13008,6 @@ def activated_device_list(request):
             'status': 'error', 
             'message': f'An error occurred while retrieving activated devices: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
 
 
 @api_view(['POST'])
