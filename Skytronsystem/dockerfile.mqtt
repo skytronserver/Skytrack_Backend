@@ -61,9 +61,9 @@ RUN pip install \
 WORKDIR /app
 
 # Copy certificate files first - they are required for the MQTT client
-COPY Skytronsystem/ca.crt /app/ca.crt
-COPY Skytronsystem/client.crt /app/client.crt
-COPY Skytronsystem/client.key /app/client.key
+COPY Skytronsystem/mqttKeys/ca.crt /app/ca.crt
+COPY Skytronsystem/mqttKeys/client.crt /app/client.crt
+COPY Skytronsystem/mqttKeys/client.key /app/client.key
 
 # Create keys directory and copy keys
 RUN mkdir -p /app/keys

@@ -93,5 +93,4 @@ if __name__ == "__main__":
         send_to_tcp(SERVER_IP, PORT1, payload1)
         send_to_tcp(SERVER_IP, PORT2, payload2)
 
-        # Wait 5 seconds before next update
-        time.sleep(10)
+        time.sleep(12)
