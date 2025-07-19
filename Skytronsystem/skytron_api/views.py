@@ -4985,15 +4985,39 @@ def  DEx_getloc(request ):
             except:
                 pass
 
+        # Add comprehensive call information
+        call_info = EMCallSerializer(assignment.call, many=False).data
+        
+        # Get all assignments for this call
+        all_assignments = EMCallAssignment.objects.filter(call=assignment.call).all()
+        assignments_info = EMCallAssignmentSerializer(all_assignments, many=True).data
+        
+        # Get all broadcasts for this call
+        broadcasts = EMCallBroadcast.objects.filter(call=assignment.call).all()
+        broadcasts_info = EMCallBroadcastSerializer(broadcasts, many=True).data
+        
+        # Get all messages for this call
+        messages = EMCallMessages.objects.filter(call=assignment.call).order_by('time').all()
+        messages_info = EMCallMessagesSerializer(messages, many=True).data
+        
+        # Get all backup requests for this call
+        backup_requests = EMCallBackupRequest.objects.filter(call=assignment.call).all()
+        backup_requests_info = EMCallBackupRequestSerializer(backup_requests, many=True).data
 
         
-
-        
-        return Response( {"target":deviceloc,"fieldEx":fieldEx}, status=200)#Response(SOS_userSerializer(dealer).data)
+        return Response( {
+            "target":deviceloc,
+            "fieldEx":fieldEx,
+            "call_info": call_info,
+            "assignments": assignments_info,
+            "broadcasts": broadcasts_info,
+            "messages": messages_info,
+            "backup_requests": backup_requests_info
+        }, status=200)#Response(SOS_userSerializer(dealer).data)
         
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+ e}, status=400)
+        return Response({'error': "Unable to process request."+ str(e)}, status=400)
 
 
 
