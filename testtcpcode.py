@@ -83,6 +83,7 @@ def send_to_tcp(ip, port, data):
 
 # ========================
 # MAIN LOOP
+# python3 testtcpcode.py
 # ========================
 if __name__ == "__main__":
     while True:

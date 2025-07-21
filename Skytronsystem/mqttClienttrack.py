@@ -261,8 +261,9 @@ def Process_sosEx_Data(msg,topic_parts):
         
                         client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "locationHistory":deviceloc,"broadcast":EMCallBroadcastSerializer(ee,many=False).data,"groupMSG":EMCallMessagesSerializer(msg,many=True).data,"message": success_message}))
                         return 0
-                except:
-                    pass
+                except Exception as e:
+                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message":"  "+str(e)}))
+                     
 
 
 
@@ -399,7 +400,7 @@ def on_message(client, userdata, msg):
             print(f"Message received for user ID: {user_id}")
             ###Process_Device_Data(msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'sosEx':
-            print("message payload decode" ,msg.payload.decode())
+            #print("message payload decode" ,msg.payload.decode())
             Process_sosEx_Data(msg,topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'owner':
             Process_owner_Data(msg,topic_parts)

@@ -932,6 +932,7 @@ class DeviceTag(models.Model):
     rc_file = models.CharField(max_length=255)
     receipt_file_or = models.CharField(max_length=255)
     receipt_file_ul = models.CharField(max_length=255)
+    district = models.ForeignKey(Settings_District, on_delete=models.CASCADE, null=True, blank=True)
     status = models.CharField(max_length=255, choices=STATUS_CHOICES)
     tagged_by = models.ForeignKey(User, on_delete=models.CASCADE)
     tagged = models.DateTimeField()    

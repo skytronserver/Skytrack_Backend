@@ -3,9 +3,25 @@ cd Skytronsystem
 # Move to the project root directory
 cd /home/azureuser/Skytrack_Backend
 
+# Source environment variables from .env file
+echo "Loading environment variables from .env file..."
+source .env
+
 # Build the Docker image
 echo "Building Docker image..."
-docker build -t skytrack-mqtt -f Skytronsystem/dockerfile.mqtt .
+docker build -t skytrack-mqtt \
+  --build-arg MAIL_ID="$MAIL_ID" \
+  --build-arg MAIL_PW="$MAIL_PW" \
+  --build-arg DEBUG="$DEBUG" \
+  --build-arg SECRET_KEY="$SECRET_KEY" \
+  --build-arg EMAIL_HOST_USER="$EMAIL_HOST_USER" \
+  --build-arg EMAIL_HOST_PASSWORD="$EMAIL_HOST_PASSWORD" \
+  --build-arg ALLOWED_HOSTS="$ALLOWED_HOSTS" \
+  --build-arg DB_NAME="$DB_NAME" \
+  --build-arg DB_USER="$DB_USER" \
+  --build-arg DB_PASSWORD="$DB_PASSWORD" \
+  --build-arg DB_HOST="$DB_HOST" \
+  --build-arg DB_PORT="$DB_PORT"  -f Skytronsystem/dockerfile.mqtt .
 
 # Check if build was successful
 if [ $? -eq 0 ]; then

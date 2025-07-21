@@ -1,5 +1,6 @@
 import socket,re
 from django.core.management.base import BaseCommand
+from django.db import close_old_connections
 from skytron_api.models import GPSData, GPSDataLog ,DeviceTag, DeviceStock,Route,AlertsLog
 from geopy.distance import geodesic
 import json
@@ -96,6 +97,9 @@ def createAleart(t,s,locid,devicetag):
                 state=devicetag.device.dealer.manufacturer.state
             )
 def process_alert(gps_data, locid):
+    # Close old database connections before processing alerts
+    close_old_connections()
+    
     devicetag = gps_data['device_tag']
     packet_type = gps_data['packet_type']
     alert_id = gps_data['alert_id']
@@ -417,6 +421,9 @@ def handle_client(conn, client_address):
             
 
             if  data: 
+                # Close old database connections to prevent leaks
+                close_old_connections()
+                
                 data_str = data.decode('utf-8')
 
                 try:
@@ -467,6 +474,8 @@ def handle_client(conn, client_address):
         print(f"Error handling client {client_address}: {e}", flush=True)
         raise e
     finally:
+        # Close any remaining database connections
+        close_old_connections()
         conn.close()
         print(f"Connection from {client_address} closed.", flush=True)
 

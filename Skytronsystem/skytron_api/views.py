@@ -787,7 +787,8 @@ def model_to_dict(instance, fields=None, exclude=None):
 
 
 @csrf_exempt   
-@require_http_methods(['GET', 'POST'])
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def gps_track_data_api(request ): 
     #errors = validate_inputs(request)
     #if errors:
@@ -795,6 +796,19 @@ def gps_track_data_api(request ):
 
     
     if request.method == 'GET':
+        # Debug authentication status
+        print(f"DEBUG: request.user = {request.user}")
+        print(f"DEBUG: request.user.is_authenticated = {request.user.is_authenticated}")
+        print(f"DEBUG: request.user type = {type(request.user)}")
+        if hasattr(request.user, 'role'):
+            print(f"DEBUG: request.user.role = {request.user.role}")
+        else:
+            print("DEBUG: request.user has no role attribute")
+        
+        # Check authentication headers
+        auth_header = request.META.get('HTTP_AUTHORIZATION', None)
+        print(f"DEBUG: Authorization header = {auth_header}")
+        
         imei=False
         regno=False
         try:
@@ -811,8 +825,13 @@ def gps_track_data_api(request ):
         gps_queryset = GPSData.objects.exclude(device_tag=None)
         
         # Apply role-based filtering
-        if request.user.is_authenticated:
-            user_role = request.user.role
+        if request.user and request.user.is_authenticated:
+            user_role = getattr(request.user, 'role', None)
+            
+            if not user_role:
+                # If user doesn't have a role, return empty queryset
+                gps_queryset = GPSData.objects.none()
+                return JsonResponse({'error': 'User role not found.'}, status=400)
             
             if user_role == 'superadmin':
                 # Superadmin sees all data - no additional filtering
@@ -836,15 +855,14 @@ def gps_track_data_api(request ):
                 
                 if user_states:
                     # Filter GPSData for vehicles belonging to owners in user's states
-                    # This requires checking the state through the device owner's address_State
+                    # This requires checking the state through the device district's state
                     gps_queryset = gps_queryset.filter(
-                        device_tag__vehicle_owner__users__address_State__in=[
-                            Settings_State.objects.get(id=state_id).state for state_id in user_states
-                        ]
+                        device_tag__district__state__id__in=user_states
                     )
                 else:
                     # If no states found, return empty queryset
                     gps_queryset = GPSData.objects.none()
+                    return JsonResponse({'error':  'No user states found.'}, status=400)
                     
             elif user_role == 'owner':
                 # Get vehicles owned by this user
@@ -856,12 +874,15 @@ def gps_track_data_api(request ):
                 else:
                     # If user is not associated with any vehicles, return empty queryset
                     gps_queryset = GPSData.objects.none()
+                    return JsonResponse({'error':  'User is not linked to any vehicles.'}, status=400)
             else:
                 # For other roles, return empty queryset for security
                 gps_queryset = GPSData.objects.none()
+                return JsonResponse({'error':  'User not Authorised for this api.'}, status=400)
         else:
-            # If user is not authenticated, return empty queryset
+            # If user is not authenticated, return error
             gps_queryset = GPSData.objects.none()
+            return JsonResponse({'error': 'User not authenticated.'}, status=401)
         
         distinct_registration_numbers = gps_queryset.values('device_tag').distinct() #vehicle_registration_number
         data = []
@@ -891,11 +912,12 @@ def gps_track_data_api(request ):
                 data.append(dd)
             
           
+          
 
 
         data_list = list(data)
         return JsonResponse({'data': data_list})
-    return JsonResponse({'data': []})
+    return JsonResponse({'error':  'Invalid request method. Only GET is allowed.'}, status=400)
 
 
 
@@ -5733,6 +5755,7 @@ def TagDevice2Vehicle(request ):
             vehicle_make=request.data['vehicle_make'],
             vehicle_model=request.data['vehicle_model'],
             category=request.data['category'],
+            district=request.data['district'],
             rc_file=file_path,
             status='Dealer_OTP_Sent',
             tagged_by=user,
@@ -6135,7 +6158,7 @@ def Tag_ownerlist(request ):
         devices = DeviceTag.objects.filter(status="Owner_Final_OTP_Verified")
         
         # Apply role-based filtering
-        if request.user.is_authenticated:
+        if request.user:
             user_role = request.user.role
             
             if user_role == 'superadmin':
@@ -11161,9 +11184,8 @@ def temp_user_logout(request ):
 
 from django.core.serializers.json import DjangoJSONEncoder
 
-
-
-
+from django.forms.models import model_to_dict
+from django.db.models.fields.related import ManyToManyField
 
 def recursive_model_to_dict(data, exclude_fields=None):
     """
@@ -11171,25 +11193,43 @@ def recursive_model_to_dict(data, exclude_fields=None):
     handling nested structures (like lists, tuples, or dictionaries),
     and excludes specified fields from the dictionaries.
     
-    :param data: The data (model instance, list, tuple, or dict) to process.
-    :param exclude_fields: A list of field names to exclude (default: None).
+    - Handles ForeignKey (via model_to_dict)
+    - Handles ManyToMany fields properly (expands related objects recursively)
     """
-    exclude_fields = exclude_fields or []  # Default to an empty list if None provided
+    exclude_fields = exclude_fields or []
 
-    if isinstance(data, list) or isinstance(data, tuple):
-        # Recursively apply the function to each element in the list/tuple
+    # If data is a list/tuple, recursively process each item
+    if isinstance(data, (list, tuple)):
         return [recursive_model_to_dict(item, exclude_fields) for item in data]
-    
+
+    # If data is a dict, recursively process each value
     if isinstance(data, dict):
-        # Recursively apply the function to each value in the dictionary
-        return {key: recursive_model_to_dict(value, exclude_fields) for key, value in data.items() if key not in exclude_fields}
-    
-    if hasattr(data, '_meta'):  # If it’s a Django model instance
-        # Convert the model instance to a dictionary, excluding the specified fields
-        data_dict = model_to_dict(data)
-        return {key: value for key, value in data_dict.items() if key not in exclude_fields}
-    
-    # If it's not a list, tuple, dict, or model instance, return the data as is
+        return {
+            key: recursive_model_to_dict(value, exclude_fields)
+            for key, value in data.items()
+            if key not in exclude_fields
+        }
+
+    # If it's a Django model instance
+    if hasattr(data, '_meta'):
+        opts = data._meta
+        data_dict = model_to_dict(data)  # handles normal + FK fields
+
+        # Add ManyToMany fields explicitly
+        for field in opts.get_fields():
+            if isinstance(field, ManyToManyField) and field.name not in exclude_fields:
+                related_qs = getattr(data, field.name).all()
+                # Recursively process related objects
+                data_dict[field.name] = recursive_model_to_dict(list(related_qs), exclude_fields)
+
+        # Exclude requested fields
+        return {
+            key: value
+            for key, value in data_dict.items()
+            if key not in exclude_fields
+        }
+
+    # Base case: primitive value
     return data
 
 
@@ -11335,7 +11375,7 @@ def validate_otp(request ):
                 session.user.save()
                 uu=get_user_object(session.user,session.user.role)
                 if uu:
-                    uu = recursive_model_to_dict(uu,["users","districts","esim_provider"])
+                    uu = recursive_model_to_dict(uu,["users","esim_provider"])
 
   
                 return Response({'status':'Login Successful','token': session.token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
