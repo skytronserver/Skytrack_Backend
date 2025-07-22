@@ -5750,6 +5750,9 @@ def TagDevice2Vehicle(request ):
             with open(file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
+            district= Settings_District.objects.filter(id=request.data['district']).last()
+            if not district:
+                return Response({"error":"District not found."}, status=status.HTTP_400_BAD_REQUEST)
             
             device_tag ,error= DeviceTag.objects.safe_create(
             device_id=device_id,
@@ -5760,7 +5763,7 @@ def TagDevice2Vehicle(request ):
             vehicle_make=request.data['vehicle_make'],
             vehicle_model=request.data['vehicle_model'],
             category=request.data['category'],
-            district=request.data['district'],
+            district=district,
             rc_file=file_path,
             status='Dealer_OTP_Sent',
             tagged_by=user,
