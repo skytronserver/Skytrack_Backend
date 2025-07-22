@@ -770,18 +770,9 @@ def gps_data_table1(request ):
 
 
 from itertools import chain
-def model_to_dict(instance, fields=None, exclude=None):
-    
-    opts = instance._meta
-    data = {}
-    for f in chain(opts.concrete_fields, opts.private_fields, opts.many_to_many):
-        
-        if fields is not None and f.name not in fields:
-            continue
-        if exclude and f.name in exclude:
-            continue
-        data[f.name] = f.value_from_object(instance)
-    return data
+
+# Remove the custom model_to_dict function and use Django's built-in version
+# which is already imported from django.forms.models
 
 
 
@@ -901,8 +892,22 @@ def gps_track_data_api(request ):
             latest_entry=latest_entry.first()
             excluded_fields = []   
             if latest_entry:
-                #data.append(latest_entry.values())
-                dd=model_to_dict(latest_entry, exclude=excluded_fields)
+                # Use the GPSData_Serializer which properly handles entry_time field
+                serializer = GPSData_Serializer(latest_entry)
+                dd = serializer.data.copy()  # Make a copy so we can modify it
+                
+                # Debug: Print the keys to see what fields are included
+                print(f"DEBUG: Fields in serializer.data: {list(dd.keys())}")
+                print(f"DEBUG: entry_time present: {'entry_time' in dd}")
+                if 'entry_time' in dd:
+                    print(f"DEBUG: entry_time value: {dd['entry_time']}")
+                    print(f"DEBUG: entry_time type: {type(dd['entry_time'])}")
+                
+                # Fallback: manually add entry_time if it's missing from serializer
+                if 'entry_time' not in dd and hasattr(latest_entry, 'entry_time'):
+                    dd['entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
+                    print(f"DEBUG: Manually added entry_time: {dd['entry_time']}")
+                
                 if latest_entry.device_tag:
                     dd['vehicle_registration_number']=latest_entry.device_tag.vehicle_reg_no
                     dd['imei']=latest_entry.device_tag.device.imei
