@@ -827,7 +827,7 @@ def gps_track_data_api(request ):
             if user_role == 'superadmin':
                 # Superadmin sees all data - no additional filtering
                 pass
-            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive']:
+            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive', 'dtorto']:
                 # Get user's state(s) based on role
                 user_states = []
                 
@@ -843,6 +843,10 @@ def gps_track_data_api(request ):
                     # Get states from EM_ex relationship
                     em_exs = EM_ex.objects.filter(users=request.user, status='StateAdminVerified')
                     user_states = [ee.state.id for ee in em_exs]
+                elif user_role == 'dtorto':
+                    # Get states from dto_rto relationship
+                    dto_rtos = dto_rto.objects.filter(users=request.user, status='StateAdminVerified')
+                    user_states = [dr.state.id for dr in dto_rtos]
                 
                 if user_states:
                     # Filter GPSData for vehicles belonging to owners in user's states
@@ -1413,8 +1417,13 @@ def getRoute(request ):
         man=get_user_object(user,role)
         role1="superadmin"
         sa=get_user_object(user,role1)
-        if not man and not sa:
-            return Response({"error":"Request must be from  "+role+' or '+role1+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        role2="stateadmin"
+        state_admin_obj=get_user_object(user,role2)
+        role3="dtorto"
+        dto_obj=get_user_object(user,role3)
+        
+        if not man and not sa and not state_admin_obj and not dto_obj:
+            return Response({"error":"Request must be from owner, superadmin, state admin, or DTO."}, status=status.HTTP_400_BAD_REQUEST)
 
         data =json.loads( request.body )
         device_id =  data['device_id']
@@ -1428,6 +1437,18 @@ def getRoute(request ):
                 tag=DeviceTag.objects.filter(   device_id=device,   vehicle_owner =man)
             elif sa:
                 tag=DeviceTag.objects.filter(   device_id=device )
+            elif state_admin_obj:
+                # State admin can access devices in their state
+                tag=DeviceTag.objects.filter(
+                    device_id=device,
+                    district__state=state_admin_obj.state
+                )
+            elif dto_obj:
+                # DTO can access devices in their state
+                tag=DeviceTag.objects.filter(
+                    device_id=device,
+                    district__state=dto_obj.state
+                )
             if not tag:
                     return JsonResponse({"error": "Unauthorised Access "}, status=405) 
              
@@ -7298,7 +7319,7 @@ def deviceStockCreateBulk(request ):
     try:
         excel_data = pd.read_excel(request.FILES['excel_file'], engine='openpyxl')
     except Exception as e:
-        return JsonResponse({'error': 'Error reading Excel file.', 'details': "Unable to process request."+ e}, status=400)
+        return JsonResponse({'error': 'Error reading Excel file.', 'details': f"Unable to process request. {str(e)}"}, status=400)
 
     headers = list(excel_data.columns)
     success_count = 0
@@ -8701,31 +8722,30 @@ def homepage_DTO(request ):
             
             # Filter by state
             if hasattr(profile, 'state') and profile.state:
-                # Get all device tags in this state
+                # Get all device tags in this state using the DeviceTag's district field
                 devices_in_state = DeviceTag.objects.filter(
-                    device__dealer__manufacturer__state=profile.state
+                    district__state=profile.state
                 )
                 
                 # If DTO has specific district, filter further
                 if hasattr(profile, 'district') and profile.district:
                     devices_in_state = devices_in_state.filter(
-                        device__dealer__district__district=profile.district
+                        district__district=profile.district
                     )
             else:
                 # Fallback: get all devices (for testing)
                 devices_in_state = DeviceTag.objects.all()
                 
                 if hasattr(profile, 'state') and profile.state:
-                    # Get all device tags in this state
+                    # Get all device tags in this state using DeviceTag's district field
                     devices_in_state = DeviceTag.objects.filter(
-                        device__dealer__manufacturer__state=profile.state
+                        district__state=profile.state
                     )
                     
                     # If DTO has specific district, filter further
                     if hasattr(profile, 'district') and profile.district:
-                        # Since dealers have a many-to-many relationship with districts
                         devices_in_state = devices_in_state.filter(
-                            device__dealer__districts__district_code=profile.district
+                            district__district=profile.district
                         )
                 else:
                     # Fallback: get all devices (for testing)
@@ -11430,10 +11450,12 @@ def combined_device_stock(request):
         data['dealer_id'] = man.id
     elif user.role == "stateadmin":
         man = get_user_object(user, "stateadmin")
+    elif user.role == "dtorto":
+        man = get_user_object(user, "dtorto")
     
     if not man:
         return Response({
-            "error": "Request must be from device manufacturer, dealer, or state admin"
+            "error": "Request must be from device manufacturer, dealer, state admin, or DTO"
         }, status=status.HTTP_400_BAD_REQUEST)
     
     # Get filter parameters
@@ -11469,6 +11491,16 @@ def combined_device_stock(request):
         # Add available for fitting devices from dealers in their state
         available_devices = device_stocks.filter(
             dealer__manufacturer__state=man.state,
+            stock_status='Available_for_fitting'
+        )
+    elif user.role == "dtorto":
+        # For DTO, get devices in their state
+        device_stocks = device_stocks.filter(
+            dealer__manufacturer__state=man.state.state
+        )
+        # Add available for fitting devices from dealers in their state
+        available_devices = device_stocks.filter(
+            dealer__manufacturer__state=man.state.state,
             stock_status='Available_for_fitting'
         )
     else:  # dealer
@@ -12300,10 +12332,23 @@ def StateAdmin_view_all_tagging(request):
         if not admin_state:
             return Response({"error": "State admin state not found."}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Get all DeviceTag entries where the vehicle owner's state matches the state admin's state
-        # We need to filter based on vehicle owner's address_State field
+        # Get all DeviceTag entries where the district's state matches the state admin's state
+        # Use DeviceTag's direct district relationship for proper filtering
+        # Also include fallback filtering for legacy data that might not have district set
         device_tags = DeviceTag.objects.filter(
-            vehicle_owner__users__address_State=admin_state.state
+            Q(district__state=admin_state) |
+            Q(district__isnull=True, vehicle_owner__users__address_State=admin_state.state)
+        ).select_related(
+            'device',
+            'device__model', 
+            'device__dealer',
+            'district',
+            'district__state',
+            'vehicle_owner',
+            'tagged_by'
+        ).prefetch_related(
+            'vehicle_owner__users',
+            'device__dealer__users'
         ).order_by('-tagged')
         
         # Apply additional filters if provided in request
@@ -12385,6 +12430,14 @@ def StateAdmin_view_all_tagging(request):
         has_next = page_number < total_pages
         has_previous = page_number > 1
         
+        # Debug information
+        total_device_tags_in_db = DeviceTag.objects.count()
+        device_tags_in_state = DeviceTag.objects.filter(district__state=admin_state).count()
+        device_tags_legacy = DeviceTag.objects.filter(
+            district__isnull=True, 
+            vehicle_owner__users__address_State=admin_state.state
+        ).count()
+        
         response_data = {
             'success': True,
             'message': f'Found {total_count} tagging records in {admin_state.state} state.',
@@ -12400,6 +12453,14 @@ def StateAdmin_view_all_tagging(request):
             'state_info': {
                 'state_id': admin_state.id,
                 'state_name': admin_state.state
+            },
+            'debug_info': {
+                'total_device_tags_in_db': total_device_tags_in_db,
+                'device_tags_in_state': device_tags_in_state,
+                'device_tags_legacy': device_tags_legacy,
+                'user_role': user.role,
+                'admin_state_id': admin_state.id,
+                'admin_state_name': admin_state.state
             }
         }
         
@@ -12407,8 +12468,13 @@ def StateAdmin_view_all_tagging(request):
         
     except Exception as e:
         return Response({
-            'error': f"Unable to process request. {str(e)}"
-        }, status=status.HTTP_400_BAD_REQUEST)
+            'success': False,
+            'error': f"Unable to process request: {str(e)}",
+            'debug_info': {
+                'user_role': request.user.role if hasattr(request, 'user') else 'Unknown',
+                'error_type': type(e).__name__
+            }
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
  
 
@@ -12736,7 +12802,7 @@ def get_device_tags(request):
                 drivers_info.append({
                     'id': driver.id,
                     'name': driver.name,
-                    'mobile': driver.mobile,
+                    'mobile': driver.phone_no,
                     'license_no': driver.license_no
                 })
             
@@ -12863,9 +12929,17 @@ def activated_device_list(request):
                 "error": f"Access denied. This endpoint is only accessible by {', '.join(allowed_roles)}."
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # Base query for activated devices (Device Active status)
+        # Base query for activated devices (multiple active statuses)
+        # Include multiple status values that indicate an active/working device
+        active_statuses = [
+            'Device_Active',
+            'Live_Location_Confirmed', 
+            'SOS_Confirmed','Owner_Final_OTP_Verified',
+            'RegNo_Configuration_Confirmed'
+        ]
+        
         activated_devices = DeviceTag.objects.filter(
-            status='Device_Active'
+            status__in=active_statuses
         ).select_related(
             'device',
             'device__model',
@@ -12963,16 +13037,21 @@ def activated_device_list(request):
 
         # Prepare response data
         device_list = []
+        
+        # Debug information
+        total_device_tags = DeviceTag.objects.count()
+        active_device_tags = activated_devices.count()
+        
         for device_tag in activated_devices:
             try:
                 # Get manufacturer information
-                manufacturer = device_tag.device.dealer.manufacturer if device_tag.device.dealer else None
+                manufacturer = device_tag.device.dealer.manufacturer if device_tag.device and device_tag.device.dealer else None
                 manufacturer_name = manufacturer.company_name if manufacturer else 'N/A'
                 manufacturer_users = list(manufacturer.users.all()) if manufacturer else []
                 manufacturer_user_name = manufacturer_users[0].name if manufacturer_users else 'N/A'
                 
                 # Get dealer information
-                dealer = device_tag.device.dealer
+                dealer = device_tag.device.dealer if device_tag.device else None
                 dealer_name = dealer.company_name if dealer else 'N/A'
                 dealer_users = list(dealer.users.all()) if dealer else []
                 dealer_user_name = dealer_users[0].name if dealer_users else 'N/A'
@@ -12991,26 +13070,26 @@ def activated_device_list(request):
                 
                 # Get device information
                 device = device_tag.device
-                device_model = device.model
+                device_model = device.model if device else None
                 
                 device_data = {
                     'id': device_tag.id,
-                    'device_esn': device.device_esn,
-                    'imei': device.imei,
-                    'iccid': device.iccid,
-                    'msisdn1': device.msisdn1,
-                    'msisdn2': device.msisdn2 or 'N/A',
+                    'device_esn': device.device_esn if device else 'N/A',
+                    'imei': device.imei if device else 'N/A',
+                    'iccid': device.iccid if device else 'N/A',
+                    'msisdn1': device.msisdn1 if device else 'N/A',
+                    'msisdn2': device.msisdn2 if device and device.msisdn2 else 'N/A',
                     
                     # Fitment information
                     'fitment_date': device_tag.tagged.strftime('%Y-%m-%d %H:%M:%S') if device_tag.tagged else 'N/A',
                     'fitment_status': device_tag.status,
                     
                     # eSIM information
-                    'esim_validity': device.esim_validity.strftime('%Y-%m-%d') if device.esim_validity else 'N/A',
-                    'telecom_provider1': device.telecom_provider1,
-                    'telecom_provider2': device.telecom_provider2 or 'N/A',
-                    'stock_status': device.stock_status,
-                    'esim_status': device.esim_status,
+                    'esim_validity': device.esim_validity.strftime('%Y-%m-%d') if device and device.esim_validity else 'N/A',
+                    'telecom_provider1': device.telecom_provider1 if device else 'N/A',
+                    'telecom_provider2': device.telecom_provider2 if device and device.telecom_provider2 else 'N/A',
+                    'stock_status': device.stock_status if device else 'N/A',
+                    'esim_status': device.esim_status if device else 'N/A',
                     
                     # Vehicle information
                     'vehicle_reg_no': device_tag.vehicle_reg_no,
@@ -13031,11 +13110,11 @@ def activated_device_list(request):
                     'vehicle_owner_id': vehicle_owner.id if vehicle_owner else None,
                     
                     # Device model information
-                    'device_model_name': device_model.model_name,
-                    'device_model_id': device_model.id,
-                    'hardware_version': device_model.hardware_version,
-                    'vendor_id': device_model.vendor_id,
-                    'tac_no': device_model.tac_no,
+                    'device_model_name': device_model.model_name if device_model else 'N/A',
+                    'device_model_id': device_model.id if device_model else None,
+                    'hardware_version': device_model.hardware_version if device_model else 'N/A',
+                    'vendor_id': device_model.vendor_id if device_model else 'N/A',
+                    'tac_no': device_model.tac_no if device_model else 'N/A',
                     
                     # Manufacturer information
                     'manufacturer_name': manufacturer_name,
@@ -13053,14 +13132,15 @@ def activated_device_list(request):
                     'tagged_by_email': device_tag.tagged_by.email if device_tag.tagged_by else 'N/A',
                     
                     # Additional device information
-                    'created_date': device.created.strftime('%Y-%m-%d %H:%M:%S') if device.created else 'N/A',
-                    'device_assigned_date': device.assigned.strftime('%Y-%m-%d %H:%M:%S') if device.assigned else 'N/A',
+                    'created_date': device.created.strftime('%Y-%m-%d %H:%M:%S') if device and device.created else 'N/A',
+                    'device_assigned_date': device.assigned.strftime('%Y-%m-%d %H:%M:%S') if device and device.assigned else 'N/A',
                 }
                 
                 device_list.append(device_data)
                 
             except Exception as e:
                 # Log individual device errors but continue processing
+                print(f"Error processing device tag {device_tag.id}: {str(e)}")
                 continue
 
         # Pagination
@@ -13079,6 +13159,13 @@ def activated_device_list(request):
                 'page': page,
                 'page_size': page_size,
                 'total_pages': (len(device_list) + page_size - 1) // page_size
+            },
+            'debug_info': {
+                'user_role': user.role,
+                'total_device_tags_in_db': total_device_tags,
+                'matching_active_devices': active_device_tags,
+                'processed_devices': len(device_list),
+                'active_statuses_searched': active_statuses
             },
             'message': 'Activated devices retrieved successfully'
         }
