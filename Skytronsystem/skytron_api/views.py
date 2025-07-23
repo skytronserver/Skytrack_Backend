@@ -2066,7 +2066,7 @@ def filter_VehicleOwner(request ):
         
         elif uo:  # State admin - filter by state
             state=uo.state
-            owners = DeviceTag.objects.filter( device__dealer_id__manufacturer_id__state=state, status="Owner_Final_OTP_Verified").values("vehicle_owner").distinct()
+            owners = DeviceTag.objects.filter( district__state=state, status="Owner_Final_OTP_Verified").values("vehicle_owner").distinct()
             manufacturers = VehicleOwner.objects.filter(
                         id__in=owners,
                         users__email__icontains=email,
@@ -4303,11 +4303,15 @@ def DEx_getPendingCallList(request ):
     uo=get_user_object(user,role)
     role2="stateadmin" 
     uo2=get_user_object(user,role2)
-    if not (uo or uo2):
-        return Response({"error":"Request must be from  "+role+' or '+role2+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    role3="sosadmin"
+    uo3=get_user_object(user,role3)
+    if not (uo or uo2 or uo3):
+        return Response({"error":"Request must be from  "+role+' or '+role2+' or '+role3+'.'}, status=status.HTTP_400_BAD_REQUEST)
     try: 
         if uo2:
             ee=EMCallAssignment.objects.filter(  ex__state = uo2.state  ).exclude(status="closed") 
+        elif uo3:
+            ee=EMCallAssignment.objects.filter(  ex__state = uo3.state  ).exclude(status="closed")
         else:
             ee=EMCallAssignment.objects.filter(  ex = uo  ).exclude(status="closed")  
 
@@ -6191,30 +6195,21 @@ def Tag_ownerlist(request ):
                 elif user_role == 'dtorto':
                     # Get districts from DTO/RTO relationship
                     dto_rtos = dto_rto.objects.filter(users=request.user, status='UserVerified')
-                    user_districts = [dr.district for dr in dto_rtos if dr.district]
+                    user_district_names = [dr.district for dr in dto_rtos if dr.district]
                     
-                    if user_districts:
-                        # Filter devices for vehicles belonging to owners with registration in user's districts
-                        # Vehicle registration numbers typically contain district codes (e.g., AS01, AS02, etc.)
-                        district_q = Q()
-                        for district_code in user_districts:
-                            # Check if vehicle registration contains the district code
-                            district_q |= Q(vehicle_reg_no__icontains=district_code)
-                        
-                        devices = devices.filter(district_q)
+                    if user_district_names:
+                        # Filter devices based on the district field in DeviceTag model
+                        # Get district objects that match the district names from dto_rto
+                        user_districts = Settings_District.objects.filter(district__in=user_district_names)
+                        devices = devices.filter(district__in=user_districts)
                     else:
                         # If no districts found, return empty queryset
                         devices = DeviceTag.objects.none()
                 
                 # Handle state-based filtering for other roles
                 if user_role in ['stateadmin', 'sosadmin', 'sosexecutive'] and user_states:
-                    # Filter devices for vehicles belonging to owners in user's states
-                    # This requires checking the state through the device owner's address_State
-                    devices = devices.filter(
-                        vehicle_owner__users__address_State__in=[
-                            Settings_State.objects.get(id=state_id).state for state_id in user_states
-                        ]
-                    )
+                    # Filter devices based on the district's state relationship in DeviceTag model
+                    devices = devices.filter(district__state__id__in=user_states)
                 elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive'] and not user_states:
                     # If no states found, return empty queryset
                     devices = DeviceTag.objects.none()
@@ -6241,7 +6236,13 @@ def Tag_ownerlist(request ):
             devices = devices.filter(device=device_id)
         reg_no = request.POST.get('reg_no') 
         if reg_no:
-            devices = devices.filter(vehicle_reg_no=reg_no)
+            devices = devices.filter(vehicle_reg_no__icontains=reg_no)
+        owner_name = request.POST.get('owner_name')
+        if owner_name:
+            devices = devices.filter(vehicle_owner__users__name__icontains=owner_name)
+        district_code = request.POST.get('district_code')
+        if district_code:
+            devices = devices.filter(district__district_code__icontains=district_code)
         tag_status = request.POST.get('tag_status') 
         if tag_status:
             devices = devices.filter(status=tag_status)
@@ -7825,7 +7826,15 @@ def DeviceModelAwaitingStateApproval(request ):
       
 
     # Retrieve device models with status "Manufacturer_OTP_Verified"
-    device_models = DeviceModel.objects.filter(status__in=['Manufacturer_OTP_Verified',"StateAdminOTPSend"])#created_by=user_id, 
+    device_models = DeviceModel.objects.filter(
+        status__in=['Manufacturer_OTP_Verified',"StateAdminOTPSend"]
+    ).select_related(
+        'created_by'
+    ).prefetch_related(
+        'eSimProviders',
+        'eSimProviders__users',
+        'eSimProviders__state'
+    ) 
     
     # Serialize the data
     serializer = DeviceModelSerializer_disp(device_models, many=True)
@@ -12863,13 +12872,14 @@ def activated_device_list(request):
             'device__model__created_by',
             'device__dealer',
             'device__dealer__manufacturer',
-            'device__dealer__district',
-            'device__dealer__district__state',
+            'district',
+            'district__state',
             'vehicle_owner'
         ).prefetch_related(
             'device__model__created_by',
             'device__dealer__manufacturer__users',
             'device__dealer__users',
+            'device__dealer__districts',
             'vehicle_owner__users'
         )
 
@@ -12878,9 +12888,9 @@ def activated_device_list(request):
             # State admin can only see devices in their state
             state_admin = get_user_object(user, "stateadmin")
             if state_admin:
-                # Fix: Filter by state name/string instead of state object
+                # Use DeviceTag's district to filter by state
                 activated_devices = activated_devices.filter(
-                    device__dealer__manufacturer__state__state=state_admin.state.state
+                    district__state=state_admin.state
                 )
             else:
                 return Response({
@@ -12891,10 +12901,10 @@ def activated_device_list(request):
             # DTO can only see devices in their district(s)
             dto_admin = get_user_object(user, "dtorto")
             if dto_admin:
-                # Fix: Filter by state and district properly
+                # Use DeviceTag's district field directly
                 activated_devices = activated_devices.filter(
-                    device__dealer__manufacturer__state__state=dto_admin.state.state,
-                    device__dealer__district__district=dto_admin.district
+                    district__state=dto_admin.state,
+                    district__district=dto_admin.district
                 )
             else:
                 return Response({
@@ -12929,7 +12939,7 @@ def activated_device_list(request):
             
         if district_code:
             activated_devices = activated_devices.filter(
-                device__dealer__district__district_code__icontains=district_code
+                district__district_code__icontains=district_code
             )
             
         if state_id:
@@ -12967,8 +12977,8 @@ def activated_device_list(request):
                 dealer_users = list(dealer.users.all()) if dealer else []
                 dealer_user_name = dealer_users[0].name if dealer_users else 'N/A'
                 
-                # Get district information (first district for backwards compatibility)
-                district = dealer.districts.first() if dealer else None
+                # Get district information from DeviceTag's direct district field
+                district = device_tag.district
                 district_name = district.district if district else 'N/A'
                 district_code = district.district_code if district else 'N/A'
                 state_name = district.state.state if district and district.state else 'N/A'
