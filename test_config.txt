@@ -1,0 +1,79 @@
+# =============================================================================
+# SkyTron Email & SMS Test Configuration
+# =============================================================================
+# Modify these values to test with different email addresses and phone numbers
+# =============================================================================
+
+# Test Recipients (CHANGE THESE TO YOUR TEST TARGETS)
+TEST_EMAIL="your-test-email@example.com"
+TEST_MOBILE="9876543210"
+
+# Email Configuration (from your Django settings.py)
+EMAIL_HOST="smtp.titan.email"
+EMAIL_PORT=465
+EMAIL_USE_SSL=true
+EMAIL_HOST_USER="noreply@skytron.in"
+EMAIL_HOST_PASSWORD="Developer@18062025"
+
+# SMS Configuration (from your Django views.py)
+SMS_URL="http://tra.bulksmshyderabad.co.in/websms/sendsms.aspx"
+SMS_USERID="Gobell"
+SMS_PASSWORD="1234566"
+SMS_SENDER="SKYTRN"
+SMS_PEID="1001371511701977986"
+
+# =============================================================================
+# SMS Templates Available in Your System
+# =============================================================================
+# Template ID: 1007135935525313027
+# Purpose: Registration of new user
+# Text: "Dear User,To confirm your registration in SkyTron platform, please click at the following link and validate the registration request-{VAR}The link will expire in 5 minutes.-SkyTron"
+
+# Template ID: 1007941652638984780
+# Purpose: Tagging of device and vehicle - owner confirmation
+# Text: "Dear Vehicle Owner,To confirm Tagging of your vehicle with your tracking device in SkyTron platform, please click at the following link and validate the tagging request-{VAR}The link will expire in 5 minutes.-SkyTron"
+
+# Template ID: 1007927199705544392
+# Purpose: Set/Re-set new password
+# Text: "Dear User,To activate your new password in SkyTron portal, please enter the OTP {VAR} valid for 5 minutes.Please do NOT share with anyone.-SkyTron"
+
+# Template ID: 1007201930295888818
+# Purpose: Dealer/Manufacturer confirmation of Tagging
+# Text: "Dear VLTD Dealer/ Manufacturer,We have received request for tagging and activation of following device and vehicle-Vehicle Reg No: {VAR}Device IMEI No: {VAR}To confirm, please enter the OTP {VAR}.- SkyTron"
+
+# Template ID: 1007671504419591069
+# Purpose: Owner verification link sent during tagging and activation
+# Text: "Dear Vehicle Owner,To confirm tagging and activation of your VLTD with your vehicle in SkyTron platform, kindly click on the following link and validate: {VAR}Link will expire in 5 minutes. Please do NOT share.-SkyTron"
+
+# Template ID: 1007937055979875563
+# Purpose: Owner OTP after tagging/activation is successful
+# Text: "Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {VAR} will expire in 5 minutes. Please do NOT share.-SkyTron"
+
+# Template ID: 1007274756418421381
+# Purpose: New User create OTP
+# Text: "Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {VAR}.Valid for 5 minutes. Please do not share.-SkyTron"
+
+# Template ID: 1007387007813205696
+# Purpose: User registration confirmation with link
+# Text: "Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://gromed.in/new/{VAR} The link will expire in 5 minutes.-SkyTron"
+
+# Template ID: 1007536593942813283
+# Purpose: Login OTP
+# Text: "Dear User, Your Login OTP for SkyTron portal is {VAR}. DO NOT disclose it to anyone. Warm Regards, SkyTron."
+
+# =============================================================================
+# NOTES:
+# =============================================================================
+# 1. The script will automatically select random templates and generate 
+#    appropriate test data (OTPs, vehicle numbers, IMEI numbers, etc.)
+#
+# 2. For testing, modify TEST_EMAIL and TEST_MOBILE in this file
+#
+# 3. The script uses the exact same credentials as your Django application
+#
+# 4. All {VAR} placeholders in templates will be replaced with appropriate
+#    test values automatically
+#
+# 5. Make sure to test with a valid email address and phone number that
+#    you have access to verify the delivery
+# =============================================================================
