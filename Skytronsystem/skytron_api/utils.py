@@ -2,10 +2,14 @@ import random
 import io
 from PIL import Image, ImageDraw, ImageFont
 
-def generate_captcha():
+def generate_captcha(static=False):
     # Generate a random mathematical expression
-    num1 = random.randint(1, 9)
-    num2 = random.randint(1, 9)
+    if static:
+        num1 = 1
+        num2 = 1
+    else:
+        num1 = random.randint(1, 9)
+        num2 = random.randint(1, 9)
     expression = f"{num1} + {num2}"
     result = num1 + num2
 

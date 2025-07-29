@@ -301,10 +301,15 @@ LOGGING = {
             'class': 'logging.FileHandler',
             'filename': BASE_DIR / 'logs/errors.log',
         },
+        'console': {
+            'level': 'ERROR',
+            'class': 'logging.StreamHandler',
+            'stream': 'ext://sys.stdout',
+        },
     },
     'loggers': {
         'django': {
-            'handlers': ['file'],
+            'handlers': ['file', 'console'],
             'level': 'ERROR',
             'propagate': True,
         },
