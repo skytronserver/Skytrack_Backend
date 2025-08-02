@@ -50,8 +50,11 @@ def processEM(str_data):
                         data_list=data_list[2:]
                         print(data_list)
                         location = EMGPSLocation.create_from_string(data_list)
-                        location.save()
-                        RegNo=data_list[14]
+                        if location is not None:
+                            location.save()
+                            RegNo=data_list[14]
+                        else:
+                            print(f"Warning: No device tag found for IMEI {data_list[1]}, skipping save")
                 except Exception as e :
                     print("error1 ",e)
                     #raise e

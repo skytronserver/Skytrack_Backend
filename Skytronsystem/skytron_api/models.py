@@ -1020,7 +1020,21 @@ class EMGPSLocation(models.Model): #imergency tracking data
 
         data_list[3]=adjusted_datetime.strftime("%Y-%m-%d") 
         data_list[4]=adjusted_datetime.strftime("%H:%M:%S") 
-        device_tag=DeviceTag.objects.filter(device__imei=str(data_list[1]),status='Owner_Final_OTP_Verified').last()
+        # First, let's check what device tags exist for this IMEI
+        all_device_tags = DeviceTag.objects.filter(device__imei=str(data_list[1]))
+        print(f"All device tags for IMEI {data_list[1]}:")
+        for tag in all_device_tags:
+            print(f"  - Status: {tag.status}, Vehicle: {tag.vehicle_reg_no}")
+        
+        # Try to find an active device tag
+        device_tag = DeviceTag.objects.filter(device__imei=str(data_list[1]), status='Device_Active').last()
+        if not device_tag:
+            # If no active device found, try other valid statuses
+            device_tag = DeviceTag.objects.filter(
+                device__imei=str(data_list[1]), 
+                status__in=['Owner_OTP_Verified', 'SOS_Confirmed', 'Live_Location_Confirmed']
+            ).last()
+        
         print("datalist",data_list[1])
         print(data_list)
         print(device_tag)

@@ -19,7 +19,7 @@ BASE_LAT = 24.880475
 BASE_LON = 92.881256
 
 # Random movement radius in meters
-RANDOM_RADIUS_M = 50
+RANDOM_RADIUS_M = 5
 
 # ========================
 # FUNCTIONS

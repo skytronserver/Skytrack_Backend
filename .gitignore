@@ -81,3 +81,5 @@ migration_20250713_174041.log
 migration_20250713_174327.log
 Skytronsystem/skytron_api/__pycache__/urls.cpython-312.pyc
 Skytronsystem/skytron_api/management/commands/__pycache__/migrate_data.cpython-312.pyc
+skytrondb_backup_20250802_063945.dump
+skytrondb_backup_20250802_064838.dump

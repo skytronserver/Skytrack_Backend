@@ -252,8 +252,8 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle',  # For authenticated users
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '10/minute',   # Limit anonymous users to 10 requests per minute
-        'user': '500/hour',    # Limit authenticated users to 100 requests per hour
+        'anon': '100/minute',   # Limit anonymous users to 10 requests per minute
+        'user': '5000/hour',    # Limit authenticated users to 100 requests per hour
     },
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',

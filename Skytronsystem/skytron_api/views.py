@@ -1033,24 +1033,15 @@ def gps_history_map(request ):
         return JsonResponse({'error': e}) 
         return Response({'error': "ww"}, status=400)
 
-#@csrf_exempt
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 @require_http_methods(['GET', 'POST'])
 def gps_history_map_data(request ): 
-    #errors = validate_inputs(request)
-    #if errors:
-    #    return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-     
     t = time.time()
-    #print("Timer init",time.time() - t )   
 
     mapdata=[]
     data=[]     
-    mapdata=[]
-    data=[]
     try:
-       
-        
         try:
             vehicle_registration_number = request.GET.get('vehicle_registration_number', None)
             start_datetime = request.GET.get('start_datetime', None)
@@ -1058,9 +1049,53 @@ def gps_history_map_data(request ):
         except:
              pass
 
-        #return JsonResponse({"eg":vehicle_registration_number})
-     
+        if not vehicle_registration_number or vehicle_registration_number == "":
+            return JsonResponse({'error': "Vehicle registration number is required"}, status=400)
+
+        # User authentication and authorization checks
+        if not request.user or not request.user.is_authenticated:
+            return JsonResponse({'error': "Authentication required"}, status=401)
         
+        user_role = getattr(request.user, 'role', None)
+        if not user_role:
+            return JsonResponse({'error': "User role not found"}, status=403)
+
+        # Check if user has access to this registration number
+        device_tag = DeviceTag.objects.filter(vehicle_reg_no=vehicle_registration_number).first()
+        if not device_tag:
+            return JsonResponse({'error': "Vehicle registration number not found in system"}, status=404)
+
+        # Role-based authorization
+        has_access = False
+        
+        if user_role == 'superadmin':
+            # Super admin can access any registration number
+            has_access = True
+            
+        elif user_role == 'stateadmin':
+            # State admin can access vehicles from their state only
+            state_admins = StateAdmin.objects.filter(users=request.user, status='UserVerified')
+            user_states = [sa.state.id for sa in state_admins]
+            if user_states and device_tag.district and device_tag.district.state.id in user_states:
+                has_access = True
+                
+        elif user_role == 'dtorto':
+            # DTO can access vehicles from same district only
+            dto_rtos = dto_rto.objects.filter(users=request.user, status='StateAdminVerified')
+            user_districts = [dr.district.id for dr in dto_rtos if dr.district]
+            if user_districts and device_tag.district and device_tag.district.id in user_districts:
+                has_access = True
+                
+        elif user_role == 'owner':
+            # Owner can access only their own vehicles
+            vehicle_owners = VehicleOwner.objects.filter(users=request.user, status='UserVerified')
+            if vehicle_owners.exists():
+                owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners)
+                if device_tag in owned_device_tags:
+                    has_access = True
+
+        if not has_access:
+            return JsonResponse({'error': "Unauthorised access to history data"}, status=403)
         
         if vehicle_registration_number!="":
             if vehicle_registration_number:
@@ -7283,26 +7318,124 @@ def deviceStockFilter(request ):
     
     if not man:
             return Response({"error":"Request must be from device manufacture or dealer"}, status=status.HTTP_400_BAD_REQUEST)
-    print(data)
+   
     # Deserialize the input data
     serializer = DeviceStockFilterSerializer(data=data)
     serializer.is_valid(raise_exception=True)
 
-    # Filter DeviceStock instances based on parameters
-    device_stock = DeviceStock.objects.filter(**serializer.validated_data)
-    for item in device_stock:
-        item.is_tagged = DeviceTag.objects.filter(device=item).exists()
-    # Serialize the data
-    #is_tagged_filter = serializer.validated_data.get('is_tagged')
+    # Add pagination to limit results
+    page_size = min(int(request.data.get('page_size', 50)), 200)  # Max 200 records per page
+    page = max(int(request.data.get('page', 1)), 1)
+    offset = (page - 1) * page_size
 
-    # Filter based on 'is_tagged' value if provided
+    # Use raw SQL or values() for maximum performance
+    from django.db.models import Exists, OuterRef, Case, When, BooleanField
+    
+    # Build the base query with only essential fields
+    base_query = DeviceStock.objects.filter(**serializer.validated_data)
+    
+    # Get total count
+    total_count = base_query.count()
+    
+    # Apply is_tagged filter at database level if specified
     if is_tagged_filter is not None:
-        is_tagged_filter= is_tagged_filter=='True'
-        device_stock = [item for item in device_stock if item.is_tagged == is_tagged_filter]
+        is_tagged_bool = is_tagged_filter == 'True'
+        tagged_subquery = DeviceTag.objects.filter(device=OuterRef('pk'))
+        base_query = base_query.annotate(
+            is_tagged=Exists(tagged_subquery)
+        ).filter(is_tagged=is_tagged_bool)
+        total_count = base_query.count()
+    
+    # Use values() to get only required data as dictionaries (much faster than model instances)
+    device_data = base_query.select_related('model', 'dealer', 'created_by').values(
+        'id', 'device_esn', 'iccid', 'imei', 'telecom_provider1', 'telecom_provider2',
+        'msisdn1', 'msisdn2', 'esim_validity', 'remarks', 'created', 'stock_status', 
+        'esim_status', 'assigned', 'shipping_remark',
+        # Related model fields
+        'model__id', 'model__model_name', 'model__test_agency', 'model__vendor_id',
+        'model__tac_no', 'model__hardware_version',
+        # Dealer fields (using correct field names)
+        'dealer__id', 'dealer__company_name',
+        # Created by fields (using correct field names)
+        'created_by__id', 'created_by__name', 'created_by__email'
+    ).order_by('-id')[offset:offset + page_size]
+    
+    # Convert to list and add is_tagged for each item if not already filtered
+    result_data = []
+    device_ids = []
+    
+    for item in device_data:
+        device_ids.append(item['id'])
+        result_data.append(item)
+    
+    # If is_tagged_filter was not applied, get is_tagged status for all items in one query
+    if is_tagged_filter is None and device_ids:
+        tagged_device_ids = set(
+            DeviceTag.objects.filter(device_id__in=device_ids).values_list('device_id', flat=True)
+        )
+        for item in result_data:
+            item['is_tagged'] = item['id'] in tagged_device_ids
+    elif is_tagged_filter is not None:
+        # If filtered, all items have the same is_tagged value
+        for item in result_data:
+            item['is_tagged'] = is_tagged_filter == 'True'
+    
+    # Calculate pagination info
+    total_pages = (total_count + page_size - 1) // page_size
+    has_next = page < total_pages
+    has_previous = page > 1
 
-    serializer = DeviceStockSerializer2(device_stock, many=True)
+    # Format the response to match the expected structure
+    formatted_data = []
+    for item in result_data:
+        formatted_item = {
+            'id': item['id'],
+            'device_esn': item['device_esn'],
+            'iccid': item['iccid'],
+            'imei': item['imei'],
+            'telecom_provider1': item['telecom_provider1'],
+            'telecom_provider2': item['telecom_provider2'],
+            'msisdn1': item['msisdn1'],
+            'msisdn2': item['msisdn2'],
+            'esim_validity': item['esim_validity'],
+            'remarks': item['remarks'],
+            'created': item['created'],
+            'stock_status': item['stock_status'],
+            'esim_status': item['esim_status'],
+            'assigned': item['assigned'],
+            'shipping_remark': item['shipping_remark'],
+            'is_tagged': item.get('is_tagged', False),
+            'model': {
+                'id': item['model__id'],
+                'model_name': item['model__model_name'],
+                'test_agency': item['model__test_agency'],
+                'vendor_id': item['model__vendor_id'],
+                'tac_no': item['model__tac_no'],
+                'hardware_version': item['model__hardware_version'],
+            } if item['model__id'] else None,
+            'dealer': {
+                'id': item['dealer__id'],
+                'company_name': item['dealer__company_name'],
+            } if item['dealer__id'] else None,
+            'created_by': {
+                'id': item['created_by__id'],
+                'name': item['created_by__name'],
+                'email': item['created_by__email'],
+            } if item['created_by__id'] else None,
+        }
+        formatted_data.append(formatted_item)
 
-    return JsonResponse({'data': serializer.data}, status=200)
+    return JsonResponse({
+        'data': formatted_data,
+        'pagination': {
+            'current_page': page,
+            'page_size': page_size,
+            'total_count': total_count,
+            'total_pages': total_pages,
+            'has_next': has_next,
+            'has_previous': has_previous
+        }
+    }, status=200)
 
 
 @api_view(['POST'])
@@ -8109,35 +8242,52 @@ def create_Settings_ip(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
-def filter_Settings_District(request ): 
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    
+def filter_Settings_District(request): 
     try:
-        #"superadmin","devicemanufacture","","dtorto","dealer","owner","esimprovider"
-        role="stateadmin"
-        user=request.user
-        uo=get_user_object(user,role)
-        if  uo:
-            state=uo.state
-            manufacturers = Settings_District.objects.filter(state=state ).distinct()
-        else:
-            manufacturers = Settings_District.objects.all()
-    
-        # Create a dictionary to hold the filter parameters
-        filters = {}
-        # Add ID filter if provided
+        user = request.user
+        user_role = getattr(user, 'role', None)
         
-            
-        # Serialize the queryset
-        dealer_serializer = Settings_DistrictSerializer(manufacturers, many=True)
-        # Return the serialized data as JSON response
-        return Response(dealer_serializer.data)
+        # Fast role-based filtering
+        if user_role == 'stateadmin':
+            # Get user's state efficiently
+            uo = get_user_object(user, "stateadmin")
+            if uo and uo.state:
+                # Use values() for maximum performance - only get required fields
+                districts = Settings_District.objects.filter(
+                    state=uo.state
+                ).select_related('state').values(
+                    'id', 'district', 'created', 
+                    'state__id', 'state__state_name'
+                ).distinct()
+            else:
+                districts = Settings_District.objects.none().values()
+        else:
+            # For other roles, get all districts with optimized query
+            districts = Settings_District.objects.select_related('state').values(
+                'id', 'district', 'created',
+                'state__id', 'state__state_name'
+            ).distinct()
+        
+        # Convert to list for JSON response
+        district_list = list(districts)
+        
+        # Format response to match expected structure
+        formatted_data = []
+        for district in district_list:
+            formatted_data.append({
+                'id': district['id'],
+                'district': district['district'],
+                'created': district['created'],
+                'state': {
+                    'id': district['state__id'],
+                    'state_name': district['state__state_name']
+                } if district['state__id'] else None
+            })
+        
+        return Response(formatted_data, status=200)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request." + str(e)}, status=400)
 
 
 
@@ -8237,7 +8387,7 @@ def create_Settings_firmware(request ):
 
      
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    role="devicemanufacture"
+    role="superadmin"
     user=request.user
     uo=get_user_object(user,role)
     if not uo:
@@ -9561,48 +9711,142 @@ def homepage_stateAdmin(request ):
 
 
         if profile:
+            # Get current datetime for filtering
+            from datetime import datetime, timedelta
+            from django.utils import timezone
+            
+            now = timezone.now()
+            today = now.date()
+            seven_days_ago = now - timedelta(days=7)
+            thirty_days_ago = now - timedelta(days=30)
+            current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            # Filter data by state admin's state
+            state_filter = profile.state
+            
+            # Get dealers in this state (through manufacturer)
+            dealers_in_state = Dealer.objects.filter(manufacturer__state=state_filter)
+            
+            # Get manufacturers in this state
+            manufacturers_in_state = Manufacturer.objects.filter(state=state_filter)
+            
+            # Get DTOs in this state
+            dtos_in_state = dto_rto.objects.filter(state=state_filter)
+            
+            # Get vehicle owners through dealers in this state
+            vehicle_owners_in_state = VehicleOwner.objects.filter(
+                devicetag__device__dealer__manufacturer__state=state_filter
+            ).distinct()
+            
+            # Get device tags in this state
+            device_tags_in_state = DeviceTag.objects.filter(
+                device__dealer__manufacturer__state=state_filter
+            )
+            
+            # Get active devices in this state
+            active_devices = device_tags_in_state.filter(status='Device_Active')
+            
+            # Get device stock in this state
+            device_stock_in_state = DeviceStock.objects.filter(
+                dealer__manufacturer__state=state_filter
+            )
+            
+            # Get districts in this state
+            districts_in_state = Settings_District.objects.filter(state=state_filter)
+
             count_dict = {
+                # User counts filtered by state
+                'Total_Dealer_available': dealers_in_state.count(),
+                'Total_Manufacture_available': manufacturers_in_state.count(),
+                'Total_DTO_available': dtos_in_state.count(),
+                'Total_Vehicle_Owner_available': vehicle_owners_in_state.count(),
 
-                'Total_Dealer_available':Dealer.objects.count(),
-                'Total_Manufacture_available':Manufacturer.objects.filter(state=profile.state).count(),
-                'Total_DTO_available':dto_rto.objects.filter(state=profile.state).count(),
-                'Total_Vehicle_Owner_available':VehicleOwner.objects.count(),
+                # Device counts filtered by state
+                'Total_Fit_Device': device_tags_in_state.filter(
+                    status__in=['Device_Active', 'Fitted', 'Owner_OTP_Verified']
+                ).count(),
+                'Online_Devices': active_devices.count(),
+                'Offline_Devices': device_tags_in_state.filter(status='Device_Not_Active').count(),
 
-
-                'Total_Fit_Device' : DeviceTag.objects.filter(status='Device_Active').count(),
-                'Online_Devices':DeviceTag.objects.filter(status='Device_Active').count(),
-                'Offline_Devices':0,
-
-                'Total_Device_Activated':DeviceTag.objects.filter(status='Device_Active').count(),
-                'Active_Device_Today':0,
-                'Inactive_Device_7days' :0,
-                'Inactive_Device_30days':0,
+                'Total_Device_Activated': active_devices.count(),
+                'Active_Device_Today': device_tags_in_state.filter(
+                    status='Device_Active',
+                    tagged__date=today
+                ).count(),
+                'Inactive_Device_7days': device_tags_in_state.filter(
+                    status='Device_Not_Active',
+                    tagged__gte=seven_days_ago
+                ).count(),
+                'Inactive_Device_30days': device_tags_in_state.filter(
+                    status='Device_Not_Active',
+                    tagged__gte=thirty_days_ago
+                ).count(),
                 
-                'Total_overspeeding_Alert':0,
-                'Monthly_overspeeding_Alert':0,
-                'Today_overspeeding_Alert':0,
+                # Alert counts (using EMGPSLocation for real data)
+                'Total_overspeeding_Alert': EMGPSLocation.objects.filter(
+                    device_tag__device__dealer__manufacturer__state=state_filter,
+                    speed__gt=80  # Assuming 80+ is overspeeding
+                ).count(),
+                'Monthly_overspeeding_Alert': EMGPSLocation.objects.filter(
+                    device_tag__device__dealer__manufacturer__state=state_filter,
+                    speed__gt=80,
+                    timestamp__gte=current_month_start
+                ).count(),
+                'Today_overspeeding_Alert': EMGPSLocation.objects.filter(
+                    device_tag__device__dealer__manufacturer__state=state_filter,
+                    speed__gt=80,
+                    timestamp__date=today
+                ).count(),
                 
-                'Total_emergency_Alert':0,
-                'This_month_emergency_Alert':0,
-                'Today_emergency_Alert':0,
+                # Emergency alerts (SOS button pressed)
+                'Total_emergency_Alert': EMGPSLocation.objects.filter(
+                    device_tag__device__dealer__manufacturer__state=state_filter,
+                    sos_status='1'  # Assuming '1' means SOS activated
+                ).count(),
+                'This_month_emergency_Alert': EMGPSLocation.objects.filter(
+                    device_tag__device__dealer__manufacturer__state=state_filter,
+                    sos_status='1',
+                    timestamp__gte=current_month_start
+                ).count(),
+                'Today_emergency_Alert': EMGPSLocation.objects.filter(
+                    device_tag__device__dealer__manufacturer__state=state_filter,
+                    sos_status='1',
+                    timestamp__date=today
+                ).count(),
                 
-                'Total_harsh_brake_Alert':0,
-                'This_month_harsh_brake_Alert':0,
-                'Today_harsh_brake_Alert' :0 ,
+                # Harsh brake alerts (using acceleration data if available)
+                'Total_harsh_brake_Alert': EMGPSLocation.objects.filter(
+                    device_tag__device__dealer__manufacturer__state=state_filter,
+                    acceleration__lt=-5  # Assuming negative acceleration indicates braking
+                ).count(),
+                'This_month_harsh_brake_Alert': EMGPSLocation.objects.filter(
+                    device_tag__device__dealer__manufacturer__state=state_filter,
+                    acceleration__lt=-5,
+                    timestamp__gte=current_month_start
+                ).count(),
+                'Today_harsh_brake_Alert': EMGPSLocation.objects.filter(
+                    device_tag__device__dealer__manufacturer__state=state_filter,
+                    acceleration__lt=-5,
+                    timestamp__date=today
+                ).count(),
 
-                'Total_device_stock':DeviceStock.objects.count(),
-                'unassigned_device_stock':DeviceStock.objects.filter(stock_status='NotAssigned').count(),
-                'waiting_device_stock':DeviceStock.objects.filter(stock_status='Available_for_fitting').count(),
+                # Device stock counts filtered by state
+                'Total_device_stock': device_stock_in_state.count(),
+                'unassigned_device_stock': device_stock_in_state.filter(
+                    stock_status='NotAssigned'
+                ).count(),
+                'waiting_device_stock': device_stock_in_state.filter(
+                    stock_status='Available_for_fitting'
+                ).count(),
                 
-                'Total_state':Settings_State.objects.all().count(),
-                'Active_state':Settings_State.objects.filter(status='active').count(),
-                'Active_state':Settings_State.objects.filter(status='discontinued').count(),
+                # State and district counts
+                'Total_state': 1,  # This state admin manages only one state
+                'Active_state': 1 if state_filter.status == 'active' else 0,
+                'Discontinued_state': 1 if state_filter.status == 'discontinued' else 0,
              
-
-                'Total_district':Settings_District.objects.all().count(),
-                'Active_district':Settings_District.objects.filter(status='active').count(),
-                'Active_district':Settings_District.objects.filter(status='discontinued').count(),
-             
+                'Total_district': districts_in_state.count(),
+                'Active_district': districts_in_state.filter(status='active').count(),
+                'Discontinued_district': districts_in_state.filter(status='discontinued').count(),
              
             }
             # Return the serialized data as JSON response
