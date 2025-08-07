@@ -113,7 +113,7 @@ RUN python manage.py migrate
 
 #CMD ["gunicorn", "--certfile=cert_old.pem","--workers=3", "--timeout=120", "--keyfile=key_old.pem", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]
 
-#CMD ["gunicorn", "--workers=3", "--timeout=120", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]
+CMD ["gunicorn", "--workers=40", "--timeout=120", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]
 
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:2000"]
+#CMD ["python", "manage.py", "runserver", "0.0.0.0:2000"]

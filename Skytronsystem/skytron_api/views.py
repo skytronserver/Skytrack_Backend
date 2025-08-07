@@ -12,6 +12,7 @@ STATIC_OTP_CAP=True
 DEPLOY_URL = 'gromed.in'   
 EMAIL_ACTIVE=False
 
+REMOVE_OTP_CAP=True
 
 from django.core.serializers import serialize
 from django.core.paginator import Paginator
@@ -10977,29 +10978,32 @@ def user_login(request ):
         if not username or not password :#or not key or not user_input:
             return Response({'error': 'Incomplete credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         
-        password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
         
-        captchaSuccess=False
-        try:
-            user_input=int(user_input)
-        except:
-            return JsonResponse({'success': False, 'error': 'Invalid Captcha Input. Only integers allowed'})
-        try:
-            captcha = Captcha.objects.filter(key=key).last() 
-            if not captcha.is_valid():
-                captcha.delete()  # Optionally, delete the expired captcha
-                return JsonResponse({'success': False, 'error': 'Captcha expired'}) 
-            if int(user_input) == int(captcha.answer):
-                captcha.delete()  # Optionally, delete the captcha after successful verification
-                captchaSuccess=True
-            else:
-                return JsonResponse({'success': False, 'error': 'Invalid captcha'})
-        except Captcha.DoesNotExist: 
-            return JsonResponse({'success': False, 'error': 'Captcha not found'})
-        except Exception as e: #Captcha.DoesNotExist: 
-            print('error',e)
-            return JsonResponse({'success': False, 'error': 'Captcha not found'})
-         
+        
+        if not REMOVE_OTP_CAP:
+            password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
+        
+            captchaSuccess=False
+            try:
+                user_input=int(user_input)
+            except:
+                return JsonResponse({'success': False, 'error': 'Invalid Captcha Input. Only integers allowed'})
+            try:
+                captcha = Captcha.objects.filter(key=key).last() 
+                if not captcha.is_valid():
+                    captcha.delete()  # Optionally, delete the expired captcha
+                    return JsonResponse({'success': False, 'error': 'Captcha expired'}) 
+                if int(user_input) == int(captcha.answer):
+                    captcha.delete()  # Optionally, delete the captcha after successful verification
+                    captchaSuccess=True
+                else:
+                    return JsonResponse({'success': False, 'error': 'Invalid captcha'})
+            except Captcha.DoesNotExist: 
+                return JsonResponse({'success': False, 'error': 'Captcha not found'})
+            except Exception as e: #Captcha.DoesNotExist: 
+                print('error',e)
+                return JsonResponse({'success': False, 'error': 'Captcha not found'})
+            
     
           
     
@@ -11035,7 +11039,7 @@ def user_login(request ):
             'user': user.id,
             'token': str(token),
             'otp': otp,
-            'status': 'otpsent',
+            'status': 'login',
             'login_time': timezone.now(),
         } 
         session_serializer = SessionSerializer(data=session_data)  
@@ -11052,7 +11056,8 @@ def user_login(request ):
                 uu=get_user_object(user,user.role)
                 if uu:
                     uu = recursive_model_to_dict(uu,["users","esim_provider"])
-
+                return Response({'status':'Login Successful','token': token,'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
+            
   
                 #return Response({'status':'Login Successful','token': str(token),'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
 
