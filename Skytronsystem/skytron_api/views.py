@@ -1,11 +1,13 @@
 # skytron_api/views.py
-from rest_framework.authtoken.models import Token 
-from django.http import HttpResponseBadRequest, JsonResponse,HttpResponse  
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
 import secrets
 import string
+
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from rest_framework.authtoken.models import Token
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+
 HOST_STORAGE_PATH = '/host_storage'   
 e=""
 STATIC_OTP_CAP=True
@@ -14,87 +16,91 @@ EMAIL_ACTIVE=False
 
 REMOVE_OTP_CAP=True
 
-from django.core.serializers import serialize
-from django.core.paginator import Paginator
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from django.contrib.auth import authenticate,logout,login 
-from rest_framework.response import Response
-from rest_framework import status 
-import bleach
-from .models import *
-from .serializers import *
-import xml.etree.ElementTree as ET
-import json
 import html
-from django.db.models import Q
+import json
 import random
-from itertools import islice 
-from django.utils import timezone     
+import xml.etree.ElementTree as ET
+from itertools import islice
+
+import bleach
+from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail as sm
+from django.core.paginator import Paginator
+from django.core.serializers import serialize
+from django.db.models import Q
+from django.utils import timezone
+from rest_framework import status
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+
+from .models import *
+from .serializers import *
+
+
 def send_mail(subject, message, from_email, recipient_list, fail_silently=False, html_message=None):    
     pass
-import os 
-import magic
+import ast
+import base64
+import calendar
 import glob
+import io
+import json
+import os
+import subprocess
+import sys
+import time
+import uuid
+from datetime import datetime, timedelta
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+
+import magic
+import numpy as np
+import pandas as pd
+import pdfkit
+import requests
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.PublicKey import RSA
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import LoginView
+from django.core.exceptions import ValidationError
+from django.core.files.storage import FileSystemStorage
+from django.core.validators import RegexValidator, validate_email
+from django.db import transaction
+from django.db.models import F, Max, OuterRef, Q, Subquery
+from django.forms.models import model_to_dict
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.crypto import get_random_string
+from django.utils.decorators import method_decorator
+from django.utils.timezone import now
+from django.views import View
+from django.views.static import serve
+from docx import Document
+from rest_framework import filters, generics, status
+from rest_framework.parsers import FileUploadParser, MultiPartParser
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+from rest_framework.views import APIView
+from scipy.signal import butter, lfilter
+
+from .forms import GPSDataFilterForm
+from .utils import generate_captcha
+
 # Define the path on the host machine where files will be stored
 # This directory should be mounted as a volume in Docker
 #HOST_STORAGE_PATH = os.environ.get('HOST_STORAGE_PATH', '/tmp/skytrack_storage')  # This should match the volume mount point in Docker
 
 
                
-from django.utils.crypto import get_random_string   
-import sys
-from django.forms.models import model_to_dict
-from django.db import transaction
 
-from django.contrib.auth import get_user_model
-from rest_framework.views import APIView  
 
-from django.shortcuts import get_object_or_404 
-from rest_framework.parsers import MultiPartParser,FileUploadParser
-import time 
-import pandas as pd 
-import calendar 
 
-from rest_framework import generics,filters  
 
-from django.core.files.storage import FileSystemStorage
-from rest_framework import generics, status 
-from django.conf import settings
      
-import ast 
-from django.views.static import serve
-from django.conf import settings 
-from django.shortcuts import render  
-import json
-from django.db.models import Subquery, OuterRef, Max, F,Subquery, OuterRef,Q  
-from django.forms.models import model_to_dict
-from scipy.signal import butter, lfilter,lfilter
-from .forms import GPSDataFilterForm
-import numpy as np
-from django.shortcuts import render
-from django.views import View 
-from django.contrib.auth.decorators import login_required
-from django.utils.decorators import method_decorator
-from django.shortcuts import render, get_object_or_404 
-from django.contrib.auth.views import LoginView
-from django.shortcuts import redirect
-import requests
 
-import base64
-import uuid   
-from .utils import generate_captcha
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_OAEP
-import base64
-import json
-import os 
-from django.core.exceptions import ValidationError
-from django.core.validators import validate_email, RegexValidator
-from datetime import datetime, timedelta
 
-from django.utils.timezone import now
 #python3 -m pip install python-docx
 #python3 -m pip install pypandoc
 #python3 -m pip install docx2pdf
@@ -104,20 +110,9 @@ from django.utils.timezone import now
 #sudo apt-get update
 #sudo apt-get install libreoffice
 
-import io
-from docx import Document
-import pdfkit
-from tempfile import NamedTemporaryFile
 
 
-import io
-from docx import Document
-import subprocess
-from tempfile import NamedTemporaryFile
 
-from pathlib import Path
-import os  
-from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -335,10 +330,13 @@ def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,A
 
 
 
- 
+import os
+
 
 def load_private_key():
-    private_key_path = '/app/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    private_key_path = os.path.join(BASE_DIR, "keys", "private_key.pem")
+    # private_key_path = '/app/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
     with open(private_key_path, 'rb') as key_file:
         private_key = RSA.import_key(key_file.read()) 
     with open(private_key_path, 'rb') as key_file: 
@@ -486,26 +484,31 @@ def verify_captcha_api(request ):
         return JsonResponse({'success': False, 'error': 'Captcha not found'})
    
 
-import os, magic
+################################################################
+
+import glob
 import os
 import random
+
+import magic
+import requests
+from django.http import HttpResponse, JsonResponse
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
 
 def save_file(request, tag, path):
     uploaded_file = request.FILES.get(tag)
     if not uploaded_file:
-        return None 
-        return Response({'error': f"File not found"}, status=400)
-    #Response({'error': f"Invalid file type. Allowed types are:"}, status=400)
+        return Response({'error': "File not found"}, status=400)
 
-    # Validate file size (should be less than 1 MB)
-    max_file_size = 1 * 1024 * 1024  # 1 MB in bytes
+    max_file_size = 1 * 1024 * 1024  # 1 MB
     if uploaded_file.size > max_file_size:
-        return None 
         return Response({'error': f"File size should be less than 1 MB. Current size: {uploaded_file.size / (1024 * 1024):.2f} MB"}, status=400)
 
-    # Validate file type using magic numbers
     valid_mime_types = {
         'image/png': 'png',
         'image/jpeg': 'jpg',
@@ -514,167 +517,137 @@ def save_file(request, tag, path):
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
     }
 
-    # Use python-magic to detect the MIME type
     mime = magic.Magic(mime=True)
-    mime_type = mime.from_buffer(uploaded_file.read(2048))  # Read the first 2 KB of the file
+    mime_type = mime.from_buffer(uploaded_file.read(2048))
+    uploaded_file.seek(0)
 
     if mime_type not in valid_mime_types:
-        return None 
         return Response({'error': f"Invalid file type. Allowed types are: {', '.join(valid_mime_types.keys())}"}, status=400)
 
-    # Additional validation to prevent executable files
-    uploaded_file.seek(0)  # Reset file pointer to the beginning
-    file_content = uploaded_file.read(2048)  # Read the first 2 KB of the file
-    if b'MZ' in file_content or b'PK\x03\x04' in file_content:
-        return None 
+    file_content = uploaded_file.read(2048)
+    uploaded_file.seek(0)
+    if file_content.startswith((b"MZ", b"\x7FELF", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"#!")):
         return Response({'error': "Invalid file detected. Upload denied."}, status=400)
-    data=file_content
-    if data.startswith(b"MZ") or data.startswith(b"\x7FELF") or data.startswith(b"\xcf\xfa\xed\xfe") or \
-        data.startswith(b"\xce\xfa\xed\xfe") or \
-        data.startswith(b"\xca\xfe\xba\xbe")or data.startswith(b"#!"):
-            return None 
-        #return Response({'error': "Invalid file detected. Upload denied."}, status=400)
-    
-    # Create the directory in the host storage path if it doesn't exist
-    if not path.startswith('fileuploads/') and path != 'fileuploads' and not path.startswith('./fileuploads/'):
-        # Prepend fileuploads/ to ensure consistent path structure
-        host_path = os.path.join(HOST_STORAGE_PATH, 'fileuploads', path.lstrip('./'))
-    else:
-        host_path = os.path.join(HOST_STORAGE_PATH, path.lstrip('./'))
-    
-    os.makedirs(host_path, exist_ok=True)
-    
+
     file_extension = valid_mime_types[mime_type]
-    file_name = ''.join(random.choices('0123456789', k=40)) + "." + file_extension
-    file_path = os.path.join(host_path, file_name)
+    file_path = os.path.join(path, ''.join(random.choices('0123456789', k=40)) + "." + file_extension)
     
     with open(file_path, 'wb') as file:
-        uploaded_file.seek(0)  # Reset file pointer to the beginning
         for chunk in uploaded_file.chunks():
             file.write(chunk)
 
-    # Return the path that will be stored in the database and used for retrieval
-    if not path.startswith('fileuploads/') and path != 'fileuploads' and not path.startswith('./fileuploads/'):
-        # Return path with folder name included, e.g., "notice/filename.jpg"
-        return os.path.join(path.lstrip('./'), file_name)
-    else:
-        # Path already has structure, just return it
-        return os.path.join(path.lstrip('./'), file_name)
-
-
+    return file_path
 
 def find_file_in_folders(filename, folders):
-    # First try with the original path which might include directories
-    
-    
-    filename=os.path.join(HOST_STORAGE_PATH, filename)
-    if os.path.isfile(filename):
-        return filename
-                
-    return None
+    filename = os.path.basename(filename)  # Prevent path traversal
     for folder in folders:
-        filename_clean = filename.replace("%20", " ")
-        
-        # Case 1: If filename already contains path components like 'notice/file.jpg'
-        if '/' in filename_clean:
-            # Try direct path
-            potential_path = os.path.join(folder, filename_clean)
-            if os.path.isfile(potential_path):
-                return potential_path
-                
-            # Try with fileuploads prefix if not already there
-            if not filename_clean.startswith('fileuploads/'):
-                potential_path = os.path.join(folder, 'fileuploads', filename_clean)
-                if os.path.isfile(potential_path):
-                    return potential_path
-        
-        # Case 2: Simple filename without directory
-        else:
-            # Try direct path for simple filename
-            potential_path = os.path.join(folder, filename_clean)
-            if os.path.isfile(potential_path):
-                return potential_path
-            
-            # Try common subdirectories for files
-            for subdir in ['', 'notice', 'fileuploads/notice']:
-                potential_path = os.path.join(folder, subdir, filename_clean)
-                if os.path.isfile(potential_path):
-                    return potential_path
+        pattern = os.path.join(folder, filename)
+        for file_path in glob.iglob(pattern, recursive=True):
+            if os.path.isfile(file_path):
+                return file_path
+    return None
 
-    # Use glob as a fallback for more flexible matching
-    for folder in folders:
-        # Try to find by filename only, anywhere under the folder
-        pattern = os.path.join(folder, '**', os.path.basename(filename.replace("%20", " ")))
-        matches = glob.glob(pattern, recursive=True)
-        if matches and os.path.isfile(matches[0]):
-            return matches[0]
-            
-    return None
 folders = [
-    os.path.join(HOST_STORAGE_PATH, ''),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/tac_docs/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/Receipt_files/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/kyc_files/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/cop_files/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/file_bin/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/man/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/media/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/notice/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/driver/'),
-    # Add more folders as needed
+    './',
+    './fileuploads/',
+    'fileuploads/tac_docs/',
+    'fileuploads/Receipt_files/',
+    'fileuploads/kyc_files/',
+    'fileuploads/cop_files/',
+    'fileuploads/file_bin/',
+    'fileuploads/man/',
+    'fileuploads/driver/',
 ]
 
-# Ensure directories exist
-for folder in folders:
-    os.makedirs(folder, exist_ok=True)
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def list_files_from_fastapi(request):
+    try:
+        fastapi_url = f"{FASTAPI_BASE_URL}/files/"
+        resp = requests.get(fastapi_url)
+        if resp.status_code == 200:
+            return Response(resp.json())
+        else:
+            return Response({'error': 'FastAPI failed', 'details': resp.text}, status=resp.status_code)
+    except requests.exceptions.RequestException as e:
+        return Response({'error': 'Could not connect to FastAPI', 'details': str(e)}, status=500)
 
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def view_file_from_fastapi(request, custom_path, filename):
+    try:
+        fastapi_url = f"{FASTAPI_BASE_URL}/view/{custom_path}/{filename}/"
+        resp = requests.get(fastapi_url)
+        if resp.status_code == 200:
+            return HttpResponse(resp.content, content_type=resp.headers.get('content-type'))
+        else:
+            return Response({'error': 'FastAPI failed', 'details': resp.text}, status=resp.status_code)
+    except requests.exceptions.RequestException as e:
+        return Response({'error': 'Could not connect to FastAPI', 'details': str(e)}, status=500)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def download_file_from_fastapi(request, custom_path, filename):
+    try:
+        fastapi_url = f"{FASTAPI_BASE_URL}/download/{custom_path}/{filename}/"
+        resp = requests.get(fastapi_url)
+        if resp.status_code == 200:
+            response = HttpResponse(resp.content, content_type=resp.headers.get('content-type'))
+            response['Content-Disposition'] = resp.headers.get('content-disposition', f'attachment; filename="{filename}"')
+            return response
+        else:
+            return Response({'error': 'FastAPI failed', 'details': resp.text}, status=resp.status_code)
+    except requests.exceptions.RequestException as e:
+        return Response({'error': 'Could not connect to FastAPI', 'details': str(e)}, status=500)
+
+
+FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "http://host.docker.internal:8080")
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])  # Apply throttling here
-@require_http_methods(['GET', 'POST'])
-def downloadfile(request): 
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def upload_forward_to_fastapi(request):
+    print("Upload Forward endpoint hit")
 
-    
-    if request.method == 'POST': 
-        file_path =   request.data.get('file_path') 
-        #print(request.content_type )
-        #print(request.data)
-        #print(request.user )
+    uploaded_file = request.FILES.get('file')
+    custom_path = request.data.get('custom_path')
 
-        if not file_path:
-            return JsonResponse({'error': 'file_path is required'}, status=400) 
-        try:
-            # Extract just the filename for the response header
-            filename = os.path.basename(file_path)
-            
-            # Try to find the file first with the full path
-            full_path = find_file_in_folders(file_path, folders)
-            
-            # If that fails, try with just the filename
-            if not full_path:
-                filename_only = os.path.basename(file_path)
-                full_path = find_file_in_folders(filename_only, folders)
-                
-            if not full_path:
-                return JsonResponse({'error': f'file not found: {file_path}'}, status=400) 
-                
-            try:                
-                with open(full_path, 'rb') as file:
-                    response = HttpResponse(file.read(), content_type='application/octet-stream')
-                    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                    return response
-                    return response
-            except FileNotFoundError:
-                return HttpResponse("File not found.", status=404) 
-        except DeviceTag.DoesNotExist:
-            return JsonResponse({'error': 'Error in reading file.'}, status=404)
-    return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
+    if not uploaded_file:
+        return Response({'error': 'No file uploaded'}, status=status.HTTP_400_BAD_REQUEST)
+    if not custom_path:
+        return Response({'error': 'custom_path is required'}, status=status.HTTP_400_BAD_REQUEST)
 
+    uploaded_file.seek(0)
+
+    files = {
+        'file': (uploaded_file.name, uploaded_file.read(), uploaded_file.content_type),
+    }
+
+    data = {
+        'custom_path': custom_path,
+    }
+
+    fastapi_url = f"{FASTAPI_BASE_URL}/upload/"
+
+    try:
+        resp = requests.post(fastapi_url, files=files, data=data)
+        if resp.status_code == 200:
+            return Response(resp.json())
+        else:
+            return Response({
+                'error': 'FastAPI upload failed',
+                'details': resp.json() if resp.headers.get('Content-Type') == 'application/json' else resp.text
+            }, status=resp.status_code)
+    except requests.exceptions.RequestException as e:
+        return Response(
+            {'error': 'Could not connect to FastAPI server', 'details': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+###########################################################################
 
 
 def apply_low_pass_filter(queryset, columns):
@@ -1204,7 +1177,7 @@ def delRoute(request ):
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
-from jsonschema import validate, ValidationError
+from jsonschema import ValidationError, validate
 
 # Define the expected JSON schema
 response_schema = {
@@ -3096,8 +3069,9 @@ def filter_manufacturers(request ):
         return Response({'error': "Unable to process request."+str(e)}, status=400)
 
 
-from django.db import IntegrityError
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
+
 
 def create_user(role, req):
     try:
@@ -3178,85 +3152,237 @@ def send_usercreation_otp(user,new_password,type):
         pass
         # Response({'error': "Error in sendig email  "+"Unable to process request."+str(e)}, status=400)
     
+########################
+
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated])
+# @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+# @transaction.atomic
+# @require_http_methods(['GET', 'POST'])
+# def create_StateAdmin(request ): 
+#     errors = validate_inputs(request)
+#     if errors:
+#         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        
+#     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+#     role="superadmin"
+#     user=request.user
+#     uo=get_user_object(user,role)
+#     if not uo:
+#         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
+#     try: 
+#         idProofno = request.data.get('idProofno' )  # Placeholder for idProofno
+#         state= request.data.get('state','')  
+        
+#         createdby = request.user 
+#         date_joined = timezone.now()
+#         created = timezone.now()  
+#         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+#         file_idProof = request.data.get('file_idProof')
+#         file_authorisation_letter = request.data.get('file_authorisation_letter')
+        
+         
+#         user,error,new_password=create_user('stateadmin',request)
+#         if user:         
+#             try: 
+#                 # Create a savepoint for rollback if needed
+#                 sid = transaction.savepoint()
+                
+#                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
+#                 if not file_idProof:
+#                     transaction.savepoint_rollback(sid)
+#                     return Response({'error': "Invalid file." }, status=400)
+#                 file_authorisation_letter=save_file(request,'file_authorisation_letter','fileuploads/man')
+#                 if not file_authorisation_letter:
+#                     transaction.savepoint_rollback(sid)
+#                     return Response({'error': "Invalid file." }, status=400)
+                
+#                 dealer, error = StateAdmin.objects.safe_create( 
+#                     created=created,
+#                     state_id=state,
+#                     expirydate=expirydate, 
+#                     idProofno=idProofno, 
+#                     file_idProof=file_idProof,
+#                     file_authorisation_letter=file_authorisation_letter,
+#                     createdby=createdby,
+#                     status="Created",
+#                 ) 
+                
+#                 if error:
+#                     transaction.savepoint_rollback(sid)
+#                     return error  # Return the Response object from safe_create
+
+#                 transaction.savepoint_commit(sid)
+                
+#             except Exception as e:
+#                 transaction.savepoint_rollback(sid)
+#                 return Response({'error': "Unable to process request1."+str(e)}, status=400)
+#             dealer.users.add(user)
+#             dealer.save()  # Save the dealer after adding users
+#             send_usercreation_otp(user,new_password,'State Admin ')
+             
+#             return Response(StateadminSerializer(dealer).data)
+#         else:
+#             return Response(error, status=400)
+
+#     except Exception as e:
+#         return Response({'error': "Unable to process request."+str(e)}, status=400)
+
+####################################################################
+
+
+import os
+import requests
+from django.http import HttpResponse
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+from rest_framework import status
+from rest_framework.response import Response
+from django.views.decorators.http import require_http_methods
+from django.db import transaction
+from django.utils import timezone
+from rest_framework.permissions import AllowAny
+
+FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "http://host.docker.internal:8080")
+
+
+def upload_file_to_fastapi_internal(file_obj, custom_path):
+    if not file_obj:
+        return None
+
+    file_obj.seek(0)  # Ensure pointer is at the start
+
+    files = {
+        'file': (file_obj.name, file_obj.read(), file_obj.content_type),
+    }
+    data = {'custom_path': custom_path}
+
+    fastapi_url = f"{FASTAPI_BASE_URL}/upload/"
+    try:
+        resp = requests.post(fastapi_url, files=files, data=data)
+        if resp.status_code == 200:
+            return resp.json().get('filepath')  # Relative path only
+        return None
+    except requests.exceptions.RequestException:
+        return None
+
+
+def download_file_from_fastapi_internal(file_path):
+    """Fetch file from FastAPI server internally."""
+    fastapi_url = f"{FASTAPI_BASE_URL}/files/{file_path}"
+    try:
+        resp = requests.get(fastapi_url, stream=True)
+        if resp.status_code == 200:
+            return resp
+        return None
+    except requests.exceptions.RequestException:
+        return None
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])  # public access
+def download_file_from_fastapi(request, custom_path, filename):
+    """
+    Retrieve a file from the FastAPI server and display it inline in the browser.
+    Users can still use 'Save As' to download it manually.
+    """
+    # Always use FastAPI's 'view' endpoint
+    file_url = f"{FASTAPI_BASE_URL}/view/{custom_path}/{filename}"
+    response = requests.get(file_url, stream=True)
+
+    if response.status_code == 200:
+        return HttpResponse(
+            response.content,
+            content_type=response.headers.get('Content-Type', 'application/octet-stream')
+        )
+    else:
+        return Response({"error": "File not found"}, status=response.status_code)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @transaction.atomic
-@require_http_methods(['GET', 'POST'])
-def create_StateAdmin(request ): 
+@require_http_methods(['POST'])
+def create_StateAdmin(request):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-        
-    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    role="superadmin"
-    user=request.user
-    uo=get_user_object(user,role)
+    role = "superadmin"
+    user = request.user
+    uo = get_user_object(user, role)
     if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    try: 
-        idProofno = request.data.get('idProofno' )  # Placeholder for idProofno
-        state= request.data.get('state','')  
-        
-        createdby = request.user 
+        return Response({"error": f"Request must be from {role}."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        idProofno = request.data.get('idProofno')
+        state = request.data.get('state', '')
+        createdby = request.user
         date_joined = timezone.now()
-        created = timezone.now()  
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
-        file_idProof = request.data.get('file_idProof')
-        file_authorisation_letter = request.data.get('file_authorisation_letter')
-        
-         
-        user,error,new_password=create_user('stateadmin',request)
-        if user:         
-            try: 
-                # Create a savepoint for rollback if needed
+        created = timezone.now()
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)
+
+        custom_path = request.data.get('custom_path', '').strip("/")
+        if not custom_path:
+            return Response({'error': 'custom_path is required'}, status=400)
+
+        file_idProof_file = request.FILES.get('file_idProof')
+        file_authorisation_letter_file = request.FILES.get('file_authorisation_letter')
+
+        user, error, new_password = create_user('stateadmin', request)
+        if user:
+            try:
                 sid = transaction.savepoint()
-                
-                file_idProof = save_file(request,'file_idProof','fileuploads/man')
+
+                file_idProof = upload_file_to_fastapi_internal(file_idProof_file, custom_path)
                 if not file_idProof:
                     transaction.savepoint_rollback(sid)
-                    return Response({'error': "Invalid file." }, status=400)
-                file_authorisation_letter=save_file(request,'file_authorisation_letter','fileuploads/man')
+                    return Response({'error': "Failed to upload idProof file to file server."}, status=400)
+
+                file_authorisation_letter = upload_file_to_fastapi_internal(file_authorisation_letter_file, custom_path)
                 if not file_authorisation_letter:
                     transaction.savepoint_rollback(sid)
-                    return Response({'error': "Invalid file." }, status=400)
-                
-                dealer, error = StateAdmin.objects.safe_create( 
+                    return Response({'error': "Failed to upload authorisation letter to file server."}, status=400)
+
+                dealer, error = StateAdmin.objects.safe_create(
                     created=created,
                     state_id=state,
-                    expirydate=expirydate, 
-                    idProofno=idProofno, 
+                    expirydate=expirydate,
+                    idProofno=idProofno,
                     file_idProof=file_idProof,
                     file_authorisation_letter=file_authorisation_letter,
                     createdby=createdby,
                     status="Created",
-                ) 
-                
+                )
+
                 if error:
                     transaction.savepoint_rollback(sid)
-                    return error  # Return the Response object from safe_create
+                    return error
 
                 transaction.savepoint_commit(sid)
-                
+
             except Exception as e:
                 transaction.savepoint_rollback(sid)
-                return Response({'error': "Unable to process request1."+str(e)}, status=400)
+                return Response({'error': "Unable to process request1." + str(e)}, status=400)
+
             dealer.users.add(user)
-            dealer.save()  # Save the dealer after adding users
-            send_usercreation_otp(user,new_password,'State Admin ')
-             
+            dealer.save()
+            send_usercreation_otp(user, new_password, 'State Admin')
+
             return Response(StateadminSerializer(dealer).data)
         else:
             return Response(error, status=400)
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
+        return Response({'error': "Unable to process request." + str(e)}, status=400)
+
+################################################
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+# @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
@@ -3330,6 +3456,8 @@ def update_StateAdmin(request ):
 
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
+
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -3816,6 +3944,7 @@ def filter_SOS_user(request ):
 
 
 from collections import defaultdict
+
 
 @api_view(['POST'])
 @require_http_methods(['GET', 'POST'])
@@ -7330,8 +7459,8 @@ def deviceStockFilter(request ):
     offset = (page - 1) * page_size
 
     # Use raw SQL or values() for maximum performance
-    from django.db.models import Exists, OuterRef, Case, When, BooleanField
-    
+    from django.db.models import BooleanField, Case, Exists, OuterRef, When
+
     # Build the base query with only essential fields
     base_query = DeviceStock.objects.filter(**serializer.validated_data)
     
@@ -8767,10 +8896,11 @@ def homepage_Manufacturer(request ):
         filters = {}
         # Add ID filter if provided
         if profile:
-            from django.db.models import Sum, Q, Count, Avg
             from datetime import datetime, timedelta
+
+            from django.db.models import Avg, Count, Q, Sum
             from django.utils import timezone
-            
+
             # Current time for calculations
             now = timezone.now()
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -8902,10 +9032,11 @@ def homepage_DTO(request ):
         filters = {}
         # Add ID filter if provided
         if profile:
-            from django.db.models import Sum, Q, Count, Avg
             from datetime import datetime, timedelta
+
+            from django.db.models import Avg, Count, Q, Sum
             from django.utils import timezone
-            
+
             # Current time for calculations
             now = timezone.now()
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -9080,10 +9211,11 @@ def homepage_VehicleOwner(request ):
         filters = {}
         # Add ID filter if provided
         if profile:
-            from django.db.models import Sum, Q, Count, Avg
             from datetime import datetime, timedelta
+
+            from django.db.models import Avg, Count, Q, Sum
             from django.utils import timezone
-            
+
             # Get all devices owned by this vehicle owner
             owned_devices = DeviceTag.objects.filter(vehicle_owner=profile)
             activated_devices = owned_devices.filter(status="Device_Active")
@@ -9340,10 +9472,11 @@ def homepage_Dealer(request ):
         filters = {}
         # Add ID filter if provided
         if profile:
-            from django.db.models import Sum, Q, Count, Avg
             from datetime import datetime, timedelta
+
+            from django.db.models import Avg, Count, Q, Sum
             from django.utils import timezone
-            
+
             # Current time for calculations
             now = timezone.now()
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -9714,6 +9847,7 @@ def homepage_stateAdmin(request ):
         if profile:
             # Get current datetime for filtering
             from datetime import datetime, timedelta
+
             from django.utils import timezone
             
             now = timezone.now()
@@ -10653,7 +10787,9 @@ def update_user(request, user_id):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 import re
+
 from django.db.models import Exists, OuterRef
+
 
 def is_valid_string(s):
     # Check the length
@@ -11524,9 +11660,9 @@ def temp_user_logout(request ):
 
 
 from django.core.serializers.json import DjangoJSONEncoder
-
-from django.forms.models import model_to_dict
 from django.db.models.fields.related import ManyToManyField
+from django.forms.models import model_to_dict
+
 
 def recursive_model_to_dict(data, exclude_fields=None):
     """
@@ -13512,8 +13648,9 @@ def dealer_check_esim_status(request):
         msisdn1 = request.data.get('msisdn1', '')
         esim_status_filter = request.data.get('esim_status', '')
         from datetime import datetime, timedelta
+
         from django.utils import timezone
-        
+
         # Current time for validity checks
         now = timezone.now()
         
@@ -13677,10 +13814,11 @@ def homepage_esimProvider(request):
         filters = {}
         
         if profile:
-            from django.db.models import Sum, Q, Count, Avg
             from datetime import datetime, timedelta
+
+            from django.db.models import Avg, Count, Q, Sum
             from django.utils import timezone
-            
+
             # Current time for calculations
             now = timezone.now()
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -14404,9 +14542,10 @@ def get_device_trip_details(request):
     - Alerts during trip
     """
     try:
-        from datetime import datetime, timedelta
-        from django.db.models import Q, Min, Max
         import math
+        from datetime import datetime, timedelta
+
+        from django.db.models import Max, Min, Q
         
         def calculate_distance(lat1, lon1, lat2, lon2):
             """
@@ -14616,6 +14755,14 @@ def get_device_trip_details(request):
             'total_duration_minutes': round(total_duration, 2),
             'trips': processed_trips
         }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred while retrieving trip details: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         return Response(response_data, status=status.HTTP_200_OK)
         

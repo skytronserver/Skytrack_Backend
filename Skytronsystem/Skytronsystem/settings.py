@@ -30,7 +30,9 @@ SECRET_KEY = os.environ.get('SECRET_KEY', ' ')
 DEBUG = True  # os.environ.get('DEBUG', 'False') == 'True'
 # True
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
+
+ALLOWED_HOSTS = ["*"]
+# ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 # ALLOWED_HOSTS = ['api.skytron.in', 'skytron.in','dev.skytron.in','api-dev.skytron.in', 'skytrack.tech']
 # ['http://localhost:3000/','40.81.241.29','20.210.207.21','api.skytron.in','skytron.in','localhost','172.17.0.1','skytron.in','216.10.244.243','skytrack.tech','https://www.skytrack.tech','admiring-solomon.216-10-244-243.plesk.page']
 
@@ -318,3 +320,5 @@ LOGGING = {
         },
     },
 }
+
+FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "http://host.docker.internal:8080")

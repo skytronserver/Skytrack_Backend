@@ -1,13 +1,21 @@
 from django.urls import path
+from . import views
 
  
-from .views import * #SellFitDevice, ActivateESIMRequest, ConfirmESIMActivation, ConfigureIPPort, ConfigureSOSGateway, ConfigureSMSGateway, MarkDeviceDefective, ReturnToDeviceManufacturer
+from .views import * #SellFitDevice, ActivateESIMRequest, ConfirmESIMActivation, ConfigureIPPort, ConfigureSOSGateway, ConfigureSMSGateway, MarkDeviceDefective, ReturnToDeviceManufacturer, upload_forward_to_fastapi
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 # ... the rest of your URLconf goes here ...
 
 
 urlpatterns = [
+     path('upload_forward/', views.upload_forward_to_fastapi, name='upload_forward_to_fastapi'),
+
+    # Proxies for FastAPI
+    path('files/', views.list_files_from_fastapi, name='list_files_from_fastapi'),
+    path('view/<path:custom_path>/<str:filename>/', views.view_file_from_fastapi, name='view_file_from_fastapi'),
+    path('download/<path:custom_path>/<str:filename>/', views.download_file_from_fastapi, name='download_file_from_fastapi'),
+    
     path('get_settings/', get_settings, name='settings'),
     
     path('EM/DEx/get-media/', DEx_getMedia, name='get_media'),
@@ -93,6 +101,7 @@ urlpatterns = [
     path('Settings/filter_settings_firmware/', filter_Settings_firmware, name='filter_settings_firmware'), 
 
     path('StateAdmin/create_StateAdmin/', create_StateAdmin, name='create_StateAdmin'),
+    path('download/<path:custom_path>/<str:filename>/', views.download_file_from_fastapi, name='download_file_from_fastapi'),
     path('StateAdmin/update_StateAdmin/', update_StateAdmin, name='update_StateAdmin'),
     path('StateAdmin/filter_StateAdmin/', filter_StateAdmin, name='filter_StateAdmin'),
     path('DTO_RTO/create_DTO_RTO/', create_DTO_RTO, name='create_DTO_RTO'),
@@ -336,7 +345,7 @@ urlpatterns = [
     path('tag/StateAdmin_view_all_tagging/', StateAdmin_view_all_tagging, name='StateAdmin_view_all_tagging'),
    
 
-    path('download/', downloadfile, name='download'),
+    # path('download/', downloadfile, name='download'),
     path('sms/rcv', sms_received, name='sms_received'),
     path('sms/send', sms_send, name='sms_send'),
     path('sms/que', sms_queue, name='sms_queue'),
