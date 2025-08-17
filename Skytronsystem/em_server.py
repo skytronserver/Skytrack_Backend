@@ -94,8 +94,7 @@ def handle_client(client_socket, client_address):
     while True:
         data = client_socket.recv(1024)  # Receive up to 1024 bytes of data
         if not data:
-            continue
-            #break  # No more data to receive
+            break  # No more data to receive, exit the loop
         str_data=data.decode('utf-8')
         print(f"Received data from {client_address}: {str_data}:::: ")
         RegNo=""
@@ -108,6 +107,7 @@ def handle_client(client_socket, client_address):
                     data = {'vehicle_no': existing_emergency_call.vehicle_no,'device_imei': existing_emergency_call.device_imei,'call_id': existing_emergency_call.call_id,}
                     d="CloseEM"+existing_emergency_call.vehicle_no
                     client_socket.sendall(d.encode('utf-8'))"""
+    
     client_socket.close()
     print(f"Connection with {client_address} closed")
 if __name__ == "__main__":
