@@ -65,6 +65,7 @@ RUN pip install \
 # Set the working directory in the container
 WORKDIR /app
 
+
 # Copy your Django project files into the container (including cert.pem & key.pem if needed)
 COPY . /app
 
