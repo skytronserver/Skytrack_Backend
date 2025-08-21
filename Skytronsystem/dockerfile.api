@@ -57,6 +57,7 @@ RUN pip install \
     pycryptodome \
     python-docx \
     pdfkit \
+    django-redis\
     docx2pdf \
     django-filter \ 
     django-cors-headers bleach\  

@@ -30,7 +30,14 @@ docker stop skytron-backend-api-container || true
 docker rm skytron-backend-api-container || true
 
 # Run the container with the volume mount (environment variables are now baked into the image)
-sudo docker run -d --restart=always -p 2000:2000 -v $STORAGE_DIR:/host_storage --name skytron-backend-api-container skytron-backend-api 
+# sudo docker run -d --restart=always -p 2000:2000 -v $STORAGE_DIR:/host_storage --name skytron-backend-api-container skytron-backend-api 
+
+sudo docker run -d --restart=always \
+  --env-file .env \
+  -p 2000:2000 \
+  -v $STORAGE_DIR:/host_storage \
+  --name skytron-backend-api-container \
+  skytron-backend-api
 
 echo "Docker container started with host storage mounted at /host_storage"
 echo "Files saved through the API will be stored in $STORAGE_DIR on the host machine"
