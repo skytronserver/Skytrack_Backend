@@ -1,0 +1,1000 @@
+ 1000  docker logs skytrack-mqtt-client
+ 1001  sudo docker stop skytrack-mqtt-client
+ 1002  sudo docker rm skytrack-mqtt-client
+ 1003  ./build_run_mqtt.sh
+ 1004  docker logs skytrack-mqtt-client
+ 1005  ./build_run_mqtt.sh
+ 1006  sudo docker ps 
+ 1007  sudo docker logs  skytrack-mqtt-client
+ 1008  sudo ./restart.sh
+ 1009  ls
+ 1010  ls *.sh
+ 1011  cd ../
+ 1012  ls *.sh
+ 1013  sudo ./run_with_host_storage.sh 
+ 1014  cd projects
+ 1015  ls
+ 1016  docker ps
+ 1017  docker compose build --no-cache
+ 1018  cd Skytrack_frontend
+ 1019  cd projects
+ 1020  cd Skytrack_frontend
+ 1021  docker compose build --no-cache
+ 1022  docker compose up
+ 1023  ls -la ~/skytrack_crt.pem ~/skytron_key.pem 2>/dev/null || echo "Certificates not found in expected location"
+ 1024  ls
+ 1025  cd etc
+ 1026  cd nginx
+ 1027  nginx -t
+ 1028  sudo nginx -t
+ 1029  cd /etc/nginx/nginx.conf
+ 1030  cd /etc/nginx
+ 1031  ls -l
+ 1032  cd sites-available
+ 1033  ls -l
+ 1034  clear
+ 1035  ls -l
+ 1036  sudo nano skytrack.conf
+ 1037  nginx -t
+ 1038  cd /etc/nginx
+ 1039  cd sites-available
+ 1040  sudo nano skytrack.conf
+ 1041  cd /etc/nginx
+ 1042  ls
+ 1043  cd conf.d
+ 1044  ls
+ 1045  ls -l
+ 1046  cd ..
+ 1047  cd sites-available
+ 1048  ls
+ 1049  nano default
+ 1050  nano sites.conf
+ 1051  docker ps
+ 1052  ls 
+ 1053  cd ../
+ 1054  ls
+ 1055  sudo nano skytrack_crt.pem
+ 1056  ls
+ 1057  sudo nano /etc/nginx/sites-available/skytrack.conf 
+ 1058  ls 
+ 1059  sudo nano /etc/nginx/sites-available/skytrack.conf 
+ 1060  sudo ls /etc/nginx/sites-enabled/
+ 1061  sudo nginx -t
+ 1062  sudo nano /home/azureuser/skytrack_key.pem
+ 1063  sudo nano skytrack_crt.pem
+ 1064  sudo rm skytrack_crt.pem
+ 1065  sudo nano skytrack_crt.pem
+ 1066  sudo nano /etc/nginx/sites-available/skytrack.conf 
+ 1067  sudo nginx -t
+ 1068  sudo openssl req -new -key /home/azureuser/skytrack_key.pem -out skytrack.csr
+ 1069  sudo openssl x509 -req -days 365 -in skytrack.csr -signkey /home/azureuser/skytrack_key.pem -out /home/azureuser/new_skytrack_crt.pem
+ 1070  openssl x509 -in /home/azureuser/skytrack_crt.pem -text -noout | grep "Issuer:"
+ 1071  grep -c "BEGIN CERTIFICATE" /home/azureuser/skytrack_crt.pem
+ 1072  # Download the Sectigo RSA Domain Validation Secure Server CA intermediate certificate
+ 1073  sudo wget https://crt.sh/?d=924467857 -O /home/azureuser/sectigo_intermediate.crt
+ 1074  # Download the USERTrust RSA Certification Authority (root certificate)
+ 1075  sudo wget https://crt.sh/?d=924467861 -O /home/azureuser/sectigo_root.crt
+ 1076  # Combine them into a certificate chain (your certificate first, then intermediates)
+ 1077  sudo cat /home/azureuser/skytrack_crt.pem /home/azureuser/sectigo_intermediate.crt > /home/azureuser/skytrack_chain.pem
+ 1078  sudo nano /etc/nginx/sites-available/skytrack.conf 
+ 1079  sudo nginx -t
+ 1080  -----BEGIN CERTIFICATE REQUEST-----
+ 1081  MIIDADCCAegCAQAwgYUxCzAJBgNVBAYTAklOMQ4wDAYDVQQIDAVBU1NBTTERMA8G
+ 1082  A1UEBwwIR1VXQUhBVEkxLjAsBgNVBAoMJVNLWVRSQUNLIFRFQ0hOT0xPR0lFUyBQ
+ 1083  UklWQVRFIExJTUlURUQxCzAJBgNVBAsMAklUMRYwFAYDVQQDDA1TS1lUUkFDSy5U
+ 1084  RUNIMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1pkBxipQLIeO0qy/
+ 1085  ILwGL0kYIDCgQ898JmrWCVO5or1uvbgGt7jh3H18uK6tEcMp8dsiRXqv9DGvs/zT
+ 1086  f5nI4ztjiSdj9rHa9uJfZSTMp69eIUQ4IMYb5Pt0I3XHdKXHhGQKvA8kqxvy+PEb
+ 1087  q9li7B3p16Pziw+RE5UrOteMxi3JkzhN+OEdEMUjIN5WxPxUCK3Elpk7aXAqyFm5
+ 1088  D7mgubqd66SiQ9Gp8sigJEbgHhgmQeemgQI7YSUN0D94beHKjgsv9QXTlcAitpxW
+ 1089  C/0ya4vQB/25xbwQHq65pOtEGSKqQZEwbvPZB/jqFbEKDRYyNzdBrk/UB/5u2w7T
+ 1090  VoVrlQIDAQABoDUwMwYJKoZIhvcNAQkOMSYwJDAiBgNVHREEGzAZgg1TS1lUUkFD
+ 1091  Sy5URUNIgghTS1lUUkFDSzANBgkqhkiG9w0BAQsFAAOCAQEAMTwQdyT4Dw1c7sJs
+ 1092  sqRsJrpAzcWPbI5qHZUJdr3A7iVINPIob9ipH1NxI6vSyD2EXjxYdhCv/cahXHxA
+ 1093  lLjP+VPvTeZUa0QKIiyUUrHX/yYUcZmu/RhrAkX4rLP7+yGJf8hNF3QpFGygSIbt
+ 1094  hV0yEgBH4eMla1jlUBGtAQyief9MTX2HcXBFpdQhiFzoAei/+kY30IeMAk1Pz5MV
+ 1095  yGzgu4H6PTLLMHJpKa84dfSbxiSqzNwlgwGWgCr8OlHlepVGWtPKuiDilYEyu2ES
+ 1096  4C2rO/MnydhKkcxAFxpuj349hHAV1vV9iSnuouXxSFobmwv/8zgZr53hBWUEkCa2
+ 1097  h4koMg==
+ 1098  -----END CERTIFICATE REQUEST-----
+ 1099  -----BEGIN PRIVATE KEY-----
+ 1100  MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDWmQHGKlAsh47S
+ 1101  rL8gvAYvSRggMKBDz3wmatYJU7mivW69uAa3uOHcfXy4rq0Rwynx2yJFeq/0Ma+z
+ 1102  /NN/mcjjO2OJJ2P2sdr24l9lJMynr14hRDggxhvk+3Qjdcd0pceEZAq8DySrG/L4
+ 1103  8Rur2WLsHenXo/OLD5ETlSs614zGLcmTOE344R0QxSMg3lbE/FQIrcSWmTtpcCrI
+ 1104  WbkPuaC5up3rpKJD0anyyKAkRuAeGCZB56aBAjthJQ3QP3ht4cqOCy/1BdOVwCK2
+ 1105  nFYL/TJri9AH/bnFvBAerrmk60QZIqpBkTBu89kH+OoVsQoNFjI3N0GuT9QH/m7b
+ 1106  DtNWhWuVAgMBAAECggEACiJpsgkXhjLUrOBZmlsm057ZE9QYDXvD+jB7cS9SCfx2
+ 1107  OWFyd8S0bexDMpmVNMyJs5FMuglEO/0ItjBPcKw7j3ejiLuifekCVTx1kto9DAI9
+ 1108  KMcG+40/jf3OC0qpo7mchYUP+LeiXK5SOC1yyBfZExuKipOEkeGnUUxvITVCwa0b
+ 1109  vO+eoV3gJhz7pZCjo+pR1VNkynzzQRX/NLrLcfVrtXpJZiirIgQ0ngNPQEzm/fNt
+ 1110  /mTxEKurwL2bsECVAFWr13wdyFh6RRjSUD595frejJTJgGg8CxptviVh4dLXEfq2
+ 1111  pzsoG37G3MlcEFWrGL0KkCmpgCJnzBXm1Twzn68C9QKBgQDxj3NrSmICJpmf/HOa
+ 1112  sL3i7AzPe5UyULbQ3eQzb7C6JAeMfap+VTEUNzSUVecsVdNF+QJAn0jP+40DvcG+
+ 1113  Jq+W9sz9llNqfD9VvdLwzANSEiRUU2RV5YvxV+kczbQofw4+tXmcg8fVGJCnv68R
+ 1114  gZwK1SCzy+9DfppMALRXycTafwKBgQDjbPOnn/rNfsvU+90HTZFswd9lmz5z9cxE
+ 1115  w4AteOwPnozdSGtaDZ335XALLTvyFAAQBntnPLtJczY8X7lCw2CBvh89VSnMeXGh
+ 1116  SxpxiQgkYrkdemPraoePzI0zCEmlAT35E1hlywF4g/F+fo9LJHycPcIMXvPNIB7+
+ 1117  cotg17in6wKBgQCCqP5cZXKYCTsFn68EWF+Ns/LF8+niumf4mF1MOTjVppFyu7KR
+ 1118  /RC8B5RoPAL8JzxNWACQ5dejsEQ5ZtW6PgCyXrLI5BwguC4l+bR0zVVqeieueSEH
+ 1119  mU9V7yBHlTjCwt74qn6qW1mm+U+dfQB8Lqgx79BtkHzN/FgHjkX+SkQxjwKBgQCh
+ 1120  lRBMgXKtPDBQI553iNoQ/nHde/5UX0gBdzGDnU2DD3Af7EsxkUkyDtabakkUBrfA
+ 1121  qwpUYCbk2bGoFY7H646Ov+jsJ6zp9UMRiQ3Bqs2ZJHdHhWSmp2qndXrAzlucm5RP
+ 1122  ejotIJ3r5TrYV80xYzwRuiM7rN7lV7QNro5ugPZWfwKBgQDUon/QsEnBXjQOS1l+
+ 1123  /V0LRYtaiyYwrxwmqzW0OkTxb2KtPr4yF/P8tcGDbh2sJN+rTOOJ2+k2jP5CqUIy
+ 1124  D8643mSlbY256A/fKav60o8xfzdXOYL1+rYqhecYCjE/9J7by1zdUEOxzTIygECO
+ 1125  93p0HMQMOeCPCmsO3IzHdhPBWQ==
+ 1126  -----END PRIVATE KEY-----
+ 1127  sudo nano /home/azureuser/skytrack_key.pem
+ 1128  sudo  /home/azureuser/skytrack_key.pem
+ 1129  sudo nano /home/azureuser/skytrack_chain.pem
+ 1130  sudo chmod 644 /home/azureuser/skytrack_chain.pem
+ 1131  sudo chmod 600 /home/azureuser/skytrack_key.pem
+ 1132  sudo nginx -t
+ 1133  sudo chmod 777 /home/azureuser/skytrack_key.pem
+ 1134  sudo chmod 600 /home/azureuser/skytrack_key.pem
+ 1135  sudo nginx -t
+ 1136  sudo apt install certbot python3-certbot-nginx -y
+ 1137  sudo certbot --nginx -d skytrack.tech -d www.skytrack.tech
+ 1138  sudo chmod 777 /etc/nginx/sites-available/skytrack.conf 
+ 1139  sudo certbot --nginx -d skytrack.tech -d www.skytrack.tech
+ 1140  sudo nginx -t
+ 1141  sudo chmod 777 /etc/nginx/sites-available/sites.conf 
+ 1142  sudo nginx -t
+ 1143  grep -c "BEGIN CERTIFICATE" /home/azureuser/skytrack_crt.pem
+ 1144  sudo systemctl restart nginx
+ 1145  sudo docker build -t skytron-backend-api -f dockerfile.api .
+ 1146  sudo docker stop skytron-backend-api-container
+ 1147  sudo docker rm skytron-backend-api-container
+ 1148  cd Skytrack_Backend/Skytronsystem/
+ 1149  ls
+ 1150  cd ../
+ 1151  sudo ./run_with_host_storage.sh 
+ 1152  python /home/azureuser/.vscode-server/extensions/ms-python.python-2025.8.0-linux-x64/python_files/printEnvVariablesToFile.py /home/azureuser/.vscode-server/extensions/ms-python.python-2025.8.0-linux-x64/python_files/deactivate/bash/envVars.txt
+ 1153  docker ps -a
+ 1154  docker start -a 9cf66b898084
+ 1155  docker ps
+ 1156  docker start -a 9cf66b898084
+ 1157  docker ps 
+ 1158  ls /var/skytrack_storage/
+ 1159  ls /var/skytrack_storage/fileuploads/
+ 1160  ls /var/skytrack_storage/fileuploads/tac_docs/
+ 1161  ls /var/skytrack_storage/fileuploads/cop_files/
+ 1162  ls /var/skytrack_storage/fileuploads/kyc_files/
+ 1163  ls /var/skytrack_storage/fileuploads/man/
+ 1164  ls /var/skytrack_storage/fileuploads/media/
+ 1165  ls /var/skytrack_storage/fileuploads/notice/
+ 1166  sudo docker ps 
+ 1167  sudo docker logs skytron-backend-api-container
+ 1168  sudo ./run_with_host_storage.sh 
+ 1169  sudo docker logs skytron-backend-api-container
+ 1170  docker logs skytron-backend-api-container
+ 1171  sudo ./run_with_host_storage.sh 
+ 1172  ls ../
+ 1173  sudo ./run_with_host_storage.sh 
+ 1174  docker ps 
+ 1175  /bin/python3 /home/azureuser/.vscode-server/extensions/ms-python.python-2025.8.1-linux-x64/python_files/printEnvVariablesToFile.py /home/azureuser/.vscode-server/extensions/ms-python.python-2025.8.1-linux-x64/python_files/deactivate/bash/envVars.txt
+ 1176  docker exec -it 9cf66b898084
+ 1177  /usr/bin/python3 /home/azureuser/.vscode-server/extensions/ms-python.python-2025.8.1-linux-x64/python_files/printEnvVariablesToFile.py /home/azureuser/.vscode-server/extensions/ms-python.python-2025.8.1-linux-x64/python_files/deactivate/bash/envVars.txt
+ 1178  curl --location 'https://staging.parivahan.gov.in/vltdmakerws/dataportws?wsdl=null' --header 'Content-Type: text/xml; charset=utf-8' --data-raw '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.web.homologation.transport.nic/">
+ 1179     <soapenv:Header/>
+ 1180     <soapenv:Body>
+ 1181        <ser:getVltdInfoByIMEI>          
+ 1182           <userId>asbackendtest</userId>
+ 1183           <transactionPass>Asbackend@123</transactionPass>       
+ 1184           <imeiNo>862273046827366</imeiNo>
+ 1185        </ser:getVltdInfoByIMEI>
+ 1186     </soapenv:Body>
+ 1187  </soapenv:Envelope>'
+ 1188  chmod +x /home/azureuser/Skytrack_Backend/flush_and_reset_db.sh
+ 1189  export DB_NAME=skytrondbnew2
+ 1190  export DB_USER=dbadmin
+ 1191  export DB_PASSWORD=lask1028zmnx
+ 1192  export DB_HOST=135.235.166.209
+ 1193  export DB_PORT=5432
+ 1194  export MAIL_ID=testskytrack@gmail.com
+ 1195  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1196  export DEBUG=False
+ 1197  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1198  export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1199  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1200  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1201  export ALLOWED_HOSTS="api.skytron.in, skytron.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1202  chmod +x /home/azureuser/Skytrack_Backend/flush_and_reset_db.sh
+ 1203  chmod +x /home/azureuser/Skytrack_Backend/flush_and_reset_db_django.sh
+ 1204  ./flush_and_reset_db.sh
+ 1205  echo "Database environment variables:"
+ 1206  echo "DB_NAME: $DB_NAME"
+ 1207  echo "DB_USER: $DB_USER" 
+ 1208  echo "DB_HOST: $DB_HOST"
+ 1209  echo "DB_PORT: $DB_PORT"
+ 1210  echo "DB_PASSWORD: [hidden for security]"
+ 1211  export DB_NAME=skytrondbnew2
+ 1212  export DB_USER=dbadmin
+ 1213  export DB_PASSWORD=lask1028zmnx
+ 1214  export DB_HOST=135.235.166.209
+ 1215  export DB_PORT=5432
+ 1216  echo "Checking current environment variables:"
+ 1217  echo "DB_NAME: $DB_NAME"
+ 1218  echo "DB_USER: $DB_USER" 
+ 1219  echo "DB_PASSWORD: $DB_PASSWORD"
+ 1220  echo "DB_HOST: $DB_HOST"
+ 1221  echo "DB_PORT: $DB_PORT"
+ 1222  export DB_NAME=skytrondbnew2
+ 1223  export DB_USER=dbadmin
+ 1224  export DB_PASSWORD=lask1028zmnx
+ 1225  export DB_HOST=135.235.166.209
+ 1226  export DB_PORT=5432
+ 1227  echo "Environment variables set:"
+ 1228  echo "DB_NAME: $DB_NAME"
+ 1229  echo "DB_USER: $DB_USER" 
+ 1230  echo "DB_PASSWORD: [HIDDEN]"
+ 1231  echo "DB_HOST: $DB_HOST"
+ 1232  echo "DB_PORT: $DB_PORT"
+ 1233  which psql
+ 1234  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -p 5432 -U dbadmin -d skytrondbnew2 -c "SELECT 1;"
+ 1235  DB_NAME=skytrondbnew2 DB_USER=dbadmin DB_PASSWORD=lask1028zmnx DB_HOST=135.235.166.209 DB_PORT=5432 ./flush_and_reset_db.sh
+ 1236  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -p 5432 -U dbadmin -d skytrondbnew2 -c "
+ 1237  INSERT INTO skytron_api_user (
+ 1238      id,
+ 1239      is_superuser,
+ 1240      name,
+ 1241      email,
+ 1242      mobile,
+ 1243      role,
+ 1244      usertype,
+ 1245      createdby,
+ 1246      date_joined,
+ 1247      created,
+ 1248      \"Access\",
+ 1249      password,
+ 1250      is_active,
+ 1251      is_staff,
+ 1252      address,
+ 1253      address_pin,
+ 1254      address_state,
+ 1255      dob,
+ 1256      status,
+ 1257      last_login,
+ 1258      last_activity,
+ 1259      login
+ 1260  ) VALUES
+ 1261  (1, true, 'ankur superadmin', 'a65471280@gmail.com', '8638760290', 'superadmin', 'main', '1', '2024-08-14 20:33:26.815802+05:30', '2024-08-14 20:33:27.051642+05:30', '[]', 'pbkdf2_sha256\$1000000\$KxKAgjyC5mOUu5uHmvsTQW\$IzDO6ZhZdCW8i6RVvXTnu6tL195ZHxKz4gqXj04K0hA=', true, true, NULL, NULL, NULL, '2024-08-11', 'active', '2025-07-12 09:48:44.897242+05:30', '2025-07-12 09:48:44.897242+05:30', true),
+ 1262  (2, true, 'superadmin sujal', 'b.sujal@gmail.com', '9773300556', 'superadmin', 'main', '1', '2024-08-11 12:33:26.141273+05:30', '2024-08-11 12:33:26.381213+05:30', '[]', 'pbkdf2_sha256\$600000\$IGBPyT9BwFAw77PzTyS2Vz\$67PEps8b2VV57lW4ALl56Mz6bLU4Dv6m2Nvy1OADc7g=', true, true, NULL, NULL, NULL, '2024-08-11', 'pwreset', '2025-06-25 12:19:58.15282+05:30', '2025-06-25 12:19:58.15282+05:30', true),
+ 1263  (3, true, 'kishalaySpperadmin', 'kishalaychakraborty1@gmail.com', '9401633421', 'superadmin', 'main', '1', '2024-08-19 08:02:18.079454+05:30', '2024-08-19 08:02:18.308701+05:30', '[]', 'pbkdf2_sha256\$600000\$64aissMbwogjm6LIwPUv3c\$TweWpS10MI9lp6kWNcWicM6EQJkYVmClck9pfITRFfs=', true, true, NULL, NULL, NULL, '2007-07-01', 'active', '2025-07-03 14:09:13.026577+05:30', '2025-07-03 14:09:13.026577+05:30', true);
+ 1264  "
+ 1265  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -p 5432 -U dbadmin -d skytrondbnew2 -c "\d skytron_api_user" | grep address
+ 1266  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -p 5432 -U dbadmin -d skytrondbnew2 -c "
+ 1267  INSERT INTO skytron_api_user (
+ 1268      id,
+ 1269      is_superuser,
+ 1270      name,
+ 1271      email,
+ 1272      mobile,
+ 1273      role,
+ 1274      usertype,
+ 1275      createdby,
+ 1276      date_joined,
+ 1277      created,
+ 1278      \"Access\",
+ 1279      password,
+ 1280      is_active,
+ 1281      is_staff,
+ 1282      address,
+ 1283      address_pin,
+ 1284      \"address_State\",
+ 1285      dob,
+ 1286      status,
+ 1287      last_login,
+ 1288      last_activity,
+ 1289      login
+ 1290  ) VALUES
+ 1291  (1, true, 'ankur superadmin', 'a65471280@gmail.com', '8638760290', 'superadmin', 'main', '1', '2024-08-14 20:33:26.815802+05:30', '2024-08-14 20:33:27.051642+05:30', '[]', 'pbkdf2_sha256\$1000000\$KxKAgjyC5mOUu5uHmvsTQW\$IzDO6ZhZdCW8i6RVvXTnu6tL195ZHxKz4gqXj04K0hA=', true, true, NULL, NULL, NULL, '2024-08-11', 'active', '2025-07-12 09:48:44.897242+05:30', '2025-07-12 09:48:44.897242+05:30', true),
+ 1292  (2, true, 'superadmin sujal', 'b.sujal@gmail.com', '9773300556', 'superadmin', 'main', '1', '2024-08-11 12:33:26.141273+05:30', '2024-08-11 12:33:26.381213+05:30', '[]', 'pbkdf2_sha256\$600000\$IGBPyT9BwFAw77PzTyS2Vz\$67PEps8b2VV57lW4ALl56Mz6bLU4Dv6m2Nvy1OADc7g=', true, true, NULL, NULL, NULL, '2024-08-11', 'pwreset', '2025-06-25 12:19:58.15282+05:30', '2025-06-25 12:19:58.15282+05:30', true),
+ 1293  (3, true, 'kishalaySpperadmin', 'kishalaychakraborty1@gmail.com', '9401633421', 'superadmin', 'main', '1', '2024-08-19 08:02:18.079454+05:30', '2024-08-19 08:02:18.308701+05:30', '[]', 'pbkdf2_sha256\$600000\$64aissMbwogjm6LIwPUv3c\$TweWpS10MI9lp6kWNcWicM6EQJkYVmClck9pfITRFfs=', true, true, NULL, NULL, NULL, '2007-07-01', 'active', '2025-07-03 14:09:13.026577+05:30', '2025-07-03 14:09:13.026577+05:30', true);
+ 1294  "
+ 1295  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -p 5432 -U dbadmin -d skytrondbnew2 -c "SELECT id, name, email, mobile, role, status FROM skytron_api_user ORDER BY id;"
+ 1296  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -p 5432 -U dbadmin -d skytrondbnew2 -c "SELECT setval('skytron_api_user_id_seq', 3, true);"
+ 1297  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -p 5432 -U dbadmin -d skytrondbnew2 -c "SELECT COUNT(*) as total_users FROM skytron_api_user;"
+ 1298  DB_NAME=skytrondbnew2 DB_USER=dbadmin DB_PASSWORD=lask1028zmnx DB_HOST=135.235.166.209 DB_PORT=5432 ./flush_and_reset_db.sh
+ 1299  cd /home/azureuser/Skytrack_Backend/Skytronsystem && python manage.py makemigrations
+ 1300  cd /home/azureuser/Skytrack_Backend/Skytronsystem && python3 manage.py makemigrations
+ 1301  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1302  source /home/azureuser/venv/bin/activate
+ 1303  cd /home/azureuser/Skytrack_Backend/Skytronsystem
+ 1304  source /home/azureuser/venv/bin/activate && python manage.py makemigrations skytron_api
+ 1305  source /home/azureuser/venv/bin/activate && cd /home/azureuser/Skytrack_Backend/Skytronsystem && export DEBUG=True && export DB_NAME=skytrondbnew2 && export DB_USER=dbadmin && export DB_PASSWORD=lask1028zmnx && export DB_HOST=135.235.166.209 && export DB_PORT=5432 && python manage.py makemigrations skytron_api --dry-run
+ 1306  source /home/azureuser/venv/bin/activate && cd /home/azureuser/Skytrack_Backend/Skytronsystem && python manage.py makemigrations skytron_api
+ 1307  source /home/azureuser/venv/bin/activate && cd /home/azureuser/Skytrack_Backend/Skytronsystem && python manage.py migrate
+ 1308  source /home/azureuser/venv/bin/activate && cd /home/azureuser/Skytrack_Backend/Skytronsystem && python manage.py makemigrations skytron_api
+ 1309  source /home/azureuser/venv/bin/activate && cd /home/azureuser/Skytrack_Backend/Skytronsystem && export DEBUG=True && export DB_NAME=skytrondbnew2 && export DB_USER=dbadmin && export DB_PASSWORD=lask1028zmnx && export DB_HOST=135.235.166.209 && export DB_PORT=5432 && python manage.py makemigrations skytron_api --dry-run
+ 1310  source /home/azureuser/venv/bin/activate && cd /home/azureuser/Skytrack_Backend/Skytronsystem && python manage.py migrate
+ 1311  source /home/azureuser/venv/bin/activate && cd /home/azureuser/Skytrack_Backend/Skytronsystem && python manage.py makemigrations skytron_api
+ 1312  source /home/azureuser/venv/bin/activate && cd /home/azureuser/Skytrack_Backend/Skytronsystem && python manage.py migrate
+ 1313  source /home/azureuser/venv/bin/activate && cd /home/azureuser/Skytrack_Backend/Skytronsystem && python manage.py showmigrations skytron_api
+ 1314  source /home/azureuser/venv/bin/activate && cd /home/azureuser/Skytrack_Backend/Skytronsystem && python manage.py makemigrations skytron_api --name=update_dealer_districts --empty
+ 1315  source /home/azureuser/venv/bin/activate && cd /home/azureuser/Skytrack_Backend/Skytronsystem && python manage.py makemigrations skytron_api --name=dealer_districts_update
+ 1316  sudo docker build -t skytron-backend-api -f Skytronsystem/dockerfile.api Skytronsystem/
+ 1317  cd /home/azureuser/Skytrack_Backend/Skytronsystem && python manage.py makemigrations --dry-run
+ 1318  source /home/azureuser/venv/bin/activate 
+ 1319  cd /home/azureuser/Skytrack_Backend/Skytronsystem && python3 manage.py makemigrations --dry-run
+ 1320  cd /home/azureuser/Skytrack_Backend/Skytronsystem && export DB_NAME=skytrondbnew2 && export DB_USER=dbadmin && export DB_PASSWORD=lask1028zmnx && export DB_HOST=135.235.166.209 && export DB_PORT=5432 && python3 manage.py makemigrations
+ 1321  cd /home/azureuser/Skytrack_Backend/Skytronsystem && export DB_NAME=skytrondbnew2 && export DB_USER=dbadmin && export DB_PASSWORD=lask1028zmnx && export DB_HOST=135.235.166.209 && export DB_PORT=5432 && python3 manage.py migrate
+ 1322  cd /home/azureuser/Skytrack_Backend/Skytronsystem && export DB_NAME=skytrondbnew2 && export DB_USER=dbadmin && export DB_PASSWORD=lask1028zmnx && export DB_HOST=135.235.166.209 && export DB_PORT=5432 && python3 manage.py makemigrations skytron_api
+ 1323  cd /home/azureuser/Skytrack_Backend/Skytronsystem && export DB_NAME=skytrondbnew2 && export DB_USER=dbadmin && export DB_PASSWORD=lask1028zmnx && export DB_HOST=135.235.166.209 && export DB_PORT=5432 && python3 manage.py migrate
+ 1324  cd /home/azureuser/Skytrack_Backend/Skytronsystem && export DB_NAME=skytrondbnew2 && export DB_USER=dbadmin && export DB_PASSWORD=lask1028zmnx && export DB_HOST=135.235.166.209 && export DB_PORT=5432 && python3 manage.py makemigrations
+ 1325  cd /home/azureuser/Skytrack_Backend/Skytronsystem && export DB_NAME=skytrondbnew2 && export DB_USER=dbadmin && export DB_PASSWORD=lask1028zmnx && export DB_HOST=135.235.166.209 && export DB_PORT=5432 && python3 manage.py showmigrations
+ 1326  cd /home/azureuser/Skytrack_Backend/Skytronsystem && export DB_NAME=skytrondbnew2 && export DB_USER=dbadmin && export DB_PASSWORD=lask1028zmnx && export DB_HOST=135.235.166.209 && export DB_PORT=5432 && python3 manage.py dbshell -c "\dt skytron_api_*retailer*;"
+ 1327  cd /home/azureuser/Skytrack_Backend/Skytronsystem && export DB_NAME=skytrondbnew2 && export DB_USER=dbadmin && export DB_PASSWORD=lask1028zmnx && export DB_HOST=135.235.166.209 && export DB_PORT=5432 && python3 -c "
+ 1328  import os
+ 1329  import django
+ 1330  os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Skytronsystem.settings')
+ 1331  django.setup()
+ 1332  from django.db import connection
+ 1333  with connection.cursor() as cursor:
+ 1334      cursor.execute(\"SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%dealer%' OR table_name LIKE '%retailer%' ORDER BY table_name;\")
+ 1335      tables = cursor.fetchall()
+ 1336      for table in tables:
+ 1337          print(table[0])
+ 1338  "
+ 1339  sudo ./run_with_host_storage.sh 
+ 1340  sudo docker ps 
+ 1341  sudo log
+ 1342  sudo ./run_with_host_storage.sh 
+ 1343  curl --location --request POST 'https://api.gromed.in/api/dealer/filter_dealer/' --header 'Authorization: Token 4b19452131ac26ef1648f855ef1857894afed825'
+ 1344  sudo docker ps 
+ 1345  ls
+ 1346  cd ..
+ 1347  ls
+ 1348  cd /home/azureuser && source venv/bin/activate && cd Skytrack_Backend/Skytronsystem && python manage.py makemigrations skytron_api
+ 1349  sudo ./run_with_host_storage.sh 
+ 1350  cd ../
+ 1351  sudo ./run_with_host_storage.sh 
+ 1352  curl --location --request POST 'https://api.gromed.in/api/dealer/filter_dealer/' --header 'Authorization: Token 4b19452131ac26ef1648f855ef1857894afed825'
+ 1353  echo "=== Checking Environment Variables ===" && echo "DB_NAME: $DB_NAME" && echo "DB_USER: $DB_USER" && echo "DB_PASSWORD: $DB_PASSWORD" && echo "DB_HOST: $DB_HOST" && echo "DB_PORT: $DB_PORT" && echo "MAIL_ID: $MAIL_ID" && echo "MAIL_PW: $MAIL_PW" && echo "DEBUG: $DEBUG" && echo "SECRET_KEY: $SECRET_KEY" && echo "EMAIL_HOST_USER: $EMAIL_HOST_USER" && echo "EMAIL_HOST_PASSWORD: $EMAIL_HOST_PASSWORD" && echo "ALLOWED_HOSTS: $ALLOWED_HOSTS"
+ 1354  source /home/azureuser/Skytrack_Backend/.env && echo "Environment variables loaded from .env file"
+ 1355  echo "=== Environment Variables After Loading ===" && echo "DB_NAME: $DB_NAME" && echo "DB_USER: $DB_USER" && echo "DB_PASSWORD: $DB_PASSWORD" && echo "DB_HOST: $DB_HOST" && echo "DB_PORT: $DB_PORT"
+ 1356  sudo ./run_with_host_storage.sh 
+ 1357  echo "=== Environment Variables After Loading ===" && echo "DB_NAME: $DB_NAME" && echo "DB_USER: $DB_USER" && echo "DB_PASSWORD: $DB_PASSWORD" && echo "DB_HOST: $DB_HOST" && echo "DB_PORT: $DB_PORT"
+ 1358  sudo ./run_with_host_storage.sh 
+ 1359  export DB_NAME=skytrondb_main
+ 1360  export DB_USER=dbadmin
+ 1361  export DB_PASSWORD=lask1028zmnx
+ 1362  export DB_HOST=135.235.166.209
+ 1363  export DB_PORT=5432
+ 1364  export MAIL_ID=testskytrack@gmail.com
+ 1365  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1366  export DEBUG=False
+ 1367  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1368  #export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1369  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1370  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1371  export ALLOWED_HOSTS="api.skytron.in, app.skytron.in, skytron.in,api.gromed.in, gromed.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1372  sudo ./run_with_host_storage.sh 
+ 1373  /usr/bin/python3 /home/azureuser/.vscode-server/extensions/ms-python.python-2025.10.0-linux-x64/python_files/printEnvVariablesToFile.py /home/azureuser/.vscode-server/extensions/ms-python.python-2025.10.0-linux-x64/python_files/deactivate/bash/envVars.txt
+ 1374  docler ps
+ 1375  docker ps
+ 1376  docker exec -it bd4342e625f0 ./bash
+ 1377  docker exec -it bd4342e625f0 bash
+ 1378  docker ps
+ 1379  docker logs -f aa61f3800dba
+ 1380  docker exec -it aa61f3800dba bash
+ 1381  ls
+ 1382  docker exec -it aa61f3800dba bashcd projects 
+ 1383  docker exec -it aa61f3800dba ./sh
+ 1384  docker exec -it aa61f3800dba ./bash
+ 1385  docker exec -it aa61f3800dba bash
+ 1386  docker exec -it aa61f3800dba sh
+ 1387  docker ps 
+ 1388  docker ps
+ 1389  cd projects
+ 1390  ls
+ 1391  cd skytronfrontend
+ 1392  git pul origin nic_prod
+ 1393  git pull origin nic_prod
+ 1394  docker compose down
+ 1395  docker compose build --no-cache
+ 1396  docker compose up
+ 1397  docker ps 
+ 1398  docker exec -it cc7ae19e58f3 sh
+ 1399  git config --global user.name
+ 1400  sudo ./run_with_host_storage.sh 
+ 1401  curl --location 'https://staging.parivahan.gov.in/vltdmakerws/dataportws?wsdl=null' --header 'Content-Type: text/xml; charset=utf-8' --data-raw '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.web.homologation.transport.nic/">
+ 1402     <soapenv:Header/>
+ 1403     <soapenv:Body>
+ 1404        <ser:getVltdInfoByIMEI>          
+ 1405           <userId>asbackendtest</userId>
+ 1406           <transactionPass>Asbackend@123</transactionPass>       
+ 1407           <imeiNo>862273046827366</imeiNo>
+ 1408        </ser:getVltdInfoByIMEI>
+ 1409     </soapenv:Body>
+ 1410  </soapenv:Envelope>'
+ 1411  ls
+ 1412  sudo chmod 777 run_tcp.sh 
+ 1413  sudo ./run_tcp.sh 
+ 1414  export DB_NAME=skytrondb_main
+ 1415  export DB_USER=dbadmin
+ 1416  export DB_PASSWORD=lask1028zmnx
+ 1417  export DB_HOST=135.235.166.209
+ 1418  export DB_PORT=5432
+ 1419  export MAIL_ID=testskytrack@gmail.com
+ 1420  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1421  export DEBUG=False
+ 1422  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1423  #export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1424  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1425  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1426  export ALLOWED_HOSTS="api.skytron.in, app.skytron.in, skytron.in,api.gromed.in, gromed.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1427  sudo ./run_tcp.sh 
+ 1428  sudo docker ps 
+ 1429  sudo docker stop skytron-backend-gps
+ 1430  sudo ./run_tcp.sh 
+ 1431  htop
+ 1432  export DB_NAME=skytrondb_main
+ 1433  export DB_USER=dbadmin
+ 1434  export DB_PASSWORD=lask1028zmnx
+ 1435  export DB_HOST=135.235.166.209
+ 1436  export DB_PORT=5432
+ 1437  export MAIL_ID=testskytrack@gmail.com
+ 1438  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1439  export DEBUG=False
+ 1440  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1441  #export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1442  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1443  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1444  export ALLOWED_HOSTS="api.skytron.in, app.skytron.in, skytron.in,api.gromed.in, gromed.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1445  sudo ./run_with_host_storage.sh 
+ 1446  sudo ./run_tcp.sh 
+ 1447  export DB_NAME=skytrondb_main
+ 1448  export DB_USER=dbadmin
+ 1449  export DB_PASSWORD=lask1028zmnx
+ 1450  export DB_HOST=135.235.166.209
+ 1451  export DB_PORT=5432
+ 1452  export MAIL_ID=testskytrack@gmail.com
+ 1453  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1454  export DEBUG=False
+ 1455  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1456  #export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1457  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1458  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1459  export ALLOWED_HOSTS="api.skytron.in, app.skytron.in, skytron.in,api.gromed.in, gromed.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1460  sudo ./run_tcp.sh 
+ 1461  python3 testtcpcode.py 
+ 1462  curl --location 'https://api.gromed.in/api/EM/DEx/getLiveCallList/' --header 'Authorization: Token 10f94205a9a80230600f236689adf2c49c721a8d' --header 'Content-Type: application/json' --data '{
+ 1463      "assignment_id":8
+ 1464  }
+ 1465  '
+ 1466  export MAIL_ID=testskytrack@gmail.com
+ 1467  export DB_NAME=skytrondb_main
+ 1468  export DB_USER=dbadmin
+ 1469  export DB_PASSWORD=lask1028zmnx
+ 1470  export DB_HOST=135.235.166.209
+ 1471  export DB_PORT=5432
+ 1472  export MAIL_ID=testskytrack@gmail.com
+ 1473  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1474  export DEBUG=False
+ 1475  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1476  #export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1477  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1478  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1479  export ALLOWED_HOSTS="api.skytron.in, app.skytron.in, skytron.in,api.gromed.in, gromed.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1480  sudo ./run_with_host_storage.sh 
+ 1481  sudo docker ps 
+ 1482  sudo docker stop skytrack-mqtt-client
+ 1483  export DB_NAME=skytrondb_main
+ 1484  export DB_USER=dbadmin
+ 1485  export DB_PASSWORD=lask1028zmnx
+ 1486  export DB_HOST=135.235.166.209
+ 1487  export DB_PORT=5432
+ 1488  export MAIL_ID=testskytrack@gmail.com
+ 1489  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1490  export DEBUG=False
+ 1491  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1492  #export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1493  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1494  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1495  export ALLOWED_HOSTS="api.skytron.in, app.skytron.in, skytron.in,api.gromed.in, gromed.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1496  sudo ./build_run_mqtt.sh 
+ 1497  sudo docker ps 
+ 1498  sudo docker logs skytrack-mqtt-client
+ 1499  export DB_NAME=skytrondb_main
+ 1500  export DB_USER=dbadmin
+ 1501  export DB_PASSWORD=lask1028zmnx
+ 1502  export DB_HOST=135.235.166.209
+ 1503  export DB_PORT=5432
+ 1504  export MAIL_ID=testskytrack@gmail.com
+ 1505  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1506  export DEBUG=False
+ 1507  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1508  #export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1509  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1510  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1511  export ALLOWED_HOSTS="api.skytron.in, app.skytron.in, skytron.in,api.gromed.in, gromed.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1512  sudo ./run_with_host_storage.sh 
+ 1513  pkill -f "vscode-server"
+ 1514  htop
+ 1515  htop
+ 1516  /usr/bin/python3 /home/azureuser/.vscode-server/extensions/ms-python.python-2025.10.0-linux-x64/python_files/printEnvVariablesToFile.py /home/azureuser/.vscode-server/extensions/ms-python.python-2025.10.0-linux-x64/python_files/deactivate/bash/envVars.txt
+ 1517  docker ps
+ 1518  export DB_NAME=skytrondb_main
+ 1519  export DB_USER=dbadmin
+ 1520  export DB_PASSWORD=lask1028zmnx
+ 1521  export DB_HOST=135.235.166.209
+ 1522  export DB_PORT=5432
+ 1523  export MAIL_ID=testskytrack@gmail.com
+ 1524  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1525  export DEBUG=False
+ 1526  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1527  #export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1528  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1529  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1530  export ALLOWED_HOSTS="api.skytron.in, app.skytron.in, skytron.in,api.gromed.in, gromed.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1531  sudo ./run_with_host_storage.sh 
+ 1532  export DB_NAME=skytrondb_main
+ 1533  export DB_USER=dbadmin
+ 1534  export DB_PASSWORD=lask1028zmnx
+ 1535  export DB_HOST=135.235.166.209
+ 1536  export DB_PORT=5432
+ 1537  export MAIL_ID=testskytrack@gmail.com
+ 1538  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1539  export DEBUG=False
+ 1540  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1541  #export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1542  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1543  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1544  export ALLOWED_HOSTS="api.skytron.in, app.skytron.in, skytron.in,api.gromed.in, gromed.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1545  sudo ./run_with_host_storage.sh 
+ 1546  htop
+ 1547  sudo reboot
+ 1548  reboot
+ 1549  sudo reboot
+ 1550  sudo ./run_with_host_storage.sh 
+ 1551  sudo reboot
+ 1552  htop
+ 1553  sudo ./run_with_host_storage.sh 
+ 1554  sudo ./run_tcp.sh 
+ 1555  sudo cocker ps -a
+ 1556  sudo docker ps -a
+ 1557  sudo cocker start sudo ./run_tcp.sh 
+ 1558  sudo cocker start dwarpal_app_container
+ 1559  sudo docker start dwarpal_app_container
+ 1560  sudo docker ps 
+ 1561  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -U dbadmin -d skytrondb_main -c "SHOW max_connections;"
+ 1562  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -U dbadmin -d skytrondb_main -c "SELECT count(*) as active_connections, state FROM pg_stat_activity GROUP BY state;"
+ 1563  cd /home/azureuser/Skytrack_Backend/Skytronsystem && pip install django-db-connection-pool[postgresql]
+ 1564  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -U dbadmin -d skytrondb_main -c "SHOW superuser_reserved_connections;"
+ 1565  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -U dbadmin -d skytrondb_main -c "SHOW max_connections;"
+ 1566  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -U dbadmin -d skytrondb_main -c "SELECT setting, unit, context FROM pg_settings WHERE name IN ('max_connections', 'superuser_reserved_connections');"
+ 1567  PGPASSWORD=lask1028zmnx psql -h 135.235.166.209 -U dbadmin -d skytrondb_main -c "ALTER SYSTEM SET max_connections = 2000;"
+ 1568  sudo find /etc -name "postgresql.conf" 2>/dev/null
+ 1569  sudo grep -n "max_connections" /etc/postgresql/16/main/postgresql.conf
+ 1570  sudo grep -n -E "(superuser_reserved_connections|shared_buffers)" /etc/postgresql/16/main/postgresql.conf
+ 1571  sudo sed -i 's/max_connections = 1000/max_connections = 2000/' /etc/postgresql/16/main/postgresql.conf
+ 1572  sudo sed -i 's/#superuser_reserved_connections = 3/superuser_reserved_connections = 2/' /etc/postgresql/16/main/postgresql.conf
+ 1573  sudo grep -n -E "(max_connections|superuser_reserved_connections)" /etc/postgresql/16/main/postgresql.conf
+ 1574  sudo sed -i 's/shared_buffers = 128MB/shared_buffers = 256MB/' /etc/postgresql/16/main/postgresql.conf
+ 1575  sudo systemctl restart postgresql
+ 1576  sudo systemctl status postgresql
+ 1577  sudo -u postgres psql -c "SHOW max_connections;"
+ 1578  sudo -u postgres psql -c "SHOW superuser_reserved_connections;"
+ 1579  sudo -u postgres psql -c "SHOW shared_buffers;"
+ 1580  PGPASSWORD=lask1028zmnx psql -h localhost -U dbadmin -d skytrondb_main -c "SELECT 'Connection successful! Max connections: ' || setting AS status FROM pg_settings WHERE name = 'max_connections';"
+ 1581  python -m py_compile skytron_api/management/commands/tcp_server.py
+ 1582  python3 -m py_compile skytron_api/management/commands/tcp_server.py
+ 1583  python3 -m py_compile skytron_api/management/commands/tcp_server_improved.py
+ 1584  cp skytron_api/management/commands/tcp_server_improved.py skytron_api/management/commands/tcp_server.py
+ 1585  python3 -m py_compile skytron_api/management/commands/tcp_server.py
+ 1586  rm skytron_api/management/commands/tcp_server_improved.py
+ 1587  sudo ./run_tcp.sh 
+ 1588  cd..
+ 1589  cd ../
+ 1590  sudo ./run_tcp.sh 
+ 1591  export DB_PASSWORD=lask1028zmnx
+ 1592  python3 testtcpcode.py
+ 1593  cd /home/azureuser/Skytrack_Backend/Skytronsystem && python3 -m py_compile skytron_api/management/commands/tcp_server.py
+ 1594  cd Skytronsystem && python3 -c "import skytron_api.management.commands.tcp_server"
+ 1595  sudo ./run_tcp.sh 
+ 1596  cd ../..
+ 1597  sudo ./run_tcp.sh 
+ 1598  python3 testtcpcode.py
+ 1599  cd projects
+ 1600  ls
+ 1601  skytronfrontend
+ 1602  cd skytronfrontend
+ 1603  docker compose down 
+ 1604  docker ps 
+ 1605  git pull origin nic_prod
+ 1606  docker compose build --no-cache
+ 1607  docker compose up
+ 1608  docker compose down
+ 1609  git pull origin nic_prod
+ 1610  docker compose build --no-cache
+ 1611  docker compose up
+ 1612  docker compose down
+ 1613  docker compose build --no-cache
+ 1614  docker compose up
+ 1615  docker ps
+ 1616  ls /etc/nginx/
+ 1617  cd /etc/nginx/
+ 1618  ls
+ 1619  cd nginx.conf
+ 1620  vi nginx.conf
+ 1621  cd sites-enabled
+ 1622  ls
+ 1623  vi sites.conf
+ 1624  sudo nginx -t
+ 1625  sudo systemctl reload nginx
+ 1626  vi sites.conf
+ 1627  ls
+ 1628  vi dwarpal.conf
+ 1629  clear
+ 1630  vi sites.conf
+ 1631  sudo systemctl reload nginx
+ 1632  sudo nginx -t
+ 1633  vi sites.conf
+ 1634  sudo nginx -t
+ 1635  sudo systemctl reload nginx
+ 1636  vi sites.conf
+ 1637  sudo systemctl reload nginx
+ 1638  sudo nginx -t
+ 1639  docker ps
+ 1640  vi sites.conf
+ 1641  cd /etc/nginx/
+ 1642  vi sites.conf
+ 1643  cd sites-enabled
+ 1644  vi sites.conf
+ 1645  sudo nginx -t
+ 1646  sudo systemctl reload nginx
+ 1647  vi sites.conf
+ 1648  sudo nginx -t
+ 1649  sudo systemctl reload nginx
+ 1650  vi sites.conf
+ 1651  sudo nginx -t
+ 1652  sudo systemctl reload nginx
+ 1653  vi sites.conf
+ 1654  sudo nginx -t
+ 1655  sudo systemctl reload nginx
+ 1656  vi sites.conf
+ 1657  sudo nginx -t
+ 1658  sudo systemctl reload nginx
+ 1659  vi sites.conf
+ 1660  sudo nginx -t
+ 1661  sudo systemctl reload nginx
+ 1662  vi sites.conf
+ 1663  sudo nginx -t
+ 1664  sudo systemctl reload nginx
+ 1665  vi sites.conf
+ 1666  sudo nginx -t
+ 1667  sudo systemctl reload nginx
+ 1668  vi sites.conf
+ 1669  sudo nginx -t
+ 1670  vi sites.conf
+ 1671  sudo nginx -t
+ 1672  sudo systemctl reload nginx
+ 1673  vi sites.conf
+ 1674  sudo nginx -t
+ 1675  sudo systemctl reload nginx
+ 1676  cd projects
+ 1677  ls
+ 1678  cd skytronfrontend
+ 1679  docker compose down
+ 1680  ls
+ 1681  docker ps
+ 1682  git pull origin nic_prod
+ 1683  docker compose up
+ 1684  docker ps
+ 1685  docker compose down
+ 1686  docker compose up
+ 1687  docker compose down
+ 1688  docker compose build --no-cache
+ 1689  docker compose up 
+ 1690  docker compose down
+ 1691  docker compose up 
+ 1692  cd /etc/nginx/
+ 1693  ls
+ 1694  cd sites-acailable
+ 1695  cd sites-available
+ 1696  ls
+ 1697  vi sites.conf
+ 1698  ls
+ 1699  vi default
+ 1700  cd..
+ 1701  cd /
+ 1702  ls
+ 1703  cd etc
+ 1704  ls
+ 1705  cd nginx
+ 1706  ls
+ 1707  cd conf.d
+ 1708  ls
+ 1709  /usr/bin/python3 /home/azureuser/.vscode-server/extensions/ms-python.python-2025.10.1-linux-x64/python_files/printEnvVariablesToFile.py /home/azureuser/.vscode-server/extensions/ms-python.python-2025.10.1-linux-x64/python_files/deactivate/bash/envVars.txt
+ 1710  /bin/python3 /home/azureuser/.vscode-server/extensions/ms-python.python-2025.10.1-linux-x64/python_files/printEnvVariablesToFile.py /home/azureuser/.vscode-server/extensions/ms-python.python-2025.10.1-linux-x64/python_files/deactivate/bash/envVars.txt
+ 1711  handle_client
+ 1712  handle_clienthandle_clienthandle_clienthandle_client
+ 1713  sudo docker logs  skytrack-mqtt-client
+ 1714  export DB_NAME=skytrondb_main
+ 1715  export DB_USER=dbadmin
+ 1716  export DB_PASSWORD=lask1028zmnx
+ 1717  export DB_HOST=135.235.166.209
+ 1718  export DB_PORT=5432
+ 1719  export MAIL_ID=testskytrack@gmail.com
+ 1720  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1721  export DEBUG=False
+ 1722  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1723  #export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1724  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1725  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1726  export ALLOWED_HOSTS="api.skytron.in, app.skytron.in, skytron.in,api.gromed.in, gromed.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1727  sudo ./build_run_mqtt.sh 
+ 1728  sudo docker logs  skytrack-mqtt-client
+ 1729  sudo ./build_run_mqtt.sh 
+ 1730  sudo docker logs  skytrack-mqtt-client
+ 1731  sudo docker logs  skytrack-mqtt-client 
+ 1732  export DB_PASSWORD=lask1028zmnx
+ 1733  python3 testtcpcode.py
+ 1734  sudo ./build_run_mqtt.sh 
+ 1735  sudo docker logs  skytrack-mqtt-client 
+ 1736  sudo ./build_run_mqtt.sh 
+ 1737  sudo ./run_with_host_storage.sh 
+ 1738  export DB_NAME=skytrondb_main
+ 1739  export DB_USER=dbadmin
+ 1740  export DB_PASSWORD=lask1028zmnx
+ 1741  export DB_HOST=135.235.166.209
+ 1742  export DB_PORT=5432
+ 1743  export MAIL_ID=testskytrack@gmail.com
+ 1744  export MAIL_PW=zmzmexdnrlmsqrlr
+ 1745  export DEBUG=False
+ 1746  export SECRET_KEY="django-insecure-j4+*w3&%@iy2r)-7dz%_mk10%)4gjx1w5n&mve&=zfwx@)f2ql"
+ 1747  #export DATABASE_URL=postgres://dbadmin:lask1028zmnx@localhost:5432/skytrondbnew2
+ 1748  export EMAIL_HOST_USER=testskytrack@gmail.com
+ 1749  export EMAIL_HOST_PASSWORD=zmzmexdnrlmsqrlr
+ 1750  export ALLOWED_HOSTS="api.skytron.in, app.skytron.in, skytron.in,api.gromed.in, gromed.in, dev.skytron.in, api-dev.skytron.in, skytrack.tech, skytrack.tech:2000, localhost,localhost:2000"
+ 1751  sudo ./run_with_host_storage.sh 
+ 1752  source .env && sudo ./run_with_host_storage.sh 
+ 1753  sudo ./run_with_host_storage.sh 
+ 1754  sudo ./run_tcp.sh 
+ 1755  python3 testtcpcode.py
+ 1756  sudo ./run_tcp.sh 
+ 1757  python3 testtcpcode.py
+ 1758  chmod +x /home/azureuser/Skytrack_Backend/test_email_sms.sh
+ 1759  chmod +x /home/azureuser/Skytrack_Backend/quick_test.sh
+ 1760  ./test_email_sms.sh connectivity
+ 1761  ./test_email_sms.sh sms
+ 1762  ./test_email_sms.sh email
+ 1763  which systemctl
+ 1764  systemctl list-units --type=service | grep -i postgres
+ 1765  sudo systemctl restart postgresql
+ 1766  sudo systemctl status postgresql
+ 1767  sudo systemctl restart postgresql
+ 1768  [200~sudo systemctl restart postgresql@16-main~
+ 1769  sudo systemctl restart postgresql@16-main
+ 1770  sudo df -h
+ 1771  sudo docker system  prune
+ 1772  sudo df -h
+ 1773  [200~sudo systemctl restart postgresql@16-main~
+ 1774  sudo systemctl restart postgresql@16-main
+ 1775  sudo reboot
+ 1776  sudo ./run_with_host_storage.sh 
+ 1777  sudo docker ps
+ 1778  sudo docker logs  skytron-backend-api-container
+ 1779  sudo ./run_with_host_storage.sh 
+ 1780  sudo docker logs  skytron-backend-api-container
+ 1781  sudo ./run_with_host_storage.sh 
+ 1782  sudo docker logs  skytron-backend-api-container
+ 1783  sudo ./run_with_host_storage.sh 
+ 1784  curl -X POST http://localhost:2000/api/send-sms/   -H "Content-Type: application/json"   -d '{ 
+ 1785      'userid': "Gobell",
+ 1786          'password':"1234566",
+ 1787          'sender': "SKYTRN",
+ 1788          'mobileno': '9401633421',
+ 1789          'msg': "Dear User, To reset your password for SkyTron platform, please click at the following link and validate the password re-set request- {#var#}{#var#} .The link will expire in 5 minutes. -SkyTron",
+ 1790          'peid': '1001371511701977986',
+ 1791          'tpid':  "1007407542374860000"
+ 1792    }'
+ 1793  sudo ./run_with_host_storage.sh 
+ 1794  python3 testtcpcode.py
+ 1795  chmod +x /home/azureuser/Skytrack_Backend/database_backup_restore.sh /home/azureuser/Skytrack_Backend/quick_db_migration.sh
+ 1796  export PGPASSWORD='lask1028zmnx'
+ 1797  pg_dump -h 135.235.166.209 -p 5432 -U dbadmin -d skytrondb_main -Fc -v -f skytrondb_backup_$(date +%Y%m%d_%H%M%S).dump
+ 1798  PGPASSWORD='lask1028zmnx' pg_dump -h 135.235.166.209 -p 5432 -U dbadmin -d skytrondb_main --clean --no-owner --no-privileges -f skytrondb_full_backup.sql
+ 1799  git log --oneline -5
+ 1800  git status
+ 1801  git reset --soft HEAD~1
+ 1802  git status
+ 1803  ls -lh skytrondb_backup_* database_backup_restore.sh quick_db_migration.sh skytrondb_full_backup.sql 2>/dev/null || echo "Some files not found"
+ 1804  ls -lh *.dump *.sql database_backup_restore.sh quick_db_migration.sh 2>/dev/null
+ 1805  find . -name "*.dump" -o -name "skytrondb_full_backup.sql" | xargs ls -lh
+ 1806  git restore --staged skytrondb_backup_20250802_063945.dump skytrondb_backup_20250802_064838.dump 
+ 1807  sudo docker ps 
+ 1808  sudo docker ps skytrack-mqtt-client
+ 1809  sudo docker logs skytrack-mqtt-client
+ 1810  sudo docker logs skytrack-mqtt-client --tail
+ 1811  sudo docker restart  skytrack-mqtt-client
+ 1812  sudo docker logs skytrack-mqtt-client
+ 1813  sudo ./run_tcp.sh 
+ 1814  sudo docker logs skytron-backend-em-container
+ 1815  sudo ./run_tcp.sh 
+ 1816  sudo docker logs skytron-backend-em-container
+ 1817  sudo ./run_tcp.sh 
+ 1818  sudo docker logs skytron-backend-em-container
+ 1819  docker ps
+ 1820  cd projects
+ 1821  git clone https://github.com/skytronserver/mapwala.git
+ 1822  cd mapwala
+ 1823  docker ps 
+ 1824  docker compose build --no-cache
+ 1825  docker compose up
+ 1826  docker ps
+ 1827  cd etc/nginx
+ 1828  cd etc
+ 1829  e
+ 1830  cd etc/nginx
+ 1831  ls
+ 1832  cd ..
+ 1833  ls
+ 1834  cd azureuser
+ 1835  ls
+ 1836  vi skytrack_nginx.conf
+ 1837  nano skytrack_nginx.conf
+ 1838  nginx -v
+ 1839  systemctl status nginx
+ 1840  /etc/nginx/nginx.conf
+ 1841  cd /etc/nginx/nginx.conf
+ 1842  sudo vi /etc/nginx/nginx.conf
+ 1843  sudo cd /etc/nginx/nginx.conf
+ 1844  sudo cd /etc/nginx
+ 1845  whereis nginx
+ 1846  cd /etc/nginx/sites-available
+ 1847  ls -l
+ 1848  ls
+ 1849  nano dwarpal.conf
+ 1850  sudo nano mapwala.conf
+ 1851  ls
+ 1852  cd projects
+ 1853  cd mapwala
+ 1854  docker compose down
+ 1855  cd /etc/nginx/sites-availablecd /etc/nginx/sites-availablecd /etc/nginx/sites-availablecd /etc/nginx/sites-availabl
+ 1856  cd /etc/nginx/sites-available
+ 1857  ls
+ 1858  sudo rm /etc/nginx/sites-available/mapwala.conf
+ 1859  ls
+ 1860  cd ..
+ 1861  cd..
+ 1862  cd ..
+ 1863  cd ...
+ 1864  cd ..
+ 1865  ls
+ 1866  cd /
+ 1867  cd azureuser
+ 1868  /usr/bin/python3 /home/azureuser/.vscode-server/extensions/ms-python.python-2025.10.1-linux-x64/python_files/printEnvVariablesToFile.py /home/azureuser/.vscode-server/extensions/ms-python.python-2025.10.1-linux-x64/python_files/deactivate/bash/envVars.txt
+ 1869  ls
+ 1870  cd projects
+ 1871  ls
+ 1872  rm -rf ~/projects/mapwala
+ 1873  ls
+ 1874  docker ps
+ 1875  docker ps -a
+ 1876  ker ps
+ 1877  docker ps 
+ 1878  docker ps -a
+ 1879  cd projects
+ 1880  git clone export const encryptWithPublicKey = (data) => {
+ 1881  clear
+ 1882  cd projects
+ 1883  ls
+ 1884  clear
+ 1885  ls
+ 1886  skytronfrontend
+ 1887  cd skytronfrontend
+ 1888  ls
+ 1889  docker compose down
+ 1890  git branch
+ 1891  git pull origin main
+ 1892  git branch -r
+ 1893  git checkout updated_login
+ 1894  git pull
+ 1895  git checkout updated_login
+ 1896  docker compose build --no-cache
+ 1897  sudo ./run_with_host_storage.sh 
+ 1898  docker ps
+ 1899  cd projects
+ 1900  ls
+ 1901  cd skytronfrontend
+ 1902  clear
+ 1903  docker compose down
+ 1904  docker compose build --no-cache
+ 1905  docker compose up 
+ 1906  ls
+ 1907  docker compose down
+ 1908  git checkout nic_prod
+ 1909  git branch
+ 1910  git pull origin nic_prod
+ 1911  docker compose build --no-cache
+ 1912  docker compose up 
+ 1913  cd projects
+ 1914  ls
+ 1915  cd Dwarpal_Frontend\
+ 1916  cd Dwarpal_Frontend
+ 1917  ls
+ 1918  docker compose down
+ 1919  git pull origin main
+ 1920  docker compose build --no-cache
+ 1921  docker compose up
+ 1922  cd projects
+ 1923  ls
+ 1924  cd Dwarpal_Frontend
+ 1925  clear
+ 1926  docker compose down
+ 1927  docker compose up
+ 1928  cd projects
+ 1929  ls
+ 1930  cd Dwarpal_Frontend
+ 1931  git stash
+ 1932  docker compose down
+ 1933  git pull origin main
+ 1934  git stash apply
+ 1935  docker compose build --no-cache
+ 1936  docker compose up
+ 1937  docker compose down
+ 1938  azureuser@Skytrack:~/projects/Dwarpal_
+ 1939  pwd
+ 1940  rm -r -i /home/azureuser/projects/Dwarpal_Frontend
+ 1941  rm -rf /home/azureuser/projects/Dwarpal_Frontend
+ 1942  cd..
+ 1943  cd ..
+ 1944  ls
+ 1945  git clone https://github.com/skytronserver/Dwarpal_Frontend.git
+ 1946  cd dwarpal_deploy
+ 1947  ls
+ 1948  cd Dwarpal_Frontend
+ 1949  ls
+ 1950  docker compose build --no-cache
+ 1951  docker compose up 
+ 1952  cd projects
+ 1953  ls
+ 1954  cd Dwarpal_Frontend
+ 1955  docker compose down
+ 1956  git stash
+ 1957  git pull origin main
+ 1958  docker compose build
+ 1959  docker compose build --no-cache
+ 1960  docker compose up
+ 1961  cd projects
+ 1962  ls
+ 1963  Dwarpal_Frontend
+ 1964  cd Dwarpal_Frontend
+ 1965  docker compose down 
+ 1966  git pull origin main
+ 1967  docker compose build --no-cache
+ 1968  docker compose up
+ 1969  python3 ftp.py 
+ 1970  python3 -m pip install pyftplib
+ 1971  sudo python3 -m pip install pyftplib
+ 1972  ls
+ 1973  cd ../
+ 1974  ls
+ 1975  cd Skytrack_Backend/
+ 1976  /home/azureuser/Skytrack_Backend/.venv/bin/python -m python3 -m pip install pyftplib
+ 1977  /home/azureuser/Skytrack_Backend/.venv/bin/python -m pip install pyftplib
+ 1978  /home/azureuser/Skytrack_Backend/.venv/bin/python -m pip install pyftpdlib
+ 1979  /home/azureuser/Skytrack_Backend/.venv/bin/python ftp.py
+ 1980  docker ps
+ 1981  docker logs -f f752d3a9bd2a
+ 1982  cd etc.nginx/sites-available
+ 1983  cd etc/nginx/sites-available
+ 1984  ls
+ 1985  cd \
+ 1986  cd /
+ 1987  ls
+ 1988  cd etc/nginx/sites-available
+ 1989  ls
+ 1990  cd dwarpal.conf
+ 1991  cat dwarpal.conf
+ 1992  sudo docker ps 
+ 1993  sudo docker logs skytron-backend-em-container
+ 1994  sudo ./run_tcp.sh 
+ 1995  python3 ftp
+ 1996  python3 ftp.py 
+ 1997  python ftp.py 
+ 1998  history
+ 1999  history > hist.txt
