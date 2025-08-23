@@ -59,6 +59,7 @@ RUN pip install \
     pdfkit \
     docx2pdf \
     django-filter \ 
+    django-redis \
     django-cors-headers bleach\  
     gunicorn
 
