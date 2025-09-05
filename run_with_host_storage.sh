@@ -58,3 +58,8 @@ sudo docker run -d --restart=always \
 
 echo "Docker container started with host storage mounted at /host_storage"
 echo "Files saved through the API will be stored in $STORAGE_DIR on the host machine"
+#@SET PORT1-6000*
+#@GET DEBUG   @CLR SOSDIS-1*
+@GET LOC*
+
+@SETREGNO-DL333*
