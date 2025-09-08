@@ -253,8 +253,12 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle',  # For authenticated users
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '1000/minute',   # Limit anonymous users to 10 requests per minute
-        'user': '5000/hour',    # Limit authenticated users to 100 requests per hour
+        'anon': '1000/minute',   # Limit anonymous users to 1000 requests per minute (general APIs)
+        'user': '5000/hour',    # Limit authenticated users to 5000 requests per hour (general APIs)
+        'auth': '5/minute',     # Limit authentication endpoints to 5 requests per minute
+        'login': '5/minute',    # Limit login endpoints to 5 requests per minute  
+        'otp': '5/minute',      # Limit OTP endpoints to 5 requests per minute
+        'password_reset': '3/minute',  # Limit password reset to 3 requests per minute
     },
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',

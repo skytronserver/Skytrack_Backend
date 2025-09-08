@@ -8,11 +8,11 @@ import secrets
 import string
 HOST_STORAGE_PATH = '/host_storage'   
 e=""
-STATIC_OTP_CAP=True
+STATIC_OTP_CAP=False #True
 DEPLOY_URL = 'gromed.in'   
 EMAIL_ACTIVE=False
 
-REMOVE_OTP_CAP=True
+REMOVE_OTP_CAP=False #True
 
 from django.core.serializers import serialize
 from django.core.paginator import Paginator
@@ -118,6 +118,7 @@ from tempfile import NamedTemporaryFile
 from pathlib import Path
 import os  
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+from .throttles import AuthRateThrottle, LoginRateThrottle, OTPRateThrottle, PasswordResetRateThrottle
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -10673,6 +10674,7 @@ def is_valid_string(s):
         return False
 @csrf_exempt
 @api_view(['POST'])
+@throttle_classes([PasswordResetRateThrottle])  # 3 requests per minute, block IP for 5 min
 @require_http_methods(['GET', 'POST'])
 def password_reset(request ): 
     errors = validate_inputs(request)
@@ -10816,6 +10818,7 @@ def password_reset(request ):
 
 @csrf_exempt
 @api_view(['POST'])
+@throttle_classes([OTPRateThrottle])  # 5 requests per minute, block IP for 5 min
 @require_http_methods(['GET', 'POST'])
 def send_email_otp(request ): 
     errors = validate_inputs(request)
@@ -10842,7 +10845,7 @@ def send_email_otp(request ):
 
 @csrf_exempt
 @api_view(['POST'])
-
+@throttle_classes([OTPRateThrottle])  # 5 requests per minute, block IP for 5 min
 @permission_classes([AllowAny])
 @require_http_methods(['GET', 'POST'])
 def send_sms_otp(request ): 
@@ -10903,6 +10906,7 @@ def send_sms_otp(request ):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([PasswordResetRateThrottle])  # 3 requests per minute, block IP for 5 min
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
 def reset_password(request ): 
@@ -10963,6 +10967,7 @@ def reset_password(request ):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
+@throttle_classes([LoginRateThrottle])  # 5 requests per minute, block IP for 5 min
 @require_http_methods(['GET', 'POST'])
 def user_login(request ): 
     errors = validate_inputs(request)
@@ -11039,7 +11044,7 @@ def user_login(request ):
             'user': user.id,
             'token': str(token),
             'otp': otp,
-            'status': 'login',
+            'status':'otpsent', #'login',
             'login_time': timezone.now(),
         } 
         session_serializer = SessionSerializer(data=session_data)  
@@ -11056,7 +11061,7 @@ def user_login(request ):
                 uu=get_user_object(user,user.role)
                 if uu:
                     uu = recursive_model_to_dict(uu,["users","esim_provider"])
-                return Response({'status':'Login Successful','token': token,'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
+                #return Response({'status':'Login Successful','token': token,'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
             
   
                 #return Response({'status':'Login Successful','token': str(token),'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
@@ -11576,6 +11581,7 @@ def recursive_model_to_dict(data, exclude_fields=None):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
+@throttle_classes([LoginRateThrottle])  # 5 requests per minute, block IP for 5 min
 @require_http_methods(['GET', 'POST'])
 def user_login_app(request ): 
     errors = validate_inputs(request)
@@ -11650,6 +11656,7 @@ def user_login_app(request ):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the OTP validation endpoint
+@throttle_classes([OTPRateThrottle])  # 5 requests per minute, block IP for 5 min
 @require_http_methods(['GET', 'POST'])
 def validate_otp(request ): 
     errors = validate_inputs(request)

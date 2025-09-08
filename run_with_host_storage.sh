@@ -63,3 +63,7 @@ echo "Files saved through the API will be stored in $STORAGE_DIR on the host mac
 #@GET LOC*
 
 #@SETREGNO-DL333*
+# @CLR SOSDIS-1*
+#@SETREGNO-DL00000*
+#@GETREGNO*
+#   @GETLOC*        @SETPROF-2*
