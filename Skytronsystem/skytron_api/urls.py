@@ -345,7 +345,7 @@ urlpatterns = [
     path('tag/StateAdmin_view_all_tagging/', StateAdmin_view_all_tagging, name='StateAdmin_view_all_tagging'),
    
 
-    # path('download/', downloadfile, name='download'),
+    path('download/', download_file, name='download'),
     path('sms/rcv', sms_received, name='sms_received'),
     path('sms/send', sms_send, name='sms_send'),
     path('sms/que', sms_queue, name='sms_queue'),

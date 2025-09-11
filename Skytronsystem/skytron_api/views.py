@@ -1778,16 +1778,13 @@ def get_live_vehicle_no(request ):
     try:
         if request.method == 'POST':
             # Fetch distinct vehicle registration numbers
-            #vehicles = GPSData.objects.all().values('device_tag').distinct()
-            vehicles = GPSData.objects.select_related('device_tag').distinct('device_tag')
-
-            if not vehicles:
-                return Response([])
-            print(vehicles)
-            vehicle_list=[]
-            for vehicle in vehicles:
-                if vehicle.device_tag:
-                        vehicle_list = vehicle_list +[vehicle.device_tag.vehicle_reg_no]
+            # Use subquery to get unique vehicle_reg_no from GPSData -> DeviceTag relationship
+            from skytron_api.models import DeviceTag
+            vehicle_reg_nos = DeviceTag.objects.filter(
+                gpsdata__isnull=False
+            ).values_list('vehicle_reg_no', flat=True).distinct()
+            
+            vehicle_list = list(vehicle_reg_nos)
             return Response(vehicle_list)
         else:
             return Response({'error': "POST request only"}, status=400)
@@ -2087,64 +2084,61 @@ def filter_VehicleOwner(request ):
         filters = {} 
         
         if uo2:  # Superadmin - should get all data
+            manufacturers = VehicleOwner.objects.all()
             if obj_id:
-                manufacturers = VehicleOwner.objects.filter(
-                    id=obj_id,
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no,
-                    users__address__icontains=address,
-                    users__address_State__icontains=address_State,
-                ).distinct()
-            else:
-                manufacturers = VehicleOwner.objects.filter(
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no,
-                    users__address__icontains=address,
-                    users__address_State__icontains=address_State,
-                ).distinct()
+                manufacturers = manufacturers.filter(id=obj_id)
+            if email:
+                manufacturers = manufacturers.filter(users__email__icontains=email)
+            if company_name:
+                manufacturers = manufacturers.filter(company_name__icontains=company_name)
+            if name:
+                manufacturers = manufacturers.filter(users__name__icontains=name)
+            if phone_no:
+                manufacturers = manufacturers.filter(users__mobile__icontains=phone_no)
+            if address:
+                manufacturers = manufacturers.filter(users__address__icontains=address)
+            if address_State:
+                manufacturers = manufacturers.filter(users__address_State__icontains=address_State)
+            manufacturers = manufacturers.distinct()
         
         
         elif uo:  # State admin - filter by state
             state=uo.state
             owners = DeviceTag.objects.filter( district__state=state, status="Owner_Final_OTP_Verified").values("vehicle_owner").distinct()
-            manufacturers = VehicleOwner.objects.filter(
-                        id__in=owners,
-                        users__email__icontains=email,
-                        company_name__icontains=company_name,
-                        users__name__icontains=name,
-                        users__mobile__icontains=phone_no,
-                        users__address__icontains=address,
-                        users__address_State__icontains=address_State,
-                    ).distinct()
+            manufacturers = VehicleOwner.objects.filter(id__in=owners)
+            if email:
+                manufacturers = manufacturers.filter(users__email__icontains=email)
+            if company_name:
+                manufacturers = manufacturers.filter(company_name__icontains=company_name)
+            if name:
+                manufacturers = manufacturers.filter(users__name__icontains=name)
+            if phone_no:
+                manufacturers = manufacturers.filter(users__mobile__icontains=phone_no)
+            if address:
+                manufacturers = manufacturers.filter(users__address__icontains=address)
+            if address_State:
+                manufacturers = manufacturers.filter(users__address_State__icontains=address_State)
+            manufacturers = manufacturers.distinct()
         
         
         else:  # Other roles
             state = request.data.get('state', '')
-            if obj_id :
-                manufacturers = VehicleOwner.objects.filter(
-                    id=obj_id,
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no,
-                    users__address__icontains=address,
-                    users__address_State__icontains=address_State,
-                ).distinct()
-            else:
-                manufacturers = VehicleOwner.objects.filter(
-                    #id=manufacturer_id,
-                    users__status='active',
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no,
-                    users__address__icontains=address,
-                    users__address_State__icontains=address_State,
-                ).distinct()
+            manufacturers = VehicleOwner.objects.filter(users__status='active')
+            if obj_id:
+                manufacturers = manufacturers.filter(id=obj_id)
+            if email:
+                manufacturers = manufacturers.filter(users__email__icontains=email)
+            if company_name:
+                manufacturers = manufacturers.filter(company_name__icontains=company_name)
+            if name:
+                manufacturers = manufacturers.filter(users__name__icontains=name)
+            if phone_no:
+                manufacturers = manufacturers.filter(users__mobile__icontains=phone_no)
+            if address:
+                manufacturers = manufacturers.filter(users__address__icontains=address)
+            if address_State:
+                manufacturers = manufacturers.filter(users__address_State__icontains=address_State)
+            manufacturers = manufacturers.distinct()
 
         # Serialize the queryset
         dealer_serializer = VehicleOwnerSerializer(manufacturers, many=True)
@@ -6102,6 +6096,66 @@ def deleteTagDevice2Vehicle(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+def download_file(request):
+    """
+    Download files from the server based on file path.
+    Handles TAC documents, receipt files, and other uploaded files.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        file_path = request.data.get('file_path')
+        if not file_path:
+            return Response({'error': 'file_path is required'}, status=400)
+        
+        # Security check - ensure the file path is within allowed directories
+        allowed_dirs = [
+            'fileuploads/tac_docs/',
+            'fileuploads/Receipt_files/',
+            'fileuploads/kyc_files/',
+            'fileuploads/cop_files/',
+        ]
+        
+        if not any(file_path.startswith(allowed_dir) for allowed_dir in allowed_dirs):
+            return Response({'error': 'Access denied to this file path'}, status=403)
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            return Response({'error': f'file not found: {file_path}'}, status=404)
+        
+        # Get file extension for content type
+        file_extension = os.path.splitext(file_path)[1].lower()
+        content_types = {
+            '.pdf': 'application/pdf',
+            '.doc': 'application/msword',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.xls': 'application/vnd.ms-excel',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.txt': 'text/plain',
+        }
+        
+        content_type = content_types.get(file_extension, 'application/octet-stream')
+        
+        # Read and return the file
+        with open(file_path, 'rb') as file:
+            response = HttpResponse(file.read(), content_type=content_type)
+            filename = os.path.basename(file_path)
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+            
+    except Exception as e:
+        return Response({'error': f'Error downloading file: {str(e)}'}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
 def download_receiptPDF(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7476,84 +7530,37 @@ def deviceStockFilter(request ):
         ).filter(is_tagged=is_tagged_bool)
         total_count = base_query.count()
     
-    # Use values() to get only required data as dictionaries (much faster than model instances)
-    device_data = base_query.select_related('model', 'dealer', 'created_by').values(
-        'id', 'device_esn', 'iccid', 'imei', 'telecom_provider1', 'telecom_provider2',
-        'msisdn1', 'msisdn2', 'esim_validity', 'remarks', 'created', 'stock_status', 
-        'esim_status', 'assigned', 'shipping_remark',
-        # Related model fields
-        'model__id', 'model__model_name', 'model__test_agency', 'model__vendor_id',
-        'model__tac_no', 'model__hardware_version',
-        # Dealer fields (using correct field names)
-        'dealer__id', 'dealer__company_name',
-        # Created by fields (using correct field names)
-        'created_by__id', 'created_by__name', 'created_by__email'
-    ).order_by('-id')[offset:offset + page_size]
+    # Get device instances with proper relationships for serializer
+    device_instances = base_query.select_related('model', 'dealer', 'created_by').prefetch_related('esim_provider').order_by('-id')[offset:offset + page_size]
     
-    # Convert to list and add is_tagged for each item if not already filtered
+    # Convert to list and add is_tagged for each item
     result_data = []
     device_ids = []
     
-    for item in device_data:
-        device_ids.append(item['id'])
-        result_data.append(item)
+    for device in device_instances:
+        device_ids.append(device.id)
+        result_data.append(device)
     
     # If is_tagged_filter was not applied, get is_tagged status for all items in one query
     if is_tagged_filter is None and device_ids:
         tagged_device_ids = set(
             DeviceTag.objects.filter(device_id__in=device_ids).values_list('device_id', flat=True)
         )
-        for item in result_data:
-            item['is_tagged'] = item['id'] in tagged_device_ids
+        for device in result_data:
+            device.is_tagged = device.id in tagged_device_ids
     elif is_tagged_filter is not None:
         # If filtered, all items have the same is_tagged value
-        for item in result_data:
-            item['is_tagged'] = is_tagged_filter == 'True'
+        for device in result_data:
+            device.is_tagged = is_tagged_filter == 'True'
     
     # Calculate pagination info
     total_pages = (total_count + page_size - 1) // page_size
     has_next = page < total_pages
     has_previous = page > 1
 
-    # Format the response to match the expected structure
-    formatted_data = []
-    for item in result_data:
-        formatted_item = {
-            'id': item['id'],
-            'device_esn': item['device_esn'],
-            'iccid': item['iccid'],
-            'imei': item['imei'],
-            'telecom_provider1': item['telecom_provider1'],
-            'telecom_provider2': item['telecom_provider2'],
-            'msisdn1': item['msisdn1'],
-            'msisdn2': item['msisdn2'],
-            'esim_validity': item['esim_validity'],
-            'remarks': item['remarks'],
-            'created': item['created'],
-            'stock_status': item['stock_status'],
-            'esim_status': item['esim_status'],
-            'assigned': item['assigned'],
-            'shipping_remark': item['shipping_remark'],
-            'is_tagged': item.get('is_tagged', False),
-            'model': {
-                'id': item['model__id'],
-                'model_name': item['model__model_name'],
-                'test_agency': item['model__test_agency'],
-                'vendor_id': item['model__vendor_id'],
-                'tac_no': item['model__tac_no'],
-                'hardware_version': item['model__hardware_version'],
-            } if item['model__id'] else None,
-            'dealer': {
-                'id': item['dealer__id'],
-                'company_name': item['dealer__company_name'],
-            } if item['dealer__id'] else None,
-            'created_by': {
-                'id': item['created_by__id'],
-                'name': item['created_by__name'],
-                'email': item['created_by__email'],
-            } if item['created_by__id'] else None,
-        }
-        formatted_data.append(formatted_item)
+    # Use serializer to format the response data properly (includes esim_provider)
+    serializer = DeviceStockSerializer2(result_data, many=True)
+    formatted_data = serializer.data
 
     return JsonResponse({
         'data': formatted_data,
@@ -7642,8 +7649,8 @@ def deviceStockCreateBulk(request ):
             'telecom_provider2': row.get('telecom_provider2', ''),
             'msisdn1': row.get('msisdn1', ''),
             'msisdn2': row.get('msisdn2', ''),
-            #'imsi1': row.get('imsi1', ''),
-            #'imsi2': row.get('imsi2', ''),
+            'imsi1': row.get('imsi1', ''),
+            'imsi2': row.get('imsi2', ''),
             'esim_validity': row.get('esim_validity', ''), 
             'stock_status': "NotAssigned",
             'esim_status':"NotAssigned",
@@ -8386,16 +8393,16 @@ def filter_Settings_District(request):
                 districts = Settings_District.objects.filter(
                     state=uo.state
                 ).select_related('state').values(
-                    'id', 'district', 'created', 
-                    'state__id', 'state__state_name'
+                    'id', 'district', 'district_code', 'status',
+                    'state__id', 'state__state'
                 ).distinct()
             else:
                 districts = Settings_District.objects.none().values()
         else:
             # For other roles, get all districts with optimized query
             districts = Settings_District.objects.select_related('state').values(
-                'id', 'district', 'created',
-                'state__id', 'state__state_name'
+                'id', 'district', 'district_code', 'status',
+                'state__id', 'state__state'
             ).distinct()
         
         # Convert to list for JSON response
@@ -8407,10 +8414,11 @@ def filter_Settings_District(request):
             formatted_data.append({
                 'id': district['id'],
                 'district': district['district'],
-                'created': district['created'],
+                'district_code': district['district_code'],
+                'status': district['status'],
                 'state': {
                     'id': district['state__id'],
-                    'state_name': district['state__state_name']
+                    'state': district['state__state']
                 } if district['state__id'] else None
             })
         
@@ -9925,44 +9933,44 @@ def homepage_stateAdmin(request ):
                 'Monthly_overspeeding_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
                     speed__gt=80,
-                    timestamp__gte=current_month_start
+                    date__gte=current_month_start.date()
                 ).count(),
                 'Today_overspeeding_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
                     speed__gt=80,
-                    timestamp__date=today
+                    date=today
                 ).count(),
                 
-                # Emergency alerts (SOS button pressed)
+                # Emergency alerts (SOS button pressed) - Note: EMGPSLocation doesn't have sos_status field
                 'Total_emergency_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
-                    sos_status='1'  # Assuming '1' means SOS activated
+                    message_type='EMR'  # Emergency message type
                 ).count(),
                 'This_month_emergency_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
-                    sos_status='1',
-                    timestamp__gte=current_month_start
+                    message_type='EMR',
+                    date__gte=current_month_start.date()
                 ).count(),
                 'Today_emergency_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
-                    sos_status='1',
-                    timestamp__date=today
+                    message_type='EMR',
+                    date=today
                 ).count(),
                 
-                # Harsh brake alerts (using acceleration data if available)
+                # Harsh brake alerts (using speed changes as proxy since no acceleration field)
                 'Total_harsh_brake_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
-                    acceleration__lt=-5  # Assuming negative acceleration indicates braking
+                    speed__lt=5  # Very low speed might indicate sudden braking
                 ).count(),
                 'This_month_harsh_brake_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
-                    acceleration__lt=-5,
-                    timestamp__gte=current_month_start
+                    speed__lt=5,
+                    date__gte=current_month_start.date()
                 ).count(),
                 'Today_harsh_brake_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
-                    acceleration__lt=-5,
-                    timestamp__date=today
+                    speed__lt=5,
+                    date=today
                 ).count(),
 
                 # Device stock counts filtered by state
@@ -11100,6 +11108,7 @@ def reset_password(request ):
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow any user, as this is the login endpoint
 @require_http_methods(['GET', 'POST'])
+@csrf_exempt
 def user_login(request ): 
     errors = validate_inputs(request)
     if errors:

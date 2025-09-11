@@ -270,8 +270,6 @@ class EmergencyCall_assignment(models.Model):
 
 
 class CustomUserManager(BaseUserManager):
-     
-    objects = SafeCreateManager()
     
     def create_user(self, email, password=None, **extra_fields):
         if not email:
@@ -314,12 +312,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     last_login =  models.DateTimeField(blank=True, null=True)
     last_activity =  models.DateTimeField(blank=True, null=True)
     login=models.BooleanField(default=False)
-    objects = CustomUserManager()
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['name' ]
     
-    objects = SafeCreateManager()
+    objects = CustomUserManager()
 
     def __str__(self):
         return self.email

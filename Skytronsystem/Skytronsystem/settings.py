@@ -10,8 +10,8 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
-from pathlib import Path
 import os
+from pathlib import Path
 
 # mail_id = os.environ.get("MAIL_ID", "testskytrack@gmail.com")
 # mail_pw = os.environ.get("MAIL_PW", " ")
@@ -24,17 +24,36 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', ' ')
+SECRET_KEY = os.environ.get("SECRET_KEY", " ")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True  # os.environ.get('DEBUG', 'False') == 'True'
 # True
 
 
-ALLOWED_HOSTS = ["*"]
-# ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
-# ALLOWED_HOSTS = ['api.skytron.in', 'skytron.in','dev.skytron.in','api-dev.skytron.in', 'skytrack.tech']
-# ['http://localhost:3000/','40.81.241.29','20.210.207.21','api.skytron.in','skytron.in','localhost','172.17.0.1','skytron.in','216.10.244.243','skytrack.tech','https://www.skytrack.tech','admiring-solomon.216-10-244-243.plesk.page']
+# ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",")
+ALLOWED_HOSTS = [
+    "api.skytron.in",
+    "skytron.in",
+    "dev.skytron.in",
+    "api-dev.skytron.in",
+    "skytrack.tech",
+]
+[
+    "http://localhost:3000/",
+    "40.81.241.29",
+    "20.210.207.21",
+    "api.skytron.in",
+    "skytron.in",
+    "localhost",
+    "172.17.0.1",
+    "skytron.in",
+    "216.10.244.243",
+    "skytrack.tech",
+    "https://www.skytrack.tech",
+    "admiring-solomon.216-10-244-243.plesk.page",
+]
 
 
 # Secure cookies
@@ -55,37 +74,36 @@ DATA_UPLOAD_MAX_NUMBER_FIELD = 71193766
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'rest_framework',
-    'bootstrap4',
-    'csp',
-    'bootstrap_datepicker_plus',
-    'drf_spectacular',
-    'corsheaders',
-    'skytron_api',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "rest_framework",
+    "bootstrap4",
+    "csp",
+    "bootstrap_datepicker_plus",
+    "drf_spectacular",
+    "corsheaders",
+    "skytron_api",
     "django_extensions",
-    'rest_framework.authtoken',
+    "rest_framework.authtoken",
 ]
 
-FORM_RENDERER = 'django.forms.renderers.DjangoTemplates'
+FORM_RENDERER = "django.forms.renderers.DjangoTemplates"
 MIDDLEWARE = [
-
-    'corsheaders.middleware.CorsMiddleware',
-    'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'csp.middleware.CSPMiddleware',
-    'skytron_api.middleware.RequestLoggerMiddleware'
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "csp.middleware.CSPMiddleware",
+    "skytron_api.middleware.RequestLoggerMiddleware",
 ]
 
 # Content Security Policy settings
@@ -125,25 +143,25 @@ SECURE_BROWSER_XSS_FILTER = True
     'skytron_api.middleware.RequestLoggerMiddleware'      
 """
 
-ROOT_URLCONF = 'Skytronsystem.urls'
+ROOT_URLCONF = "Skytronsystem.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'Skytronsystem.wsgi.application'
+WSGI_APPLICATION = "Skytronsystem.wsgi.application"
 
 
 # Database
@@ -159,34 +177,34 @@ print(f"DB_PORT: {os.environ.get('DB_PORT', 'NOT SET')}")
 print("========================================")
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'skytrondb_main'),
-        'USER': os.environ.get('DB_USER', 'dbadmin'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'lask1028zmnx'),
-        'HOST': os.environ.get('DB_HOST', '135.235.166.209'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("DB_NAME", "skytrondb_main"),
+        "USER": os.environ.get("DB_USER", "dbadmin"),
+        "PASSWORD": os.environ.get("DB_PASSWORD", "lask1028zmnx"),
+        "HOST": os.environ.get("DB_HOST", "135.235.166.209"),
+        "PORT": os.environ.get("DB_PORT", "5432"),
     }
 }
 
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
-AUTH_USER_MODEL = 'skytron_api.User'
+AUTH_USER_MODEL = "skytron_api.User"
 
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -194,9 +212,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -211,27 +229,28 @@ CORS_ALLOW_HEADERS = [
     "authorization",
     "x-csrftoken",
 ]
-CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
-                        "http://localhost:3000",
-                        "https://localhost:3000",
-                        "https://skytrack.tech:3000",
-                        "https://gromed.in",
-                        "https://api.gromed.in",
-                        "https://skytrack.tech:2000",
-                        "https://skytrack.tech",
-                        'https://skytron.in',
-                        'https://api.skytron.in',
-                        'https://skytron.in',
-                        'https://dev-api.skytron.in',
-                        'http://dev-api.skytron.in',
-                        'https://dev.skytron.in',
-                        'http://dev.skytron.in',
-                        'https://dev.skytron.in',
-                        # Add your frontend domain(s) here
-                        "https://dev.skytrack.tech",
-                        # "https://yourfrontenddomain.com",
-                        # to allow all origins
-                        ]
+CORS_ALLOWED_ORIGINS = [
+    "https://www.skytrack.tech",
+    "http://localhost:3000",
+    "https://localhost:3000",
+    "https://skytrack.tech:3000",
+    "https://gromed.in",
+    "https://api.gromed.in",
+    "https://skytrack.tech:2000",
+    "https://skytrack.tech",
+    "https://skytron.in",
+    "https://api.skytron.in",
+    "https://skytron.in",
+    "https://dev-api.skytron.in",
+    "http://dev-api.skytron.in",
+    "https://dev.skytron.in",
+    "http://dev.skytron.in",
+    "https://dev.skytron.in",
+    # Add your frontend domain(s) here
+    "https://dev.skytrack.tech",
+    # "https://yourfrontenddomain.com",
+    # to allow all origins
+]
 CORS_ALLOW_ALL_ORIGINS = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
@@ -239,47 +258,44 @@ CORS_ALLOW_ALL_ORIGINS = True
 # STATIC_URL = 'static/'
 
 
-STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / '../staticfiles'
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "../staticfiles"
 
 # WhiteNoise settings to enable static file compression and caching
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',  # For unauthenticated users
-        'rest_framework.throttling.UserRateThrottle',  # For authenticated users
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",  # For unauthenticated users
+        "rest_framework.throttling.UserRateThrottle",  # For authenticated users
     ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '1000/minute',   # Limit anonymous users to 10 requests per minute
-        'user': '5000/hour',    # Limit authenticated users to 100 requests per hour
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "1000/minute",  # Limit anonymous users to 10 requests per minute
+        "user": "5000/hour",  # Limit authenticated users to 100 requests per hour
     },
-
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.TokenAuthentication',
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.TokenAuthentication",
         # ... other authentication classes
     ],
-
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
     ],
-
 }
 
 
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-         "LOCATION": "redis://skytron-redis:6379/1",  # Redis DB index 1
+        "LOCATION": "redis://skytron-redis:6379/1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        }
+        },
     }
 }
 
@@ -287,8 +303,8 @@ SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 SESSION_CACHE_ALIAS = "default"
 
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.titan.email'  # Use your email provider's SMTP server
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.titan.email"  # Use your email provider's SMTP server
 EMAIL_PORT = 465
 EMAIL_USE_SSL = True
 EMAIL_USE_TLS = False
@@ -299,33 +315,33 @@ EMAIL_HOST_PASSWORD = "Developer@18062025"
 
 
 AUTHENTICATION_BACKENDS = [
-    'django.contrib.auth.backends.ModelBackend',
+    "django.contrib.auth.backends.ModelBackend",
 ]
-LOGIN_URL = 'admin:login'
-LOGIN_REDIRECT_URL = 'admin:index'
+LOGIN_URL = "admin:login"
+LOGIN_REDIRECT_URL = "admin:index"
 
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'file': {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "file": {
             # 'level': 'ERROR',
             # 'class': 'logging.FileHandler',
             # 'filename': BASE_DIR / 'logs/errors.log',
-            'level': 'ERROR',
-            'class': 'logging.StreamHandler',
+            "level": "ERROR",
+            "class": "logging.StreamHandler",
         },
-        'console': {
-            'level': 'ERROR',
-            'class': 'logging.StreamHandler',
-            'stream': 'ext://sys.stdout',
+        "console": {
+            "level": "ERROR",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
         },
     },
-    'loggers': {
-        'django': {
-            'handlers': ['file', 'console'],
-            'level': 'ERROR',
-            'propagate': True,
+    "loggers": {
+        "django": {
+            "handlers": ["file", "console"],
+            "level": "ERROR",
+            "propagate": True,
         },
     },
 }
