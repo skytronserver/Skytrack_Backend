@@ -255,7 +255,7 @@ def Process_sosEx_Data(msg,topic_parts):
                     else:
                         deviceloc=list(EMGPSLocation.objects.filter(device_tag= assignment.call.device).order_by('-id')[:100].values())
         
-                        ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted").last
+                        ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted").last()
              
                         msg=EMCallMessages.objects.filter(call=assignment.call).all()
         

@@ -176,14 +176,22 @@ print(f"DB_HOST: {os.environ.get('DB_HOST', 'NOT SET')}")
 print(f"DB_PORT: {os.environ.get('DB_PORT', 'NOT SET')}")
 print("========================================")
 
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.postgresql",
+#         "NAME": os.environ.get("DB_NAME", "skytrondb_main"),
+#         "USER": os.environ.get("DB_USER", "dbadmin"),
+#         "PASSWORD": os.environ.get("DB_PASSWORD", "lask1028zmnx"),
+#         "HOST": os.environ.get("DB_HOST", "135.235.166.209"),
+#         "PORT": os.environ.get("DB_PORT", "5432"),
+#     }
+# }
+
+# Use local SQLite database for development
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("DB_NAME", "skytrondb_main"),
-        "USER": os.environ.get("DB_USER", "dbadmin"),
-        "PASSWORD": os.environ.get("DB_PASSWORD", "lask1028zmnx"),
-        "HOST": os.environ.get("DB_HOST", "135.235.166.209"),
-        "PORT": os.environ.get("DB_PORT", "5432"),
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
@@ -289,18 +297,29 @@ REST_FRAMEWORK = {
 }
 
 
+# CACHES = {
+#     "default": {
+#         "BACKEND": "django_redis.cache.RedisCache",
+#         "LOCATION": "redis://skytron-redis:6379/1",
+#         "OPTIONS": {
+#             "CLIENT_CLASS": "django_redis.client.DefaultClient",
+#         },
+#     }
+# }
+
+# Use local memory cache for development
 CACHES = {
     "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://skytron-redis:6379/1",
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        },
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "unique-snowflake",
     }
 }
 
-SESSION_ENGINE = "django.contrib.sessions.backends.cache"
-SESSION_CACHE_ALIAS = "default"
+# SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+# SESSION_CACHE_ALIAS = "default"
+
+# Use database sessions for development
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
 
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"

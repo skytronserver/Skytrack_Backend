@@ -553,7 +553,7 @@ class EM_exSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
     state_info = Settings_StateSerializer(source='state', read_only=True)
-    district_info = Settings_DistrictSerializer(source='district', read_only=True)
+    # district_info = Settings_DistrictSerializer(source='district', read_only=True)  # Commented out because district is CharField, not ForeignKey
 
     class Meta:
         model = EM_ex
@@ -566,7 +566,7 @@ class EMTeamSerializer(SanitizingModelSerializer):
     #admin = SOS_AdminSerializer(many=True, read_only=True)
     createdby_info = UserSerializer(source='created_by', read_only=True)
     state_info = Settings_StateSerializer(source='state', read_only=True)
-    district_info = Settings_DistrictSerializer(source='district', read_only=True)
+    # district_info = Settings_DistrictSerializer(source='district', read_only=True)  # Commented out because EMTeams model doesn't have district field
     teamlead_info =EM_exSerializer(source='teamlead', read_only=True)
     members_info =EM_exSerializer(source='members', read_only=True,many=True)  
     class Meta:
@@ -580,7 +580,7 @@ class EM_adminSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     createdby_info = UserSerializer(source='createdby', read_only=True)
     state_info = Settings_StateSerializer(source='state', read_only=True)
-    district_info = Settings_DistrictSerializer(source='district', read_only=True)
+    # district_info = Settings_DistrictSerializer(source='district', read_only=True)  # Commented out because EM_admin model doesn't have district field
 
     class Meta:
         model = EM_admin
