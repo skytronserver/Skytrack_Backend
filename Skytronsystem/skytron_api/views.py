@@ -4699,7 +4699,7 @@ def FEx_broadcastlist(request ):
     uo=get_user_object(user,role)
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
-    if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex'or uo.user_type=='PCR'or uo.user_type=='ACR' :
+    if uo.user_type not in ['police_ex', 'ambulance_ex', 'PCR', 'ACR']:
  
         return Response({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
     try:  
@@ -4787,7 +4787,6 @@ def FEx_broadcastaccept(request ):
     role="sosexecutive"
     user=request.user
     uo=get_user_object(user,role)
-
     if not uo:
         return JsonResponse({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
     if uo.user_type not in ['police_ex', 'ambulance_ex', 'PCR', 'ACR']:
@@ -5298,7 +5297,7 @@ def FEx_updateLoc(request ):
 
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
-    if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex' :
+    if uo.user_type not in ['police_ex', 'ambulance_ex']:
         return Response({"error":"Request must be from   police_ex or  ambulance_ex ."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
         ob,error=EMUserLocation.objects.safe_create( field_ex = uo , em_lat = float(request.data.get("em_lat") ), em_lon = float(request.data.get("em_lon") ), speed= float(request.data.get("speed") ) )
@@ -5373,7 +5372,7 @@ def FEx_reqBackup(request ):
     uo=get_user_object(user,role)
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
-    if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex' :
+    if uo.user_type not in ['police_ex', 'ambulance_ex']:
         return Response({"error":"Request must be from   police_ex or  ambulance_ex ."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
         assignment =request.data.get("assignment_id") 
