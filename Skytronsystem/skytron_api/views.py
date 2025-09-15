@@ -4668,15 +4668,15 @@ def FEx_broadcastaccept(request ):
 
     if not uo:
         return JsonResponse({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
-    if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex'or uo.user_type=='PCR'or uo.user_type=='ACR' :
- 
-        return JsonResponse({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
+    if uo.user_type not in ['police_ex', 'ambulance_ex', 'PCR', 'ACR']:
+        return JsonResponse({"error":"Request must be from police_ex or ambulance_ex or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
         id =request.data.get("broadcast_id")  
         ee=EMCallBroadcast.objects.filter( id = id,type=uo.user_type,status="pending").last()
         if not ee:
             return JsonResponse({'error': "Not found"}, status=400)
         ee.status="accepted"
+        ee.accept_at = timezone.now()
         ee.save()
         assignment,error =   EMCallAssignment.objects.safe_create(
                     admin =  EM_admin.objects.all().last(),#filter(users__login=True)
