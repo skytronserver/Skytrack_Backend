@@ -27,10 +27,14 @@ BROKER_URL ="135.235.166.209"
 BROKER_PORT = 8883  # Use SSL/TLS port
 TOPIC = "field_ex/location_update"
 
-# Paths to certificates - using container paths
-ROOT_CA = "/app/mqttKeys/ca.crt"
-CLIENT_CERT = "/app/mqttKeys/client.crt"
-CLIENT_KEY = "/app/mqttKeys/client.key"
+# MQTT Authentication - using admin credentials
+MQTT_USERNAME = "6026969588"
+MQTT_PASSWORD = "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h"
+
+# Paths to certificates - Docker container path
+ROOT_CA = "/app/keys/ca.crt"
+#CLIENT_CERT = "/app/mqttKeys/client.crt"
+#CLIENT_KEY = "/app/mqttKeys/client.key"
 #ROOT_CA = "/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt"
 #CLIENT_CERT = "/home/azureuser/Skytrack_Backend/Skytronsystem/client.crt"
 #CLIENT_KEY = "/home/azureuser/Skytrack_Backend/Skytronsystem/client.key"
@@ -185,11 +189,23 @@ def on_connect(client, userdata, flags, rc):
 
 def Process_sosEx_Data(msg,topic_parts): 
     try:
-        data = json.loads(msg.payload.decode())
-        print(data)
+        # Print raw message for debugging
+        raw_message = msg.payload.decode()
+        print(f"Raw message received: {raw_message}")
+        
+        try:
+            data = json.loads(raw_message)
+        except json.JSONDecodeError as je:
+            print(f"JSON Decode Error: {je}")
+            print(f"Raw message that failed: '{raw_message}'")
+            client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": f"Invalid JSON format: {str(je)}"}))
+            return
+            
+        print("Parsed data:", data)
         token=data.get("token")
         if token:
             token = "Token "+token
+            client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "update", "message": "user authentication in progress"}))
 
             # Authenticate the token using TokenAuthentication
             try:
@@ -203,26 +219,28 @@ def Process_sosEx_Data(msg,topic_parts):
                 user_auth_tuple = authenticator.authenticate(fake_request)
 
                 if user_auth_tuple is None:
-                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error1", "message": "Invalid token."}))
+                    #client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps3#({"status": "error1", "message": "Invalid token."}))
  
                
                     raise AuthenticationFailed("Invalid token.")
-
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status":"update", "message": "user found"}))
                 user = user_auth_tuple[0]  # Extract the user from the authentication tuple
             except AuthenticationFailed as e:
                 error_message = f"Authentication error: {str(e)}"
                 print(error_message)
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": error_message}))
                 #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
                 return
 
             # Get user object and validate roles
             role = "sosexecutive"
             uo = get_user_object(user, role)
+            
 
             if not uo:
                 error_message = f"Request must be from {role}"
                 print(error_message)
-                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": error_message}))
                 return
             
             # Optional role validation for specific user types
@@ -269,15 +287,23 @@ def Process_sosEx_Data(msg,topic_parts):
 
         
 
-                ee=EMCallBroadcast.objects.filter( type=uo.user_type,status="pending")
-                dat={"status": "success", "broadcast":EMCallBroadcastSerializer(ee,many=True).data,"message": success_message}
-                 
+                # Check for active broadcasts for this user type
+                ee = EMCallBroadcast.objects.filter(type=uo.user_type, status="pending")
+                print(f"Found {ee.count()} pending broadcasts for user type: {uo.user_type}")
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "update", "message": f"Found {ee.count()} pending broadcasts for user type: {uo.user_type}"}))
+                if ee.exists():
+                    dat = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee, many=True).data, "message": success_message}
+                    print(f"Sending broadcast response: {dat}")
+                else:
+                    # If no pending broadcasts, send success without broadcast data
+                    dat = {"status": "success", "broadcast": [], "message": success_message}
+                    print("No pending broadcasts found, sending empty broadcast array")
                 
-                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps(dat))
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps(dat))
             else:
                 error_message = "Location not updated. Value error."
                 print(error_message)
-                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": error_message}))
         
         else:
  
@@ -286,7 +312,7 @@ def Process_sosEx_Data(msg,topic_parts):
 
                
     except Exception as e:
-            client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": "Something went wrong."}))
+            client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": "Something went wrong."}))
                
             raise e
             print("data processign error function ",e, flush=True)
@@ -483,38 +509,17 @@ def on_message(client, userdata, msg):
 
 client = mqtt.Client()
 
+# Set username and password for authentication
+client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
+# Set up SSL/TLS with CA certificate only (no client certificates needed)
+client.tls_set(ca_certs=ROOT_CA, tls_version=ssl.PROTOCOL_TLS)
+
 # Set up callbacks
-
-# Create SSL context
-#context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-#context.check_hostname = False 
-#context.set_ciphers('ECDHE-RSA-AES128-GCM-SHA256') 
-
-#context.load_verify_locations(cafile=ROOT_CA)
-#context.load_cert_chain(certfile=CLIENT_CERT, keyfile=CLIENT_KEY)
-
-
-
- 
-#client.tls_set(ca_certs="/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt",
-#               certfile="/home/azureuser/Skytrack_Backend/Skytronsystem/client.crt",
-#               keyfile="/home/azureuser/Skytrack_Backend/Skytronsystem/client.key")
- 
-client.tls_set(ca_certs="/app/ca.crt",
-               certfile="/app/client.crt",
-               keyfile="/app/client.key")
- 
-
 client.on_connect = on_connect
 client.on_message = on_message
-client.tls_insecure_set(True) 
-client.connect("135.235.166.209", 8883)
-# Set the SSL context
-#client.tls_set_context(context)
-#
 
 # Connect to the broker
-#client.connect(BROKER_URL, BROKER_PORT, 60)
-
+client.connect(BROKER_URL, BROKER_PORT, 60)
 # Blocking loop to keep listening to messages
 client.loop_forever()

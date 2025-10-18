@@ -60,15 +60,13 @@ RUN pip install \
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy certificate files first - they are required for the MQTT client
-COPY Skytronsystem/mqttKeys/ca.crt /app/ca.crt
-COPY Skytronsystem/mqttKeys/client.crt /app/client.crt
-COPY Skytronsystem/mqttKeys/client.key /app/client.key
-
-# Create keys directory and copy keys
+# Create keys directory first
 RUN mkdir -p /app/keys
-COPY Skytronsystem/keys/private_key.pem /app/keys/private_key.pem
-COPY Skytronsystem/keys/public_key.pem /app/keys/public_key.pem
+
+# Copy certificate files - they are required for the MQTT client
+COPY keys/ca.crt /app/keys/ca.crt
+#COPY Skytronsystem/keys/private_key.pem /app/keys/private_key.pem
+#COPY Skytronsystem/keys/public_key.pem /app/keys/public_key.pem
 
 # Copy your Django project files into the container
 COPY . /app
@@ -109,4 +107,4 @@ ENV DB_PORT=${DB_PORT}
 
 
 # Run the MQTT client
-CMD ["python", "Skytronsystem/mqttClienttrack.py"]
+CMD ["python", "mqttClienttrack.py"]
