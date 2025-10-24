@@ -26,7 +26,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from skytron_api.data_processor import process_device_tracking_data, process_emergency_data, get_device_response_data
 
 # MQTT Settings
-BROKER_URL ="103.195.217.127"
+BROKER_URL ="135.235.166.209"   # "103.195.217.127"   # 
 BROKER_PORT = 8883  # Use SSL/TLS port
 TOPIC = "field_ex/location_update"
 

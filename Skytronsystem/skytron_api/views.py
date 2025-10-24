@@ -98,6 +98,9 @@ from django.utils.timezone import now
 #python3 -m pip install python-docx
 #python3 -m pip install pypandoc
 #python3 -m pip install docx2pdf
+
+# Import MQTT user creation function (relative import)
+from .mqtt_user_creator import create_mqtt_user
  
 #python3 -m pip install pdfkit
 #sudo apt-get install wkhtmltopdf
@@ -11316,7 +11319,7 @@ def temp_user_OTPValidate(request ):
             tempu.online=True 
             tempu.session_key=session_key
             tempu.save() 
-            return Response({'success': True,'session_key': session_key,'token2': "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h"}, status=status.HTTP_200_OK)
+            return Response({'success': True,'session_key': session_key,'token2': ""}, status=status.HTTP_200_OK)
         else:
             return JsonResponse({'success': False, 'error': 'Incorrect OTP.'}) 
     
@@ -11692,7 +11695,15 @@ def validate_otp(request ):
 
 
         if session.status == 'login':
-            return Response({'status':'Login Successful','token': session.token,'token2': "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h",'user':UserSerializer2(session.user).data}, status=status.HTTP_200_OK)
+            # Create/update MQTT user for existing session
+            try:
+                mqtt_success = create_mqtt_user(session.user.mobile, session.token)
+                mqtt_token = session.token if mqtt_success else "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h"
+            except Exception as e:
+                print(f"MQTT user creation failed for existing session: {e}")
+                mqtt_token = "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h"
+            
+            return Response({'status':'Login Successful','token': session.token,'token2': mqtt_token,'user':UserSerializer2(session.user).data}, status=status.HTTP_200_OK)
 
         
         time_difference = timezone.now() - session.loginTime
@@ -11728,8 +11739,15 @@ def validate_otp(request ):
                 if uu:
                     uu = recursive_model_to_dict(uu,["users","esim_provider"])
 
-  
-                return Response({'status':'Login Successful','token': session.token,'token2': "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h",'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
+                # Create/update MQTT user after successful OTP validation
+                try:
+                    mqtt_success = create_mqtt_user(session.user.mobile, session.token)
+                    mqtt_token = session.token if mqtt_success else "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h"
+                except Exception as e:
+                    print(f"MQTT user creation failed for OTP validation: {e}")
+                    mqtt_token = "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h"
+
+                return Response({'status':'Login Successful','token': session.token,'token2': mqtt_token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
             except Exception as e:
                 return Response({'error': "Unable to process request."+str(e)}, status=400)
         else:
