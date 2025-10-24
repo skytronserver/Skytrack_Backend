@@ -1,5 +1,5 @@
 # Start from an official Python image
-FROM python:3.9-slim-buster
+FROM python:3.9-slim-bullseye
 
 # Install required system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
