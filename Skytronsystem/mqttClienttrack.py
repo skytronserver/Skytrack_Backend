@@ -23,7 +23,7 @@ from rest_framework.authentication import TokenAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
 # MQTT Settings
-BROKER_URL ="135.235.166.209"
+BROKER_URL ="103.195.217.127"
 BROKER_PORT = 8883  # Use SSL/TLS port
 TOPIC = "field_ex/location_update"
 
@@ -421,9 +421,11 @@ def on_message(client, userdata, msg):
         # Split the topic to extract the user ID
         topic_parts = msg.topic.split('/')
         print(f"Message Topic: {topic_parts}")
-        if len(topic_parts) == 2 and topic_parts[0] == 'gpsTracking':
+        if len(topic_parts) == 2 and topic_parts[0] == 'deviceTracking':
             user_id = topic_parts[1]
             print(f"Message received for user ID: {user_id}")
+            print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
+            print(f"Message received payload: {msg.payload.decode()}")
             ###Process_Device_Data(msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'sosEx':
             #print("message payload decode" ,msg.payload.decode())
