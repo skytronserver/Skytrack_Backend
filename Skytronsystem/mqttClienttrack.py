@@ -22,6 +22,9 @@ from django.contrib.auth.models import User
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
+# Import our common data processor
+from skytron_api.data_processor import process_device_tracking_data, process_emergency_data, get_device_response_data
+
 # MQTT Settings
 BROKER_URL ="103.195.217.127"
 BROKER_PORT = 8883  # Use SSL/TLS port
@@ -75,110 +78,7 @@ client.loop_forever()
 
 
 
-from datetime import datetime
-import pytz
-gmt_timezone = pytz.timezone('GMT')
-ist_timezone = pytz.timezone('Asia/Kolkata')
-def process_gps_data(data_str):    
-    # Save the raw data to GPSDataLog model     
-    try:
-        # Define a regular expression pattern to match the format of the incoming string
-        #pattern = re.compile(r'\$,T,(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),(.*?),\*')
-        groups=data_str.split(',') 
-        #print(groups)
-        print("length of data",len(groups))
-
-        if len(groups)==52:
-            if groups[0]=='$' and groups[1]=='T' and groups[-1]=='*' : 
-                # Combine date and time strings and convert to a datetime object
-                gmt_datetime_str = f'{groups[10]} {groups[11]}'
-                gmt_datetime = datetime.strptime(gmt_datetime_str, '%d%m%Y %H%M%S')
-                ist_datetime = gmt_timezone.localize(gmt_datetime).astimezone(ist_timezone)
-                # Separate date and time components
-                ist_date = ist_datetime.strftime('%d%m%Y')
-                ist_time = ist_datetime.strftime('%H%M%S')
-
- 
-                #if groups[8]!='GEM1205-04-00':#868960065504918, 
-                #    return None
-                try:
-                    if float(groups[12])<5 or float(groups[14])<5 :
-                        return None
-                    if float(groups[12])>180 or float(groups[14])>180 :
-                        return None
-                    if str(groups[13])!="N" or str(groups[15])!="E" :
-                        return None
-                except:
-                    return None
-                gps_data = {
-                    #'start_character': groups[0],
-                    #'header': groups[1],
-                    #'vendor_id': groups[2],
-                    #'firmware_version': groups[3],
-                    'packet_type': groups[4],
-                    'alert_id': groups[5],
-                    'packet_status': groups[6],
-                    'imei': groups[7],
-                    'vehicle_registration_number': groups[8],
-                    'gps_status': groups[9],
-                    'date': ist_date,
-                    'time': ist_time,
-                    'latitude': float(groups[12]),
-                    'latitude_dir': groups[13],
-                    'longitude': float(groups[14]),
-                    'longitude_dir': groups[15],
-                    'speed': float(groups[16]),
-                    'heading': float(groups[17]),
-                    'satellites': int(groups[18]),
-                    'altitude': int(float(groups[19])),
-                    'pdop': float(groups[20]),
-                    'hdop': float(groups[21]),
-                    'network_operator': groups[22],
-                    'ignition_status': groups[23],
-                    'main_power_status': groups[24],
-                    'main_input_voltage': float(groups[25]),
-                    'internal_battery_voltage': float(groups[26]),
-                    'emergency_status': groups[27],
-                    'box_tamper_alert': groups[28],
-                    'gsm_signal_strength': groups[29],
-                    'mcc': groups[30],
-                    'mnc': groups[31],
-                    'lac': groups[32],
-                    'cell_id': groups[33],
-                    'nbr1_cell_id': groups[34],
-                    'nbr1_lac': groups[35],
-                    'nbr1_signal_strength': groups[36],
-                    'nbr2_cell_id': groups[37],
-                    'nbr2_lac': groups[38],
-                    'nbr2_signal_strength': groups[39],
-                    'nbr3_cell_id': groups[40],
-                    'nbr3_lac': groups[41],
-                    'nbr3_signal_strength': groups[42],
-                    'nbr4_cell_id': groups[43],
-                    'nbr4_lac': groups[44],
-                    'nbr4_signal_strength': groups[45],
-                    'digital_input_status': groups[46],
-                    'digital_output_status': groups[47],
-                    'frame_number': int(groups[48]),
-                    'odometer': float(groups[49]),
-                    #'checksum': groups[50],
-                    #'end_char': groups[51],
-                }
-                #print(data_str)
-                #print(gps_data)
-
-                return gps_data
-            else:
-                return None
-        else:
-            return None
-    except Exception as e:
-        print("data processign error function ",e, flush=True)
-        return None
-    
-
 authenticator = TokenAuthentication()
-# Callback when the client connects to the broker
 # Callback when the client connects to the broker
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -383,38 +283,51 @@ def Process_owner_Data(msg,topic_parts):
             print("data processign error function ",e, flush=True)
 
 def Process_Device_Data(msg):
-    print(msg.payload.decode())
-    data_str=str(msg.payload.decode())
+    """Process device tracking data using common processor and send response"""
     try:
+        data_str = str(msg.payload.decode())
+        print(f"[MQTT] Processing device tracking data: {data_str}", flush=True)
+        
+        # Process the GPS data
+        process_device_tracking_data(data_str, source="MQTT")
+        
+        # Extract IMEI from the data for response
+        imei = None
         try:
-            GPSDataLog.objects.create(raw_data=data_str)
+            # Parse the data to extract IMEI
+            data_parts = data_str.split(',')
+            if len(data_parts) > 7:
+                # For PVT format: $,PVT,HPSP,1.0.0,NR,01,L,860269065242240,...
+                imei = data_parts[7]  # IMEI is at index 7
+                print(f"[MQTT] Extracted IMEI for response: {imei}", flush=True)
         except Exception as e:
-            print("Data processing error log:", e, flush=True)
-                
-        data_l = data_str.split('$')
-        for dat in data_l:
+            print(f"[MQTT] Error extracting IMEI: {e}", flush=True)
+        
+        # Send device response if IMEI was found
+        if imei:
             try:
-                #dat=",T,ATMV,1.1.4,BH,05,L,861850060252547,ABC00000012,0,25102024,023547,26.133602,N,91.804747,E,3,269,00,78,24.4,24.4,airtel,0,1,8.1,4.0,0,O,18,405,56,0092,F0A1,E364,0092,14,0F17,0092,18,0F17,0092,18,0,0,0,1100,00,000781,1162.0,E9,*"
-                dat = '$' + dat
-                if len(dat) > 4:
-                    gps_data = process_gps_data(dat)
-                            
-                    if gps_data:
-                        reg=gps_data['imei']
-                        dev=DeviceStock.objects.filter(imei__contains=str(reg)).last()
-                        if dev:
-                            print("hhhh",reg)
-                            device_tag=DeviceTag.objects.filter(device=dev).last()#,status='Device_Active'
-                            if device_tag:
-                                gps_data['device_tag']=device_tag
-                                gps_data.pop('imei', None)
-                                gps_data.pop('vehicle_registration_number', None)
-                                g=GPSData.objects.create(**gps_data)
-                                g.save()
+                # Get BLE keys and response data
+                response_data = get_device_response_data(imei)
+                
+                # Publish response to deviceResponse/<IMEI>
+                response_topic = f"deviceResponse/{imei}"
+                response_json = json.dumps(response_data)
+                
+                client.publish(response_topic, response_json)
+                print(f"[MQTT] Sent response to {response_topic}: {response_json}", flush=True)
+                
             except Exception as e:
-                        print("Data processing error main:", e, flush=True)
+                print(f"[MQTT] Error sending device response: {e}", flush=True)
+                
     except Exception as e:
-            print("data processign error function ",e, flush=True)
+        print(f"[MQTT] Device data processing error: {e}", flush=True)
+
+
+def Process_EM_Data(msg):
+    """Process emergency data using common processor"""
+    data_str = str(msg.payload.decode())
+    print(f"[MQTT] Processing emergency data: {data_str}", flush=True)
+    process_emergency_data(data_str, source="MQTT")
 
 def on_message(client, userdata, msg):
     try:
@@ -426,7 +339,13 @@ def on_message(client, userdata, msg):
             print(f"Message received for user ID: {user_id}")
             print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
             print(f"Message received payload: {msg.payload.decode()}")
-            ###Process_Device_Data(msg)
+            Process_Device_Data(msg)
+        elif len(topic_parts) == 2 and topic_parts[0] == 'deviceEM':
+            user_id = topic_parts[1]
+            print(f"Message received for user ID: {user_id}")
+            print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
+            print(f"Message received payload: {msg.payload.decode()}")
+            Process_EM_Data(msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'sosEx':
             #print("message payload decode" ,msg.payload.decode())
             Process_sosEx_Data(msg,topic_parts)

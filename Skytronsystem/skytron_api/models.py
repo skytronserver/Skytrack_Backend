@@ -1006,14 +1006,41 @@ class EMGPSLocation(models.Model): #imergency tracking data
 
     @classmethod
     def create_from_string(cls, data_list): 
+        # Handle default values for missing data
         if data_list[3]=='x':
             data_list[3]='01012020'
         if data_list[4]=='x':
             data_list[4]='000000'
-        data_list[3]='23062025'
-        data_list[3] = datetime.strptime(data_list[3], "%d%m%Y").strftime("%Y-%m-%d")
-        data_list[4] = datetime.strptime(data_list[4], "%H%M%S").strftime("%H:%M:%S")
+            
+        # For new EPB format, the date and time are already separated correctly
+        # data_list[3] should be date in DDMMYYYY format like "24102025"
+        # data_list[4] should be time in HHMMSS format like "063355"
+        
+        # Parse the date - expect DDMMYYYY format
+        try:
+            date_part = data_list[3]
+            if len(date_part) == 8:  # DDMMYYYY format
+                data_list[3] = datetime.strptime(date_part, "%d%m%Y").strftime("%Y-%m-%d")
+            else:
+                # Fallback to default date if format is unexpected
+                data_list[3] = datetime.strptime("23062025", "%d%m%Y").strftime("%Y-%m-%d")
+        except ValueError as e:
+            print(f"Date parsing error: {e}, using default date")
+            data_list[3] = datetime.strptime("23062025", "%d%m%Y").strftime("%Y-%m-%d")
+        
+        # Parse the time - expect HHMMSS format  
+        try:
+            time_part = data_list[4]
+            if len(time_part) == 6:  # HHMMSS format
+                data_list[4] = datetime.strptime(time_part, "%H%M%S").strftime("%H:%M:%S")
+            else:
+                # Fallback to default time if format is unexpected
+                data_list[4] = datetime.strptime("000000", "%H%M%S").strftime("%H:%M:%S")
+        except ValueError as e:
+            print(f"Time parsing error: {e}, using default time")
+            data_list[4] = datetime.strptime("000000", "%H%M%S").strftime("%H:%M:%S")
 
+        # Combine date and time, then adjust timezone (GMT to IST: +5:30)
         datetime_str = f"{data_list[3]} {data_list[4]}"
         dt_object = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S") 
         adjusted_datetime = dt_object + timedelta(hours=5, minutes=30, seconds=0)

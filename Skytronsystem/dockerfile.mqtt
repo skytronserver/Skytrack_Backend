@@ -46,7 +46,8 @@ RUN pip install \
     docx2pdf \ 
     django-filter \
     django-cors-headers bleach python-magic\ 
-    gunicorn
+    gunicorn \
+    django-redis
 
 # Set the working directory in the container
 WORKDIR /app

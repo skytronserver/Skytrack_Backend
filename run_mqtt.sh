@@ -29,6 +29,11 @@ docker build -t skytrack-mqtt-client -f Skytronsystem/dockerfile.mqtt \
 docker stop skytrack-mqtt-client-container || true
 docker rm skytrack-mqtt-client-container || true
 
+# Run migrations first in a temporary container
+echo "Running database migrations..."
+docker run --rm --name skytrack-mqtt-migration skytrack-mqtt-client python manage.py makemigrations skytron_api
+docker run --rm --name skytrack-mqtt-migration skytrack-mqtt-client python manage.py migrate --run-syncdb
+
 # Run the container with the volume mount (environment variables are now baked into the image)
 sudo docker run -d --restart=always  -v $STORAGE_DIR:/host_storage --name skytrack-mqtt-client-container skytrack-mqtt-client
 
