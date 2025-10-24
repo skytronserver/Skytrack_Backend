@@ -1,0 +1,175 @@
+{
+	"defaultACLAccess":	{
+		"publishClientSend":	false,
+		"publishClientReceive":	true,
+		"subscribe":	false,
+		"unsubscribe":	true
+	},
+	"clients":	[{
+			"username":	"1000000010",
+			"roles":	[{
+					"rolename":	"open-all"
+				}],
+			"password":	"uiICwEt1yNMuX3tsPr37SN63I5vh3pUIsoXIHefA4RZgPJpST8acSBL4k/Xkiq+HXx3Xi3bK1cLrZ4nzoezLKw==",
+			"salt":	"RqrlR+84Yi9sQBZA",
+			"iterations":	101
+		}, {
+			"username":	"1000000011",
+			"roles":	[{
+					"rolename":	"open-all"
+				}],
+			"password":	"09oOcZVaG97DwgIsyG3KB7OS1Oo0OqwFXYYNeZeBYZv8MIJUz0LcQGD/ijfYVassUlCU5VBo8pmEvTJZE+mG3g==",
+			"salt":	"4evlcF2H+eHeG8gN",
+			"iterations":	101
+		}, {
+			"username":	"1234567890",
+			"roles":	[{
+					"rolename":	"open-all"
+				}],
+			"password":	"O9yrQMCkgCgyqq3j8UDNKz7HtXoti5gM+bOGLAOtGB1OYXgFTx33eaWEOjkow4nRvlOBDdmVm3cUl2JEVtI1LA==",
+			"salt":	"1s2CTOD5MbUmXGug",
+			"iterations":	101
+		}, {
+			"username":	"2345678901",
+			"roles":	[{
+					"rolename":	"open-all"
+				}],
+			"password":	"dqgsKd6CPedwQ6HMPGZNNLd+NwuA2A3JyyHNPMvyE52D6d+12IxWtcPv/420RjDkbJU10gDkPkRp3hIBuI2Tyg==",
+			"salt":	"uF5OpDgz8LhD9hnJ",
+			"iterations":	101
+		}, {
+			"username":	"3456789012",
+			"roles":	[{
+					"rolename":	"open-all"
+				}],
+			"password":	"Z+mKJFv1Pchlyv2XYd0OJCO3+MtFAVNHjZxxA4P4KvG2Knx+SIiPHioAFsN1lLrc3toC9tvFS/BxjNNVP02+Tw==",
+			"salt":	"le9neCyVC1ARDZ85",
+			"iterations":	101
+		}, {
+			"username":	"6026929588",
+			"roles":	[{
+					"rolename":	"open-all"
+				}],
+			"password":	"xezfkKCKXVTe0yzDD1oDl0xyYUarjb0o69fs8PWkdVxcb1VYPmOEFZwWu4PLN27tqy1ol67LN3ZjAaEUpg7ReA==",
+			"salt":	"IAze792QAsMMh3RY",
+			"iterations":	101
+		}, {
+			"username":	"6026969588",
+			"roles":	[{
+					"rolename":	"open-all"
+				}],
+			"password":	"cFQnOqmEP5fqwJSv9vdalH/fEwcSg2BEeXxaS7r+MjXHLAY39fwX1l1T+f7FCndkLn7IHCaxICaZCpdgwn0E3A==",
+			"salt":	"/sWu8HTX4ZEU7YGT",
+			"iterations":	101
+		}, {
+			"username":	"9998887777",
+			"roles":	[{
+					"rolename":	"open-all"
+				}, {
+					"rolename":	"sky-allow"
+				}],
+			"password":	"EXiRpSMgLYOMzzOUUSmpECl13/N4TV2GamKRE4SJzTIQFnSIQfmezPqEDktPDXUkHhkwV/NgrCkIR38LdT//LQ==",
+			"salt":	"PzdE7qBQ4py5Aot+",
+			"iterations":	101
+		}, {
+			"username":	"admin",
+			"textname":	"Dynsec admin user",
+			"roles":	[{
+					"rolename":	"admin"
+				}],
+			"password":	"aBr9CsQ7oyEc3qz5C/tdHMNa94dnHz6PRJnp0c/6EiqEQ228mo1pMSOOr9GOE6IZ07Y0ylrE5T6NjTNKTtOHPg==",
+			"salt":	"79C0aE0AVt1cN04X",
+			"iterations":	101
+		}],
+	"groups":	[],
+	"roles":	[{
+			"rolename":	"admin",
+			"acls":	[{
+					"acltype":	"publishClientSend",
+					"topic":	"$CONTROL/dynamic-security/#",
+					"priority":	0,
+					"allow":	true
+				}, {
+					"acltype":	"publishClientReceive",
+					"topic":	"$CONTROL/dynamic-security/#",
+					"priority":	0,
+					"allow":	true
+				}, {
+					"acltype":	"publishClientReceive",
+					"topic":	"$SYS/#",
+					"priority":	0,
+					"allow":	true
+				}, {
+					"acltype":	"publishClientReceive",
+					"topic":	"#",
+					"priority":	0,
+					"allow":	true
+				}, {
+					"acltype":	"subscribePattern",
+					"topic":	"$CONTROL/dynamic-security/#",
+					"priority":	0,
+					"allow":	true
+				}, {
+					"acltype":	"subscribePattern",
+					"topic":	"$SYS/#",
+					"priority":	0,
+					"allow":	true
+				}, {
+					"acltype":	"subscribePattern",
+					"topic":	"#",
+					"priority":	0,
+					"allow":	true
+				}, {
+					"acltype":	"unsubscribePattern",
+					"topic":	"#",
+					"priority":	0,
+					"allow":	true
+				}]
+		}, {
+			"rolename":	"open-all",
+			"acls":	[{
+					"acltype":	"publishClientSend",
+					"topic":	"#",
+					"priority":	1,
+					"allow":	true
+				}, {
+					"acltype":	"publishClientReceive",
+					"topic":	"#",
+					"priority":	1,
+					"allow":	true
+				}, {
+					"acltype":	"subscribePattern",
+					"topic":	"#",
+					"priority":	1,
+					"allow":	true
+				}]
+		}, {
+			"rolename":	"sky-allow",
+			"acls":	[{
+					"acltype":	"publishClientSend",
+					"topic":	"devices/%u/tx",
+					"priority":	1,
+					"allow":	true
+				}, {
+					"acltype":	"publishClientReceive",
+					"topic":	"devices/%u/rx",
+					"priority":	1,
+					"allow":	true
+				}, {
+					"acltype":	"subscribeLiteral",
+					"topic":	"devices/9998887777/rx",
+					"priority":	1,
+					"allow":	true
+				}, {
+					"acltype":	"subscribePattern",
+					"topic":	"devices/%u/rx",
+					"priority":	1,
+					"allow":	true
+				}, {
+					"acltype":	"subscribePattern",
+					"topic":	"devices/%u/tx",
+					"priority":	1,
+					"allow":	true
+				}]
+		}]
+}

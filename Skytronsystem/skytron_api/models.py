@@ -1511,6 +1511,20 @@ class EMUserLocation(models.Model):
         return f"EMCall {self.id}"
 
 
+class BleKey(models.Model):
+    objects = SafeCreateManager()
+    key = models.CharField(max_length=25, unique=True, verbose_name="BLE Key")
+    imei = models.CharField(max_length=15, verbose_name="Device IMEI")
+    active = models.BooleanField(default=True, verbose_name="Active Status")
+    entry_time = models.DateTimeField(auto_now_add=True, verbose_name="Entry Time")
+    
+    def __str__(self):
+        return f"BleKey {self.key} - {self.imei}"
+    
+    class Meta:
+        app_label = 'skytron_api'
+
+
 
 
 """

@@ -1,21 +1,12 @@
-# Start from an official Python image
-FROM python:3.9-slim-buster
+# Start from an official Python image - using bullseye instead of buster
+FROM python:3.9-slim-bullseye
 
 # Install required system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wkhtmltopdf libmagic1 \          
-    # for pdfkit
-    #
     libssl-dev \          
-    # often needed by cryptography/pycryptodome
     libffi-dev \    
-    # often needed by cryptography/pycryptodome
     build-essential \     
-    # for compiling numpy/scipy if needed
-    #git \                  # if needed
-    #nodejs \               # if needed
-    #npm \                  # if needed
-    # libreoffice          # uncomment if you need LibreOffice
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
