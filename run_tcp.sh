@@ -23,6 +23,18 @@ docker build -t skytron-backend-gps -f Skytronsystem/dockerfile.gps \
   --build-arg DB_PASSWORD="$DB_PASSWORD" \
   --build-arg DB_HOST="$DB_HOST" \
   --build-arg DB_PORT="$DB_PORT" \
+  --build-arg SMS_URL="$SMS_URL" \
+  --build-arg SMS_USERID="$SMS_USERID" \
+  --build-arg SMS_PASSWORD="$SMS_PASSWORD" \
+  --build-arg SMS_SENDER="$SMS_SENDER" \
+  --build-arg SMS_PEID="$SMS_PEID" \
+  --build-arg MQTT_BROKER_HOST="$MQTT_BROKER_HOST" \
+  --build-arg MQTT_BROKER_PORT="$MQTT_BROKER_PORT" \
+  --build-arg MQTT_ADMIN_USER="$MQTT_ADMIN_USER" \
+  --build-arg MQTT_ADMIN_PASS="$MQTT_ADMIN_PASS" \
+  --build-arg MQTT_USERNAME="$MQTT_USERNAME" \
+  --build-arg MQTT_PASSWORD="$MQTT_PASSWORD" \
+  --build-arg ROOT_URL="$ROOT_URL" \
   Skytronsystem/
  
 # Stop any running container with the same name
@@ -52,6 +64,18 @@ docker build -t skytron-backend-em -f Skytronsystem/dockerfile.em \
   --build-arg DB_PASSWORD="$DB_PASSWORD" \
   --build-arg DB_HOST="$DB_HOST" \
   --build-arg DB_PORT="$DB_PORT" \
+  --build-arg SMS_URL="$SMS_URL" \
+  --build-arg SMS_USERID="$SMS_USERID" \
+  --build-arg SMS_PASSWORD="$SMS_PASSWORD" \
+  --build-arg SMS_SENDER="$SMS_SENDER" \
+  --build-arg SMS_PEID="$SMS_PEID" \
+  --build-arg MQTT_BROKER_HOST="$MQTT_BROKER_HOST" \
+  --build-arg MQTT_BROKER_PORT="$MQTT_BROKER_PORT" \
+  --build-arg MQTT_ADMIN_USER="$MQTT_ADMIN_USER" \
+  --build-arg MQTT_ADMIN_PASS="$MQTT_ADMIN_PASS" \
+  --build-arg MQTT_USERNAME="$MQTT_USERNAME" \
+  --build-arg MQTT_PASSWORD="$MQTT_PASSWORD" \
+  --build-arg ROOT_URL="$ROOT_URL" \
   Skytronsystem/
  
 # Stop any running container with the same name

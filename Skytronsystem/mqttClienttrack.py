@@ -25,17 +25,17 @@ from rest_framework.exceptions import AuthenticationFailed
 # Import our common data processor
 from skytron_api.data_processor import process_device_tracking_data, process_emergency_data, get_device_response_data
 
-# MQTT Settings
-BROKER_URL ="135.235.166.209"   # "103.195.217.127"   # 
-BROKER_PORT = 8883  # Use SSL/TLS port
+# MQTT Settings - using environment variables for deployment flexibility
+BROKER_URL = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")  # Default fallback
+BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))  # Use SSL/TLS port
 TOPIC = "field_ex/location_update"
 
-# MQTT Authentication - using admin credentials
-MQTT_USERNAME = "6026969588"
-MQTT_PASSWORD = "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h"
+# MQTT Authentication - using environment variables
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "6026969588")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h")
 
 # Paths to certificates - Docker container path
-ROOT_CA = "/app/keys/ca.crt"
+ROOT_CA = "/app/keys/ca.crt"  # Updated certificate path
 #CLIENT_CERT = "/app/mqttKeys/client.crt"
 #CLIENT_KEY = "/app/mqttKeys/client.key"
 #ROOT_CA = "/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt"

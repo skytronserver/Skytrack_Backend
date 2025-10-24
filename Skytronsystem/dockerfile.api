@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # often needed by cryptography/pycryptodome
     build-essential \     
     # for compiling numpy/scipy if needed
+    mosquitto-clients \
+    # for MQTT user management
     #git \                  # if needed
     #nodejs \               # if needed
     #npm \                  # if needed
@@ -66,8 +68,20 @@ RUN pip install \
 # Set the working directory in the container
 WORKDIR /app
 
+# Setup MQTT certificates directory and copy CA certificate
+# Create directories for certificates
+RUN mkdir -p /app/keys
+RUN mkdir -p /etc/mosquitto/certs
+
+# Copy certificate files - they are required for the MQTT client
+COPY keys/ca.crt /app/keys/ca.crt
+
 # Copy your Django project files into the container (including cert.pem & key.pem if needed)
 COPY . /app
+
+# Ensure certificates are available in both locations for compatibility
+RUN cp /app/keys/ca.crt /etc/mosquitto/certs/ca.crt || cp /app/ca.crt /etc/mosquitto/certs/ca.crt || echo "Warning: CA certificate setup may need manual configuration"
+
 
 # (Optional) If you need to collect static files, uncomment the line below:
 RUN python manage.py collectstatic --noinput
@@ -88,6 +102,18 @@ ARG DB_USER
 ARG DB_PASSWORD
 ARG DB_HOST
 ARG DB_PORT
+ARG MQTT_BROKER_HOST
+ARG MQTT_BROKER_PORT
+ARG MQTT_ADMIN_USER
+ARG MQTT_ADMIN_PASS
+ARG MQTT_USERNAME
+ARG MQTT_PASSWORD
+ARG SMS_URL
+ARG SMS_USERID
+ARG SMS_PASSWORD
+ARG SMS_SENDER
+ARG SMS_PEID
+ARG ROOT_URL
 
 ENV MAIL_ID=${MAIL_ID}
 ENV MAIL_PW=${MAIL_PW}
@@ -101,11 +127,23 @@ ENV DB_USER=${DB_USER}
 ENV DB_PASSWORD=${DB_PASSWORD}
 ENV DB_HOST=${DB_HOST}
 ENV DB_PORT=${DB_PORT}
+ENV MQTT_BROKER_HOST=${MQTT_BROKER_HOST}
+ENV MQTT_BROKER_PORT=${MQTT_BROKER_PORT}
+ENV MQTT_ADMIN_USER=${MQTT_ADMIN_USER}
+ENV MQTT_ADMIN_PASS=${MQTT_ADMIN_PASS}
+ENV MQTT_USERNAME=${MQTT_USERNAME}
+ENV MQTT_PASSWORD=${MQTT_PASSWORD}
+ENV SMS_URL=${SMS_URL}
+ENV SMS_USERID=${SMS_USERID}
+ENV SMS_PASSWORD=${SMS_PASSWORD}
+ENV SMS_SENDER=${SMS_SENDER}
+ENV SMS_PEID=${SMS_PEID}
+ENV ROOT_URL=${ROOT_URL}
 # 
 # Run database migrations
-RUN python manage.py makemigrations skytron_api  
-RUN python manage.py makemigrations  
-RUN python manage.py migrate
+#RUN python manage.py makemigrations skytron_api  
+#RUN python manage.py makemigrations  
+#RUN python manage.py migrate
 
 
 

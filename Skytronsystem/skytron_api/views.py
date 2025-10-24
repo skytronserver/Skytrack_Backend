@@ -9,7 +9,8 @@ import string
 HOST_STORAGE_PATH = '/host_storage'   
 e=""
 STATIC_OTP_CAP=False #True
-DEPLOY_URL = 'gromed.in'   
+import os
+DEPLOY_URL = os.getenv("ROOT_URL", "skytron.in")   
 EMAIL_ACTIVE=False
 
 REMOVE_OTP_CAP=False #True
@@ -1652,14 +1653,15 @@ def gps_em_data_log_table(request ):
 
 
 def send_SMS(no,text,tpid):
-    url = "http://tra.bulksmshyderabad.co.in/websms/sendsms.aspx"
+    import os
+    url = os.getenv("SMS_URL", "http://tra.bulksmshyderabad.co.in/websms/sendsms.aspx")
     params = {
-        'userid': "Gobell",
-        'password':"1234566",
-        'sender': "SKYTRN",
+        'userid': os.getenv("SMS_USERID", "Gobell"),
+        'password': os.getenv("SMS_PASSWORD", "1234566"),
+        'sender': os.getenv("SMS_SENDER", "SKYTRN"),
         'mobileno': no,
         'msg': text,
-        'peid': '1001371511701977986',
+        'peid': os.getenv("SMS_PEID", "1001371511701977986"),
         'tpid':  tpid
     } 
 
@@ -1679,14 +1681,15 @@ def send_SMS(no,text,tpid):
 
 def sms_send(no,text,tpid):
     #text = "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
-    url = "http://tra.bulksmshyderabad.co.in/websms/sendsms.aspx"
+    import os
+    url = os.getenv("SMS_URL", "http://tra.bulksmshyderabad.co.in/websms/sendsms.aspx")
     params = {
-        'userid': "Gobell",
-        'password':"1234566",
-        'sender': "SKYTRN",
+        'userid': os.getenv("SMS_USERID", "Gobell"),
+        'password': os.getenv("SMS_PASSWORD", "1234566"),
+        'sender': os.getenv("SMS_SENDER", "SKYTRN"),
         'mobileno': no,
         'msg': text,
-        'peid': '1001371511701977986',
+        'peid': os.getenv("SMS_PEID", "1001371511701977986"),
         'tpid':  tpid
     } 
 
@@ -10426,7 +10429,7 @@ def send_email_confirmation(request ):
     email_confirmation_serializer = ConfirmationSerializer(data=email_confirmation_data)
     if email_confirmation_serializer.is_valid():
         email_confirmation_serializer.save()
-        url=f"https://skytron.in/{confirmation_token}"
+        url=f"https://{DEPLOY_URL}/{confirmation_token}"
         tpid ="1007515117119518623"
         text=f"Dear User,To confirm your registration in SkyTron platform, please click at the following link and validate the registration request-{url}The link will expire in 5 minutes.-SkyTron"
 
@@ -11698,10 +11701,10 @@ def validate_otp(request ):
             # Create/update MQTT user for existing session
             try:
                 mqtt_success = create_mqtt_user(session.user.mobile, session.token)
-                mqtt_token = session.token if mqtt_success else "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h"
+                mqtt_token = session.token if mqtt_success else "error_creating_mqtt_user1"
             except Exception as e:
                 print(f"MQTT user creation failed for existing session: {e}")
-                mqtt_token = "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h"
+                mqtt_token = "error_creating_mqtt_user2"
             
             return Response({'status':'Login Successful','token': session.token,'token2': mqtt_token,'user':UserSerializer2(session.user).data}, status=status.HTTP_200_OK)
 
@@ -11742,10 +11745,10 @@ def validate_otp(request ):
                 # Create/update MQTT user after successful OTP validation
                 try:
                     mqtt_success = create_mqtt_user(session.user.mobile, session.token)
-                    mqtt_token = session.token if mqtt_success else "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h"
+                    mqtt_token = session.token if mqtt_success else "error_creating_mqtt_user3"
                 except Exception as e:
                     print(f"MQTT user creation failed for OTP validation: {e}")
-                    mqtt_token = "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h"
+                    mqtt_token = "error_creating_mqtt_user4"
 
                 return Response({'status':'Login Successful','token': session.token,'token2': mqtt_token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
             except Exception as e:
