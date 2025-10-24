@@ -35,6 +35,10 @@ docker build -t skytron-backend-gps -f Skytronsystem/dockerfile.gps \
   --build-arg MQTT_USERNAME="$MQTT_USERNAME" \
   --build-arg MQTT_PASSWORD="$MQTT_PASSWORD" \
   --build-arg ROOT_URL="$ROOT_URL" \
+  --build-arg JWT_SECRET_KEY="$JWT_SECRET_KEY" \
+  --build-arg JWT_ALGORITHM="$JWT_ALGORITHM" \
+  --build-arg JWT_ACCESS_TOKEN_LIFETIME="$JWT_ACCESS_TOKEN_LIFETIME" \
+  --build-arg JWT_REFRESH_TOKEN_LIFETIME="$JWT_REFRESH_TOKEN_LIFETIME" \
   Skytronsystem/
  
 # Stop any running container with the same name
@@ -76,6 +80,10 @@ docker build -t skytron-backend-em -f Skytronsystem/dockerfile.em \
   --build-arg MQTT_USERNAME="$MQTT_USERNAME" \
   --build-arg MQTT_PASSWORD="$MQTT_PASSWORD" \
   --build-arg ROOT_URL="$ROOT_URL" \
+  --build-arg JWT_SECRET_KEY="$JWT_SECRET_KEY" \
+  --build-arg JWT_ALGORITHM="$JWT_ALGORITHM" \
+  --build-arg JWT_ACCESS_TOKEN_LIFETIME="$JWT_ACCESS_TOKEN_LIFETIME" \
+  --build-arg JWT_REFRESH_TOKEN_LIFETIME="$JWT_REFRESH_TOKEN_LIFETIME" \
   Skytronsystem/
  
 # Stop any running container with the same name

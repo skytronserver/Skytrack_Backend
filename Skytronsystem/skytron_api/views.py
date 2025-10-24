@@ -45,6 +45,7 @@ import glob
 
                
 from django.utils.crypto import get_random_string   
+from .secure_token import generate_jwt_token, verify_jwt_token, decode_jwt_token   
 import sys
 from django.forms.models import model_to_dict
 from django.db import transaction
@@ -3141,8 +3142,24 @@ def create_user(role, req):
 
         user.save()
 
-        # Create token
-        token = Token.objects.create(user=user, key=new_password)  
+        # Create token with JWT
+        from .secure_token import generate_jwt_token
+        jwt_token = generate_jwt_token(
+            user_id=user.id,
+            mobile=user.mobile,
+            session_metadata={
+                "session_type": "user_creation",
+                "role": user.role
+            }
+        )
+        # If we have a JWT, return it directly. Don't store the long JWT in
+        # the legacy Token table (Token.key is varchar(40)). Only create a
+        # legacy Token when JWT isn't available.
+        if jwt_token:
+            token_value = jwt_token
+        else:
+            token_obj = Token.objects.create(user=user)
+            token_value = token_obj.key
 
         return [user, None, new_password]
 
@@ -10941,7 +10958,24 @@ def reset_password(request ):
         # Save the User instance
         
         Token.objects.filter(user=user).delete()
-        token=Token.objects.create(user=user,key=new_password) 
+        
+        # Create token with JWT
+        from .secure_token import generate_jwt_token
+        jwt_token = generate_jwt_token(
+            user_id=user.id,
+            mobile=user.mobile,
+            session_metadata={
+                "session_type": "password_reset",
+                "role": user.role
+            }
+        )
+        # Do not persist JWT into legacy Token table. Use JWT directly when
+        # available; otherwise create a short legacy Token.
+        if jwt_token:
+            token_value = jwt_token
+        else:
+            token_obj = Token.objects.create(user=user)
+            token_value = token_obj.key
         
         #if error:  # Rollback user creation if dealer creation fails
         #            return error  # Return the Response object from safe_create
@@ -11039,19 +11073,30 @@ def user_login(request ):
                 otp = str(random.randint(100000, 999999))
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
-        token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(30))
-         
-        token  = Token.objects.create(user=user)  
-        token=str(token.key)
+        
+        # Generate secure JWT token instead of random string
+        jwt_token = generate_jwt_token(
+            user_id=user.id,
+            user_mobile=user.mobile,
+            session_data={"login_type": "otp_flow", "status": "otpsent"}
+        )
+        
+        # Prefer returning JWT directly; only create a legacy Token when
+        # JWT isn't available.
+        if jwt_token:
+            token_value = jwt_token
+        else:
+            token_obj = Token.objects.create(user=user)
+            token_value = str(token_obj.key)
              
 
         
         session_data = {
             'user': user.id,
-            'token': str(token),
-            'otp': otp,
+            'token': token_value,
+            'otp': int(otp),  # Convert string OTP to integer for IntegerField
             'status':'otpsent', #'login',
-            'login_time': timezone.now(),
+            'loginTime': timezone.now(),
         } 
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
@@ -11087,9 +11132,10 @@ def user_login(request ):
                 [user.email],
                 fail_silently=False,
             )  
-            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
+            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token_value,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
         else:
-            return Response({'error': 'Failed to create session'}, status=400)
+            print("Session validation errors:", session_serializer.errors)
+            return Response({'error': 'Failed to create session', 'details': session_serializer.errors}, status=400)
 
 
 
@@ -11504,14 +11550,25 @@ def temp_user_logout(request ):
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
 
-        token  = Token.objects.create(user=user) 
+        # Generate secure JWT token for OTP flow
+        jwt_token = generate_jwt_token(
+            user_id=user.id,
+            user_mobile=user.mobile,
+            session_data={"login_type": "password_otp_flow", "status": "otpsent"}
+        )
+        
+        if jwt_token:
+            token_value = jwt_token
+        else:
+            token_obj = Token.objects.create(user=user)
+            token_value = str(token_obj.key)
 
         session_data = {
             'user': user.id,
-            'token': str(token.key),
-            'otp': otp,
+            'token': token_value,
+            'otp': int(otp),  # Convert string OTP to integer for IntegerField
             'status': 'otpsent',
-            'login_time': timezone.now(),
+            'loginTime': timezone.now(),
         } 
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
@@ -11526,9 +11583,10 @@ def temp_user_logout(request ):
                 [user.email],
                 fail_silently=False,
             )  
-            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token.key,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
+            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token_value,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
         else:
-            return Response({'error': 'Failed to create session'}, status=400)
+            print("Session validation errors:", session_serializer.errors)
+            return Response({'error': 'Failed to create session', 'details': session_serializer.errors}, status=400)
 
     """
 
@@ -11628,16 +11686,25 @@ def user_login_app(request ):
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
 
-        token = Token.objects.create(user=user) 
+        # Generate secure JWT token for web OTP flow
+        jwt_token = generate_jwt_token(
+            user_id=user.id,
+            user_mobile=user.mobile,
+            session_data={"login_type": "web_otp_flow", "status": "otpsent"}
+        )
         
-       
+        if jwt_token:
+            token_value = jwt_token
+        else:
+            token_obj = Token.objects.create(user=user)
+            token_value = str(token_obj.key)
 
         session_data = {
             'user': user.id,
-            'token': str(token.key),
-            'otp': otp,
+            'token': token_value,
+            'otp': int(otp),  # Convert string OTP to integer for IntegerField
             'status': 'otpsent',
-            'login_time': timezone.now(),
+            'loginTime': timezone.now(),
         } 
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
@@ -11655,9 +11722,10 @@ def user_login_app(request ):
             uu=get_user_object(user,user.role)
             if uu:
                 uu = recursive_model_to_dict(uu,["users"]) 
-            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token.key,'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
+            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token_value,'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
         else:
-            return Response({'error': 'Failed to create session'}, status=400)
+            print("Session validation errors:", session_serializer.errors)
+            return Response({'error': 'Failed to create session', 'details': session_serializer.errors}, status=400)
 
 
 @api_view(['POST'])
@@ -11725,11 +11793,29 @@ def validate_otp(request ):
             session.status = 'login'
             Token.objects.filter(user=session.user).delete()
 
-            token = Token.objects.create(user=session.user) 
+            # Generate secure JWT token for authenticated session
+            jwt_token = generate_jwt_token(
+                user_id=session.user.id,
+                user_mobile=session.user.mobile,
+                session_data={
+                    "login_type": "otp_validated", 
+                    "status": "authenticated",
+                    "login_time": timezone.now().isoformat(),
+                    "role": session.user.role
+                }
+            )
             
-            session.token=str(token.key)
+            # Prefer returning the JWT directly. Only create a legacy Token
+            # when JWT isn't available.
+            if jwt_token:
+                token_value = jwt_token
+            else:
+                token_obj = Token.objects.create(user=session.user)
+                token_value = str(token_obj.key)
+
+            session.token = token_value
              
-            session.login_time=timezone.now(),
+            session.loginTime=timezone.now()
       
             session.save()
             try:

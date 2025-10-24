@@ -60,12 +60,28 @@ def authenticate_user_db(mobile, token_key):
             log_message(f"User not found with mobile: {mobile}")
             return False, None
         
-        # Check if token exists and belongs to user
+        # Try JWT verification first (stateless). If token is a valid JWT and
+        # contains the expected user_id that matches this user, authenticate.
+        try:
+            from skytron_api.secure_token import verify_jwt_token, decode_jwt_token
+            if verify_jwt_token(token_key):
+                payload = decode_jwt_token(token_key)
+                user_id_in_token = payload.get('user_id') if payload else None
+                if user_id_in_token and int(user_id_in_token) == user.id:
+                    log_message(f"Successfully authenticated user via JWT: {mobile} (ID: {user.id})")
+                    return True, user
+                else:
+                    log_message(f"JWT provided but does not match user: {mobile}")
+                    return False, None
+        except Exception as e:
+            log_message(f"JWT verification error: {e}")
+
+        # Fallback to legacy Token DB lookup
         token = Token.objects.filter(key=token_key, user=user).first()
         if not token:
             log_message(f"Invalid token for user: {mobile}")
             return False, None
-        
+
         log_message(f"Successfully authenticated user: {mobile} (ID: {user.id})")
         return True, user
         

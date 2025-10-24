@@ -63,7 +63,8 @@ RUN pip install \
     django-filter \ 
     django-redis \
     django-cors-headers bleach\  
-    gunicorn
+    gunicorn \
+    PyJWT
 
 # Set the working directory in the container
 WORKDIR /app
@@ -114,6 +115,10 @@ ARG SMS_PASSWORD
 ARG SMS_SENDER
 ARG SMS_PEID
 ARG ROOT_URL
+ARG JWT_SECRET_KEY
+ARG JWT_ALGORITHM
+ARG JWT_ACCESS_TOKEN_LIFETIME
+ARG JWT_REFRESH_TOKEN_LIFETIME
 
 ENV MAIL_ID=${MAIL_ID}
 ENV MAIL_PW=${MAIL_PW}
@@ -139,6 +144,10 @@ ENV SMS_PASSWORD=${SMS_PASSWORD}
 ENV SMS_SENDER=${SMS_SENDER}
 ENV SMS_PEID=${SMS_PEID}
 ENV ROOT_URL=${ROOT_URL}
+ENV JWT_SECRET_KEY=${JWT_SECRET_KEY}
+ENV JWT_ALGORITHM=${JWT_ALGORITHM}
+ENV JWT_ACCESS_TOKEN_LIFETIME=${JWT_ACCESS_TOKEN_LIFETIME}
+ENV JWT_REFRESH_TOKEN_LIFETIME=${JWT_REFRESH_TOKEN_LIFETIME}
 # 
 # Run database migrations
 #RUN python manage.py makemigrations skytron_api  
