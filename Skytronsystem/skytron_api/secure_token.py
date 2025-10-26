@@ -24,8 +24,8 @@ class SecureTokenManager:
         # Get JWT configuration from environment variables
         self.secret_key = os.getenv("JWT_SECRET_KEY", "default-fallback-secret-key")
         self.algorithm = os.getenv("JWT_ALGORITHM", "HS256")
-        self.access_token_lifetime = int(os.getenv("JWT_ACCESS_TOKEN_LIFETIME", "3600"))  # 1 hour default
-        self.refresh_token_lifetime = int(os.getenv("JWT_REFRESH_TOKEN_LIFETIME", "86400"))  # 24 hours default
+        self.access_token_lifetime = int(os.getenv("JWT_ACCESS_TOKEN_LIFETIME", "36000"))  # 1 hour default
+        self.refresh_token_lifetime = int(os.getenv("JWT_REFRESH_TOKEN_LIFETIME", "864000"))  # 24 hours default
         
     def generate_jwt_token(self, user_id, user_mobile=None, session_data=None, token_type="access"):
         """

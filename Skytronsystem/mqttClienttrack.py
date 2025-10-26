@@ -128,7 +128,7 @@ def Process_sosEx_Data(msg,topic_parts):
             except AuthenticationFailed as e:
                 error_message = f"Authentication error: {str(e)}"
                 print(error_message)
-                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": error_message}))
+                #client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": error_message}))
                 #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
                 return
 
@@ -243,7 +243,7 @@ def Process_owner_Data(msg,topic_parts):
             except AuthenticationFailed as e:
                 error_message = f"Authentication error: {str(e)}"
                 print(error_message)
-                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+                #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
                 return
 
 

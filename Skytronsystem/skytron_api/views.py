@@ -103,6 +103,9 @@ from django.utils.timezone import now
 
 # Import MQTT user creation function (relative import)
 from .mqtt_user_creator import create_mqtt_user
+import paho.mqtt.client as mqtt
+import ssl
+import threading
  
 #python3 -m pip install pdfkit
 #sudo apt-get install wkhtmltopdf
@@ -128,6 +131,53 @@ from .throttles import AuthRateThrottle, LoginRateThrottle, OTPRateThrottle, Pas
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def send_sos_mqtt_message(imei):
+    """
+    Send SOS=1 message to device via MQTT deviceResponse topic
+    This function runs in a separate thread to avoid blocking the API response
+    """
+    def mqtt_publisher():
+        try:
+            # MQTT Configuration (matching the existing mqttClienttrack.py)
+            BROKER_URL = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")
+            BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
+            MQTT_USERNAME = os.getenv("MQTT_USERNAME", "6026969588")
+            MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h")
+            ROOT_CA = "/app/keys/ca.crt"
+            
+            # Create MQTT client
+            client = mqtt.Client()
+            client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+            client.tls_set(ca_certs=ROOT_CA, tls_version=ssl.PROTOCOL_TLS)
+            
+            # Connect to broker
+            client.connect(BROKER_URL, BROKER_PORT, 60)
+            
+            # Create SOS message
+            sos_message = {
+                "sos": 1
+            }
+            
+            # Publish to device response topic
+            response_topic = f"deviceResponse/{imei}"
+            response_json = json.dumps(sos_message)
+            
+            result = client.publish(response_topic, response_json)
+            result.wait_for_publish()
+            
+            print(f"[SOS MQTT] Successfully sent SOS message to {response_topic}: {response_json}", flush=True)
+            
+            client.disconnect()
+            
+        except Exception as e:
+            print(f"[SOS MQTT] Error sending SOS message to {imei}: {e}", flush=True)
+    
+    # Run MQTT publishing in a separate thread to avoid blocking
+    mqtt_thread = threading.Thread(target=mqtt_publisher)
+    mqtt_thread.daemon = True
+    mqtt_thread.start()
 
 
 def replace_text_in_docx_in_memory(template_path, replacements): 
@@ -11390,10 +11440,23 @@ def temp_user_BLEValidate(request ):
         if len(ble_key)<10:
             return JsonResponse({'success': False, 'error': 'Invalid ble_key'}) 
 
+        # Check if BLE key exists with active status
+        try:
+            ble_key_obj = BleKey.objects.get(key=ble_key, active=True)
+        except BleKey.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Invalid BLE key'})
+
         tempu=TempUser.objects.filter(online=True,  session_key=session_key).last()
         if not tempu:
             return JsonResponse({'success': False, 'error': 'Online User not found'})
          
+        # Update BLE key status to inactive before proceeding
+        ble_key_obj.active = False
+        ble_key_obj.save()
+        
+        # Send SOS message via MQTT to the device
+        send_sos_mqtt_message(ble_key_obj.imei)
+        
         tempu.last_activity = timezone.now() 
         tempu.ble_key = ble_key
 
