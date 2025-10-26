@@ -47,7 +47,8 @@ RUN pip install \
     django-filter \
     django-cors-headers bleach python-magic\ 
     gunicorn \
-    django-redis
+    django-redis PyJWT
+
 
 # Set the working directory in the container
 WORKDIR /app

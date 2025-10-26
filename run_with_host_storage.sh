@@ -30,6 +30,12 @@ echo "Redis is running and reachable at redis://skytron-redis:6379"
 
 # Build the Docker image with build arguments
 docker build -t skytron-backend-api -f Skytronsystem/dockerfile.api \
+  --build-arg http_proxy=http://192.0.2.12:8080 \
+  --build-arg https_proxy=http://192.0.2.12:8080 \
+  --build-arg HTTP_PROXY=http://192.0.2.12:8080 \
+  --build-arg HTTPS_PROXY=http://192.0.2.12:8080 \
+  --build-arg ftp_proxy=http://192.0.2.12:8080 \
+  --build-arg FTP_PROXY=http://192.0.2.12:8080 \
   --build-arg MAIL_ID="$MAIL_ID" \
   --build-arg MAIL_PW="$MAIL_PW" \
   --build-arg DEBUG="$DEBUG" \
