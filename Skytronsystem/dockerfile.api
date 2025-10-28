@@ -64,7 +64,7 @@ RUN pip install \
     django-redis \
     django-cors-headers bleach\  
     gunicorn \
-    PyJWT paho-mqtt 
+    PyJWT paho-mqtt  pycryptodome
 
 # Set the working directory in the container
 WORKDIR /app

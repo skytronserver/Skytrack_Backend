@@ -11441,22 +11441,77 @@ def temp_user_BLEValidate(request ):
         if len(ble_key)<10:
             return JsonResponse({'success': False, 'error': 'Invalid ble_key'}) 
 
-        # Check if BLE key exists with active status
+        # Check if BLE key exists with active status (primary validation)
+        ble_key_obj = None
         try:
             ble_key_obj = BleKey.objects.get(key=ble_key, active=True)
         except BleKey.DoesNotExist:
-            return JsonResponse({'success': False, 'error': 'Invalid BLE key'})
+            ble_key_obj = None
+
+        # If not found in DB, try alternate validation by decrypting the token
+        if ble_key_obj is None:
+            ALT_REQUIRED_SUBSTRING = "734iugukegfiwg7734fjgjhghjghj"
+
+            def _unpad_pkcs7(data: bytes) -> bytes:
+                if not data:
+                    raise ValueError("empty data")
+                BLOCK = 16
+                pad = data[-1]
+                if pad == 0 or pad > BLOCK:
+                    raise ValueError("bad pkcs7 pad")
+                if data[-pad:] != bytes([pad]) * pad:
+                    raise ValueError("bad pkcs7 content")
+                return data[:-pad]
+
+            def decrypt_token_hex(token_hex: str) -> str:
+                # Import locally to avoid hard dependency during module import
+                try:
+                    from Crypto.Cipher import AES  # pycryptodome
+                except Exception as _imp_err:
+                    raise RuntimeError("crypto_unavailable") from _imp_err
+
+                # Must match ENCRYPTION_KEY in device firmware (ql_ble_demo.c)
+                ENCRYPTION_KEY = bytes([
+                    0x4d, 0x61, 0x70, 0x57, 0x61, 0x6c, 0x61, 0x2d,
+                    0x53, 0x65, 0x63, 0x6b, 0x65, 0x74, 0x2d, 0x31
+                ])  # b"Mapwala-Seket-1"
+
+                raw = bytes.fromhex(token_hex)
+                BLOCK = 16
+                if len(raw) < BLOCK * 2:
+                    raise ValueError("token too short")
+                iv = raw[:BLOCK]
+                ct = raw[BLOCK:]
+                cipher = AES.new(ENCRYPTION_KEY, AES.MODE_CBC, iv)
+                pt = cipher.decrypt(ct)
+                pt = _unpad_pkcs7(pt)
+                return pt.decode("utf-8", errors="strict")
+
+            alt_valid = False
+            try:
+                plaintext = decrypt_token_hex(ble_key.strip())
+                # Accept if required substring present
+                if ALT_REQUIRED_SUBSTRING in plaintext:
+                    alt_valid = True
+            except Exception as _dec_err:
+                # Keep alternate invalid silently; we'll reject below if both validations fail
+                alt_valid = False
+
+            if not alt_valid:
+                return JsonResponse({'success': False, 'error': 'Invalid BLE key'})
 
         tempu=TempUser.objects.filter(online=True,  session_key=session_key).last()
         if not tempu:
             return JsonResponse({'success': False, 'error': 'Online User not found'})
          
-        # Update BLE key status to inactive before proceeding
-        ble_key_obj.active = False
-        ble_key_obj.save()
-        
-        # Send SOS message via MQTT to the device
-        send_sos_mqtt_message(ble_key_obj.imei)
+        # If DB-validated, mark inactive and send SOS to the specific device
+        if ble_key_obj is not None:
+            ble_key_obj.active = False
+            ble_key_obj.save()
+            try:
+                send_sos_mqtt_message(ble_key_obj.imei)
+            except Exception:
+                pass
         
         tempu.last_activity = timezone.now() 
         tempu.ble_key = ble_key
