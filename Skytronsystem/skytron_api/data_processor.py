@@ -706,19 +706,20 @@ def process_emergency_data(data_str, source="unknown"):
         close_old_connections()
 
 
-def generate_random_ble_key(hex_length=128):
-    """Generate a random BLE key as a hexadecimal string.
+def generate_random_ble_key(length=15):
+    """Generate a random BLE key using Base32 alphabet (no padding).
+
+    Keys are 15 characters long and use the character set
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".
 
     Args:
-        hex_length (int): Total number of hex characters to generate. Must be even.
+        length (int): Length of the key. Default 15.
 
     Returns:
-        str: A random lowercase hexadecimal string of length `hex_length`.
+        str: A random uppercase Base32-like string of length `length`.
     """
-    # Ensure even length (each byte -> 2 hex chars). Default 128 hex chars = 64 bytes
-    if hex_length % 2 != 0:
-        hex_length += 1
-    return secrets.token_hex(hex_length // 2)
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
 def generate_ble_keys_for_device(imei):
@@ -730,15 +731,14 @@ def generate_ble_keys_for_device(imei):
         # First, deactivate any existing keys for this IMEI
         BleKey.objects.filter(imei=imei).update(active=False)
         
-        # Generate 30 new keys
+        # Generate 30 new keys (15-char Base32 alphabet)
         keys = []
         for i in range(30):
-            # Generate 128-character lowercase hex key
-            key_value = generate_random_ble_key(128)
+            key_value = generate_random_ble_key(15)
             
             # Ensure uniqueness
             while BleKey.objects.filter(key=key_value).exists():
-                key_value = generate_random_ble_key(128)
+                key_value = generate_random_ble_key(15)
             
             # Create the BLE key
             ble_key = BleKey.objects.create(
@@ -764,15 +764,12 @@ def get_device_response_data(imei):
         # Check if we have active BLE keys for this device
         active_keys = BleKey.objects.filter(imei=imei, active=True).order_by('entry_time')
 
-        # Helper: validate key is 128-char lowercase hex
-        def _is_valid_hex_128(s: str) -> bool:
-            try:
-                if len(s) != 128:
-                    return False
-                int(s, 16)  # will raise if not hex
-                return True
-            except Exception:
+        # Helper: validate key is 15-char using Base32 alphabet
+        def _is_valid_b32_15(s: str) -> bool:
+            if not s or len(s) != 15:
                 return False
+            alphabet = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
+            return all(c in alphabet for c in s.upper())
 
         count = active_keys.count()
         need_regen = count != 30
@@ -780,18 +777,18 @@ def get_device_response_data(imei):
         if not need_regen:
             # Validate each key for new format
             for k in active_keys:
-                val = (k.key or '').strip().lower()
-                if not _is_valid_hex_128(val):
+                val = (k.key or '').strip().upper()
+                if not _is_valid_b32_15(val):
                     need_regen = True
                     break
                 keys_list.append(val)
 
         if need_regen:
-            print(f"Device {imei} needs new BLE keys (current: {count}); regenerating 128-hex keys", flush=True)
+            print(f"Device {imei} needs new BLE keys (current: {count}); regenerating 15-char Base32 keys", flush=True)
             keys = generate_ble_keys_for_device(imei)
         else:
             keys = keys_list
-            print(f"Using existing 128-hex BLE keys for device {imei}", flush=True)
+            print(f"Using existing 15-char Base32 BLE keys for device {imei}", flush=True)
         
         # Create response data
         response_data = {
