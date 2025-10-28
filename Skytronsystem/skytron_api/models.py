@@ -1540,7 +1540,8 @@ class EMUserLocation(models.Model):
 
 class BleKey(models.Model):
     objects = SafeCreateManager()
-    key = models.CharField(max_length=25, unique=True, verbose_name="BLE Key")
+    # Increased length to support 128-character hexadecimal keys
+    key = models.CharField(max_length=128, unique=True, verbose_name="BLE Key")
     imei = models.CharField(max_length=15, verbose_name="Device IMEI")
     active = models.BooleanField(default=True, verbose_name="Active Status")
     entry_time = models.DateTimeField(auto_now_add=True, verbose_name="Entry Time")

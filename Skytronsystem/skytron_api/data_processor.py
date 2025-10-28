@@ -706,11 +706,19 @@ def process_emergency_data(data_str, source="unknown"):
         close_old_connections()
 
 
-def generate_random_ble_key(length=25):
-    """Generate a random BLE key string of specified length"""
-    # Use uppercase letters, lowercase letters, and digits
-    characters = string.ascii_letters + string.digits
-    return ''.join(secrets.choice(characters) for _ in range(length))
+def generate_random_ble_key(hex_length=128):
+    """Generate a random BLE key as a hexadecimal string.
+
+    Args:
+        hex_length (int): Total number of hex characters to generate. Must be even.
+
+    Returns:
+        str: A random lowercase hexadecimal string of length `hex_length`.
+    """
+    # Ensure even length (each byte -> 2 hex chars). Default 128 hex chars = 64 bytes
+    if hex_length % 2 != 0:
+        hex_length += 1
+    return secrets.token_hex(hex_length // 2)
 
 
 def generate_ble_keys_for_device(imei):
@@ -725,11 +733,12 @@ def generate_ble_keys_for_device(imei):
         # Generate 30 new keys
         keys = []
         for i in range(30):
-            key_value = generate_random_ble_key(25)
+            # Generate 128-character lowercase hex key
+            key_value = generate_random_ble_key(128)
             
             # Ensure uniqueness
             while BleKey.objects.filter(key=key_value).exists():
-                key_value = generate_random_ble_key(25)
+                key_value = generate_random_ble_key(128)
             
             # Create the BLE key
             ble_key = BleKey.objects.create(
