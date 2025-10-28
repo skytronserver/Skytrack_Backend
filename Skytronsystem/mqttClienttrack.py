@@ -315,7 +315,7 @@ def Process_Device_Data(msg):
         # Send device response if IMEI was found
         if imei:
             try:
-                # Get BLE keys and response data
+                # Get _
                 response_data = get_device_response_data(imei)
                 
                 # Publish response to deviceResponse/<IMEI>

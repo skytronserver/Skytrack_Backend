@@ -763,14 +763,35 @@ def get_device_response_data(imei):
     try:
         # Check if we have active BLE keys for this device
         active_keys = BleKey.objects.filter(imei=imei, active=True).order_by('entry_time')
-        
-        # If we don't have 30 active keys, generate new ones
-        if active_keys.count() != 30:
-            print(f"Device {imei} needs new BLE keys (current: {active_keys.count()})", flush=True)
+
+        # Helper: validate key is 128-char lowercase hex
+        def _is_valid_hex_128(s: str) -> bool:
+            try:
+                if len(s) != 128:
+                    return False
+                int(s, 16)  # will raise if not hex
+                return True
+            except Exception:
+                return False
+
+        count = active_keys.count()
+        need_regen = count != 30
+        keys_list = []
+        if not need_regen:
+            # Validate each key for new format
+            for k in active_keys:
+                val = (k.key or '').strip().lower()
+                if not _is_valid_hex_128(val):
+                    need_regen = True
+                    break
+                keys_list.append(val)
+
+        if need_regen:
+            print(f"Device {imei} needs new BLE keys (current: {count}); regenerating 128-hex keys", flush=True)
             keys = generate_ble_keys_for_device(imei)
         else:
-            keys = [key.key for key in active_keys]
-            print(f"Using existing BLE keys for device {imei}", flush=True)
+            keys = keys_list
+            print(f"Using existing 128-hex BLE keys for device {imei}", flush=True)
         
         # Create response data
         response_data = {
