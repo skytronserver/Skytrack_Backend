@@ -4650,7 +4650,7 @@ def FEx_broadcastlist(request ):
     uo=get_user_object(user,role)
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
-    if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex'or uo.user_type=='PCR'or uo.user_type=='ACR' :
+    if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex' or uo.user_type=='PCR' or uo.user_type=='ACR' :
  
         return Response({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
     try:  
@@ -4741,12 +4741,13 @@ def FEx_broadcastaccept(request ):
 
     if not uo:
         return JsonResponse({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
-    if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex'or uo.user_type=='PCR'or uo.user_type=='ACR' :
+    #if not uo.user_type=='police_ex' or uo.user_type=='ambulance_ex' or uo.user_type=='PCR' or uo.user_type=='ACR' :
  
-        return JsonResponse({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
+    #    return JsonResponse({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
+        print("sosex type :::",uo.user_type)
         id =request.data.get("broadcast_id")  
-        ee=EMCallBroadcast.objects.filter( id = id,type=uo.user_type,status="pending").last()
+        ee=EMCallBroadcast.objects.filter( id = id,status="pending").last()
         if not ee:
             return JsonResponse({'error': "Not found"}, status=400)
         ee.status="accepted"

@@ -47,7 +47,7 @@ RUN pip install \
     django-filter \
     django-cors-headers bleach python-magic\ 
     gunicorn \
-    django-redis PyJWT
+    django-redis PyJWT paho-mqtt
 
 
 # Set the working directory in the container

@@ -14,6 +14,7 @@ import jwt
 import time
 from datetime import datetime, timedelta
 from django.utils import timezone
+from django.conf import settings
 
 class SecureTokenManager:
     """
@@ -21,11 +22,12 @@ class SecureTokenManager:
     """
     
     def __init__(self):
-        # Get JWT configuration from environment variables
-        self.secret_key = os.getenv("JWT_SECRET_KEY", "default-fallback-secret-key")
-        self.algorithm = os.getenv("JWT_ALGORITHM", "HS256")
-        self.access_token_lifetime = int(os.getenv("JWT_ACCESS_TOKEN_LIFETIME", "36000"))  # 1 hour default
-        self.refresh_token_lifetime = int(os.getenv("JWT_REFRESH_TOKEN_LIFETIME", "864000"))  # 24 hours default
+        # Hardcoded JWT configuration for testing
+        # TODO: Move back to environment variables in production
+        self.secret_key = "skytrack-jwt-secret-key-2025-production-v1.0-secure-signing-key-abc123def456ghi789"
+        self.algorithm = "HS256"
+        self.access_token_lifetime = 36000  # 10 hours
+        self.refresh_token_lifetime = 864000  # 24 hours
         
     def generate_jwt_token(self, user_id, user_mobile=None, session_data=None, token_type="access"):
         """

@@ -22,9 +22,6 @@ from django.contrib.auth.models import User
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
-# Import JWT authentication for proper token handling
-from skytron_api.jwt_authentication import HybridAuthentication
-
 # Import our common data processor
 from skytron_api.data_processor import process_device_tracking_data, process_emergency_data, get_device_response_data
 
@@ -81,7 +78,7 @@ client.loop_forever()
 
 
 
-authenticator = HybridAuthentication()
+authenticator = TokenAuthentication()
 # Callback when the client connects to the broker
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -107,21 +104,18 @@ def Process_sosEx_Data(msg,topic_parts):
         print("Parsed data:", data)
         token=data.get("token")
         if token:
-            # Use Token token format for JWT tokens
-            auth_header = f"Bearer {token}"
+            token = "Token "+token
             client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "update", "message": "user authentication in progress"}))
 
-            # Authenticate the token using HybridAuthentication
+            # Authenticate the token using TokenAuthentication
             try:
                 # We need a request-like object to pass into the authenticate method
                 class FakeRequest:
-                    def __init__(self, auth_header):
-                        self.META = {'HTTP_AUTHORIZATION': auth_header}
-                        self.data = {}  # Add empty data dict for compatibility
-                        self.GET = {}   # Add empty GET dict for compatibility
-                        print(f"Authorization Header: {auth_header}")
+                    def __init__(self, token):
+                        self.META = {'Authorization': f'{token}'}
+                        print(f"Authorization Header: Token {token}")
                 
-                fake_request = FakeRequest(auth_header)
+                fake_request = FakeRequest(token)
                 user_auth_tuple = authenticator.authenticate(fake_request)
 
                 if user_auth_tuple is None:
@@ -231,18 +225,15 @@ def Process_owner_Data(msg,topic_parts):
         token=data.get("token")
         
         if token:
-            # Use Token token format for JWT tokens
-            auth_header = f"Bearer {token}"
+            token = "Token "+token
  
             try: 
                 class FakeRequest:
-                    def __init__(self, auth_header):
-                        self.META = {'HTTP_AUTHORIZATION': auth_header}
-                        self.data = {}  # Add empty data dict for compatibility
-                        self.GET = {}   # Add empty GET dict for compatibility
-                        print(f"Authorization Header: {auth_header}")
+                    def __init__(self, token):
+                        self.META = {'Authorization': f'{token}'}
+                        print(f"Authorization Header: Token {token}")
                 
-                fake_request = FakeRequest(auth_header)
+                fake_request = FakeRequest(token)
                 user_auth_tuple = authenticator.authenticate(fake_request)
 
                 if user_auth_tuple is None:
@@ -371,14 +362,14 @@ def on_message(client, userdata, msg):
  
         data = json.loads(msg.payload.decode())
         print(data)
-        token = "Bearer "+data.get("token")
+        token = "Token "+data.get("token")
 
-                    # Authenticate the token using HybridAuthentication
+        # Authenticate the token using TokenAuthentication
         try:
             # We need a request-like object to pass into the authenticate method
             class FakeRequest:
                 def __init__(self, token):
-                    self.META = {'HTTP_AUTHORIZATION': f'{token}'}
+                    self.META = {'Authorization': f'{token}'}
                     print(f"Authorization Header: Token {token}")
             
             fake_request = FakeRequest(token)
