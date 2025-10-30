@@ -138,10 +138,12 @@ def send_sos_mqtt_message(imei):
     Send SOS=1 message to device via MQTT deviceResponse topic
     This function runs in a separate thread to avoid blocking the API response
     """
+    
+     
     def mqtt_publisher():
         try:
             # MQTT Configuration (matching the existing mqttClienttrack.py)
-            BROKER_URL = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")
+            BROKER_URL = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")
             BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
             MQTT_USERNAME = os.getenv("MQTT_USERNAME", "6026969588")
             MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h")
