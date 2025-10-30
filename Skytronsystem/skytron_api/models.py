@@ -154,6 +154,37 @@ class RequestLogaaaaa(models.Model):
     def __str__(self):
         return self.ip_address
 
+
+class RegNoLookupLog(models.Model):
+    """
+    Logs successful non-auth registration-number lookups to TagGetVehicle.
+    Stores the resolved device tag, vehicle registration number, device IMEI,
+    and the provided request header values for authorization and sessionid.
+
+    This is meant for auditing/traceability of anonymous queries coming via
+    external systems.
+    """
+    objects = SafeCreateManager()
+
+    device_tag = models.ForeignKey('DeviceTag', on_delete=models.CASCADE, related_name='regno_lookup_logs')
+    vehicle_reg_no = models.CharField(max_length=64)
+    imei = models.CharField(max_length=32)
+    authorization = models.TextField(blank=True, null=True)
+    sessionid = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['vehicle_reg_no']),
+            models.Index(fields=['imei']),
+            models.Index(fields=['created_at']),
+        ]
+        verbose_name = 'Reg No Lookup Log'
+        verbose_name_plural = 'Reg No Lookup Logs'
+
+    def __str__(self):
+        return f"{self.vehicle_reg_no} -> {self.imei} @ {self.created_at}"
+
 class pointofinterests(models.Model): 
     status_choices = [
             ('Active', 'Active'),

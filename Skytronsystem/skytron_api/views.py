@@ -180,6 +180,9 @@ def send_sos_mqtt_message(imei):
     mqtt_thread.start()
 
 
+
+
+
 def replace_text_in_docx_in_memory(template_path, replacements): 
     doc = Document(template_path) 
     for paragraph in doc.paragraphs:
@@ -6588,6 +6591,24 @@ def TagGetVehicle(request ):
     if not request.user.is_authenticated:
         device_tag = DeviceTag.objects.filter(vehicle_reg_no=reg_no).last()
         if device_tag:
+            # Capture headers from anonymous caller (authorization, sessionid)
+            # Prefer Django's META keys, fallback to request.headers for robustness
+            auth_header = request.META.get('HTTP_AUTHORIZATION') or request.headers.get('authorization') or ''
+            session_id = request.META.get('HTTP_SESSIONID') or request.headers.get('sessionid') or ''
+
+            # Create an audit log record for this successful lookup
+            try:
+                RegNoLookupLog.objects.create(
+                    device_tag=device_tag,
+                    vehicle_reg_no=str(device_tag.vehicle_reg_no or reg_no or ''),
+                    imei=str(device_tag.device.imei),
+                    authorization=str(auth_header),
+                    sessionid=str(session_id),
+                )
+            except Exception:
+                # Do not block the primary response if logging fails
+                pass
+
             return JsonResponse({
                 'imei': str(device_tag.device.imei),
                 'reg_no': reg_no
@@ -11490,10 +11511,7 @@ def temp_user_BLEValidate(request ):
         if ble_key_obj is not None:
             ble_key_obj.active = False
             ble_key_obj.save()
-            try:
-                send_sos_mqtt_message(ble_key_obj.imei)
-            except Exception:
-                pass
+   
         
         tempu.last_activity = timezone.now() 
         tempu.ble_key = ble_key
@@ -11563,8 +11581,27 @@ def temp_user_emcall(request ):
         tempu.em_lat = em_lat
         tempu.em_lon = em_lon
 
+        # Attempt to trigger SOS for this session using latest RegNoLookupLog
+        sos_sent = False
+        imei_used = None
+        try:
+            incoming_session = (
+                request.META.get('HTTP_SESSIONID')
+                or request.headers.get('sessionid')
+                or session_key
+            )
+            if incoming_session:
+                lookup = RegNoLookupLog.objects.filter(sessionid=incoming_session).order_by('-created_at').first()
+                if lookup and lookup.imei:
+                    imei_used = str(lookup.imei)
+                    send_sos_mqtt_message(imei_used)
+                    sos_sent = True
+        except Exception:
+            # Do not fail the main flow on SOS send issues
+            pass
+
         tempu.save() 
-        return Response({'success': True,'session_key': session_key}, status=status.HTTP_200_OK) 
+        return Response({'success': True,'session_key': session_key, 'sos_sent': sos_sent, 'imei': imei_used}, status=status.HTTP_200_OK) 
     
     return JsonResponse({'success': False, 'error': 'Invalid input'}) 
 
