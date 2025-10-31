@@ -1868,8 +1868,14 @@ def get_live_vehicle_no(request ):
     try:
         if request.method == 'POST':
             # Fetch distinct vehicle registration numbers
-            #vehicles = GPSData.objects.all().values('device_tag').distinct()
-            vehicles = GPSData.objects.select_related('device_tag').distinct('device_tag')
+            # If the requester is a vehicle owner, restrict to their devices only
+            owner = get_user_object(request.user, "owner")
+
+            vehicles_qs = GPSData.objects.select_related('device_tag')
+            if owner:
+                vehicles_qs = vehicles_qs.filter(device_tag__vehicle_owner=owner)
+
+            vehicles = vehicles_qs.distinct('device_tag')
 
             if not vehicles:
                 return Response([])
@@ -2172,8 +2178,8 @@ def filter_VehicleOwner(request ):
         company_name = request.data.get('company_name', '')
         name = request.data.get('name', '')
         phone_no = request.data.get('phone_no', '')
-        address = request.data.get('address', '') 
-        address_State = request.data.get('address_State', '')
+        #address = request.data.get('address', '') 
+        #address_State = request.data.get('address_State', '')
         filters = {} 
         
         if uo2:  # Superadmin - should get all data
@@ -2184,8 +2190,8 @@ def filter_VehicleOwner(request ):
                     company_name__icontains=company_name,
                     users__name__icontains=name,
                     users__mobile__icontains=phone_no,
-                    users__address__icontains=address,
-                    users__address_State__icontains=address_State,
+                    #users__address__icontains=address,
+                    #users__address_State__icontains=address_State,
                 ).distinct()
             else:
                 manufacturers = VehicleOwner.objects.filter(
@@ -2193,8 +2199,8 @@ def filter_VehicleOwner(request ):
                     company_name__icontains=company_name,
                     users__name__icontains=name,
                     users__mobile__icontains=phone_no,
-                    users__address__icontains=address,
-                    users__address_State__icontains=address_State,
+                    #users__address__icontains=address,
+                    #users__address_State__icontains=address_State,
                 ).distinct()
         
         
@@ -2207,8 +2213,8 @@ def filter_VehicleOwner(request ):
                         company_name__icontains=company_name,
                         users__name__icontains=name,
                         users__mobile__icontains=phone_no,
-                        users__address__icontains=address,
-                        users__address_State__icontains=address_State,
+                        #users__address__icontains=address,
+                        #users__address_State__icontains=address_State,
                     ).distinct()
         
         
@@ -2221,8 +2227,8 @@ def filter_VehicleOwner(request ):
                     company_name__icontains=company_name,
                     users__name__icontains=name,
                     users__mobile__icontains=phone_no,
-                    users__address__icontains=address,
-                    users__address_State__icontains=address_State,
+                    #users__address__icontains=address,
+                    #users__address_State__icontains=address_State,
                 ).distinct()
             else:
                 manufacturers = VehicleOwner.objects.filter(
@@ -2232,8 +2238,8 @@ def filter_VehicleOwner(request ):
                     company_name__icontains=company_name,
                     users__name__icontains=name,
                     users__mobile__icontains=phone_no,
-                    users__address__icontains=address,
-                    users__address_State__icontains=address_State,
+                    #users__address__icontains=address,
+                    #users__address_State__icontains=address_State,
                 ).distinct()
 
         # Serialize the queryset
@@ -8244,12 +8250,14 @@ def create_Settings_hp_freq(request ):
 
      
      
-    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    role="superadmin"
-    user=request.user
-    uo=get_user_object(user,role)
-    if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    # Allow superadmin and device manufacturer
+    user = request.user
+    role_super = "superadmin"
+    role_man = "devicemanufacture"
+    super_user = get_user_object(user, role_super)
+    manu_user = get_user_object(user, role_man) if not super_user else None
+    if not super_user and not manu_user:
+        return Response({"error": f"Request must be from {role_super} or {role_man}."}, status=status.HTTP_400_BAD_REQUEST)
     
     user_id = request.user.id  
     data = {
@@ -8258,6 +8266,24 @@ def create_Settings_hp_freq(request ):
         #'status': 'Manufacturer_OTP_Sent',
     } 
     request_data = request.data.copy()
+
+    # If requester is a manufacturer, ensure they only create for their own device model
+    if manu_user:
+        devicemodel_id = request_data.get('devicemodel')
+        if not devicemodel_id:
+            return Response({'error': 'devicemodel is required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            devicemodel_id = int(devicemodel_id)
+        except (TypeError, ValueError):
+            return Response({'error': 'devicemodel must be an integer ID'}, status=status.HTTP_400_BAD_REQUEST)
+
+        dm = DeviceModel.objects.filter(id=devicemodel_id).select_related('created_by').last()
+        if not dm:
+            return Response({'error': 'Invalid devicemodel id'}, status=status.HTTP_400_BAD_REQUEST)
+        if dm.created_by != user:
+            return Response({'error': 'You can only create HP frequency for your own device models.'}, status=status.HTTP_403_FORBIDDEN)
+
+    # Set creator info
     request_data.update(data)
     #print(request_data)
     serializer = Settings_hp_freqSerializer(data=request_data)
@@ -8279,17 +8305,30 @@ def filter_Settings_hp_freq(request ):
 
     
     try:
-        # Create a dictionary to hold the filter parameters
-        filters = {}
-        # Add ID filter if provided
-        if True:
-            manufacturers = Settings_hp_freq.objects.filter(
-                 
-            ).distinct()
-        # Serialize the queryset
-        dealer_serializer = Settings_hp_freqSerializer(manufacturers, many=True)
-        # Return the serialized data as JSON response
-        return Response(dealer_serializer.data)
+        user = request.user
+        role_super = "superadmin"
+        role_man = "devicemanufacture"
+        super_user = get_user_object(user, role_super)
+        manu_user = get_user_object(user, role_man) if not super_user else None
+
+        qs = Settings_hp_freq.objects.all().select_related('devicemodel', 'createdby')
+
+        # Manufacturers can only see their own device models' settings
+        if manu_user and not super_user:
+            qs = qs.filter(devicemodel__created_by=user)
+
+        # Optional client-side narrowing by devicemodel id if provided
+        devicemodel_id = request.data.get('devicemodel')
+        if devicemodel_id:
+            try:
+                devicemodel_id = int(devicemodel_id)
+                qs = qs.filter(devicemodel_id=devicemodel_id)
+            except (TypeError, ValueError):
+                return Response({'error': 'devicemodel must be an integer ID'}, status=400)
+
+        qs = qs.distinct()
+        serializer = Settings_hp_freqSerializer(qs, many=True)
+        return Response(serializer.data)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
@@ -9819,6 +9858,7 @@ def homepage_stateAdmin(request ):
             seven_days_ago = now - timedelta(days=7)
             thirty_days_ago = now - timedelta(days=30)
             current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            current_month_start_date = current_month_start.date()
             
             # Filter data by state admin's state
             state_filter = profile.state
@@ -9889,45 +9929,35 @@ def homepage_stateAdmin(request ):
                 'Monthly_overspeeding_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
                     speed__gt=80,
-                    timestamp__gte=current_month_start
+                    date__gte=current_month_start_date
                 ).count(),
                 'Today_overspeeding_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
                     speed__gt=80,
-                    timestamp__date=today
+                    date=today
                 ).count(),
                 
                 # Emergency alerts (SOS button pressed)
                 'Total_emergency_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
-                    sos_status='1'  # Assuming '1' means SOS activated
+                    message_type='EMR'  # EMR indicates emergency
                 ).count(),
                 'This_month_emergency_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
-                    sos_status='1',
-                    timestamp__gte=current_month_start
+                    message_type='EMR',
+                    date__gte=current_month_start_date
                 ).count(),
                 'Today_emergency_Alert': EMGPSLocation.objects.filter(
                     device_tag__device__dealer__manufacturer__state=state_filter,
-                    sos_status='1',
-                    timestamp__date=today
+                    message_type='EMR',
+                    date=today
                 ).count(),
                 
                 # Harsh brake alerts (using acceleration data if available)
-                'Total_harsh_brake_Alert': EMGPSLocation.objects.filter(
-                    device_tag__device__dealer__manufacturer__state=state_filter,
-                    acceleration__lt=-5  # Assuming negative acceleration indicates braking
-                ).count(),
-                'This_month_harsh_brake_Alert': EMGPSLocation.objects.filter(
-                    device_tag__device__dealer__manufacturer__state=state_filter,
-                    acceleration__lt=-5,
-                    timestamp__gte=current_month_start
-                ).count(),
-                'Today_harsh_brake_Alert': EMGPSLocation.objects.filter(
-                    device_tag__device__dealer__manufacturer__state=state_filter,
-                    acceleration__lt=-5,
-                    timestamp__date=today
-                ).count(),
+                # Harsh brake alerts not available in EMGPSLocation schema; returning 0
+                'Total_harsh_brake_Alert': 0,
+                'This_month_harsh_brake_Alert': 0,
+                'Today_harsh_brake_Alert': 0,
 
                 # Device stock counts filtered by state
                 'Total_device_stock': device_stock_in_state.count(),
@@ -11100,7 +11130,10 @@ def user_login(request ):
         
         
         if not REMOVE_OTP_CAP:
-            password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
+            try:
+                password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
+            except:
+                return JsonResponse({'success': False, 'error': 'Invalid Password'}, status=status.HTTP_400_BAD_REQUEST)
         
             captchaSuccess=False
             try:
@@ -11799,7 +11832,13 @@ def user_login_app(request ):
         if not username or not password :
             return Response({'error': 'Incomplete credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         
-        password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
+        #password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
+        
+        try:
+                password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
+        except:
+                return JsonResponse({'success': False, 'error': 'Invalid Password'}, status=status.HTTP_400_BAD_REQUEST)
+        
         captchaSuccess=True
            
         if not password:

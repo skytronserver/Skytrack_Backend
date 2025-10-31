@@ -255,9 +255,9 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '10/minute',   # Limit anonymous users to 10 requests per minute (general APIs)
         'user': '1000/hour',    # Limit authenticated users to 1000 requests per hour (general APIs)
-        'auth': '5/minute',     # Limit authentication endpoints to 5 requests per minute
-        'login': '5/minute',    # Limit login endpoints to 5 requests per minute  
-        'otp': '5/minute',      # Limit OTP endpoints to 5 requests per minute
+        'auth': '10/minute',     # Limit authentication endpoints to 10 requests per minute
+        'login': '10/minute',    # Limit login endpoints to 10 requests per minute
+        'otp': '10/minute',      # Limit OTP endpoints to 10 requests per minute
         'password_reset': '3/minute',  # Limit password reset to 3 requests per minute
     },
 

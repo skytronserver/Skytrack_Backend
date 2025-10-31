@@ -12,34 +12,37 @@ class AuthRateThrottle(AnonRateThrottle):
     After 5 requests in 1 minute, block for 5 minutes
     """
     scope = 'auth'
-    
+
     def allow_request(self, request, view):
         """
-        Custom throttle logic with IP blocking
+        Custom throttle logic with IP blocking.
+        Important: Always invoke super().allow_request first so DRF sets
+        internal state like `self.history` used by wait().
         """
         if self.get_rate() is None:
             return True
 
-        # Get client IP
+        # Always call the parent to initialize self.history/self.duration
+        allowed = super().allow_request(request, view)
+
+        # Get client IP (after initializing parent state)
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
         if x_forwarded_for:
             ip = x_forwarded_for.split(',')[0].strip()
         else:
             ip = request.META.get('REMOTE_ADDR')
-        
-        # Check if IP is blocked
+
+        # Enforce IP block window
         blocked_key = f"auth_blocked_{ip}"
         if cache.get(blocked_key):
             return False
-        
-        # Use parent throttle logic
-        allowed = super().allow_request(request, view)
-        
-        # If throttle limit exceeded, block IP for 5 minutes
+
+        # If throttle limit exceeded, set a temporary IP block
         if not allowed:
-            cache.set(blocked_key, True, 300)  # Block for 5 minutes (300 seconds)
-            
-        return allowed
+            cache.set(blocked_key, True, 300)  # 5 minutes
+            return False
+
+        return True
 
 
 class LoginRateThrottle(AnonRateThrottle):
@@ -47,10 +50,13 @@ class LoginRateThrottle(AnonRateThrottle):
     Throttle for login endpoints - 5 requests per minute
     """
     scope = 'login'
-    
+
     def allow_request(self, request, view):
         if self.get_rate() is None:
             return True
+
+        # Always call parent first to set `self.history` for wait()
+        allowed = super().allow_request(request, view)
 
         # Get client IP
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
@@ -58,20 +64,18 @@ class LoginRateThrottle(AnonRateThrottle):
             ip = x_forwarded_for.split(',')[0].strip()
         else:
             ip = request.META.get('REMOTE_ADDR')
-        
-        # Check if IP is blocked
+
+        # Enforce IP block window
         blocked_key = f"login_blocked_{ip}"
         if cache.get(blocked_key):
             return False
-        
-        # Use parent throttle logic
-        allowed = super().allow_request(request, view)
-        
+
         # If throttle limit exceeded, block IP for 5 minutes
         if not allowed:
-            cache.set(blocked_key, True, 300)  # Block for 5 minutes
-            
-        return allowed
+            cache.set(blocked_key, True, 300)
+            return False
+
+        return True
 
 
 class OTPRateThrottle(AnonRateThrottle):
@@ -79,10 +83,13 @@ class OTPRateThrottle(AnonRateThrottle):
     Throttle for OTP endpoints - 5 requests per minute
     """
     scope = 'otp'
-    
+
     def allow_request(self, request, view):
         if self.get_rate() is None:
             return True
+
+        # Initialize parent state (self.history) for wait()
+        allowed = super().allow_request(request, view)
 
         # Get client IP
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
@@ -90,20 +97,18 @@ class OTPRateThrottle(AnonRateThrottle):
             ip = x_forwarded_for.split(',')[0].strip()
         else:
             ip = request.META.get('REMOTE_ADDR')
-        
-        # Check if IP is blocked
+
+        # Enforce IP block window
         blocked_key = f"otp_blocked_{ip}"
         if cache.get(blocked_key):
             return False
-        
-        # Use parent throttle logic
-        allowed = super().allow_request(request, view)
-        
+
         # If throttle limit exceeded, block IP for 5 minutes
         if not allowed:
-            cache.set(blocked_key, True, 300)  # Block for 5 minutes
-            
-        return allowed
+            cache.set(blocked_key, True, 300)
+            return False
+
+        return True
 
 
 class PasswordResetRateThrottle(AnonRateThrottle):
@@ -111,10 +116,13 @@ class PasswordResetRateThrottle(AnonRateThrottle):
     Throttle for password reset endpoints - 3 requests per minute (stricter)
     """
     scope = 'password_reset'
-    
+
     def allow_request(self, request, view):
         if self.get_rate() is None:
             return True
+
+        # Initialize parent state (self.history) for wait()
+        allowed = super().allow_request(request, view)
 
         # Get client IP
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
@@ -122,17 +130,15 @@ class PasswordResetRateThrottle(AnonRateThrottle):
             ip = x_forwarded_for.split(',')[0].strip()
         else:
             ip = request.META.get('REMOTE_ADDR')
-        
-        # Check if IP is blocked
+
+        # Enforce IP block window
         blocked_key = f"password_reset_blocked_{ip}"
         if cache.get(blocked_key):
             return False
-        
-        # Use parent throttle logic
-        allowed = super().allow_request(request, view)
-        
+
         # If throttle limit exceeded, block IP for 5 minutes
         if not allowed:
-            cache.set(blocked_key, True, 300)  # Block for 5 minutes
-            
-        return allowed
+            cache.set(blocked_key, True, 300)
+            return False
+
+        return True
