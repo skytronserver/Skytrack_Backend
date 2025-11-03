@@ -28,14 +28,24 @@ docker run -d \
   redis-server --appendonly yes
 echo "Redis is running and reachable at redis://skytron-redis:6379"
 
+# Decide whether to use proxy for docker build based on DB_HOST
+PROXY_ARGS=""
+if [ "$DB_HOST" = "10.192.136.184" ]; then
+  echo "Detected production DB_HOST ($DB_HOST): enabling proxy for Docker build"
+  PROXY_ARGS="\
+    --build-arg http_proxy=http://192.0.2.12:8080 \
+    --build-arg https_proxy=http://192.0.2.12:8080 \
+    --build-arg HTTP_PROXY=http://192.0.2.12:8080 \
+    --build-arg HTTPS_PROXY=http://192.0.2.12:8080 \
+    --build-arg ftp_proxy=http://192.0.2.12:8080 \
+    --build-arg FTP_PROXY=http://192.0.2.12:8080"
+else
+  echo "Detected non-production DB_HOST ($DB_HOST): building without proxy"
+fi
+
 # Build the Docker image with build arguments
 docker build -t skytron-backend-api -f Skytronsystem/dockerfile.api \
-  --build-arg http_proxy=http://192.0.2.12:8080 \
-  --build-arg https_proxy=http://192.0.2.12:8080 \
-  --build-arg HTTP_PROXY=http://192.0.2.12:8080 \
-  --build-arg HTTPS_PROXY=http://192.0.2.12:8080 \
-  --build-arg ftp_proxy=http://192.0.2.12:8080 \
-  --build-arg FTP_PROXY=http://192.0.2.12:8080 \
+  $PROXY_ARGS \
   --build-arg MAIL_ID="$MAIL_ID" \
   --build-arg MAIL_PW="$MAIL_PW" \
   --build-arg DEBUG="$DEBUG" \

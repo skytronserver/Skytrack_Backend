@@ -7275,7 +7275,8 @@ def SellListAvailableDeviceStock(request ):
     if not device_stock:
         return JsonResponse({'error': "no device found for this user avaialble for fitting "  }, status=400)
 
-    serializer =DeviceStockSerializer(device_stock, many=True)
+    # Include nested eSimProvider and related info in the response
+    serializer =DeviceStockSerializer2(device_stock, many=True)
     return JsonResponse({'data': serializer.data}, status=200)
 
 @api_view(['PATCH'])
@@ -7454,7 +7455,7 @@ def deviceStockFilter(request ):
     # Use values() to get only required data as dictionaries (much faster than model instances)
     device_data = base_query.select_related('model', 'dealer', 'created_by').values(
         'id', 'device_esn', 'iccid', 'imei', 'telecom_provider1', 'telecom_provider2',
-        'msisdn1', 'msisdn2', 'esim_validity', 'remarks', 'created', 'stock_status', 
+        'msisdn1', 'msisdn2', 'imsi1', 'imsi2', 'esim_validity', 'remarks', 'created', 'stock_status', 
         'esim_status', 'assigned', 'shipping_remark',
         # Related model fields
         'model__id', 'model__model_name', 'model__test_agency', 'model__vendor_id',
@@ -7473,6 +7474,14 @@ def deviceStockFilter(request ):
         device_ids.append(item['id'])
         result_data.append(item)
     
+    # Prefetch esim providers for all devices in this page and build a map
+    esim_provider_map = {}
+    if device_ids:
+        from .serializers import eSimProviderSerializer
+        ds_with_providers = DeviceStock.objects.filter(id__in=device_ids).prefetch_related('esim_provider')
+        for ds in ds_with_providers:
+            esim_provider_map[ds.id] = eSimProviderSerializer(ds.esim_provider.all(), many=True).data
+
     # If is_tagged_filter was not applied, get is_tagged status for all items in one query
     if is_tagged_filter is None and device_ids:
         tagged_device_ids = set(
@@ -7502,6 +7511,8 @@ def deviceStockFilter(request ):
             'telecom_provider2': item['telecom_provider2'],
             'msisdn1': item['msisdn1'],
             'msisdn2': item['msisdn2'],
+            'imsi1': item.get('imsi1'),
+            'imsi2': item.get('imsi2'),
             'esim_validity': item['esim_validity'],
             'remarks': item['remarks'],
             'created': item['created'],
@@ -7510,6 +7521,7 @@ def deviceStockFilter(request ):
             'assigned': item['assigned'],
             'shipping_remark': item['shipping_remark'],
             'is_tagged': item.get('is_tagged', False),
+            'esim_provider': esim_provider_map.get(item['id'], []),
             'model': {
                 'id': item['model__id'],
                 'model_name': item['model__model_name'],
@@ -7617,8 +7629,8 @@ def deviceStockCreateBulk(request ):
             'telecom_provider2': row.get('telecom_provider2', ''),
             'msisdn1': row.get('msisdn1', ''),
             'msisdn2': row.get('msisdn2', ''),
-            #'imsi1': row.get('imsi1', ''),
-            #'imsi2': row.get('imsi2', ''),
+            'imsi1': row.get('imsi1', ''),
+            'imsi2': row.get('imsi2', ''),
             'esim_validity': row.get('esim_validity', ''), 
             'stock_status': "NotAssigned",
             'esim_status':"NotAssigned",
