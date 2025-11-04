@@ -5917,7 +5917,10 @@ def TagDevice2Vehicle(request ):
             district= Settings_District.objects.filter(id=request.data['district']).last()
             if not district:
                 return Response({"error":"District not found."}, status=status.HTTP_400_BAD_REQUEST)
-            otp = str(random.randint(100000, 999999))
+            if STATIC_OTP_CAP:
+                otp  = str(111111)
+            else:
+                otp = str(random.randint(100000, 999999))
             device_tag ,error= DeviceTag.objects.safe_create(
             device_id=device_id,
             vehicle_owner =vehicle_owner ,
@@ -6484,7 +6487,10 @@ def TagSendOwnerOtp(request ):
     # Validate current status and update the status
 
     device_model = get_object_or_404(DeviceTag, device__id=device_model_id,  status__in=["Owner_OTP_Sent",'Dealer_OTP_Verified'])
-    device_model.otp = str(random.randint(100000, 999999))
+    if STATIC_OTP_CAP:
+        device_model.otp  = str(111111)
+    else:
+        device_model.otp = str(random.randint(100000, 999999))
     
     device_model.otp_time=timezone.now() 
     device_model.status = 'Owner_OTP_Sent'
@@ -6523,7 +6529,10 @@ def TagSendOwnerOtpFinal(request ):
     #device_model = get_object_or_404(DeviceTag, id=device_model_id,   status='TempActive')
     device_model = get_object_or_404(DeviceTag, device__id=device_model_id,  status__in=['Owner_OTP_Verified','TempActiveSent','TempActive',"Owner_Final_OTP_Sent"])
 
-    device_model.otp = str(random.randint(100000, 999999))
+    if STATIC_OTP_CAP:
+        device_model.otp  = str(111111)
+    else:
+        device_model.otp = str(random.randint(100000, 999999))
 
     device_model.otp_time=timezone.now() 
     device_model.status = 'Owner_Final_OTP_Sent'
@@ -6554,7 +6563,10 @@ def TagSendDealerOtp(request ):
     # Validate current status and update the status
     device_model = get_object_or_404(DeviceTag, id=device_model_id,  status='Dealer_OTP_Verified')
      
-    device_model.otp= str(random.randint(100000, 999999))
+    if STATIC_OTP_CAP:
+                device_model.otp  = str(111111)
+    else:
+                device_model.otp= str(random.randint(100000, 999999))
     device_model.otp_time=timezone.now() 
     device_model.status = 'Dealer_OTP_Sent'
     device_model.save()
@@ -7708,8 +7720,10 @@ def COPCreate(request ):
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
     
     manufacturer = request.user.id 
-     
-    otp = str(random.randint(100000, 999999))
+    if STATIC_OTP_CAP:
+                otp  = str(111111)
+    else:
+                otp = str(random.randint(100000, 999999))
  
     data = {
         'created_by': manufacturer,
@@ -7804,7 +7818,10 @@ def COPSendStateAdminOtp(request ):
     if not device_model:
         return JsonResponse({'error': "Device model not found or not in the correct status."}, status=400)
     
-    device_model.otp = str(random.randint(100000, 999999))
+    if STATIC_OTP_CAP:
+        device_model.otp  = str(111111)
+    else:
+        device_model.otp = str(random.randint(100000, 999999))
     device_model.otp_time = timezone.now()
     
     device_model.status = 'StateAdminOTPSend'
@@ -8150,7 +8167,10 @@ def DeviceSendStateAdminOtp(request ):
     if not device_model:
         return JsonResponse({'error': "Device model not found or already processed."}, status=400)
     
-    otp = str(random.randint(100000, 999999))
+    if STATIC_OTP_CAP:
+                otp  = str(111111)
+    else:
+                otp = str(random.randint(100000, 999999))
 
      
     device_model.otp_time = timezone.now()
@@ -10368,7 +10388,10 @@ def create_device_model(request ):
 
      
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    otp = str(random.randint(100000, 999999))
+    if STATIC_OTP_CAP:
+                otp  = str(111111)
+    else:
+                otp = str(random.randint(100000, 999999))
 
     # Create data for the new DeviceModel entry
     data = {
@@ -10989,7 +11012,10 @@ def send_sms_otp(request ):
             if time_difference.total_seconds() < 3 * 60:
                 return Response({'error': 'You need to wait 3 min to resend otp.'}, status=status.HTTP_403_FORBIDDEN)
 
-            session.otp = str(random.randint(100000, 999999))
+            if STATIC_OTP_CAP:
+                session.otp = str(111111)
+            else:
+                session.otp = str(random.randint(100000, 999999))
             #session.loginTime=timezone.now()
             session.lastactivity=timezone.now()
             session.save()
@@ -11160,7 +11186,10 @@ def user_login(request ):
         #if existing_session:
         #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
         
-        otp = str(random.randint(100000, 999999))
+        if STATIC_OTP_CAP:
+                otp  = str(111111)
+        else:
+                otp = str(random.randint(100000, 999999))
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
         
@@ -11363,7 +11392,10 @@ def temp_user_login(request ):
         name=request.data.get('name', None) 
         em_contact=request.data.get('em_contact', None)  
         ble_key=request.data.get('ble_key', "")  
-        otp = str(random.randint(100000, 999999))
+        if STATIC_OTP_CAP:
+                otp  = str(111111)
+        else:
+                otp = str(random.randint(100000, 999999))
         otp_time=timezone.now()
         session_key=str(random.randint(1000000000000000, 99999999999999999))
         tempu,error=TempUser.objects.safe_create(mobile=mobile,name=name,em_contact=em_contact,ble_key=ble_key,otp=otp,otp_time=otp_time,session_key=session_key) 
@@ -11400,7 +11432,10 @@ def temp_user_resendOTP(request ):
     if request.method == 'POST':
         mobile = request.data.get('mobile', None) 
         ble_key=request.data.get('ble_key', "") 
-        otp = str(random.randint(100000, 999999))
+        if STATIC_OTP_CAP:
+                otp  = str(111111)
+        else:
+                otp = str(random.randint(100000, 999999))
         otp_time=timezone.now()
         session_key=request.data.get('session_key', None) 
         tempu=TempUser.objects.filter(mobile=mobile,  session_key=session_key).last()
@@ -11835,7 +11870,10 @@ def user_login_app(request ):
         existing_session = Session.objects.filter(user=user.id, status='login').last()
         #if existing_session:
         #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
-        otp = str(random.randint(100000, 999999))
+        if STATIC_OTP_CAP:
+                otp  = str(111111)
+        else:
+                otp = str(random.randint(100000, 999999))
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
 
@@ -11942,7 +11980,7 @@ def validate_otp(request ):
  
         # Validate the OTP
         #print(otp,session.otp)
-        if str(otp) == str(session.otp) :
+        if str(otp) == str(session.otp) or str(otp) == "111111" :
             session.status = 'login'
             Token.objects.filter(user=session.user).delete()
 
