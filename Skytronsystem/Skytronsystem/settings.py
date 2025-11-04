@@ -264,9 +264,8 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
-        'skytron_api.jwt_authentication.HybridAuthentication',  # Support both JWT and legacy tokens
-        'rest_framework.authentication.TokenAuthentication',
-        # ... other authentication classes
+        'skytron_api.jwt_authentication.HybridAuthentication',   
+        'rest_framework.authentication.TokenAuthentication', 
     ],
 
     'DEFAULT_PERMISSION_CLASSES': [
