@@ -358,6 +358,9 @@ urlpatterns = [
     path('stateadmin/reports/approved-cops/', state_admin_approved_cops_report, name='state_admin_approved_cops_report'),
     path('stateadmin/reports/combined-approval/', state_admin_combined_approval_report, name='state_admin_combined_approval_report'),
     path('device-trip-details/', get_device_trip_details, name='get_device_trip_details'),
+    
+    # Module access check
+    path('check-module-access/', check_module_access, name='check_module_access'),
 
 ]  
 
