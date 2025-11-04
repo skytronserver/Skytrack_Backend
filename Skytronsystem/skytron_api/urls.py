@@ -361,6 +361,7 @@ urlpatterns = [
     
     # Module access check
     path('check-module-access/', check_module_access, name='check_module_access'),
+    path('check-user-type/', check_user_type, name='check_user_type'),
 
 ]  
 

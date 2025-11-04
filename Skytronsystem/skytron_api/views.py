@@ -14959,3 +14959,58 @@ def check_module_access(request):
             'message': f'An error occurred: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def check_user_type(request):
+    """
+    API endpoint to check user type and return permissions.
+    No POST data required - uses authenticated user.
+    Returns: {police: true/false, ambulance: true/false, owner: true/false, guest: true/false}
+    """
+    try:
+        user = request.user
+        
+        # Initialize all permissions as False
+        response_data = {
+            'police': False,
+            'ambulance': False,
+            'owner': False,
+            'guest': False
+        }
+        
+        # Check if user role is owner
+        if user.role == 'owner':
+            response_data['owner'] = True
+        
+        # Check if user is sosexecutive and get their type
+        elif user.role == 'sosexecutive':
+            try:
+                # Get the EM_ex record for this user
+                em_ex = EM_ex.objects.filter(
+                    users=user 
+                ).first()
+                
+                if em_ex:
+                    # Check the user_type field in EM_ex
+                    if em_ex.user_type == 'police_ex':
+                        response_data['police'] = True
+                    elif em_ex.user_type == 'ambulance_ex':
+                        response_data['ambulance'] = True
+            except Exception as e:
+                # If any error in checking EM_ex, treat as guest
+                pass
+        
+        # If none of the above conditions match, user is treated as guest
+        if not any(response_data.values()):
+            response_data['guest'] = True
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
