@@ -1,4 +1,4 @@
-import random
+import secrets
 import io
 from PIL import Image, ImageDraw, ImageFont
 
@@ -8,8 +8,8 @@ def generate_captcha(static=False):
         num1 = 1
         num2 = 1
     else:
-        num1 = random.randint(1, 9)
-        num2 = random.randint(1, 9)
+        num1 = secrets.randbelow(9) + 1
+        num2 = secrets.randbelow(9) + 1
     expression = f"{num1} + {num2}"
     result = num1 + num2
 

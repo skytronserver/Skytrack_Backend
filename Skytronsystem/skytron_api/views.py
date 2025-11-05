@@ -606,7 +606,7 @@ def save_file(request, tag, path):
     os.makedirs(host_path, exist_ok=True)
     
     file_extension = valid_mime_types[mime_type]
-    file_name = ''.join(random.choices('0123456789', k=40)) + "." + file_extension
+    file_name = ''.join(secrets.choice('0123456789') for _ in range(40)) + "." + file_extension
     file_path = os.path.join(host_path, file_name)
     
     with open(file_path, 'wb') as file:
@@ -1948,7 +1948,7 @@ def update_VehicleOwner(request ):
         if dob:
             vuser.dob = dob
 
-        new_password = ''.join(random.choices('0123456789', k=30))
+        new_password = ''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
         vuser.password = hashed_password
         #vehicle_owner.date_joined = str(date_joined)
@@ -2339,7 +2339,7 @@ def update_manufacturer(request ):
         if dob:
             man.user.dob
         
-        new_password=''.join(random.choices('0123456789', k=30))
+        new_password=''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
         man.user.password  = hashed_password
         man.date_joined = date_joined
@@ -2437,7 +2437,7 @@ def update_eSimProvider(request ):
         if dob:
             esimprovider.user.dob = dob
 
-        new_password = ''.join(random.choices('0123456789', k=30))
+        new_password = ''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
         esimprovider.user.password = hashed_password
         esimprovider.date_joined = date_joined
@@ -2711,7 +2711,7 @@ def update_dealer(request ):
         if dob:
             dealer.user.dob = dob
 
-        new_password = ''.join(random.choices('0123456789', k=30))
+        new_password = ''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
         dealer.user.password = hashed_password
         dealer.date_joined = date_joined
@@ -2986,7 +2986,7 @@ def update_manufacturer(request ):
         if dob:
             man.user.dob
         
-        new_password=''.join(random.choices('0123456789', k=30))
+        new_password=''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
         man.user.password  = hashed_password
         man.date_joined = date_joined
@@ -3180,7 +3180,7 @@ def create_user(role, req):
         is_active = True
         is_staff = False
         status = 'pending'
-        new_password = ''.join(random.choices('0123456789', k=30))
+        new_password = ''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
 
         # Create user
@@ -3401,7 +3401,7 @@ def update_StateAdmin(request ):
         if dob:
             stateadmin.user.dob = dob
 
-        new_password = ''.join(random.choices('0123456789', k=30))
+        new_password = ''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
         stateadmin.user.password = hashed_password
         stateadmin.date_joined = date_joined
@@ -3656,7 +3656,7 @@ def update_DTO_RTO(request ):
         if dob:
             dtorto.user.dob = dob
 
-        new_password = ''.join(random.choices('0123456789', k=30))
+        new_password = ''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
         dtorto.user.password = hashed_password
         dtorto.date_joined = date_joined
@@ -5851,7 +5851,7 @@ def CancelTagDevice2Vehicle(request ):
             status='Dealer_OTP_Sent',
             tagged_by=user,
             tagged=current_datetime,
-            otp=str(random.randint(100000, 999999)) ,
+            otp=str(secrets.randbelow(1000000)).zfill(6) ,
             otp_time=timezone.now() 
             )
             stock_assignment.stock_status= 'Fitted'
@@ -5920,7 +5920,7 @@ def TagDevice2Vehicle(request ):
             if STATIC_OTP_CAP:
                 otp  = str(111111)
             else:
-                otp = str(random.randint(100000, 999999))
+                otp = str(secrets.randbelow(1000000)).zfill(6)
             device_tag ,error= DeviceTag.objects.safe_create(
             device_id=device_id,
             vehicle_owner =vehicle_owner ,
@@ -6490,7 +6490,7 @@ def TagSendOwnerOtp(request ):
     if STATIC_OTP_CAP:
         device_model.otp  = str(111111)
     else:
-        device_model.otp = str(random.randint(100000, 999999))
+        device_model.otp = str(secrets.randbelow(1000000)).zfill(6)
     
     device_model.otp_time=timezone.now() 
     device_model.status = 'Owner_OTP_Sent'
@@ -6532,7 +6532,7 @@ def TagSendOwnerOtpFinal(request ):
     if STATIC_OTP_CAP:
         device_model.otp  = str(111111)
     else:
-        device_model.otp = str(random.randint(100000, 999999))
+        device_model.otp = str(secrets.randbelow(1000000)).zfill(6)
 
     device_model.otp_time=timezone.now() 
     device_model.status = 'Owner_Final_OTP_Sent'
@@ -6566,7 +6566,7 @@ def TagSendDealerOtp(request ):
     if STATIC_OTP_CAP:
                 device_model.otp  = str(111111)
     else:
-                device_model.otp= str(random.randint(100000, 999999))
+                device_model.otp= str(secrets.randbelow(1000000)).zfill(6)
     device_model.otp_time=timezone.now() 
     device_model.status = 'Dealer_OTP_Sent'
     device_model.save()
@@ -7723,7 +7723,7 @@ def COPCreate(request ):
     if STATIC_OTP_CAP:
                 otp  = str(111111)
     else:
-                otp = str(random.randint(100000, 999999))
+                otp = str(secrets.randbelow(1000000)).zfill(6)
  
     data = {
         'created_by': manufacturer,
@@ -7821,7 +7821,7 @@ def COPSendStateAdminOtp(request ):
     if STATIC_OTP_CAP:
         device_model.otp  = str(111111)
     else:
-        device_model.otp = str(random.randint(100000, 999999))
+        device_model.otp = str(secrets.randbelow(1000000)).zfill(6)
     device_model.otp_time = timezone.now()
     
     device_model.status = 'StateAdminOTPSend'
@@ -8170,7 +8170,7 @@ def DeviceSendStateAdminOtp(request ):
     if STATIC_OTP_CAP:
                 otp  = str(111111)
     else:
-                otp = str(random.randint(100000, 999999))
+                otp = str(secrets.randbelow(1000000)).zfill(6)
 
      
     device_model.otp_time = timezone.now()
@@ -10391,7 +10391,7 @@ def create_device_model(request ):
     if STATIC_OTP_CAP:
                 otp  = str(111111)
     else:
-                otp = str(random.randint(100000, 999999))
+                otp = str(secrets.randbelow(1000000)).zfill(6)
 
     # Create data for the new DeviceModel entry
     data = {
@@ -10748,7 +10748,7 @@ def create_user(request ):
     if request.method == 'POST':
         data = request.data.copy() 
         data['createdby'] = 'admin'
-        new_password=''.join(random.choices('0123456789', k=30))
+        new_password=''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
         data['password']  = hashed_password
 
@@ -11015,7 +11015,7 @@ def send_sms_otp(request ):
             if STATIC_OTP_CAP:
                 session.otp = str(111111)
             else:
-                session.otp = str(random.randint(100000, 999999))
+                session.otp = str(secrets.randbelow(1000000)).zfill(6)
             #session.loginTime=timezone.now()
             session.lastactivity=timezone.now()
             session.save()
@@ -11058,7 +11058,7 @@ def reset_password(request ):
         email = request.data.get('email', '')
         mobile = request.data.get('mobile', '')   
 
-        new_password=''.join(random.choices('0123456789', k=30))
+        new_password=''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
          
         user = User.objects.filter( 
@@ -11189,7 +11189,7 @@ def user_login(request ):
         if STATIC_OTP_CAP:
                 otp  = str(111111)
         else:
-                otp = str(random.randint(100000, 999999))
+                otp = str(secrets.randbelow(1000000)).zfill(6)
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
         
@@ -11395,9 +11395,9 @@ def temp_user_login(request ):
         if STATIC_OTP_CAP:
                 otp  = str(111111)
         else:
-                otp = str(random.randint(100000, 999999))
+                otp = str(secrets.randbelow(1000000)).zfill(6)
         otp_time=timezone.now()
-        session_key=str(random.randint(1000000000000000, 99999999999999999))
+        session_key=str(secrets.randbelow(100000000000000000)).zfill(17)
         tempu,error=TempUser.objects.safe_create(mobile=mobile,name=name,em_contact=em_contact,ble_key=ble_key,otp=otp,otp_time=otp_time,session_key=session_key) 
         if error:  # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
@@ -11435,7 +11435,7 @@ def temp_user_resendOTP(request ):
         if STATIC_OTP_CAP:
                 otp  = str(111111)
         else:
-                otp = str(random.randint(100000, 999999))
+                otp = str(secrets.randbelow(1000000)).zfill(6)
         otp_time=timezone.now()
         session_key=request.data.get('session_key', None) 
         tempu=TempUser.objects.filter(mobile=mobile,  session_key=session_key).last()
@@ -11481,7 +11481,7 @@ def temp_user_OTPValidate(request ):
             return JsonResponse({'success': False, 'error': 'User not found'}) 
         if str(otp)==str(tempu.otp):
 
-            session_key=str(random.randint(100000000000000000000, 99999999999999999999999))
+            session_key=str(secrets.randbelow(100000000000000000000000)).zfill(23)
             tempu.last_login=timezone.now()
             tempu.last_activity = timezone.now()
             tempu.online=True 
@@ -11731,7 +11731,7 @@ def temp_user_logout(request ):
         existing_session = Session.objects.filter(user=user.id, status='login').last()
         #if existing_session:
         #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
-        otp = str(random.randint(100000, 999999))
+        otp = str(secrets.randbelow(1000000)).zfill(6)
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
 
@@ -11873,7 +11873,7 @@ def user_login_app(request ):
         if STATIC_OTP_CAP:
                 otp  = str(111111)
         else:
-                otp = str(random.randint(100000, 999999))
+                otp = str(secrets.randbelow(1000000)).zfill(6)
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
 
