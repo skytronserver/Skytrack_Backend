@@ -16,7 +16,7 @@ CITY="Guwahati"
 ORGANIZATION="SKYTRON"
 ROOT_CN="SKYTRON Root CA"
 INTERMEDIATE_CN="SKYTRON Intermediate CA"
-SERVER_CN="mqtt.gromed.in"
+SERVER_CN="mqtt.skytron.in"
 
 # IP addresses and DNS names for the server
 SERVER_IPS=(
@@ -28,7 +28,7 @@ SERVER_IPS=(
 
 SERVER_DNS=(
     "localhost"
-    "mqtt.gromed.in"
+    "mqtt.skytron.in"
     "api.gromed.in"
     "*.skytron.in"
 )
