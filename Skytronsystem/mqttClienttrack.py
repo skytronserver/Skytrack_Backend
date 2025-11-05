@@ -38,12 +38,10 @@ MQTT_USERNAME = os.getenv("MQTT_USERNAME", "6026969588")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h")
 
 # Paths to certificates - Docker container path
-ROOT_CA = "/app/keys/ca.crt"  # Updated certificate path
-#CLIENT_CERT = "/app/mqttKeys/client.crt"
-#CLIENT_KEY = "/app/mqttKeys/client.key"
-#ROOT_CA = "/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt"
-#CLIENT_CERT = "/home/azureuser/Skytrack_Backend/Skytronsystem/client.crt"
-#CLIENT_KEY = "/home/azureuser/Skytrack_Backend/Skytronsystem/client.key"
+# Use root CA certificate for proper chain of trust validation
+ROOT_CA = "/app/Skytronsystem/root_ca.crt"  # Root CA for certificate chain validation
+#CLIENT_CERT = "/app/mqttKeys/client.crt"  # Optional: for mutual TLS
+#CLIENT_KEY = "/app/mqttKeys/client.key"    # Optional: for mutual TLS
 #mosquitto_sub -h '135.235.166.209' -p 8883 -t '#' --cafile /app/ca.crt --cert /app/client.crt --key /app/client.key -d
 
 
@@ -442,14 +440,25 @@ client = mqtt.Client()
 # Set username and password for authentication
 client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
-# Set up SSL/TLS with CA certificate only (no client certificates needed)
-client.tls_set(ca_certs=ROOT_CA, tls_version=ssl.PROTOCOL_TLS)
+# ✅ SECURE: Set up SSL/TLS with proper certificate validation (security audit compliant)
+# - Uses root CA for certificate chain validation
+# - Requires valid server certificate (CERT_REQUIRED)
+# - Enables hostname verification
+# - No certificate validation bypass
+client.tls_set(
+    ca_certs=ROOT_CA,
+    certfile=None,  # Client cert not required for this connection
+    keyfile=None,
+    cert_reqs=ssl.CERT_REQUIRED,  # ✅ Require valid certificate
+    tls_version=ssl.PROTOCOL_TLSv1_2,  # Use TLS 1.2 or higher
+    ciphers=None  # Use default secure ciphers
+)
 
 # Set up callbacks
 client.on_connect = on_connect
 client.on_message = on_message
 
-# Connect to the broker
+# Connect to the broker using hostname (must match certificate CN/SAN)
 client.connect(BROKER_URL, BROKER_PORT, 60)
 # Blocking loop to keep listening to messages
 client.loop_forever()

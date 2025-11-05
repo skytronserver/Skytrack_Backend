@@ -78,15 +78,29 @@ RUN mkdir -p /etc/mosquitto/certs
 COPY keys/ca.crt /app/keys/ca.crt
 
 # Copy your Django project files into the container (including cert.pem & key.pem if needed)
+# This includes:
+# - skytron_api/mqtt_validate_views.py: MQTT JWT authentication endpoint
+# - skytron_api/secure_token.py: RS256 JWT token management
+# - skytron_api/urls.py: Routes for /api/mqtt/validate-connection/ and /api/mqtt/validate-acl/
 COPY . /app
 
 # Copy JWT RSA keys to the expected location for Django settings (BASE_DIR/keys/)
 # These keys are required for RS256 JWT token signing and verification
+# Used by secure_token.py for generating and validating JWT tokens
 RUN mkdir -p /app/Skytronsystem/keys
 COPY keys/jwt_private_key.pem /app/Skytronsystem/keys/jwt_private_key.pem
 COPY keys/jwt_public_key.pem /app/Skytronsystem/keys/jwt_public_key.pem
 RUN chmod 600 /app/Skytronsystem/keys/jwt_private_key.pem
 RUN chmod 644 /app/Skytronsystem/keys/jwt_public_key.pem
+
+# Copy MQTT Root CA certificate for secure TLS connection with certificate validation
+# This root CA certificate is used by mqttClienttrack.py to validate the MQTT broker's certificate
+# Part of proper certificate chain: Root CA → Intermediate CA → Server Certificate
+# Security audit compliant: Enables certificate validation without tls_insecure_set()
+# Note: Generate certificates with: cd .. && sudo ./generate_trusted_certificates.sh
+# Then copy root CA: cp ../mqtt_certificates/root_ca/root_ca.crt ./root_ca.crt
+COPY root_ca.crt /app/Skytronsystem/root_ca.crt
+RUN chmod 644 /app/Skytronsystem/root_ca.crt
 
 # Ensure certificates are available in both locations for compatibility
 RUN cp /app/keys/ca.crt /etc/mosquitto/certs/ca.crt || cp /app/ca.crt /etc/mosquitto/certs/ca.crt || echo "Warning: CA certificate setup may need manual configuration"

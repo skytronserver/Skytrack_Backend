@@ -9,8 +9,10 @@ import django
 import json
 from datetime import datetime
 
-# Setup Django environment
-sys.path.insert(0, '/home/azureuser/Skytrack_Backend/Skytronsystem')
+# Add Django path dynamically (relative to this script's location)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DJANGO_PATH = os.path.join(SCRIPT_DIR, 'Skytronsystem')
+sys.path.insert(0, DJANGO_PATH)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Skytronsystem.settings')
 django.setup()
 

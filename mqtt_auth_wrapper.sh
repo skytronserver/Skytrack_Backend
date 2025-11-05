@@ -23,8 +23,11 @@ log_auth() {
 
 log_auth "Auth attempt - Username: '$USERNAME', Password length: ${#PASSWORD}"
 
-# Call the Python authentication script
-/usr/bin/python3 /home/azureuser/Skytrack_Backend/mqtt_unified_auth.py "$USERNAME" "$PASSWORD"
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Call the Python authentication script using relative path
+/usr/bin/python3 "$SCRIPT_DIR/mqtt_unified_auth.py" "$USERNAME" "$PASSWORD"
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 0 ]; then

@@ -1,29 +1,25 @@
 #!/usr/bin/env python3
 """
-MQTT Unified Authentication Plugin
-Supports both JWT token-based and username/password authentication
-
-Authentication Methods:
-1. JWT Token: username can be empty/token, password = JWT token
-2. Username/Password: traditional username + password from dynamic security
-
-Usage with mosquitto-auth-plug:
-- Set as auth_opt_http_getuser_uri or similar
-- Or use as external authentication script
-
-For Mosquitto Dynamic Security with auth plugin:
-- This script validates credentials before allowing dynsec to create/update users
+Unified MQTT Authentication Script
+Supports both JWT token authentication and username/password authentication
 """
-import json
-import re
-import subprocess
 import sys
 import os
-import django
+import json
+import logging
 from datetime import datetime
 
-# Add the Django project to Python path
-sys.path.append('/home/azureuser/Skytrack_Backend/Skytronsystem')
+# Setup logging
+logging.basicConfig(
+    filename='/var/log/mosquitto/mqtt_auth.log',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# Add Django path dynamically (relative to this script's location)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DJANGO_PATH = os.path.join(SCRIPT_DIR, 'Skytronsystem')
+sys.path.append(DJANGO_PATH)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Skytronsystem.settings')
 
 # Initialize Django

@@ -3,7 +3,8 @@ from django.urls import path
  
 from .views import * #SellFitDevice, ActivateESIMRequest, ConfirmESIMActivation, ConfigureIPPort, ConfigureSOSGateway, ConfigureSMSGateway, MarkDeviceDefective, ReturnToDeviceManufacturer
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
-from .mqtt_auth_views import prepare_mqtt_auth, prepare_mqtt_auth_with_token
+from .mqtt_auth_views import prepare_mqtt_auth, prepare_mqtt_auth_with_token, mqtt_dual_auth
+from .mqtt_validate_views import mqtt_validate_connection, mqtt_validate_acl
 
 # ... the rest of your URLconf goes here ...
 
@@ -367,6 +368,9 @@ urlpatterns = [
     # MQTT Authentication endpoints
     path('mqtt/prepare-auth/', prepare_mqtt_auth, name='prepare_mqtt_auth'),
     path('mqtt/prepare-auth-token/', prepare_mqtt_auth_with_token, name='prepare_mqtt_auth_with_token'),
+    path('mqtt/dual-auth/', mqtt_dual_auth, name='mqtt_dual_auth'),  # NEW: Dual authentication mode
+    path('mqtt/validate-connection/', mqtt_validate_connection, name='mqtt_validate_connection'),  # For mosquitto-go-auth
+    path('mqtt/validate-acl/', mqtt_validate_acl, name='mqtt_validate_acl'),  # For mosquitto-go-auth ACL
 
 ]  
 

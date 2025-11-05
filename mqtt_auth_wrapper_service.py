@@ -1,26 +1,22 @@
 #!/usr/bin/env python3
 """
-Mosquitto Authentication Wrapper Service
-This service monitors MQTT connection attempts and validates JWT tokens
-Works alongside dynamic security by managing user creation dynamically
-
-This script should run as a service that:
-1. Monitors authentication attempts (via log parsing or socket)
-2. Validates JWT tokens
-3. Creates/updates dynsec users on the fly
+MQTT Authentication Wrapper Service
+Runs as a background service to handle MQTT authentication requests
+via Unix socket or HTTP endpoint
 """
-import time
-import re
-import subprocess
-from datetime import datetime
 import sys
 import os
-import django
+import json
+import logging
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import socketserver
+from urllib.parse import parse_qs, urlparse
 
-# Add Django path
-sys.path.append('/home/azureuser/Skytrack_Backend/Skytronsystem')
+# Add Django path dynamically (relative to this script's location)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DJANGO_PATH = os.path.join(SCRIPT_DIR, 'Skytronsystem')
+sys.path.append(DJANGO_PATH)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Skytronsystem.settings')
-django.setup()
 
 from django.contrib.auth.models import User
 from skytron_api.secure_token import verify_jwt_token, decode_jwt_token

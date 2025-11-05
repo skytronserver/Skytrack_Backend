@@ -10,8 +10,10 @@ import time
 import ssl
 import json
 
-# Add Django path for testing
-sys.path.append('/home/azureuser/Skytrack_Backend/Skytronsystem')
+# Add Django path dynamically (relative to this script's location)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DJANGO_PATH = os.path.join(SCRIPT_DIR, 'Skytronsystem')
+sys.path.append(DJANGO_PATH)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Skytronsystem.settings')
 
 try:

@@ -1,29 +1,28 @@
 #!/usr/bin/env python3
 """
 MQTT JWT Pre-Authentication Service
-This service pre-creates MQTT users when JWT tokens are detected
-
-This solves the problem of JWT authentication with Mosquitto dynamic security:
-1. Clients connect with username (can be empty/mobile/userid) and JWT token as password
-2. This service validates the JWT token
-3. If valid, creates/updates a user in Mosquitto dynamic security with a temp password
-4. Client then authenticates with dynamic security using the created credentials
-
-Usage:
-    python3 mqtt_jwt_preauth_service.py
-
-Or integrate into your Django application startup
+Validates JWT tokens before allowing MQTT connections
+Can be used as mosquitto plugin or standalone auth server
 """
 import sys
 import os
-import django
-import hashlib
-from datetime import datetime
+import json
+import logging
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import parse_qs, urlparse
 
-# Add Django path
-sys.path.append('/home/azureuser/Skytrack_Backend/Skytronsystem')
+# Setup logging
+logging.basicConfig(
+    filename='/var/log/mosquitto/mqtt_jwt_auth.log',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# Add Django path dynamically (relative to this script's location)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DJANGO_PATH = os.path.join(SCRIPT_DIR, 'Skytronsystem')
+sys.path.append(DJANGO_PATH)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Skytronsystem.settings')
-django.setup()
 
 from skytron_api.secure_token import verify_jwt_token, decode_jwt_token
 from django.contrib.auth.models import User

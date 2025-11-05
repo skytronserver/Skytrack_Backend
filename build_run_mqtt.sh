@@ -1,7 +1,9 @@
 #!/bin/bash
-cd Skytronsystem
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Move to the project root directory
-cd /home/azureuser/Skytrack_Backend
+cd "$SCRIPT_DIR"
 
 # Source environment variables from .env file
 echo "Loading environment variables from .env file..."
