@@ -408,7 +408,7 @@ class TempUser(models.Model):
 class Confirmation(models.Model):
     objects = SafeCreateManager()
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    token = models.CharField(max_length=32, unique=True)
+    token = models.CharField(max_length=1500, unique=True)
     created_at = models.DateTimeField(default=timezone.now)
     type=    models.CharField(max_length=20, choices=[("email", "Email"), ("sms", "SMS"), ("pw_rst", "Password Resset")], verbose_name="Type")
    
@@ -1288,7 +1288,7 @@ class Session(models.Model):
     objects = SafeCreateManager()
     loginTime = models.DateTimeField(default=timezone.now, verbose_name="Login Time")
     user = models.ForeignKey(User, on_delete=models.CASCADE)# models.IntegerField(verbose_name="User")
-    token = models.CharField(max_length=512, blank=True, null=True, verbose_name="Token")  # Increased for JWT tokens
+    token = models.CharField(max_length=1500, blank=True, null=True, verbose_name="Token")  # Increased for JWT tokens
     token_tmp = models.CharField(max_length=255, blank=True, null=True, verbose_name="Token_tmp")
     otp = models.IntegerField(blank=True, null=True, verbose_name="OTP")
     status = models.CharField(max_length=10, choices=[("otpsent", "OTP Sent"), ("login", "Login"), ("logout", "Logout"), ("timeout", "Timeout")], verbose_name="Status")
@@ -1590,8 +1590,8 @@ class TokenBlacklist(models.Model):
     Used to prevent token reuse after logout or security events
     """
     objects = SafeCreateManager()
-    
-    token = models.CharField(max_length=512, unique=True, db_index=True, verbose_name="Token")
+
+    token = models.CharField(max_length=1500, unique=True, db_index=True, verbose_name="Token")
     jti = models.CharField(max_length=255, db_index=True, verbose_name="JWT ID")  # JWT ID from token payload
     user_id = models.IntegerField(db_index=True, verbose_name="User ID")
     blacklisted_at = models.DateTimeField(default=timezone.now, verbose_name="Blacklisted At")

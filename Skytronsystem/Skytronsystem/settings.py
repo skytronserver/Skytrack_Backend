@@ -31,6 +31,13 @@ SECRET_KEY = os.environ.get('SECRET_KEY', ' ')
 JWT_PRIVATE_KEY_PATH = os.path.join(BASE_DIR, 'keys', 'jwt_private_key.pem')
 JWT_PUBLIC_KEY_PATH = os.path.join(BASE_DIR, 'keys', 'jwt_public_key.pem')
 
+# MQTT Broker Configuration
+MQTT_HOST = os.environ.get('MQTT_HOST', '127.0.0.1')
+MQTT_PORT = os.environ.get('MQTT_PORT', '8883')
+MQTT_ADMIN_USER = os.environ.get('MQTT_ADMIN_USER', 'admin')
+MQTT_ADMIN_PASS = os.environ.get('MQTT_ADMIN_PASS', 'adminpass')
+MQTT_CA_FILE = os.environ.get('MQTT_CA_FILE', '/etc/mosquitto/certs/ca.crt')
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True  # os.environ.get('DEBUG', 'False') == 'True'
 # True

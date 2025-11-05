@@ -64,7 +64,7 @@ RUN pip install \
     django-redis \
     django-cors-headers bleach\  
     gunicorn \
-    PyJWT paho-mqtt  pycryptodome
+    PyJWT paho-mqtt pycryptodome cryptography==41.0.7
 
 # Set the working directory in the container
 WORKDIR /app
@@ -79,6 +79,14 @@ COPY keys/ca.crt /app/keys/ca.crt
 
 # Copy your Django project files into the container (including cert.pem & key.pem if needed)
 COPY . /app
+
+# Copy JWT RSA keys to the expected location for Django settings (BASE_DIR/keys/)
+# These keys are required for RS256 JWT token signing and verification
+RUN mkdir -p /app/Skytronsystem/keys
+COPY keys/jwt_private_key.pem /app/Skytronsystem/keys/jwt_private_key.pem
+COPY keys/jwt_public_key.pem /app/Skytronsystem/keys/jwt_public_key.pem
+RUN chmod 600 /app/Skytronsystem/keys/jwt_private_key.pem
+RUN chmod 644 /app/Skytronsystem/keys/jwt_public_key.pem
 
 # Ensure certificates are available in both locations for compatibility
 RUN cp /app/keys/ca.crt /etc/mosquitto/certs/ca.crt || cp /app/ca.crt /etc/mosquitto/certs/ca.crt || echo "Warning: CA certificate setup may need manual configuration"

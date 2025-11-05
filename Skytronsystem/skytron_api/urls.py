@@ -3,6 +3,7 @@ from django.urls import path
  
 from .views import * #SellFitDevice, ActivateESIMRequest, ConfirmESIMActivation, ConfigureIPPort, ConfigureSOSGateway, ConfigureSMSGateway, MarkDeviceDefective, ReturnToDeviceManufacturer
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+from .mqtt_auth_views import prepare_mqtt_auth, prepare_mqtt_auth_with_token
 
 # ... the rest of your URLconf goes here ...
 
@@ -362,6 +363,10 @@ urlpatterns = [
     # Module access check
     path('check-module-access/', check_module_access, name='check_module_access'),
     path('check-user-access/', check_user_type, name='check_user_type'),
+    
+    # MQTT Authentication endpoints
+    path('mqtt/prepare-auth/', prepare_mqtt_auth, name='prepare_mqtt_auth'),
+    path('mqtt/prepare-auth-token/', prepare_mqtt_auth_with_token, name='prepare_mqtt_auth_with_token'),
 
 ]  
 
