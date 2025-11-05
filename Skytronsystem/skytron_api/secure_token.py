@@ -18,16 +18,79 @@ from django.conf import settings
 
 class SecureTokenManager:
     """
-    Manages JWT tokens with secure signing for user authentication
+    Manages JWT tokens with secure RSA signing (RS256) for user authentication
+    Uses asymmetric encryption with private/public key pairs
     """
     
     def __init__(self):
-        # Hardcoded JWT configuration for testing
-        # TODO: Move back to environment variables in production
-        self.secret_key = "skytrack-jwt-secret-key-2025-production-v1.0-secure-signing-key-abc123def456ghi789"
-        self.algorithm = "HS256"
-        self.access_token_lifetime = 36000  # 10 hours
-        self.refresh_token_lifetime = 864000  # 24 hours
+        # Use RS256 algorithm with RSA keys for enhanced security
+        self.algorithm = "RS256"
+        self.access_token_lifetime = 120  # 2 minutes (for testing/security)
+        self.refresh_token_lifetime = 120  # 2 minutes (for testing/security)
+        
+        # Load RSA keys from files
+        self.private_key = self._load_private_key()
+        self.public_key = self._load_public_key()
+    
+    def _load_private_key(self):
+        """Load RSA private key for signing tokens"""
+        try:
+            # Try to load from Django settings first
+            if hasattr(settings, 'JWT_PRIVATE_KEY_PATH'):
+                key_path = settings.JWT_PRIVATE_KEY_PATH
+            else:
+                # Default path relative to project root
+                key_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    'keys',
+                    'jwt_private_key.pem'
+                )
+            
+            with open(key_path, 'r') as key_file:
+                private_key = key_file.read()
+            
+            print(f"JWT private key loaded from: {key_path}")
+            return private_key
+            
+        except FileNotFoundError:
+            print(f"ERROR: JWT private key not found at {key_path}")
+            print("Please generate RSA keys using:")
+            print("  openssl genrsa -out jwt_private_key.pem 2048")
+            print("  openssl rsa -in jwt_private_key.pem -pubout -out jwt_public_key.pem")
+            raise
+        except Exception as e:
+            print(f"ERROR loading JWT private key: {e}")
+            raise
+    
+    def _load_public_key(self):
+        """Load RSA public key for verifying tokens"""
+        try:
+            # Try to load from Django settings first
+            if hasattr(settings, 'JWT_PUBLIC_KEY_PATH'):
+                key_path = settings.JWT_PUBLIC_KEY_PATH
+            else:
+                # Default path relative to project root
+                key_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    'keys',
+                    'jwt_public_key.pem'
+                )
+            
+            with open(key_path, 'r') as key_file:
+                public_key = key_file.read()
+            
+            print(f"JWT public key loaded from: {key_path}")
+            return public_key
+            
+        except FileNotFoundError:
+            print(f"ERROR: JWT public key not found at {key_path}")
+            print("Please generate RSA keys using:")
+            print("  openssl genrsa -out jwt_private_key.pem 2048")
+            print("  openssl rsa -in jwt_private_key.pem -pubout -out jwt_public_key.pem")
+            raise
+        except Exception as e:
+            print(f"ERROR loading JWT public key: {e}")
+            raise
         
     def generate_jwt_token(self, user_id, user_mobile=None, session_data=None, token_type="access"):
         """
@@ -69,21 +132,21 @@ class SecureTokenManager:
         payload["aud"] = "skytrack-api"   # Audience
         
         try:
-            # Generate signed JWT token
-            token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+            # Generate signed JWT token using RSA private key
+            token = jwt.encode(payload, self.private_key, algorithm=self.algorithm)
             
             # Log token generation for security audit
-            print(f"JWT token generated for user {user_id}, type: {token_type}, expires: {expiration_time}")
+            print(f"JWT token generated (RS256) for user {user_id}, type: {token_type}, expires: {expiration_time}")
             
             return token
             
         except Exception as e:
-            print(f"Error generating JWT token: {e}")
+            print(f"Error generating JWT token with RS256: {e}")
             return None
     
     def verify_jwt_token(self, token):
         """
-        Verify if a JWT token is valid and not expired
+        Verify if a JWT token is valid and not expired using RSA public key
         
         Args:
             token (str): JWT token to verify
@@ -92,10 +155,10 @@ class SecureTokenManager:
             bool: True if valid, False otherwise
         """
         try:
-            # Decode and verify token
+            # Decode and verify token using RSA public key
             payload = jwt.decode(
                 token, 
-                self.secret_key, 
+                self.public_key, 
                 algorithms=[self.algorithm],
                 audience="skytrack-api",
                 issuer="skytrack-auth"
@@ -120,15 +183,15 @@ class SecureTokenManager:
             print("JWT token expired")
             return False
         except jwt.InvalidTokenError as e:
-            print(f"JWT token invalid: {e}")
+            print(f"JWT token invalid (RS256): {e}")
             return False
         except Exception as e:
-            print(f"Error verifying JWT token: {e}")
+            print(f"Error verifying JWT token (RS256): {e}")
             return False
     
     def decode_jwt_token(self, token):
         """
-        Decode a JWT token and return payload data
+        Decode a JWT token and return payload data using RSA public key
         
         Args:
             token (str): JWT token to decode
@@ -137,10 +200,10 @@ class SecureTokenManager:
             dict: Token payload or None if invalid
         """
         try:
-            # Decode and verify token
+            # Decode and verify token using RSA public key
             payload = jwt.decode(
                 token, 
-                self.secret_key, 
+                self.public_key, 
                 algorithms=[self.algorithm],
                 audience="skytrack-api",
                 issuer="skytrack-auth"
@@ -152,10 +215,10 @@ class SecureTokenManager:
             print("JWT token expired during decode")
             return None
         except jwt.InvalidTokenError as e:
-            print(f"JWT token invalid during decode: {e}")
+            print(f"JWT token invalid during decode (RS256): {e}")
             return None
         except Exception as e:
-            print(f"Error decoding JWT token: {e}")
+            print(f"Error decoding JWT token (RS256): {e}")
             return None
     
     def refresh_access_token(self, refresh_token):

@@ -19,6 +19,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth.models import User
 from django.contrib.auth import get_user_model
 from .secure_token import verify_jwt_token, decode_jwt_token
+from .models import TokenBlacklist, Session
 import logging
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,12 @@ class JWTAuthentication(BaseAuthentication):
             tuple: (user, token) if successful, None otherwise
         """
         try:
-            # First verify the token signature and expiration
+            # SECURITY CHECK 1: Check if token is blacklisted (logout, security violation)
+            if TokenBlacklist.is_blacklisted(token):
+                logger.warning(f"JWT token is blacklisted")
+                raise AuthenticationFailed('Token has been invalidated')
+            
+            # SECURITY CHECK 2: Verify the token signature and expiration
             if not verify_jwt_token(token):
                 logger.warning(f"JWT token verification failed")
                 return None
@@ -98,6 +104,21 @@ class JWTAuthentication(BaseAuthentication):
             if token_type != 'access':
                 logger.warning(f"Invalid token type: {token_type}")
                 raise AuthenticationFailed('Invalid token type')
+            
+            # SECURITY CHECK 3: Verify the session is still active (not logged out)
+            # Check if there's an active session for this token
+            try:
+                session = Session.objects.filter(token=token, user=user).last()
+                if session:
+                    if session.status == 'logout':
+                        logger.warning(f"Session logged out for user {user_id}")
+                        raise AuthenticationFailed('Session has been logged out')
+                    elif session.status == 'timeout':
+                        logger.warning(f"Session timed out for user {user_id}")
+                        raise AuthenticationFailed('Session has timed out')
+            except Session.DoesNotExist:
+                # If no session found, allow authentication (backward compatibility)
+                pass
             
             # Log successful authentication for security audit
             logger.info(f"JWT authentication successful for user {user_id}")

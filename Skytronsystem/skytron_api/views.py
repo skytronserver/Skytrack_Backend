@@ -6,6 +6,9 @@ from django.views.decorators.http import require_http_methods
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 import secrets
 import string
+import logging
+logger = logging.getLogger(__name__)
+
 HOST_STORAGE_PATH = '/host_storage'   
 e=""
 STATIC_OTP_CAP=False #True
@@ -11034,10 +11037,10 @@ def send_sms_otp(request ):
             if session.status!= 'otpsent':
                 return Response({'error': 'Invalid session token.No otp pending'}, status=status.HTTP_404_NOT_FOUND)
             time_difference = timezone.now() - session.loginTime
-            if time_difference.total_seconds() > 5 * 60:
+            if time_difference.total_seconds() > 2 * 60:  # 2 minutes OTP expiry
                 return Response({'error': 'OTP has expired.Please login again.'}, status=status.HTTP_403_FORBIDDEN)
-            if time_difference.total_seconds() < 3 * 60:
-                return Response({'error': 'You need to wait 3 min to resend otp.'}, status=status.HTTP_403_FORBIDDEN)
+            if time_difference.total_seconds() < 2 * 60:  # 2 minutes wait for resend
+                return Response({'error': 'You need to wait 2 min to resend otp.'}, status=status.HTTP_403_FORBIDDEN)
 
             if STATIC_OTP_CAP:
                 session.otp = str(111111)
@@ -11997,12 +12000,12 @@ def validate_otp(request ):
         
         time_difference = timezone.now() - session.loginTime
         
-        if time_difference.total_seconds() > 5 * 60:
+        if time_difference.total_seconds() > 2 * 60:  # 2 minutes session timeout
             return Response({'error': 'Session has expired. Please login again.'}, status=status.HTTP_403_FORBIDDEN)
  
         time_difference = timezone.now() - session.lastactivity
         
-        if time_difference.total_seconds() > 3 * 60:
+        if time_difference.total_seconds() > 2 * 60:  # 2 minutes OTP validity
             return Response({'error': 'OTP has expired. Please resend and use new OTP.'}, status=status.HTTP_403_FORBIDDEN)
  
         # Validate the OTP
@@ -12285,12 +12288,12 @@ def user_logout(request ):
 
     
     """
-    User logout.
+    User logout - Invalidates token and blacklists it.
     """
     if request.method == 'POST':
         token = request.data.get('token', None)
 
-        if  not token:
+        if not token:
             return Response({'error': 'Session token not provided'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Find the session based on the provided token
@@ -12299,11 +12302,44 @@ def user_logout(request ):
         if not session:
             return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
 
+        # Update session status to logout
         session.status = 'logout'
         session.save()
 
+        # SECURITY FIX: Blacklist the JWT token to prevent reuse
+        try:
+            # Decode token to get expiration and JTI
+            payload = decode_jwt_token(token)
+            if payload:
+                from datetime import datetime
+                jti = payload.get('jti', f"logout_{session.user.id}_{int(timezone.now().timestamp())}")
+                expires_at = datetime.fromtimestamp(payload.get('exp', 0))
+                
+                # Add token to blacklist
+                TokenBlacklist.blacklist_token(
+                    token=token,
+                    user_id=session.user.id,
+                    jti=jti,
+                    expires_at=expires_at,
+                    reason="logout"
+                )
+                logger.info(f"Token blacklisted for user {session.user.id} on logout")
+            
+            # Also delete any legacy Token objects
+            Token.objects.filter(user=session.user).delete()
+            
+        except Exception as e:
+            logger.error(f"Error blacklisting token on logout: {e}")
+            # Continue with logout even if blacklisting fails
+        
+        # Update user login status
+        try:
+            session.user.login = False
+            session.user.save()
+        except:
+            pass
 
-        return Response({'status': 'Logout successful'})
+        return Response({'status': 'Logout successful', 'message': 'Token has been invalidated'})
 '''
 @csrf_exempt
 @api_view(['GET'])

@@ -26,6 +26,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY', ' ')
 
+# JWT RSA Keys Configuration (RS256 Algorithm)
+# Paths to RSA private/public keys for JWT token signing
+JWT_PRIVATE_KEY_PATH = os.path.join(BASE_DIR, 'keys', 'jwt_private_key.pem')
+JWT_PUBLIC_KEY_PATH = os.path.join(BASE_DIR, 'keys', 'jwt_public_key.pem')
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True  # os.environ.get('DEBUG', 'False') == 'True'
 # True

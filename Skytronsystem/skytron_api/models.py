@@ -1584,6 +1584,73 @@ class BleKey(models.Model):
         app_label = 'skytron_api'
 
 
+class TokenBlacklist(models.Model):
+    """
+    Model to track blacklisted/invalidated JWT tokens
+    Used to prevent token reuse after logout or security events
+    """
+    objects = SafeCreateManager()
+    
+    token = models.CharField(max_length=512, unique=True, db_index=True, verbose_name="Token")
+    jti = models.CharField(max_length=255, db_index=True, verbose_name="JWT ID")  # JWT ID from token payload
+    user_id = models.IntegerField(db_index=True, verbose_name="User ID")
+    blacklisted_at = models.DateTimeField(default=timezone.now, verbose_name="Blacklisted At")
+    reason = models.CharField(
+        max_length=20, 
+        choices=[
+            ("logout", "User Logout"),
+            ("expired", "Token Expired"),
+            ("security", "Security Violation"),
+            ("admin", "Admin Action")
+        ],
+        default="logout",
+        verbose_name="Reason"
+    )
+    expires_at = models.DateTimeField(verbose_name="Token Expires At")  # Original token expiry time
+    
+    def __str__(self):
+        return f"Blacklisted Token (User {self.user_id}) - {self.reason}"
+    
+    class Meta:
+        db_table = 'token_blacklist'
+        verbose_name = 'Token Blacklist'
+        verbose_name_plural = 'Token Blacklists'
+        indexes = [
+            models.Index(fields=['token'], name='token_idx'),
+            models.Index(fields=['jti'], name='jti_idx'),
+            models.Index(fields=['user_id'], name='user_id_idx'),
+        ]
+    
+    @classmethod
+    def is_blacklisted(cls, token):
+        """Check if a token is blacklisted"""
+        return cls.objects.filter(token=token).exists()
+    
+    @classmethod
+    def blacklist_token(cls, token, user_id, jti, expires_at, reason="logout"):
+        """Add a token to the blacklist"""
+        try:
+            cls.objects.get_or_create(
+                token=token,
+                defaults={
+                    'jti': jti,
+                    'user_id': user_id,
+                    'expires_at': expires_at,
+                    'reason': reason
+                }
+            )
+            return True
+        except Exception as e:
+            print(f"Error blacklisting token: {e}")
+            return False
+    
+    @classmethod
+    def cleanup_expired(cls):
+        """Remove blacklisted tokens that have already expired (cleanup job)"""
+        from django.utils import timezone
+        deleted_count = cls.objects.filter(expires_at__lt=timezone.now()).delete()[0]
+        print(f"Cleaned up {deleted_count} expired blacklisted tokens")
+        return deleted_count
 
 
 """
