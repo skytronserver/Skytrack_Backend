@@ -96,11 +96,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email, RegexValidator
 from datetime import datetime, timedelta
 
-from django.utils.timezone import now
-#python3 -m pip install python-docx
-#python3 -m pip install pypandoc
-#python3 -m pip install docx2pdf
-
+from django.utils.timezone import now 
 # Import MQTT user creation function (relative import)
 from .mqtt_user_creator import create_mqtt_user
 import paho.mqtt.client as mqtt
@@ -10795,22 +10791,53 @@ def update_user(request, user_id):
 import re
 from django.db.models import Exists, OuterRef
 
+# Common passwords to reject (case-insensitive)
+COMMON_PASSWORDS = [
+    'password', 'password1', 'password123', 'password@123', 'password#123',
+    'welcome', 'welcome1', 'welcome123', 'welcome@123', 'welcome#123',
+    'admin', 'admin123', 'admin@123', 'admin#123',
+    'test', 'test123', 'test@123', 'test#123',
+    'qwerty', 'qwerty123', 'qwerty@123',
+    '12345678', '123456789', '1234567890',
+    'abc123', 'abc@123', 'letmein', 'monkey123',
+    'dragon123', 'master123', 'sunshine123',
+    'iloveyou', 'princess123', 'football123',
+    'welcome1!', 'password1!', 'admin1234!',
+    'passw0rd', 'p@ssw0rd', 'p@ssword',
+]
+
 def is_valid_string(s):
+    # Sanitize the string - remove any leading/trailing whitespace
+    s = s.strip()
+    
     # Check the length
     if len(s) < 8 or len(s) > 25:
+        return False
+    
+    # Check against common passwords (case-insensitive)
+    if s.lower() in COMMON_PASSWORDS:
+        return False
+    
+    # Check for only alphanumeric and allowed special characters
+    # Allowed: !@#$%^*()_-+=[]{}:;'",.<>?/\|`~
+    # Excluded: & (ampersand)
+    allowed_pattern = re.compile(r'^[A-Za-z0-9!@#$%^*()_\-+=\[\]{};:\'",.<>?/\\|`~]+$')
+    if not allowed_pattern.match(s):
         return False
     
     # Define regular expressions for the criteria
     has_uppercase = re.search(r'[A-Z]', s)
     has_lowercase = re.search(r'[a-z]', s)
     has_digit = re.search(r'[0-9]', s)
-    has_special = re.search(r'[!@#$%^&*(),.?":{}|<>]', s)
+    # Expanded special characters (excluding &)
+    has_special = re.search(r'[!@#$%^*()_\-+=\[\]{};:\'",.<>?/\\|`~]', s)
     
     # Check if all conditions are met
     if has_uppercase and has_lowercase and has_digit and has_special:
         return True
     else:
         return False
+    
 @csrf_exempt
 @api_view(['POST'])
 @throttle_classes([PasswordResetRateThrottle])  # 3 requests per minute, block IP for 5 min
