@@ -13,29 +13,7 @@ Command Line:
 import subprocess
 import time
 
-def create_mqtt_user(username, password):
-    """
-    Create or update an MQTT user with police-level access
-    
-    This function creates a new MQTT user or updates an existing one with:
-    - Username/password authentication
-    - Police-level access (open-all role) - same permissions as users 1000000010, 1000000011
-    - Full publish/subscribe access to all topics
-    
-    Args:
-        username (str): MQTT username (any string)
-        password (str): MQTT password (any string)
-    
-    Returns:
-        bool: True if user was created/updated successfully and can connect, False otherwise
-    
-    Example:
-        success = create_mqtt_user("device123", "secretpass")
-        if success:
-            print("User ready to use!")
-        else:
-            print("Failed to create user")
-    """
+def create_mqtt_user(username, password): 
     # MQTT broker configuration - using environment variables for deployment flexibility
     import os
     CA_FILE = "/app/keys/ca.crt"  # Updated certificate path

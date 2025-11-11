@@ -1426,8 +1426,10 @@ def saveRoute(request ):
         man=get_user_object(user,role)
         role1="superadmin"
         sa=get_user_object(user,role1)
-        if not man and not sa:
-            return Response({"error":"Request must be from  "+role+' or '+role1+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        role2="stateadmin"
+        sa2=get_user_object(user,role2)
+        if not man and not sa and not sa2:
+            return Response({"error":"Request must be from  "+role+' or '+role1+' or '+role2+'.'}, status=status.HTTP_400_BAD_REQUEST)
 
         #print(request.body)
         data =json.loads( request.body )
@@ -1446,7 +1448,7 @@ def saveRoute(request ):
             tag=None
             if man :
                 tag=DeviceTag.objects.filter(  device_id=device,   vehicle_owner =man)
-            elif sa:
+            elif sa or sa2  :
                 tag=DeviceTag.objects.filter( device_id=device)
             if not tag:
                     return JsonResponse({"error": "Unauthorised owner "}, status=405)
@@ -3195,32 +3197,13 @@ def create_user(role, req):
             is_active=is_active,
             is_staff=is_staff,
             status=status,
-            password=hashed_password
+            password=new_password
         )
         if error:  # Rollback user creation if dealer creation fails
             return [None, error.data , None] # Return the Response object from safe_create
 
         user.save()
-
-        # Create token with JWT
-        from .secure_token import generate_jwt_token
-        jwt_token = generate_jwt_token(
-            user_id=user.id,
-            mobile=user.mobile,
-            session_metadata={
-                "session_type": "user_creation",
-                "role": user.role
-            }
-        )
-        # If we have a JWT, return it directly. Don't store the long JWT in
-        # the legacy Token table (Token.key is varchar(40)). Only create a
-        # legacy Token when JWT isn't available.
-        if jwt_token:
-            token_value = jwt_token
-        else:
-            token_obj = Token.objects.create(user=user)
-            token_value = token_obj.key
-
+ 
         return [user, None, new_password]
 
     except IntegrityError as e:
@@ -5916,10 +5899,7 @@ def TagDevice2Vehicle(request ):
             district= Settings_District.objects.filter(id=request.data['district']).last()
             if not district:
                 return Response({"error":"District not found."}, status=status.HTTP_400_BAD_REQUEST)
-            if STATIC_OTP_CAP:
-                otp  = str(111111)
-            else:
-                otp = str(secrets.randbelow(1000000)).zfill(6)
+            otp = str(secrets.randbelow(1000000)).zfill(6)
             device_tag ,error= DeviceTag.objects.safe_create(
             device_id=device_id,
             vehicle_owner =vehicle_owner ,
@@ -6195,12 +6175,8 @@ def driver_remove(request ):
 def driver_add(request ): 
     errors = validate_inputs(request)
     if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    
-    
-    user=request.user 
-    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST) 
+    user=request.user  
     role="owner"
     man=get_user_object(user,role)
     if not man:
@@ -8405,16 +8381,16 @@ def filter_Settings_District(request):
                 districts = Settings_District.objects.filter(
                     state=uo.state
                 ).select_related('state').values(
-                    'id', 'district', 'created', 
-                    'state__id', 'state__state_name'
+                    'id', 'district', 
+                    'state__id', 'state__state'
                 ).distinct()
             else:
                 districts = Settings_District.objects.none().values()
         else:
             # For other roles, get all districts with optimized query
             districts = Settings_District.objects.select_related('state').values(
-                'id', 'district', 'created',
-                'state__id', 'state__state_name'
+                'id', 'district', 
+                'state__id', 'state__state'
             ).distinct()
         
         # Convert to list for JSON response
@@ -8425,11 +8401,10 @@ def filter_Settings_District(request):
         for district in district_list:
             formatted_data.append({
                 'id': district['id'],
-                'district': district['district'],
-                'created': district['created'],
+                'district': district['district'], 
                 'state': {
                     'id': district['state__id'],
-                    'state_name': district['state__state_name']
+                    'state_name': district['state__state']
                 } if district['state__id'] else None
             })
         
@@ -10809,33 +10784,26 @@ COMMON_PASSWORDS = [
     'passw0rd', 'p@ssw0rd', 'p@ssword',
 ]
 
-def is_valid_string(s):
-    # Sanitize the string - remove any leading/trailing whitespace
+def is_valid_string(s): 
     s = s.strip()
     
     # Check the length
     if len(s) < 8 or len(s) > 25:
         return False
-    
-    # Check against common passwords (case-insensitive)
+     
     if s.lower() in COMMON_PASSWORDS:
         return False
-    
-    # Check for only alphanumeric and allowed special characters
-    # Allowed: !@#$%^*()_-+=[]{}:;'",.<>?/\|`~
-    # Excluded: & (ampersand)
+     
     allowed_pattern = re.compile(r'^[A-Za-z0-9!@#$%^*()_\-+=\[\]{};:\'",.<>?/\\|`~]+$')
     if not allowed_pattern.match(s):
         return False
-    
-    # Define regular expressions for the criteria
+     
     has_uppercase = re.search(r'[A-Z]', s)
     has_lowercase = re.search(r'[a-z]', s)
-    has_digit = re.search(r'[0-9]', s)
-    # Expanded special characters (excluding &)
+    has_digit = re.search(r'[0-9]', s) 
     has_special = re.search(r'[!@#$%^*()_\-+=\[\]{};:\'",.<>?/\\|`~]', s)
     
-    # Check if all conditions are met
+ 
     if has_uppercase and has_lowercase and has_digit and has_special:
         return True
     else:
@@ -10844,6 +10812,7 @@ def is_valid_string(s):
 @csrf_exempt
 @api_view(['POST'])
 @throttle_classes([PasswordResetRateThrottle])  # 3 requests per minute, block IP for 5 min
+@permission_classes([AllowAny])
 @require_http_methods(['GET', 'POST'])
 def password_reset(request ): 
     errors = validate_inputs(request)
@@ -10891,11 +10860,9 @@ def password_reset(request ):
             # During password reset, we don't need to check request.user.id 
             # The token validation is handled by the Token authentication system
             # Let's verify the token directly
-            token_key = request.data.get('token', None)
+            token_key = request.data.get('token2', None)
             if token_key:
-                try:
-                    token = Token.objects.get(key=token_key, user=user)
-                except Token.DoesNotExist:
+                if not user.password==token_key:
                     return Response({'error': 'Invalid Token'}, status=status.HTTP_400_BAD_REQUEST)
             # If no token provided, this might be a direct password reset from an authorized user
             elif not request.user.is_authenticated:
@@ -11479,13 +11446,7 @@ def temp_user_resendOTP(request ):
         tpid="1007536593942813283"
         if tempu:
             send_SMS(tempu.mobile,text,tpid) 
-            #send_mail(
-            #    'Login OTP',
-            #    "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-            #    'noreply@skytron.in',
-            #    ["kishalaychakraborty1@gmail.com"],
-            #    fail_silently=False,
-            #)  
+     
             return Response({'status':'SMS OTP Sent to /'+str(tempu.mobile)+'.','session_key': session_key}, status=status.HTTP_200_OK)
        
     
@@ -11898,13 +11859,9 @@ def user_login_app(request ):
         user.is_active=True
         user.save()
         existing_session = Session.objects.filter(user=user.id, status='login').last()
-        #if existing_session:
-        #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
-        if STATIC_OTP_CAP:
-                otp  = str(111111)
-        else:
-                otp = str(secrets.randbelow(1000000)).zfill(6)
-        #token = get_random_string(length=32)
+         
+        otp = str(secrets.randbelow(1000000)).zfill(6)
+       
         Token.objects.filter(user=user).delete()
 
         # Generate secure JWT token for web OTP flow
@@ -12138,11 +12095,11 @@ def combined_device_stock(request):
     elif user.role == "dtorto":
         # For DTO, get devices in their state
         device_stocks = device_stocks.filter(
-            dealer__manufacturer__state=man.state.state
+            dealer__manufacturer__state=man.state
         )
         # Add available for fitting devices from dealers in their state
         available_devices = device_stocks.filter(
-            dealer__manufacturer__state=man.state.state,
+            dealer__manufacturer__state=man.state,
             stock_status='Available_for_fitting'
         )
     else:  # dealer

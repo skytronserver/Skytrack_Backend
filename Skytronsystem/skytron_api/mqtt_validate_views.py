@@ -2,7 +2,7 @@
 MQTT Connection Validation Endpoint for mosquitto-go-auth
 Handles direct MQTT authentication with JWT-only mode support
 """
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
@@ -16,6 +16,7 @@ User = get_user_model()
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([])  # Disable rate limiting for MQTT auth
 def mqtt_validate_connection(request):
     """
     Validate MQTT connection for mosquitto-go-auth plugin
@@ -45,7 +46,10 @@ def mqtt_validate_connection(request):
         logger.info(f"MQTT Auth: username={'[empty]' if not username else username}, clientid={clientid}")
         
         # MODE 1: Password-only (JWT token mode)
-        if not username and password:
+        # Accept empty username OR special placeholders: jwt, token, bearer
+        is_jwt_mode = (not username or username.lower() in ['jwt', 'token', 'bearer']) and password
+        
+        if is_jwt_mode:
             logger.info("MQTT Auth: JWT-only mode detected")
             
             # Verify JWT signature (RS256)
@@ -116,6 +120,7 @@ def mqtt_validate_connection(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([])  # Disable rate limiting for MQTT ACL
 def mqtt_validate_acl(request):
     """
     Validate MQTT ACL (topic access control) for mosquitto-go-auth

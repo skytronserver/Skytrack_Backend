@@ -39,7 +39,7 @@ MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "isjihiuhguish57hgh58ghh4ghg7h75ihgsh
 
 # Paths to certificates - Docker container path
 # Use root CA certificate for proper chain of trust validation
-ROOT_CA = "/app/Skytronsystem/root_ca.crt"  # Root CA for certificate chain validation
+ROOT_CA = "/app/keys/ca.crt"  # Root CA for certificate chain validation
 #CLIENT_CERT = "/app/mqttKeys/client.crt"  # Optional: for mutual TLS
 #CLIENT_KEY = "/app/mqttKeys/client.key"    # Optional: for mutual TLS
 #mosquitto_sub -h '135.235.166.209' -p 8883 -t '#' --cafile /app/ca.crt --cert /app/client.crt --key /app/client.key -d

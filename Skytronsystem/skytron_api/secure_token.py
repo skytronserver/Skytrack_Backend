@@ -25,9 +25,9 @@ class SecureTokenManager:
     def __init__(self):
         # Use RS256 algorithm with RSA keys for enhanced security
         self.algorithm = "RS256"
-        self.access_token_lifetime = 120  # 2 minutes (for testing/security)
-        self.refresh_token_lifetime = 120  # 2 minutes (for testing/security)
-        
+        self.access_token_lifetime = 1200 # 20 minutes (for testing/security)
+        self.refresh_token_lifetime = 1200 # 20 minutes (for testing/security)
+
         # Load RSA keys from files
         self.private_key = self._load_private_key()
         self.public_key = self._load_public_key()
