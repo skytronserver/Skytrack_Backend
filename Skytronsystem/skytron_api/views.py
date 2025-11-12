@@ -14984,44 +14984,81 @@ def check_module_access(request):
 @permission_classes([IsAuthenticated])
 def check_user_type(request):
     """
-    API endpoint to check user type and return permissions.
+    API endpoint to check user type and return permissions for all user roles.
     No POST data required - uses authenticated user.
-    Returns: {police: true/false, ambulance: true/false, owner: true/false, guest: true/false}
+    Returns: {
+        superadmin: true/false,
+        stateadmin: true/false,
+        devicemanufacture: true/false,
+        dealer: true/false,
+        owner: true/false,
+        esimprovider: true/false,
+        filment: true/false,
+        sosadmin: true/false,
+        teamleader: true/false,
+        sosexecutive: true/false,
+        police: true/false,
+        ambulance: true/false,
+        guest: true/false
+    }
     """
     try:
         user = request.user
         
         # Initialize all permissions as False
         response_data = {
+            'superadmin': False,
+            'stateadmin': False,
+            'devicemanufacture': False,
+            'dealer': False,
+            'owner': False,
+            'esimprovider': False,
+            'filment': False,
+            'sosadmin': False,
+            'teamleader': False,
+            'sosexecutive': False,
             'police': False,
             'ambulance': False,
-            'owner': False,
             'guest': False
         }
         
-        # Check if user role is owner
-        if user.role == 'owner':
+        # Check user role and set corresponding flag
+        if user.role == 'superadmin':
+            response_data['superadmin'] = True
+        elif user.role == 'stateadmin':
+            response_data['stateadmin'] = True
+        elif user.role == 'devicemanufacture':
+            response_data['devicemanufacture'] = True
+        elif user.role == 'dealer':
+            response_data['dealer'] = True
+        elif user.role == 'owner':
             response_data['owner'] = True
-        
-        # Check if user is sosexecutive and get their type
+        elif user.role == 'esimprovider':
+            response_data['esimprovider'] = True
+        elif user.role == 'filment':
+            response_data['filment'] = True
+        elif user.role == 'sosadmin':
+            response_data['sosadmin'] = True
+        elif user.role == 'teamleader':
+            response_data['teamleader'] = True
         elif user.role == 'sosexecutive':
+            response_data['sosexecutive'] = True
+            
+            # Check if sosexecutive is police or ambulance type
             try:
-                # Get the EM_ex record for this user
-                em_ex = EM_ex.objects.filter(
-                    users=user 
-                ).first()
-                
+                em_ex = EM_ex.objects.filter(users=user).first()
                 if em_ex:
-                    # Check the user_type field in EM_ex
                     if em_ex.user_type == 'police_ex':
                         response_data['police'] = True
                     elif em_ex.user_type == 'ambulance_ex':
                         response_data['ambulance'] = True
             except Exception as e:
-                # If any error in checking EM_ex, treat as guest
                 pass
+        else:
+            # Unknown role or no role, treat as guest
+            response_data['guest'] = True
         
-        # If none of the above conditions match, user is treated as guest
+        # If no role was matched, set guest to True
         if not any(response_data.values()):
             response_data['guest'] = True
         
