@@ -47,7 +47,8 @@ import glob
 
 
                
-from django.utils.crypto import get_random_string   
+from django.utils.crypto import get_random_string
+from math import radians, sin, cos, sqrt, asin   
 from .secure_token import generate_jwt_token, verify_jwt_token, decode_jwt_token   
 import sys
 from django.forms.models import model_to_dict
@@ -15523,6 +15524,296 @@ def update_incident(request):
             'status': 'success',
             'message': 'Incident updated successfully',
             'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== AlertsLog APIs ====================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def create_alert_log(request):
+    """Create a new alert log entry"""
+    try:
+        alert_type = request.data.get('type')
+        alert_status = request.data.get('status', '')
+        gps_ref_id = request.data.get('gps_ref_id')
+        device_tag_id = request.data.get('device_tag_id')
+        route_ref_id = request.data.get('route_ref_id')
+        em_ref_id = request.data.get('em_ref_id')
+        state_id = request.data.get('state_id')
+        
+        # Validate required fields
+        if not alert_type:
+            return Response({
+                'status': 'error',
+                'message': 'type is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not gps_ref_id:
+            return Response({
+                'status': 'error',
+                'message': 'gps_ref_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not device_tag_id:
+            return Response({
+                'status': 'error',
+                'message': 'device_tag_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not state_id:
+            return Response({
+                'status': 'error',
+                'message': 'state_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate foreign key references
+        gps_ref = GPSData.objects.filter(id=gps_ref_id).first()
+        if not gps_ref:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid gps_ref_id'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        device_tag = DeviceTag.objects.filter(id=device_tag_id).first()
+        if not device_tag:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid device_tag_id'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        state_obj = Settings_State.objects.filter(id=state_id).first()
+        if not state_obj:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid state_id'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Optional references
+        route_ref = None
+        if route_ref_id:
+            route_ref = Route.objects.filter(id=route_ref_id).first()
+        
+        em_ref = None
+        if em_ref_id:
+            em_ref = EMCall.objects.filter(id=em_ref_id).first()
+        
+        # Create alert log
+        alert_log = AlertsLog.objects.create(
+            type=alert_type,
+            status=alert_status,
+            gps_ref=gps_ref,
+            route_ref=route_ref,
+            em_ref=em_ref,
+            deviceTag=device_tag,
+            state=state_obj
+        )
+        
+        serializer = AlertsLogSerializer(alert_log)
+        return Response({
+            'status': 'success',
+            'message': 'Alert log created successfully',
+            'data': serializer.data
+        }, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def update_alert_log(request):
+    """Update an existing alert log entry"""
+    try:
+        alert_log_id = request.data.get('alert_log_id')
+        
+        if not alert_log_id:
+            return Response({
+                'status': 'error',
+                'message': 'alert_log_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        alert_log = AlertsLog.objects.filter(id=alert_log_id).first()
+        if not alert_log:
+            return Response({
+                'status': 'error',
+                'message': 'Alert log not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Update fields if provided
+        if 'type' in request.data:
+            alert_log.type = request.data.get('type')
+        
+        if 'status' in request.data:
+            alert_log.status = request.data.get('status')
+        
+        if 'route_ref_id' in request.data:
+            route_ref_id = request.data.get('route_ref_id')
+            if route_ref_id:
+                route_ref = Route.objects.filter(id=route_ref_id).first()
+                if route_ref:
+                    alert_log.route_ref = route_ref
+            else:
+                alert_log.route_ref = None
+        
+        if 'em_ref_id' in request.data:
+            em_ref_id = request.data.get('em_ref_id')
+            if em_ref_id:
+                em_ref = EMCall.objects.filter(id=em_ref_id).first()
+                if em_ref:
+                    alert_log.em_ref = em_ref
+            else:
+                alert_log.em_ref = None
+        
+        alert_log.save()
+        
+        serializer = AlertsLogSerializer(alert_log)
+        return Response({
+            'status': 'success',
+            'message': 'Alert log updated successfully',
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def filter_alert_log(request):
+    """Filter alert logs with multiple parameters and pagination"""
+    try:
+        # Get filter parameters
+        alert_type = request.data.get('type')
+        alert_status = request.data.get('status')
+        vehicle_reg_no = request.data.get('vehicle_reg_no')
+        state_id = request.data.get('state_id')
+        district = request.data.get('district')
+        start_date = request.data.get('start_date')
+        end_date = request.data.get('end_date')
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        radius = request.data.get('radius', 10)  # Default 10 km
+        page = request.data.get('page', 1)
+        page_size = request.data.get('page_size', 10)
+        
+        # Build query
+        query = AlertsLog.objects.all()
+        
+        # Filter by type
+        if alert_type:
+            query = query.filter(type=alert_type)
+        
+        # Filter by status
+        if alert_status:
+            query = query.filter(status=alert_status)
+        
+        # Filter by vehicle registration number
+        if vehicle_reg_no:
+            query = query.filter(deviceTag__vehicle_reg_no__icontains=vehicle_reg_no)
+        
+        # Filter by state
+        if state_id:
+            query = query.filter(state_id=state_id)
+        
+        # Filter by district from device tag
+        if district:
+            query = query.filter(deviceTag__district__district__icontains=district)
+        
+        # Filter by date range
+        if start_date:
+            try:
+                start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
+                query = query.filter(timestamp__gte=start_datetime)
+            except ValueError:
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid start_date format. Use YYYY-MM-DD'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if end_date:
+            try:
+                end_datetime = datetime.strptime(end_date, '%Y-%m-%d')
+                end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
+                query = query.filter(timestamp__lte=end_datetime)
+            except ValueError:
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid end_date format. Use YYYY-MM-DD'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Filter by location (lat, lon, radius)
+        if latitude and longitude:
+            try:
+                latitude = float(latitude)
+                longitude = float(longitude)
+                radius = float(radius)
+                
+                # Get all alerts with GPS data
+                alerts_with_location = []
+                for alert in query:
+                    if alert.gps_ref:
+                        gps_lat = float(alert.gps_ref.latitude)
+                        gps_lon = float(alert.gps_ref.longitude)
+                        
+                        # Calculate distance using Haversine formula
+                        lat1, lon1 = radians(latitude), radians(longitude)
+                        lat2, lon2 = radians(gps_lat), radians(gps_lon)
+                        
+                        dlat = lat2 - lat1
+                        dlon = lon2 - lon1
+                        
+                        a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+                        c = 2 * asin(sqrt(a))
+                        distance = 6371 * c  # Earth radius in kilometers
+                        
+                        if distance <= radius:
+                            alerts_with_location.append(alert.id)
+                
+                # Filter by IDs within radius
+                query = query.filter(id__in=alerts_with_location)
+            except (ValueError, TypeError):
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid latitude, longitude, or radius format'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Order by timestamp (newest first)
+        query = query.order_by('-timestamp')
+        
+        # Pagination
+        paginator = Paginator(query, page_size)
+        try:
+            alerts = paginator.page(page)
+        except:
+            alerts = paginator.page(1)
+        
+        serializer = AlertsLogSerializer(alerts, many=True)
+        
+        return Response({
+            'status': 'success',
+            'message': 'Alert logs retrieved successfully',
+            'data': serializer.data,
+            'pagination': {
+                'total_records': paginator.count,
+                'total_pages': paginator.num_pages,
+                'current_page': alerts.number,
+                'page_size': page_size,
+                'has_next': alerts.has_next(),
+                'has_previous': alerts.has_previous()
+            }
         }, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({

@@ -1,0 +1,487 @@
+{
+    "info": {
+        "_postman_id": "skytrack-new-apis-2025",
+        "name": "Skytrack New APIs - Bus Stand, OTA, Incident",
+        "description": "Collection of new APIs for Bus Stand Management, OTA Settings, and Incident Register",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "User Type Check",
+            "item": [
+                {
+                    "name": "Check User Type",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/check-user-access/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "check-user-access",
+                                ""
+                            ]
+                        },
+                        "description": "Check authenticated user type and permissions. Returns all user role flags including superadmin, stateadmin, dealer, owner, etc."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Bus Stand APIs",
+            "item": [
+                {
+                    "name": "Create Bus Stand",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"latitude\": 26.8467,\n    \"longitude\": 80.9462,\n    \"name\": \"Lucknow Central Bus Stand\",\n    \"details\": \"Main bus terminal in Lucknow with facilities for interstate buses\",\n    \"active\": true\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/busstand/set/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "busstand",
+                                "set",
+                                ""
+                            ]
+                        },
+                        "description": "Create a new bus stand. Any registered user can create a bus stand."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Activate/Deactivate Bus Stand",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"bus_stand_id\": 1,\n    \"active\": false\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/busstand/activate-deactivate/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "busstand",
+                                "activate-deactivate",
+                                ""
+                            ]
+                        },
+                        "description": "Activate or deactivate a bus stand by its ID. Set active to true for activation, false for deactivation."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Filter Bus Stands",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Lucknow\",\n    \"created_by\": 1,\n    \"created_at_from\": \"2025-01-01\",\n    \"created_at_to\": \"2025-12-31\",\n    \"latitude\": 26.8467,\n    \"longitude\": 80.9462,\n    \"radius_km\": 10,\n    \"active\": true,\n    \"page\": 1,\n    \"page_size\": 10\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/busstand/filter/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "busstand",
+                                "filter",
+                                ""
+                            ]
+                        },
+                        "description": "Filter bus stands by various parameters:\n- name: Bus stand name (partial match)\n- created_by: User ID who created it\n- created_at_from/to: Date range\n- latitude/longitude/radius_km: Location-based search\n- active: Filter by active status\n- page/page_size: Pagination"
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "OTA Settings APIs",
+            "item": [
+                {
+                    "name": "Create OTA Settings",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"command\": \"UPDATE_FIRMWARE_V2.5\",\n    \"active\": true\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/ota/create/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "ota",
+                                "create",
+                                ""
+                            ]
+                        },
+                        "description": "Create a new OTA (Over-The-Air) settings command. Any registered user can create OTA settings."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update OTA Settings",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"ota_id\": 1,\n    \"command\": \"UPDATE_FIRMWARE_V2.6\",\n    \"active\": false\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/ota/update/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "ota",
+                                "update",
+                                ""
+                            ]
+                        },
+                        "description": "Update an existing OTA settings by ID. You can update command and active status."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Filter OTA Settings",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"command\": \"FIRMWARE\",\n    \"triggered_by\": 1,\n    \"triggered_at_from\": \"2025-01-01\",\n    \"triggered_at_to\": \"2025-12-31\",\n    \"active\": true,\n    \"page\": 1,\n    \"page_size\": 10\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/ota/filter/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "ota",
+                                "filter",
+                                ""
+                            ]
+                        },
+                        "description": "Filter OTA settings by various parameters:\n- command: Command text (partial match)\n- triggered_by: User ID who triggered it\n- triggered_at_from/to: Date range\n- active: Filter by active status\n- page/page_size: Pagination"
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Incident Register APIs",
+            "item": [
+                {
+                    "name": "Register Incident",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"latitude\": 26.8467,\n    \"longitude\": 80.9462,\n    \"vehicle_reg_no\": \"UP32AB1234\",\n    \"details\": \"Vehicle breakdown on highway, requires immediate assistance\",\n    \"district\": \"Lucknow\",\n    \"police_station\": \"Hazratganj Police Station\",\n    \"image_file\": \"incident_12345.jpg\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/incident/register/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "incident",
+                                "register",
+                                ""
+                            ]
+                        },
+                        "description": "Register a new incident. Any registered user can register an incident. If you need to upload an image, use form-data with 'image' field."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Register Incident with Image",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "latitude",
+                                    "value": "26.8467",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "longitude",
+                                    "value": "80.9462",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "vehicle_reg_no",
+                                    "value": "UP32AB1234",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "details",
+                                    "value": "Vehicle breakdown on highway",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "district",
+                                    "value": "Lucknow",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "police_station",
+                                    "value": "Hazratganj Police Station",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "image",
+                                    "type": "file",
+                                    "src": []
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/incident/register/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "incident",
+                                "register",
+                                ""
+                            ]
+                        },
+                        "description": "Register incident with image file upload. Use form-data format with an image file."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Incident Status",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"incident_id\": 1,\n    \"latest_status\": \"Under investigation - Police team dispatched to location\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/incident/update/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "incident",
+                                "update",
+                                ""
+                            ]
+                        },
+                        "description": "Update incident status. Any registered user can update the status. The system automatically records who updated it and when."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Filter Incidents",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"vehicle_reg_no\": \"UP32AB1234\",\n    \"registered_by\": 1,\n    \"registered_at_from\": \"2025-01-01\",\n    \"registered_at_to\": \"2025-12-31\",\n    \"district\": \"Lucknow\",\n    \"police_station\": \"Hazratganj\",\n    \"latitude\": 26.8467,\n    \"longitude\": 80.9462,\n    \"radius_km\": 10,\n    \"page\": 1,\n    \"page_size\": 10\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/incident/filter/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "incident",
+                                "filter",
+                                ""
+                            ]
+                        },
+                        "description": "Filter incidents by various parameters:\n- vehicle_reg_no: Vehicle registration number (partial match)\n- registered_by: User ID who registered it\n- registered_at_from/to: Date range\n- district: District name (partial match)\n- police_station: Police station name (partial match)\n- latitude/longitude/radius_km: Location-based search\n- page/page_size: Pagination"
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Module Access Check",
+            "item": [
+                {
+                    "name": "Check Module Access",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Token {{auth_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"module\": \"bus_stand_management\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/check-module-access/",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "check-module-access",
+                                ""
+                            ]
+                        },
+                        "description": "Check if user has access to a specific module. Returns {access: 'allow'}."
+                    },
+                    "response": []
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "https://api.growmed.in",
+            "type": "string"
+        },
+        {
+            "key": "auth_token",
+            "value": "your_auth_token_here",
+            "type": "string"
+        }
+    ]
+}

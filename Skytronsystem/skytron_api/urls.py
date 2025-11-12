@@ -361,10 +361,6 @@ urlpatterns = [
     path('stateadmin/reports/combined-approval/', state_admin_combined_approval_report, name='state_admin_combined_approval_report'),
     path('device-trip-details/', get_device_trip_details, name='get_device_trip_details'),
     
-    # Module access check
-    path('check-module-access/', check_module_access, name='check_module_access'),
-    path('check-user-access/', check_user_type, name='check_user_type'),
-    
     # MQTT Authentication endpoints
     path('mqtt/prepare-auth/', prepare_mqtt_auth, name='prepare_mqtt_auth'),
     path('mqtt/prepare-auth-token/', prepare_mqtt_auth_with_token, name='prepare_mqtt_auth_with_token'),
@@ -372,6 +368,10 @@ urlpatterns = [
     path('mqtt/validate-connection/', mqtt_validate_connection, name='mqtt_validate_connection'),  # For mosquitto-go-auth
     path('mqtt/validate-acl/', mqtt_validate_acl, name='mqtt_validate_acl'),  # For mosquitto-go-auth ACL
 
+    # Module access check
+    path('check-module-access/', check_module_access, name='check_module_access'),
+    path('check-user-access/', check_user_type, name='check_user_type'),
+    
     # Bus Stand APIs
     path('busstand/set/', set_bus_stand, name='set_bus_stand'),
     path('busstand/activate-deactivate/', activate_deactivate_bus_stand, name='activate_deactivate_bus_stand'),
@@ -386,6 +386,11 @@ urlpatterns = [
     path('incident/register/', register_incident, name='register_incident'),
     path('incident/filter/', filter_incident, name='filter_incident'),
     path('incident/update/', update_incident, name='update_incident'),
+    
+    # AlertsLog APIs
+    path('alertlog/create/', create_alert_log, name='create_alert_log'),
+    path('alertlog/update/', update_alert_log, name='update_alert_log'),
+    path('alertlog/filter/', filter_alert_log, name='filter_alert_log'),
 
 ]  
 

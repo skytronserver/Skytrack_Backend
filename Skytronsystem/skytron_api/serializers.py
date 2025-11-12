@@ -112,9 +112,33 @@ class StockAssignmentSerializer2(SanitizingModelSerializer):
         fields = ['device_id', 'dealer_id', 'assigned_by', 'assigned', 'shipping_remark', 'stock_status']
 '''
 class AlertsLogSerializer(SanitizingModelSerializer):
+    device_info = DeviceTagSerializer(source='deviceTag', read_only=True)
+    gps_info = serializers.SerializerMethodField()
+    route_info = serializers.SerializerMethodField()
+    state_info = Settings_StateSerializer(source='state', read_only=True)
+    
     class Meta:
         model = AlertsLog
         fields = '__all__'
+    
+    def get_gps_info(self, obj):
+        if obj.gps_ref:
+            return {
+                'latitude': obj.gps_ref.latitude,
+                'longitude': obj.gps_ref.longitude,
+                'date': obj.gps_ref.date,
+                'time': obj.gps_ref.time
+            }
+        return None
+    
+    def get_route_info(self, obj):
+        if obj.route_ref:
+            return {
+                'id': obj.route_ref.id,
+                'status': obj.route_ref.status
+            }
+        return None
+
 class DeviceStockFilterSerializer(serializers.Serializer):
     model_id = serializers.IntegerField(required=False)
     device_esn = serializers.CharField(required=False)
