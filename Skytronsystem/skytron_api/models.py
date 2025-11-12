@@ -1686,3 +1686,59 @@ class EMUserLocation(models.Model):
     time  
     
 """
+
+
+class BusStand(models.Model):
+    objects = SafeCreateManager()
+    latitude = models.DecimalField(max_digits=10, decimal_places=7)
+    longitude = models.DecimalField(max_digits=10, decimal_places=7)
+    name = models.CharField(max_length=255)
+    details = models.TextField(blank=True, null=True)
+    active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bus_stands')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'bus_stand'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.name} - {self.latitude}, {self.longitude}"
+
+
+class OTASettings(models.Model):
+    objects = SafeCreateManager()
+    command = models.TextField()
+    triggered_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ota_settings')
+    triggered_at = models.DateTimeField(auto_now_add=True)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'ota_settings'
+        ordering = ['-triggered_at']
+
+    def __str__(self):
+        return f"OTA Command by {self.triggered_by} at {self.triggered_at}"
+
+
+class IncidentRegister(models.Model):
+    objects = SafeCreateManager()
+    latitude = models.DecimalField(max_digits=10, decimal_places=7)
+    longitude = models.DecimalField(max_digits=10, decimal_places=7)
+    image_file = models.CharField(max_length=500, blank=True, null=True)
+    vehicle_reg_no = models.CharField(max_length=50)
+    details = models.TextField(blank=True, null=True)
+    registered_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='incidents')
+    registered_at = models.DateTimeField(auto_now_add=True)
+    district = models.CharField(max_length=100, blank=True, null=True)
+    police_station = models.CharField(max_length=100, blank=True, null=True)
+    latest_status = models.TextField(blank=True, null=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='incident_updates', null=True, blank=True)
+    updated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'incident_register'
+        ordering = ['-registered_at']
+
+    def __str__(self):
+        return f"Incident - {self.vehicle_reg_no} at {self.registered_at}"

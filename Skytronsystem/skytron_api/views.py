@@ -15034,3 +15034,467 @@ def check_user_type(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+# ================================
+# Bus Stand APIs
+# ================================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+def set_bus_stand(request):
+    """Create a new bus stand"""
+    try:
+        data = request.data.copy()
+        data['created_by'] = request.user.id
+        
+        serializer = BusStandSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'status': 'success',
+                'message': 'Bus stand created successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+        return Response({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+def activate_deactivate_bus_stand(request):
+    """Activate or deactivate a bus stand"""
+    try:
+        bus_stand_id = request.data.get('bus_stand_id')
+        active = request.data.get('active')
+        
+        if bus_stand_id is None or active is None:
+            return Response({
+                'status': 'error',
+                'message': 'bus_stand_id and active status are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        bus_stand = BusStand.objects.filter(id=bus_stand_id).first()
+        if not bus_stand:
+            return Response({
+                'status': 'error',
+                'message': 'Bus stand not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        bus_stand.active = active
+        bus_stand.save()
+        
+        serializer = BusStandSerializer(bus_stand)
+        return Response({
+            'status': 'success',
+            'message': f'Bus stand {"activated" if active else "deactivated"} successfully',
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+def filter_bus_stand(request):
+    """Filter bus stands by various parameters"""
+    try:
+        queryset = BusStand.objects.all()
+        
+        # Filter by name
+        name = request.data.get('name')
+        if name:
+            queryset = queryset.filter(name__icontains=name)
+        
+        # Filter by created_by
+        created_by = request.data.get('created_by')
+        if created_by:
+            queryset = queryset.filter(created_by_id=created_by)
+        
+        # Filter by created_at (date range)
+        created_at_from = request.data.get('created_at_from')
+        created_at_to = request.data.get('created_at_to')
+        if created_at_from:
+            queryset = queryset.filter(created_at__gte=created_at_from)
+        if created_at_to:
+            queryset = queryset.filter(created_at__lte=created_at_to)
+        
+        # Filter by location (latitude, longitude, radius in km)
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        radius_km = request.data.get('radius_km')
+        
+        if latitude and longitude and radius_km:
+            from math import radians, cos, sin, asin, sqrt
+            
+            def haversine(lon1, lat1, lon2, lat2):
+                lon1, lat1, lon2, lat2 = map(float, [lon1, lat1, lon2, lat2])
+                lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+                dlon = lon2 - lon1
+                dlat = lat2 - lat1
+                a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                c = 2 * asin(sqrt(a))
+                km = 6371 * c
+                return km
+            
+            filtered_stands = []
+            for stand in queryset:
+                distance = haversine(longitude, latitude, stand.longitude, stand.latitude)
+                if distance <= float(radius_km):
+                    filtered_stands.append(stand.id)
+            queryset = queryset.filter(id__in=filtered_stands)
+        
+        # Filter by active status
+        active = request.data.get('active')
+        if active is not None:
+            queryset = queryset.filter(active=active)
+        
+        # Pagination
+        page = request.data.get('page', 1)
+        page_size = request.data.get('page_size', 10)
+        
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+        
+        serializer = BusStandSerializer(page_obj, many=True)
+        
+        return Response({
+            'status': 'success',
+            'total_count': paginator.count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': paginator.num_pages,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ================================
+# OTA Settings APIs
+# ================================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+def create_ota_settings(request):
+    """Create a new OTA setting"""
+    try:
+        data = request.data.copy()
+        data['triggered_by'] = request.user.id
+        
+        serializer = OTASettingsSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'status': 'success',
+                'message': 'OTA settings created successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+        return Response({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+def update_ota_settings(request):
+    """Update an existing OTA setting"""
+    try:
+        ota_id = request.data.get('ota_id')
+        
+        if not ota_id:
+            return Response({
+                'status': 'error',
+                'message': 'ota_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        ota_setting = OTASettings.objects.filter(id=ota_id).first()
+        if not ota_setting:
+            return Response({
+                'status': 'error',
+                'message': 'OTA setting not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = OTASettingsSerializer(ota_setting, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'status': 'success',
+                'message': 'OTA settings updated successfully',
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
+        return Response({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+def filter_ota_settings(request):
+    """Filter OTA settings by various parameters"""
+    try:
+        queryset = OTASettings.objects.all()
+        
+        # Filter by command
+        command = request.data.get('command')
+        if command:
+            queryset = queryset.filter(command__icontains=command)
+        
+        # Filter by triggered_by
+        triggered_by = request.data.get('triggered_by')
+        if triggered_by:
+            queryset = queryset.filter(triggered_by_id=triggered_by)
+        
+        # Filter by triggered_at (date range)
+        triggered_at_from = request.data.get('triggered_at_from')
+        triggered_at_to = request.data.get('triggered_at_to')
+        if triggered_at_from:
+            queryset = queryset.filter(triggered_at__gte=triggered_at_from)
+        if triggered_at_to:
+            queryset = queryset.filter(triggered_at__lte=triggered_at_to)
+        
+        # Filter by active status
+        active = request.data.get('active')
+        if active is not None:
+            queryset = queryset.filter(active=active)
+        
+        # Pagination
+        page = request.data.get('page', 1)
+        page_size = request.data.get('page_size', 10)
+        
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+        
+        serializer = OTASettingsSerializer(page_obj, many=True)
+        
+        return Response({
+            'status': 'success',
+            'total_count': paginator.count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': paginator.num_pages,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ================================
+# Incident Register APIs
+# ================================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+def register_incident(request):
+    """Register a new incident"""
+    try:
+        data = request.data.copy()
+        data['registered_by'] = request.user.id
+        
+        # Handle file upload if present
+        if 'image' in request.FILES:
+            file_response = save_file(request, 'incident_image', 'fileuploads/incidents/')
+            if file_response.status_code == 200:
+                data['image_file'] = file_response.data.get('filename')
+        
+        serializer = IncidentRegisterSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'status': 'success',
+                'message': 'Incident registered successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+        return Response({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+def filter_incident(request):
+    """Filter incidents by various parameters"""
+    try:
+        queryset = IncidentRegister.objects.all()
+        
+        # Filter by vehicle_reg_no
+        vehicle_reg_no = request.data.get('vehicle_reg_no')
+        if vehicle_reg_no:
+            queryset = queryset.filter(vehicle_reg_no__icontains=vehicle_reg_no)
+        
+        # Filter by registered_by
+        registered_by = request.data.get('registered_by')
+        if registered_by:
+            queryset = queryset.filter(registered_by_id=registered_by)
+        
+        # Filter by registered_at (date range)
+        registered_at_from = request.data.get('registered_at_from')
+        registered_at_to = request.data.get('registered_at_to')
+        if registered_at_from:
+            queryset = queryset.filter(registered_at__gte=registered_at_from)
+        if registered_at_to:
+            queryset = queryset.filter(registered_at__lte=registered_at_to)
+        
+        # Filter by district
+        district = request.data.get('district')
+        if district:
+            queryset = queryset.filter(district__icontains=district)
+        
+        # Filter by police_station
+        police_station = request.data.get('police_station')
+        if police_station:
+            queryset = queryset.filter(police_station__icontains=police_station)
+        
+        # Filter by location (latitude, longitude, radius in km)
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        radius_km = request.data.get('radius_km')
+        
+        if latitude and longitude and radius_km:
+            from math import radians, cos, sin, asin, sqrt
+            
+            def haversine(lon1, lat1, lon2, lat2):
+                lon1, lat1, lon2, lat2 = map(float, [lon1, lat1, lon2, lat2])
+                lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+                dlon = lon2 - lon1
+                dlat = lat2 - lat1
+                a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                c = 2 * asin(sqrt(a))
+                km = 6371 * c
+                return km
+            
+            filtered_incidents = []
+            for incident in queryset:
+                distance = haversine(longitude, latitude, incident.longitude, incident.latitude)
+                if distance <= float(radius_km):
+                    filtered_incidents.append(incident.id)
+            queryset = queryset.filter(id__in=filtered_incidents)
+        
+        # Pagination
+        page = request.data.get('page', 1)
+        page_size = request.data.get('page_size', 10)
+        
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+        
+        serializer = IncidentRegisterSerializer(page_obj, many=True)
+        
+        return Response({
+            'status': 'success',
+            'total_count': paginator.count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': paginator.num_pages,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+def update_incident(request):
+    """Update incident status by any registered user"""
+    try:
+        incident_id = request.data.get('incident_id')
+        latest_status = request.data.get('latest_status')
+        
+        if not incident_id:
+            return Response({
+                'status': 'error',
+                'message': 'incident_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not latest_status:
+            return Response({
+                'status': 'error',
+                'message': 'latest_status is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        incident = IncidentRegister.objects.filter(id=incident_id).first()
+        if not incident:
+            return Response({
+                'status': 'error',
+                'message': 'Incident not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Update the incident
+        incident.latest_status = latest_status
+        incident.updated_by = request.user
+        incident.updated_at = timezone.now()
+        incident.save()
+        
+        serializer = IncidentRegisterSerializer(incident)
+        return Response({
+            'status': 'success',
+            'message': 'Incident updated successfully',
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+

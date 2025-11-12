@@ -372,6 +372,21 @@ urlpatterns = [
     path('mqtt/validate-connection/', mqtt_validate_connection, name='mqtt_validate_connection'),  # For mosquitto-go-auth
     path('mqtt/validate-acl/', mqtt_validate_acl, name='mqtt_validate_acl'),  # For mosquitto-go-auth ACL
 
+    # Bus Stand APIs
+    path('busstand/set/', set_bus_stand, name='set_bus_stand'),
+    path('busstand/activate-deactivate/', activate_deactivate_bus_stand, name='activate_deactivate_bus_stand'),
+    path('busstand/filter/', filter_bus_stand, name='filter_bus_stand'),
+    
+    # OTA Settings APIs
+    path('ota/create/', create_ota_settings, name='create_ota_settings'),
+    path('ota/update/', update_ota_settings, name='update_ota_settings'),
+    path('ota/filter/', filter_ota_settings, name='filter_ota_settings'),
+    
+    # Incident Register APIs
+    path('incident/register/', register_incident, name='register_incident'),
+    path('incident/filter/', filter_incident, name='filter_incident'),
+    path('incident/update/', update_incident, name='update_incident'),
+
 ]  
 
 

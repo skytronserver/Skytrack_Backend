@@ -720,3 +720,29 @@ class DealerSerializer(SanitizingModelSerializer):
         model = Dealer
         fields = '__all__'  
 
+
+class BusStandSerializer(SanitizingModelSerializer):
+    created_by_info = UserSerializer(source='created_by', read_only=True)
+    
+    class Meta:
+        model = BusStand
+        fields = '__all__'
+
+
+class OTASettingsSerializer(SanitizingModelSerializer):
+    triggered_by_info = UserSerializer(source='triggered_by', read_only=True)
+    
+    class Meta:
+        model = OTASettings
+        fields = '__all__'
+
+
+class IncidentRegisterSerializer(SanitizingModelSerializer):
+    registered_by_info = UserSerializer(source='registered_by', read_only=True)
+    updated_by_info = UserSerializer(source='updated_by', read_only=True)
+    
+    class Meta:
+        model = IncidentRegister
+        fields = '__all__'
+
+
