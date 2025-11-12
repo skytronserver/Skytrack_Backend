@@ -1721,6 +1721,7 @@ class OTASettings(models.Model):
         return f"OTA Command by {self.triggered_by} at {self.triggered_at}"
 
 
+
 class IncidentRegister(models.Model):
     objects = SafeCreateManager()
     latitude = models.DecimalField(max_digits=10, decimal_places=7)
