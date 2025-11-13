@@ -14981,6 +14981,258 @@ def get_device_trip_details(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_device_health_status(request):
+    """
+    API to get health status of devices with filtering options
+    
+    Filter Parameters:
+    - vehicle_reg_no: Vehicle registration number
+    - device_tag_id: Device tag ID
+    - imei: Device IMEI
+    - device_stock_id: Device stock ID
+    - device_model_id: Device model ID
+    - district_id: District ID
+    - manufacturer_id: Manufacturer ID (auto-applied for manufacturer role)
+    - vehicle_owner_id: Vehicle owner ID (auto-applied for owner role)
+    
+    Returns device health status with:
+    - Online/Offline status (offline if last data > 10 minutes old)
+    - Latest GPS data information
+    - Device details
+    """
+    try:
+        from datetime import datetime, timedelta
+        from django.db.models import Q, Max, Prefetch
+        
+        user = request.user
+        
+        # Get filter parameters
+        vehicle_reg_no = request.GET.get('vehicle_reg_no', '')
+        device_tag_id = request.GET.get('device_tag_id', '')
+        imei = request.GET.get('imei', '')
+        device_stock_id = request.GET.get('device_stock_id', '')
+        device_model_id = request.GET.get('device_model_id', '')
+        district_id = request.GET.get('district_id', '')
+        manufacturer_id = request.GET.get('manufacturer_id', '')
+        vehicle_owner_id = request.GET.get('vehicle_owner_id', '')
+        
+        # Base queryset
+        device_tags_query = DeviceTag.objects.select_related(
+            'device',
+            'device__model',
+            'device__model__created_by',
+            'vehicle_owner',
+            'district',
+            'district__state'
+        ).all()
+        
+        # Apply user-based access control
+        if user.role == 'devicemanufacture':
+            # Manufacturers can only see devices with models created by them
+            manufacturer = get_user_object(user, 'devicemanufacture')
+            if not manufacturer:
+                return Response({
+                    'status': 'error',
+                    'message': 'Manufacturer profile not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+            device_tags_query = device_tags_query.filter(
+                device__model__created_by=user
+            )
+        elif user.role == 'owner':
+            # Owners can only see their own devices
+            owner = get_user_object(user, 'owner')
+            if not owner:
+                return Response({
+                    'status': 'error',
+                    'message': 'Owner profile not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+            device_tags_query = device_tags_query.filter(vehicle_owner=owner)
+        elif user.role == 'dealer':
+            # Dealers can see devices sold by them
+            dealer = get_user_object(user, 'dealer')
+            if dealer:
+                device_tags_query = device_tags_query.filter(device__dealer=dealer)
+        # superadmin, stateadmin, dto_rto can see all devices (no additional filter)
+        
+        # Apply filter parameters
+        if vehicle_reg_no:
+            device_tags_query = device_tags_query.filter(
+                vehicle_reg_no__icontains=vehicle_reg_no
+            )
+        
+        if device_tag_id:
+            device_tags_query = device_tags_query.filter(id=device_tag_id)
+        
+        if imei:
+            device_tags_query = device_tags_query.filter(device__imei__icontains=imei)
+        
+        if device_stock_id:
+            device_tags_query = device_tags_query.filter(device__id=device_stock_id)
+        
+        if device_model_id:
+            device_tags_query = device_tags_query.filter(
+                device__model__id=device_model_id
+            )
+        
+        if district_id:
+            device_tags_query = device_tags_query.filter(district__id=district_id)
+        
+        if manufacturer_id:
+            device_tags_query = device_tags_query.filter(
+                device__model__created_by__id=manufacturer_id
+            )
+        
+        if vehicle_owner_id:
+            device_tags_query = device_tags_query.filter(
+                vehicle_owner__id=vehicle_owner_id
+            )
+        
+        # Get unique device tags
+        device_tags = device_tags_query.distinct()
+        
+        if not device_tags.exists():
+            return Response({
+                'status': 'success',
+                'total_devices': 0,
+                'online_devices': 0,
+                'offline_devices': 0,
+                'devices': []
+            })
+        
+        # Process each device tag
+        now = timezone.now()
+        offline_threshold = now - timedelta(minutes=10)
+        
+        devices_health = []
+        online_count = 0
+        offline_count = 0
+        
+        for device_tag in device_tags:
+            # Get the latest GPS data for this device
+            latest_gps = GPSData.objects.filter(
+                device_tag=device_tag
+            ).order_by('-entry_time').first()
+            
+            if not latest_gps:
+                # No GPS data found
+                device_status = 'no_data'
+                last_seen = None
+                offline_duration_minutes = None
+            else:
+                # Check if device is online or offline
+                if latest_gps.entry_time >= offline_threshold:
+                    device_status = 'online'
+                    online_count += 1
+                else:
+                    device_status = 'offline'
+                    offline_count += 1
+                    offline_duration_minutes = int((now - latest_gps.entry_time).total_seconds() / 60)
+                
+                last_seen = latest_gps.entry_time
+            
+            # Prepare device information
+            device_info = {
+                'device_tag_id': device_tag.id,
+                'vehicle_reg_no': device_tag.vehicle_reg_no,
+                'device_status': device_status,
+                'last_seen': last_seen,
+                'offline_duration_minutes': offline_duration_minutes if device_status == 'offline' else 0,
+                'device_details': {
+                    'imei': device_tag.device.imei,
+                    'device_stock_id': device_tag.device.id,
+                    'device_esn': device_tag.device.device_esn,
+                    'iccid': device_tag.device.iccid,
+                    'msisdn1': device_tag.device.msisdn1,
+                    'device_model': {
+                        'id': device_tag.device.model.id,
+                        'model_name': device_tag.device.model.model_name,
+                        'vendor_id': device_tag.device.model.vendor_id,
+                        'hardware_version': device_tag.device.model.hardware_version,
+                    },
+                    'manufacturer': {
+                        'id': device_tag.device.model.created_by.id if device_tag.device.model.created_by else None,
+                        'name': device_tag.device.model.created_by.name if device_tag.device.model.created_by else 'N/A'
+                    }
+                },
+                'vehicle_details': {
+                    'vehicle_make': device_tag.vehicle_make,
+                    'vehicle_model': device_tag.vehicle_model,
+                    'category': device_tag.category,
+                    'engine_no': device_tag.engine_no,
+                    'chassis_no': device_tag.chassis_no,
+                },
+                'location_details': {
+                    'district': device_tag.district.district if device_tag.district else 'N/A',
+                    'district_code': device_tag.district.district_code if device_tag.district else 'N/A',
+                    'state': device_tag.district.state.state if device_tag.district and device_tag.district.state else 'N/A',
+                },
+                'vehicle_owner': {
+                    'id': device_tag.vehicle_owner.id if device_tag.vehicle_owner else None,
+                    'company_name': device_tag.vehicle_owner.company_name if device_tag.vehicle_owner else 'N/A'
+                }
+            }
+            
+            # Add latest GPS data if available
+            if latest_gps:
+                device_info['latest_gps_data'] = {
+                    'packet_type': latest_gps.packet_type,
+                    'entry_time': latest_gps.entry_time,
+                    'latitude': latest_gps.latitude,
+                    'longitude': latest_gps.longitude,
+                    'speed': latest_gps.speed,
+                    'heading': latest_gps.heading,
+                    'altitude': latest_gps.altitude,
+                    'gps_status': latest_gps.gps_status,
+                    'ignition_status': latest_gps.ignition_status,
+                    'main_power_status': latest_gps.main_power_status,
+                    'main_input_voltage': latest_gps.main_input_voltage,
+                    'internal_battery_voltage': latest_gps.internal_battery_voltage,
+                    'emergency_status': latest_gps.emergency_status,
+                    'gsm_signal_strength': latest_gps.gsm_signal_strength,
+                    'satellites': latest_gps.satellites,
+                    'network_operator': latest_gps.network_operator,
+                    'odometer': latest_gps.odometer,
+                    'frame_number': latest_gps.frame_number,
+                }
+            else:
+                device_info['latest_gps_data'] = None
+            
+            devices_health.append(device_info)
+        
+        # Prepare response
+        response_data = {
+            'status': 'success',
+            'query_time': now,
+            'total_devices': len(devices_health),
+            'online_devices': online_count,
+            'offline_devices': offline_count,
+            'no_data_devices': len(devices_health) - online_count - offline_count,
+            'offline_threshold_minutes': 10,
+            'applied_filters': {
+                'vehicle_reg_no': vehicle_reg_no if vehicle_reg_no else None,
+                'device_tag_id': device_tag_id if device_tag_id else None,
+                'imei': imei if imei else None,
+                'device_stock_id': device_stock_id if device_stock_id else None,
+                'device_model_id': device_model_id if device_model_id else None,
+                'district_id': district_id if district_id else None,
+                'manufacturer_id': manufacturer_id if manufacturer_id else None,
+                'vehicle_owner_id': vehicle_owner_id if vehicle_owner_id else None,
+            },
+            'user_role': user.role,
+            'devices': devices_health
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred while retrieving device health status: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def check_module_access(request):

@@ -360,6 +360,7 @@ urlpatterns = [
     path('stateadmin/reports/approved-cops/', state_admin_approved_cops_report, name='state_admin_approved_cops_report'),
     path('stateadmin/reports/combined-approval/', state_admin_combined_approval_report, name='state_admin_combined_approval_report'),
     path('device-trip-details/', get_device_trip_details, name='get_device_trip_details'),
+    path('device-health-status/', get_device_health_status, name='get_device_health_status'),
     
     # MQTT Authentication endpoints
     path('mqtt/prepare-auth/', prepare_mqtt_auth, name='prepare_mqtt_auth'),
