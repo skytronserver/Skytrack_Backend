@@ -14716,30 +14716,14 @@ def state_admin_combined_approval_report(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_device_trip_details(request):
-    """
-    API to get trip details for a device tag
-    
-    Parameters:
-    - device_tag_id: ID of the device tag (required)
-    - start_datetime: Start datetime for trip search (optional, default: 24 hours ago)
-    - end_datetime: End datetime for trip search (optional, default: now)
-    
-    Returns list of trips with details including:
-    - Trip duration, distance, average speed
-    - Start/end locations
-    - Alerts during trip
-    """
+
     try:
         from datetime import datetime, timedelta
         from django.db.models import Q, Min, Max
         import math
         
         def calculate_distance(lat1, lon1, lat2, lon2):
-            """
-            Calculate the great circle distance between two points 
-            on the earth (specified in decimal degrees)
-            Returns distance in kilometers
-            """
+
             # Convert decimal degrees to radians
             lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
             
@@ -14795,7 +14779,7 @@ def get_device_trip_details(request):
                     'message': 'Invalid start_datetime format. Use ISO format: YYYY-MM-DDTHH:MM:SS'
                 }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Get GPS data for the device tag within time range
+        # Get GPS data for the device tag within time range, sorted by entry_time
         gps_data = GPSData.objects.filter(
             device_tag=device_tag,
             entry_time__gte=start_dt,
@@ -14814,46 +14798,91 @@ def get_device_trip_details(request):
                 'trips': []
             })
         
-        # Process trips based on ignition status
+        # Process trips based on new logic
         trips = []
         current_trip = None
         trip_id = 1
+        prev_point = None
         
-        for gps_point in gps_data:
+        for i, gps_point in enumerate(gps_data):
+            is_first_point = i == 0
+            is_last_point = i == len(gps_data) - 1
             ignition_on = gps_point.ignition_status == '1'
+            packet_type = gps_point.packet_type
             
-            if ignition_on and current_trip is None:
-                # Start new trip
-                current_trip = {
-                    'trip_id': trip_id,
-                    'start_time': gps_point.entry_time,
-                    'start_location': {
-                        'latitude': gps_point.latitude,
-                        'longitude': gps_point.longitude,
-                        'address': f"{gps_point.latitude}, {gps_point.longitude}"
-                    },
-                    'gps_points': [gps_point],
-                    'last_ignition_off_time': None
-                }
-            elif current_trip is not None:
+            # Check for 30-minute gap from previous point
+            time_gap_exceeded = False
+            if prev_point is not None and current_trip is not None:
+                time_diff = (gps_point.entry_time - prev_point.entry_time).total_seconds()
+                if time_diff > 30 * 60:  # 30 minutes
+                    time_gap_exceeded = True
+            
+            # Trip Start Conditions:
+            # 1. First entry with ignition_status == '1'
+            # 2. packet_type == "IN" (Ignition ON)
+            if current_trip is None:
+                if (is_first_point and ignition_on) or packet_type == "IN":
+                    current_trip = {
+                        'trip_id': trip_id,
+                        'start_time': gps_point.entry_time,
+                        'start_location': {
+                            'latitude': gps_point.latitude,
+                            'longitude': gps_point.longitude,
+                            'address': f"{gps_point.latitude}, {gps_point.longitude}"
+                        },
+                        'gps_points': [gps_point],
+                        'end_time': None
+                    }
+            else:
+                # Add point to current trip
                 current_trip['gps_points'].append(gps_point)
                 
-                if not ignition_on:
-                    current_trip['last_ignition_off_time'] = gps_point.entry_time
-                else:
-                    current_trip['last_ignition_off_time'] = None
-        
-        # Check if current trip should end (ignition off for more than 30 minutes)
-        if current_trip is not None:
-            if current_trip['last_ignition_off_time']:
-                time_since_ignition_off = now - current_trip['last_ignition_off_time']
-                if time_since_ignition_off.total_seconds() > 30 * 60:  # 30 minutes
-                    # End current trip
+                # Trip End Conditions:
+                # 1. packet_type == "IF" (Ignition OFF)
+                # 2. Time gap > 30 minutes
+                # 3. ignition_status == '0'
+                # 4. Last entry with ignition_status == '1' (ongoing trip)
+                should_end_trip = False
+                
+                if packet_type == "IF":
+                    should_end_trip = True
+                    current_trip['end_time'] = gps_point.entry_time
+                elif time_gap_exceeded:
+                    should_end_trip = True
+                    current_trip['end_time'] = prev_point.entry_time
+                    # Start new trip with current point if ignition is on
                     trips.append(current_trip)
+                    trip_id += 1
+                    if ignition_on or packet_type == "IN":
+                        current_trip = {
+                            'trip_id': trip_id,
+                            'start_time': gps_point.entry_time,
+                            'start_location': {
+                                'latitude': gps_point.latitude,
+                                'longitude': gps_point.longitude,
+                                'address': f"{gps_point.latitude}, {gps_point.longitude}"
+                            },
+                            'gps_points': [gps_point],
+                            'end_time': None
+                        }
+                    else:
+                        current_trip = None
+                    prev_point = gps_point
+                    continue
+                elif not ignition_on and packet_type != "IN":
+                    should_end_trip = True
+                    current_trip['end_time'] = gps_point.entry_time
+                elif is_last_point and ignition_on:
+                    # Ongoing trip at last entry
+                    should_end_trip = True
+                    current_trip['end_time'] = gps_point.entry_time
+                
+                if should_end_trip:
+                    trips.append(current_trip)
+                    trip_id += 1
                     current_trip = None
-            else:
-                # Trip is still ongoing, include it
-                trips.append(current_trip)
+            
+            prev_point = gps_point
         
         # Process each completed trip
         processed_trips = []
