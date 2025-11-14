@@ -674,6 +674,8 @@ class Settings_VehicleCategory(models.Model):
     category=models.CharField(max_length=50,unique=True)
     maxSpeed=models.CharField(max_length=5)
     warnSpeed=models.CharField(max_length=5)
+    working_hour_start_time=models.TimeField(null=True, blank=True)
+    working_hour_end_time=models.TimeField(null=True, blank=True)
      
 
 class Settings_District(models.Model):  
