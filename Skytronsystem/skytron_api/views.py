@@ -8622,6 +8622,108 @@ def create_Settings_VehicleCategory(request ):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
+def manufacturer_model_stock_statistics(request):
+    """
+    Get stock statistics per model per manufacturer with device tag and online device info
+    Public API - No authentication required
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        from django.db.models import Count, Q, Exists, OuterRef
+        from datetime import datetime, timedelta
+        
+        # Calculate the time threshold for online devices (last 15 minutes)
+        online_threshold = timezone.now() - timedelta(minutes=15)
+        
+        # Get all manufacturers
+        manufacturers = Manufacturer.objects.all().select_related('createdby').prefetch_related('users')
+        
+        manufacturer_list = []
+        total_manufacturers = manufacturers.count()
+        
+        for manufacturer in manufacturers:
+            # Get the user associated with this manufacturer (creator/owner)
+            manufacturer_user = manufacturer.users.first() if manufacturer.users.exists() else None
+            
+            # Get all device models created by this manufacturer's user
+            if manufacturer_user:
+                device_models = DeviceModel.objects.filter(created_by=manufacturer_user)
+            else:
+                device_models = DeviceModel.objects.none()
+            
+            model_list = []
+            total_models = device_models.count()
+            
+            for model in device_models:
+                # Get total stock for this model
+                total_stock = DeviceStock.objects.filter(model=model).count()
+                
+                # Get device stock IDs for this model
+                device_stock_ids = DeviceStock.objects.filter(model=model).values_list('id', flat=True)
+                
+                # Get total device tags from these stocks
+                total_device_tags = DeviceTag.objects.filter(
+                    device_id__in=device_stock_ids,
+                    status__in=['Device_Active', 'Live_Location_Confirmed', 'SOS_Confirmed', 'RegNo_Configuration_Confirmed']
+                ).count()
+                
+                # Get device tags with their IMEIs
+                device_tags_with_imei = DeviceTag.objects.filter(
+                    device_id__in=device_stock_ids,
+                    status__in=['Device_Active', 'Live_Location_Confirmed', 'SOS_Confirmed', 'RegNo_Configuration_Confirmed']
+                ).select_related('device').values_list('device__imei', flat=True)
+                
+                # Count online devices (devices with GPS data in last 15 minutes)
+                online_devices = GPSData.objects.filter(
+                    imei__in=device_tags_with_imei,
+                    entry_time__gte=online_threshold
+                ).values('imei').distinct().count()
+                
+                model_info = {
+                    'model_id': model.id,
+                    'model_name': model.model_name,
+                    'vendor_id': model.vendor_id,
+                    'tac_no': model.tac_no,
+                    'hardware_version': model.hardware_version,
+                    'test_agency': model.test_agency,
+                    'total_stock': total_stock,
+                    'total_device_tags': total_device_tags,
+                    'online_devices': online_devices,
+                    'offline_devices': total_device_tags - online_devices
+                }
+                
+                model_list.append(model_info)
+            
+            manufacturer_info = {
+                'manufacturer_id': manufacturer.id,
+                'company_name': manufacturer.company_name,
+                'gstnnumber': manufacturer.gstnnumber,
+                'gstno': manufacturer.gstno,
+                'created': manufacturer.created,
+                'expirydate': manufacturer.expirydate,
+                'total_models': total_models,
+                'models': model_list
+            }
+            
+            manufacturer_list.append(manufacturer_info)
+        
+        response_data = {
+            'total_manufacturers': total_manufacturers,
+            'manufacturers': manufacturer_list
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({'error': 'Unable to process request: ' + str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

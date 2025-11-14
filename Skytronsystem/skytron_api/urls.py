@@ -91,6 +91,8 @@ urlpatterns = [
     path('Settings/create_settings_VehicleCategory/', create_Settings_VehicleCategory, name='create_settings_VehicleCategory'),
     path('Settings/filter_settings_VehicleCategory/', filter_Settings_VehicleCategory, name='filter_settings_VehicleCategory'),
 
+    path('Statistics/manufacturer_model_stock_statistics/', manufacturer_model_stock_statistics, name='manufacturer_model_stock_statistics'),
+
     path('Settings/create_settings_firmware/', create_Settings_firmware, name='create_settings_firmware'),
     path('Settings/filter_settings_firmware/', filter_Settings_firmware, name='filter_settings_firmware'), 
 
