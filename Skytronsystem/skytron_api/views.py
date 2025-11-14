@@ -15086,7 +15086,9 @@ def get_device_trip_details(request):
     try:
         from datetime import datetime, timedelta
         from django.db.models import Q, Min, Max
+        from django.utils.dateparse import parse_datetime
         import math
+        import pytz
         
         def calculate_distance(lat1, lon1, lat2, lon2):
 
@@ -15127,7 +15129,14 @@ def get_device_trip_details(request):
             end_dt = now
         else:
             try:
-                end_dt = datetime.fromisoformat(end_datetime.replace('Z', '+00:00'))
+                # Parse datetime and make it timezone-aware
+                end_dt = parse_datetime(end_datetime.replace('Z', '+00:00'))
+                if end_dt is None:
+                    # Fallback: try manual parsing
+                    end_dt = datetime.fromisoformat(end_datetime.replace('Z', '+00:00'))
+                # Ensure timezone awareness
+                if timezone.is_naive(end_dt):
+                    end_dt = timezone.make_aware(end_dt, timezone=pytz.UTC)
             except ValueError:
                 return Response({
                     'status': 'error',
@@ -15138,7 +15147,14 @@ def get_device_trip_details(request):
             start_dt = end_dt - timedelta(hours=24)
         else:
             try:
-                start_dt = datetime.fromisoformat(start_datetime.replace('Z', '+00:00'))
+                # Parse datetime and make it timezone-aware
+                start_dt = parse_datetime(start_datetime.replace('Z', '+00:00'))
+                if start_dt is None:
+                    # Fallback: try manual parsing
+                    start_dt = datetime.fromisoformat(start_datetime.replace('Z', '+00:00'))
+                # Ensure timezone awareness
+                if timezone.is_naive(start_dt):
+                    start_dt = timezone.make_aware(start_dt, timezone=pytz.UTC)
             except ValueError:
                 return Response({
                     'status': 'error',
@@ -15285,7 +15301,7 @@ def get_device_trip_details(request):
                     speeds.append(curr_point.speed)
             
             # Calculate duration
-            end_time = trip['last_ignition_off_time'] or gps_points[-1].entry_time
+            end_time = trip.get('end_time') or gps_points[-1].entry_time
             duration = (end_time - trip['start_time']).total_seconds() / 60  # minutes
             
             # Calculate average and max speed
