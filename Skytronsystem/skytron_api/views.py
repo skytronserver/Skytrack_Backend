@@ -8725,6 +8725,270 @@ def manufacturer_model_stock_statistics(request):
         return Response({'error': 'Unable to process request: ' + str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
+def user_statistics(request):
+    """
+    Get user statistics including registered users (User table), temporary users (TempUser table), 
+    online users, and login counts
+    Public API - No authentication required
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        from django.db.models import Count, Q
+        from datetime import datetime, timedelta
+        
+        # Calculate the time threshold for online users (last 15 minutes of activity)
+        online_threshold = timezone.now() - timedelta(minutes=15)
+        
+        # Total registered users from User table (active status)
+        total_registered_users = User.objects.filter(status='active').count()
+        
+        # Total temporary users from TempUser table
+        total_temporary_users = TempUser.objects.all().count()
+        
+        # Online registered users (User table with recent activity in last 15 minutes)
+        online_registered_users = User.objects.filter(
+            status='active',
+            last_activity__gte=online_threshold
+        ).count()
+        
+        # Online temporary users (TempUser table with online=True or recent activity)
+        online_temporary_users = TempUser.objects.filter(
+            Q(online=True) | Q(last_activity__gte=online_threshold)
+        ).count()
+        
+        # Total number of logins (count all successful login sessions from Session table)
+        total_logins = Session.objects.filter(status='login').count()
+        
+        # Additional useful statistics
+        # Currently logged in registered users (session status = login and recent activity)
+        currently_logged_in_registered = Session.objects.filter(
+            status='login',
+            lastactivity__gte=online_threshold
+        ).values('user').distinct().count()
+        
+        # Total registered users by role breakdown
+        users_by_role = {}
+        roles = User.objects.filter(status='active').values('role').annotate(count=Count('role'))
+        for role_data in roles:
+            users_by_role[role_data['role']] = role_data['count']
+        
+        # Recent logins (last 24 hours)
+        last_24_hours = timezone.now() - timedelta(hours=24)
+        recent_logins_24h = Session.objects.filter(
+            status='login',
+            loginTime__gte=last_24_hours
+        ).count()
+        
+        # Recent logins (last 7 days)
+        last_7_days = timezone.now() - timedelta(days=7)
+        recent_logins_7d = Session.objects.filter(
+            status='login',
+            loginTime__gte=last_7_days
+        ).count()
+        
+        # Recent temporary user registrations (last 24 hours)
+        recent_temp_users_24h = TempUser.objects.filter(
+            created__gte=last_24_hours
+        ).count()
+        
+        response_data = {
+            'total_registered_users': total_registered_users,
+            'total_temporary_users': total_temporary_users,
+            'online_registered_users': online_registered_users,
+            'online_temporary_users': online_temporary_users,
+            'total_logins': total_logins,
+            'currently_logged_in_registered_users': currently_logged_in_registered,
+            'users_by_role': users_by_role,
+            'recent_logins_24h': recent_logins_24h,
+            'recent_logins_7d': recent_logins_7d,
+            'recent_temp_users_24h': recent_temp_users_24h,
+            'offline_registered_users': total_registered_users - online_registered_users,
+            'offline_temporary_users': total_temporary_users - online_temporary_users
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({'error': 'Unable to process request: ' + str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
+def vehicle_alert_statistics(request):
+    """
+    Get vehicle and alert statistics including:
+    - Total tagged vehicles and online vehicles
+    - SOS calls, broadcasts, and alerts counts (daily, weekly, monthly, yearly)
+    Public API - No authentication required
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        from django.db.models import Count, Q
+        from datetime import datetime, timedelta
+        
+        # Calculate time thresholds
+        now = timezone.now()
+        online_threshold = now - timedelta(minutes=15)
+        day_threshold = now - timedelta(days=1)
+        week_threshold = now - timedelta(days=7)
+        month_threshold = now - timedelta(days=30)
+        year_threshold = now - timedelta(days=365)
+        
+        # ===== VEHICLE STATISTICS =====
+        # Total tagged vehicles (active device tags)
+        total_tagged_vehicles = DeviceTag.objects.filter(
+            status__in=['Device_Active', 'Live_Location_Confirmed', 'SOS_Confirmed', 
+                       'RegNo_Configuration_Confirmed', 'Owner_OTP_Verified', 'TempActive']
+        ).count()
+        
+        # Get all IMEIs from active device tags
+        active_device_imeis = DeviceTag.objects.filter(
+            status__in=['Device_Active', 'Live_Location_Confirmed', 'SOS_Confirmed', 
+                       'RegNo_Configuration_Confirmed', 'Owner_OTP_Verified', 'TempActive']
+        ).select_related('device').values_list('device__imei', flat=True)
+        
+        # Online vehicles (vehicles with GPS data in last 15 minutes)
+        online_vehicles = GPSData.objects.filter(
+            device_tag__device__imei__in=active_device_imeis,
+            entry_time__gte=online_threshold
+        ).values('device_tag').distinct().count()
+        
+        # ===== SOS CALLS STATISTICS =====
+        # Total SOS calls
+        total_sos_calls = EMCall.objects.count()
+        
+        # SOS calls - Daily
+        sos_calls_daily = EMCall.objects.filter(start_time__gte=day_threshold).count()
+        
+        # SOS calls - Weekly
+        sos_calls_weekly = EMCall.objects.filter(start_time__gte=week_threshold).count()
+        
+        # SOS calls - Monthly
+        sos_calls_monthly = EMCall.objects.filter(start_time__gte=month_threshold).count()
+        
+        # SOS calls - Yearly
+        sos_calls_yearly = EMCall.objects.filter(start_time__gte=year_threshold).count()
+        
+        # ===== BROADCASTS STATISTICS =====
+        # Total broadcasts
+        total_broadcasts = EMCallBroadcast.objects.count()
+        
+        # Closed broadcasts (accepted or canceled)
+        total_broadcasts_closed = EMCallBroadcast.objects.filter(
+            status__in=['accepted', 'canceled']
+        ).count()
+        
+        # Broadcasts closed - Daily
+        broadcasts_closed_daily = EMCallBroadcast.objects.filter(
+            status__in=['accepted', 'canceled'],
+            created_at__gte=day_threshold
+        ).count()
+        
+        # Broadcasts closed - Weekly
+        broadcasts_closed_weekly = EMCallBroadcast.objects.filter(
+            status__in=['accepted', 'canceled'],
+            created_at__gte=week_threshold
+        ).count()
+        
+        # Broadcasts closed - Monthly
+        broadcasts_closed_monthly = EMCallBroadcast.objects.filter(
+            status__in=['accepted', 'canceled'],
+            created_at__gte=month_threshold
+        ).count()
+        
+        # Broadcasts closed - Yearly
+        broadcasts_closed_yearly = EMCallBroadcast.objects.filter(
+            status__in=['accepted', 'canceled'],
+            created_at__gte=year_threshold
+        ).count()
+        
+        # ===== ALERTS STATISTICS =====
+        # Total alerts
+        total_alerts = AlertsLog.objects.count()
+        
+        # Alerts - Daily
+        alerts_daily = AlertsLog.objects.filter(timestamp__gte=day_threshold).count()
+        
+        # Alerts - Weekly
+        alerts_weekly = AlertsLog.objects.filter(timestamp__gte=week_threshold).count()
+        
+        # Alerts - Monthly
+        alerts_monthly = AlertsLog.objects.filter(timestamp__gte=month_threshold).count()
+        
+        # Alerts - Yearly
+        alerts_yearly = AlertsLog.objects.filter(timestamp__gte=year_threshold).count()
+        
+        # Alerts by type (all time)
+        alerts_by_type = {}
+        alert_types = AlertsLog.objects.values('type').annotate(count=Count('type'))
+        for alert_data in alert_types:
+            alerts_by_type[alert_data['type']] = alert_data['count']
+        
+        # ===== ADDITIONAL STATISTICS =====
+        # SOS calls by status
+        sos_calls_by_status = {}
+        sos_status = EMCall.objects.values('status').annotate(count=Count('status'))
+        for status_data in sos_status:
+            sos_calls_by_status[status_data['status']] = status_data['count']
+        
+        response_data = {
+            # Vehicle statistics
+            'vehicles': {
+                'total_tagged_vehicles': total_tagged_vehicles,
+                'online_vehicles': online_vehicles,
+                'offline_vehicles': total_tagged_vehicles - online_vehicles
+            },
+            
+            # SOS Calls statistics
+            'sos_calls': {
+                'total': total_sos_calls,
+                'daily': sos_calls_daily,
+                'weekly': sos_calls_weekly,
+                'monthly': sos_calls_monthly,
+                'yearly': sos_calls_yearly,
+                'by_status': sos_calls_by_status
+            },
+            
+            # Broadcasts statistics
+            'broadcasts': {
+                'total': total_broadcasts,
+                'total_closed': total_broadcasts_closed,
+                'closed_daily': broadcasts_closed_daily,
+                'closed_weekly': broadcasts_closed_weekly,
+                'closed_monthly': broadcasts_closed_monthly,
+                'closed_yearly': broadcasts_closed_yearly,
+                'pending': total_broadcasts - total_broadcasts_closed
+            },
+            
+            # Alerts statistics
+            'alerts': {
+                'total': total_alerts,
+                'daily': alerts_daily,
+                'weekly': alerts_weekly,
+                'monthly': alerts_monthly,
+                'yearly': alerts_yearly,
+                'by_type': alerts_by_type
+            }
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({'error': 'Unable to process request: ' + str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
