@@ -8730,17 +8730,17 @@ def manufacturer_model_stock_statistics(request):
                     status__in=['Device_Active', 'Live_Location_Confirmed', 'SOS_Confirmed', 'RegNo_Configuration_Confirmed']
                 ).count()
                 
-                # Get device tags with their IMEIs
-                device_tags_with_imei = DeviceTag.objects.filter(
+                # Get device tag IDs for this model
+                device_tag_ids = DeviceTag.objects.filter(
                     device_id__in=device_stock_ids,
                     status__in=['Device_Active', 'Live_Location_Confirmed', 'SOS_Confirmed', 'RegNo_Configuration_Confirmed']
-                ).select_related('device').values_list('device__imei', flat=True)
+                ).values_list('id', flat=True)
                 
                 # Count online devices (devices with GPS data in last 15 minutes)
                 online_devices = GPSData.objects.filter(
-                    imei__in=device_tags_with_imei,
+                    device_tag_id__in=device_tag_ids,
                     entry_time__gte=online_threshold
-                ).values('imei').distinct().count()
+                ).values('device_tag_id').distinct().count()
                 
                 model_info = {
                     'model_id': model.id,
