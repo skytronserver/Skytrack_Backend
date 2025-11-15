@@ -9205,23 +9205,32 @@ def alart_list(request ):
 
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    role="owner"
-    user=request.user
-    uo=get_user_object(user,role)
-    if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    allowed_roles = ["owner", "dtorto", "superadmin", "stateadmin", "sosadmin", "sosexecutive"]
+    
+    # Check if user has any of the allowed roles
+    if user.role not in allowed_roles:
+        return Response({"error":"Request must be from one of these roles: " + ", ".join(allowed_roles) + '.'}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        alerts = AlertsLog.objects.filter(deviceTag__vehicle_owner=uo).order_by('-id')[:10]
+        # For owner, filter by their vehicles only
+        if user.role == "owner":
+            uo = get_user_object(user, "owner")
+            if not uo:
+                return Response({"error":"Owner object not found."}, status=status.HTTP_400_BAD_REQUEST)
+            alerts = AlertsLog.objects.filter(deviceTag__vehicle_owner=uo).order_by('-id')[:100]
+        else:
+            # For all other allowed roles, show all alerts sorted by latest first
+            alerts = AlertsLog.objects.all().order_by('-id')[:100]
+        
         if alerts:
             serializer = AlertsLogSerializer(alerts, many=True)
             return Response({"alertHistory":serializer.data}, status=200)
         
         return Response({"alertHistory":[]}, status=200)
         
-    except:
-        pass
-    return Response({"error":"No Valid Data Found"+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({"error":"Unable to process request: " + str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
  
      
