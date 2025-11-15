@@ -16037,9 +16037,14 @@ def register_incident(request):
         
         # Handle file upload if present
         if 'image' in request.FILES:
-            file_response = save_file(request, 'incident_image', 'fileuploads/incidents/')
-            if file_response.status_code == 200:
-                data['image_file'] = file_response.data.get('filename')
+            file_path = save_file(request, 'image', 'fileuploads/incidents/')
+            if file_path:
+                data['image_file'] = file_path
+            else:
+                return Response({
+                    'status': 'error',
+                    'message': 'File upload failed. Please check file size (max 1MB) and type (png, jpg)'
+                }, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = IncidentRegisterSerializer(data=data)
         if serializer.is_valid():
