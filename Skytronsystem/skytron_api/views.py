@@ -16490,6 +16490,89 @@ def filter_alert_log(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def update_notification_preferences(request):
+    """
+    API endpoint for users to get or update their notification preferences.
+    
+    GET: Returns the current notification preferences for the authenticated user
+    POST: Updates the notification preferences for the authenticated user
+    
+    POST Body (all fields optional):
+    {
+        "nf_popup": true/false,
+        "nf_sms": true/false,
+        "nf_email": true/false
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Notification preferences updated successfully",
+        "data": {
+            "nf_popup": true,
+            "nf_sms": true,
+            "nf_email": true
+        }
+    }
+    """
+    try:
+        user = request.user
+        
+        if request.method == 'GET':
+            # Return current notification preferences
+            return Response({
+                'status': 'success',
+                'data': {
+                    'nf_popup': user.nf_popup,
+                    'nf_sms': user.nf_sms,
+                    'nf_email': user.nf_email
+                }
+            }, status=status.HTTP_200_OK)
+        
+        elif request.method == 'POST':
+            # Update notification preferences
+            serializer = NotificationPreferencesSerializer(data=request.data)
+            
+            if serializer.is_valid():
+                # Update only the fields that are provided
+                if 'nf_popup' in serializer.validated_data:
+                    user.nf_popup = serializer.validated_data['nf_popup']
+                
+                if 'nf_sms' in serializer.validated_data:
+                    user.nf_sms = serializer.validated_data['nf_sms']
+                
+                if 'nf_email' in serializer.validated_data:
+                    user.nf_email = serializer.validated_data['nf_email']
+                
+                user.save()
+                
+                return Response({
+                    'status': 'success',
+                    'message': 'Notification preferences updated successfully',
+                    'data': {
+                        'nf_popup': user.nf_popup,
+                        'nf_sms': user.nf_sms,
+                        'nf_email': user.nf_email
+                    }
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid input',
+                    'errors': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+    
+    except Exception as e:
+        logger.error(f"Error updating notification preferences: {str(e)}")
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
 
 
 

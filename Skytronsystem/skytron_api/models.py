@@ -345,6 +345,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     last_login =  models.DateTimeField(blank=True, null=True)
     last_activity =  models.DateTimeField(blank=True, null=True)
     login=models.BooleanField(default=False)
+    nf_popup = models.BooleanField(default=True, verbose_name="Notification Popup")
+    nf_sms = models.BooleanField(default=True, verbose_name="Notification SMS")
+    nf_email = models.BooleanField(default=True, verbose_name="Notification Email")
     objects = CustomUserManager()
 
     USERNAME_FIELD = 'email'

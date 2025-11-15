@@ -396,6 +396,9 @@ urlpatterns = [
     path('alertlog/create/', create_alert_log, name='create_alert_log'),
     path('alertlog/update/', update_alert_log, name='update_alert_log'),
     path('alertlog/filter/', filter_alert_log, name='filter_alert_log'),
+    
+    # Notification Preferences API
+    path('user/notification-preferences/', update_notification_preferences, name='update_notification_preferences'),
 
 ]  
 

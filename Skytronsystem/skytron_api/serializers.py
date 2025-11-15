@@ -770,3 +770,19 @@ class IncidentRegisterSerializer(SanitizingModelSerializer):
         fields = '__all__'
 
 
+class NotificationPreferencesSerializer(serializers.Serializer):
+    """
+    Serializer for updating user notification preferences.
+    All fields are optional and accept boolean values.
+    """
+    nf_popup = serializers.BooleanField(required=False, help_text="Enable/disable popup notifications")
+    nf_sms = serializers.BooleanField(required=False, help_text="Enable/disable SMS notifications")
+    nf_email = serializers.BooleanField(required=False, help_text="Enable/disable email notifications")
+    
+    def validate(self, data):
+        # Ensure at least one field is provided
+        if not data:
+            raise serializers.ValidationError("At least one notification preference must be provided.")
+        return data
+
+
