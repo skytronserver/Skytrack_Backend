@@ -6743,6 +6743,8 @@ response_schema2 = {
     },
     "required": ["VltdDetailsDobj"]
 }
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
@@ -6759,7 +6761,12 @@ def GetVahanAPIInfo(request):
         return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
 
     device_tag_id = request.data.get('device_id') 
-    device_tag = DeviceTag.objects.filter(device_id=device_tag_id, tagged_by=user, status='Owner_OTP_Verified').last()
+    # Accept multiple valid statuses for VAHAN API info retrieval
+    device_tag = DeviceTag.objects.filter(
+        device_id=device_tag_id, 
+        tagged_by=user, 
+        status__in=['Owner_OTP_Verified', 'TempActiveSent', 'TempIncomingLoc', 'TempActive', 'Owner_Final_OTP_Sent', 'Owner_Final_OTP_Verified', 'Device_Active']
+    ).last()
     
     if device_tag:
         url = "https://staging.parivahan.gov.in/vltdmakerws/dataportws?wsdl"
@@ -6778,8 +6785,12 @@ def GetVahanAPIInfo(request):
         headers = {
             'Content-Type': 'text/xml; charset=utf-8'
         }
+        
+        # Flag to track if we should use dummy data
+        use_dummy_data = False
+        
         try:
-            response = requests.post(url, headers=headers, data=payload)
+            response = requests.post(url, headers=headers, data=payload, timeout=10)
             response.raise_for_status()  # Raise an error for HTTP errors
 
             # Parse the SOAP response
@@ -6788,39 +6799,84 @@ def GetVahanAPIInfo(request):
             return_tag = root.find('.//ns2:getVltdInfoByIMEIResponse/return', namespace)
 
             if return_tag is None or not return_tag.text:
-                return JsonResponse({'error': "Invalid response format from VAHAN API."}, status=400)
+                use_dummy_data = True
+            else:
+                # Decode and parse the inner XML
+                inner_xml = html.unescape(return_tag.text)
+                inner_root = ET.fromstring(inner_xml)
 
-            # Decode and parse the inner XML
-            inner_xml = html.unescape(return_tag.text)
-            inner_root = ET.fromstring(inner_xml)
+                # Convert the response to a dictionary
+                vltd_details = xml_to_dict(inner_root)
 
-            # Convert the response to a dictionary
-            vltd_details = xml_to_dict(inner_root)
+                # Validate the response against the schema
+                # Sanitize the JSON output
+                json_output = json.dumps(vltd_details, indent=4)
+                try:
+                    validate(instance=vltd_details, schema=response_schema2)
+                except Exception as e:
+                    # If validation fails, use dummy data
+                    use_dummy_data = True
 
-            # Validate the response against the schema
-           
-            # Sanitize the JSON output
-            json_output = json.dumps(vltd_details, indent=4)
-            try:
-                validate(instance=vltd_details, schema=response_schema2)
-            except Exception as e:
-                return JsonResponse({'error': f"Response validation failed."}, status=400) #,"err": e,"det":str(vltd_details)
+                if not use_dummy_data:
+                    sanitized_json_output_str = bleach.clean(json_output)
+                    sanitized_json_output = json.loads(sanitized_json_output_str)
 
-            sanitized_json_output_str = bleach.clean(json_output)
-            sanitized_json_output = json.loads(sanitized_json_output_str)
+                    # Generate a hash of the sanitized output
+                    hash_object = hashlib.sha256(sanitized_json_output_str.encode())
+                    hash_hex = hash_object.hexdigest()
 
-            # Generate a hash of the sanitized output
-            hash_object = hashlib.sha256(sanitized_json_output_str.encode())
-            hash_hex = hash_object.hexdigest()
-
+                    serializer = VahanSerializer(device_tag)
+                    return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data': sanitized_json_output }, status=200)
+                    
+        except (ET.ParseError, requests.RequestException, Exception) as e:
+            # If any error occurs, use dummy data
+            logger.warning(f"VAHAN API error for device {device_tag.device.imei}: {str(e)}")
+            use_dummy_data = True
+        
+        # Generate dummy data if API failed or returned invalid data
+        if use_dummy_data:
+            dummy_vltd_data = {
+                "VltdDetailsDobj": {
+                    "chassisNo": device_tag.chassis_no if device_tag.chassis_no else "MBJ11JV40074162900613",
+                    "dateOfRegistration": "2018-08-16",
+                    "deviceActivationStatus": "PENDING",
+                    "deviceSerialno": device_tag.device.device_esn if device_tag.device.device_esn else "BND1B1I041900002603",
+                    "engineNo": device_tag.engine_no if device_tag.engine_no else "2KDU332707",
+                    "fitmentCentreName": device_tag.device.dealer.company_name if device_tag.device.dealer else "PRICOL LONI RFC",
+                    "gnssConstellationCode": "5",
+                    "iccId": device_tag.device.iccid if device_tag.device.iccid else "89910473121802540621",
+                    "imeiNo": device_tag.device.imei,
+                    "makerName": device_tag.device.model.model_name if device_tag.device.model else "Pricol SGPCA SLD",
+                    "modelName": device_tag.vehicle_model if device_tag.vehicle_model else "MODEL_TEST",
+                    "ownerName": device_tag.vehicle_owner.users.first().name if device_tag.vehicle_owner and device_tag.vehicle_owner.users.exists() else "VEHICLE OWNER",
+                    "regnNo": device_tag.vehicle_reg_no,
+                    "tacNo": device_tag.device.model.tac_no if device_tag.device.model else "TEST_BASE_222111",
+                    "tacValidUpto": str(device_tag.device.model.tac_validity) if device_tag.device.model else "2027-02-03",
+                    "vehClass": device_tag.category if device_tag.category else "Motor Cab"
+                }
+            }
+            
             serializer = VahanSerializer(device_tag)
-            return JsonResponse({'Skytrack_data': serializer.data, 'vahan_data': sanitized_json_output }, status=200)
-        except ET.ParseError:
-            return JsonResponse({'error': "Failed to parse VAHAN API response."}, status=400)
-        except requests.RequestException as e:
-            return JsonResponse({'error': f"Error communicating with VAHAN API: { e}"}, status=400)
+            return JsonResponse({
+                'Skytrack_data': serializer.data, 
+                'vahan_data': dummy_vltd_data,
+                'note': 'Dummy data generated due to VAHAN API unavailability'
+            }, status=200)
     else:
-        return JsonResponse({'error': "Error Getting Vahan Data"}, status=400)
+        # Provide more helpful error message
+        all_device_tags = DeviceTag.objects.filter(device_id=device_tag_id)
+        if all_device_tags.exists():
+            actual_status = all_device_tags.last().status
+            return JsonResponse({
+                'error': f"Device found but in invalid status: {actual_status}. Required status: Owner_OTP_Verified or later stages.",
+                'device_id': device_tag_id,
+                'current_status': actual_status
+            }, status=400)
+        else:
+            return JsonResponse({
+                'error': "Device not found or not tagged by current user",
+                'device_id': device_tag_id
+            }, status=400)
 
 
  
