@@ -15748,6 +15748,7 @@ def check_user_type(request):
             'sosexecutive': False,
             'police': False,
             'ambulance': False,
+            'dtorto': False,
             'guest': False
         }
         
@@ -15762,6 +15763,8 @@ def check_user_type(request):
             response_data['dealer'] = True
         elif user.role == 'owner':
             response_data['owner'] = True
+        elif user.role == 'dtorto':
+            response_data['dtorto'] = True
         elif user.role == 'esimprovider':
             response_data['esimprovider'] = True
         elif user.role == 'filment':
