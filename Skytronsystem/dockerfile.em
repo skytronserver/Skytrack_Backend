@@ -18,47 +18,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # libreoffice          # uncomment if you need LibreOffice
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-RUN pip install --upgrade pip
-RUN pip install \
-    geopy \
-    django \
-    djangorestframework \
-    markdown \
-    django-filter \
-    django-bootstrap4 \
-    django-bootstrap-datepicker-plus \
-    drf_spectacular \
-    django-cors-headers \
-    django-extensions \
-    psycopg2-binary \
-    pandas \
-    django-environ \
-    scipy \
-    pillow \
-    pycrypto \
-    django-csp \ 
-    python-docx \
-    pdfkit \
-    whitenoise \
-    paho-mqtt  \
-    gunicorn \
-    django \
-    djangorestframework \
-    requests \
-    numpy \
-    pandas \
-    scipy \
-    pycryptodome \
-    python-docx \
-    pdfkit \
-    docx2pdf \ 
-    django-filter \
-    django-cors-headers bleach python-magic\ 
-    gunicorn
-
 # Set the working directory in the container
 WORKDIR /app
+
+# Copy requirements file
+COPY ../requirements.txt /app/requirements.txt
+
+# Install Python dependencies
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 
 # Copy your Django project files into the container (including cert.pem & key.pem if needed)
 COPY . /app

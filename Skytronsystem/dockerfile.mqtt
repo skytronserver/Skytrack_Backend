@@ -9,85 +9,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \     
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-RUN pip install --upgrade pip
-RUN pip install \
-    geopy \
-    django \
-    djangorestframework \
-    markdown \
-    django-filter \
-    django-bootstrap4 \
-    django-bootstrap-datepicker-plus \
-    drf_spectacular \
-    django-cors-headers \
-    django-extensions \
-    psycopg2-binary \
-    pandas \
-    django-environ \
-    scipy \
-    pillow \
-    pycrypto \
-    django-csp \ 
-    python-docx \
-    pdfkit \
-    whitenoise \
-    paho-mqtt  \
-    gunicorn \
-    django \
-    djangorestframework \
-    requests \
-    numpy \
-    pandas \
-    scipy \
-    pycryptodome \
-    python-docx \
-    pdfkit \
-    docx2pdf \ 
-    django-filter \
-    django-cors-headers bleach python-magic\ 
-    gunicorn \
-    django-redis PyJWT paho-mqtt pycryptodome    bleach \
-    openpyxl \
-    djangorestframework \
-    markdown \
-    django-filter \
-    django-bootstrap4 \
-    django-bootstrap-datepicker-plus \
-    drf_spectacular \
-    django-cors-headers \
-    python-magic \
-    django-extensions \
-    psycopg2-binary \
-    pandas \
-    django-environ \
-    scipy \
-    pillow \
-    pycrypto \
-    django-csp \ 
-    python-docx \
-    pdfkit \
-    whitenoise \
-    gunicorn \
-    django \
-    djangorestframework \
-    requests \
-    numpy \
-    pandas \
-    scipy \
-    pycryptodome \
-    python-docx \
-    pdfkit \
-    docx2pdf \
-    django-filter \ 
-    django-redis \
-    django-cors-headers bleach\  
-    gunicorn \
-    PyJWT paho-mqtt pycryptodome cryptography==41.0.7
-
-
 # Set the working directory in the container
 WORKDIR /app
+
+# Copy requirements file
+COPY ../requirements.txt /app/requirements.txt
+
+# Install Python dependencies
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 
 # Create keys directory first
 RUN mkdir -p /app/keys
