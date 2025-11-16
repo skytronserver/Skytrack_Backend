@@ -143,7 +143,8 @@ def send_sos_mqtt_message(imei):
     def mqtt_publisher():
         try:
             # MQTT Configuration (matching the existing mqttClienttrack.py)
-            BROKER_URL = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")
+            #BROKER_URL = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")
+            BROKER_URL = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")
             BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
             MQTT_USERNAME = os.getenv("MQTT_USERNAME", "6026969588")
             MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h")
@@ -898,7 +899,7 @@ def gps_track_data_api(request ):
             if user_role == 'superadmin':
                 # Superadmin sees all data - no additional filtering
                 pass
-            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive', 'dtorto']:
+            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive', 'dtorto','dealer']:
                 # Get user's state(s) based on role
                 user_states = []
                 
@@ -918,6 +919,10 @@ def gps_track_data_api(request ):
                     # Get states from dto_rto relationship
                     dto_rtos = dto_rto.objects.filter(users=request.user, status='StateAdminVerified')
                     user_states = [dr.state.id for dr in dto_rtos]
+                elif user_role == 'dealer':
+                    # Get states from dto_rto relationship
+                    dlrs = Dealer.objects.filter(users=request.user)
+                    user_states = [dr.manufacturer.state.id for dr in dlrs]
                 
                 if user_states:
                     # Filter GPSData for vehicles belonging to owners in user's states

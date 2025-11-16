@@ -9,14 +9,18 @@ bash setup_host_storage.sh
 # Path to host storage directory
 STORAGE_DIR="/var/skytrack_storage"
 
-# Build the Docker image with build arguments
-docker build -t skytrack-mqtt-client -f Skytronsystem/dockerfile.mqtt \
+"""
+
   --build-arg http_proxy=http://192.0.2.12:8080 \
   --build-arg https_proxy=http://192.0.2.12:8080 \
   --build-arg HTTP_PROXY=http://192.0.2.12:8080 \
   --build-arg HTTPS_PROXY=http://192.0.2.12:8080 \
   --build-arg ftp_proxy=http://192.0.2.12:8080 \
-  --build-arg FTP_PROXY=http://192.0.2.12:8080 \
+  --build-arg FTP_PROXY=http://192.0.2.12:8080 \ 
+"""
+
+# Build the Docker image with build arguments
+docker build -t skytrack-mqtt-client -f Skytronsystem/dockerfile.mqtt \
   --build-arg MAIL_ID="$MAIL_ID" \
   --build-arg MAIL_PW="$MAIL_PW" \
   --build-arg DEBUG="$DEBUG" \

@@ -62,7 +62,7 @@ def process_gps_data(data_str):
                     return None
 
                 gps_data = {
-                    'packet_type': groups[1][:2],  # PVT -> PV (limit to 2 chars)
+                    'packet_type': groups[4][:2],  # PVT -> PV (limit to 2 chars)
                     'alert_id': groups[5][:2],     # 01 (sequence number, used as alert_id)
                     'packet_status': groups[6][:1], # L (Live/History indicator, limit to 1 char)
                     'imei': groups[7],         # 860269065286924

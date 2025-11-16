@@ -29,7 +29,8 @@ from skytron_api.jwt_authentication import HybridAuthentication
 from skytron_api.data_processor import process_device_tracking_data, process_emergency_data, get_device_response_data
 
 # MQTT Settings - using environment variables for deployment flexibility
-BROKER_URL = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")  # Default fallback
+#BROKER_URL = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")  # Default fallback
+BROKER_URL = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")  # Default fallback
 BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))  # Use SSL/TLS port
 TOPIC = "field_ex/location_update"
 
@@ -269,7 +270,78 @@ def Process_owner_Data(msg,topic_parts):
             user.save() 
             print(user)
             try:
-                alerts = AlertsLog.objects.filter(deviceTag__vehicle_owner=uo).order_by('-id')[:10]
+                #alerts = AlertsLog.objects.filter(deviceTag__vehicle_owner=uo).order_by('-id')[:10] for demo testing 
+                alerts = AlertsLog.objects.order_by('-id')[:10]
+                if alerts:
+                    serializer = AlertsLogSerializer(alerts, many=True)
+     
+                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory":serializer.data}))
+                    print("data sent")
+                    return 0
+            except Exception as e :
+                    print(e)
+            return 0
+
+
+
+         
+           
+           
+    except Exception as e:
+            raise e
+            print("data processign error function ",e, flush=True)
+            
+            
+            
+
+def Process_dtorto_Data(msg,topic_parts): 
+    try:
+        data = json.loads(msg.payload.decode())
+        print(data)
+        token=data.get("token")
+        
+        if token:
+            # Use Token token format for JWT tokens
+            auth_header = f"Bearer {token}"
+ 
+            try: 
+                class FakeRequest:
+                    def __init__(self, auth_header):
+                        self.META = {'HTTP_AUTHORIZATION': auth_header}
+                        self.data = {}  # Add empty data dict for compatibility
+                        self.GET = {}   # Add empty GET dict for compatibility
+                        print(f"Authorization Header: {auth_header}")
+                
+                fake_request = FakeRequest(auth_header)
+                user_auth_tuple = authenticator.authenticate(fake_request)
+
+                if user_auth_tuple is None:
+                    raise AuthenticationFailed("Invalid token.")
+
+                user = user_auth_tuple[0]  # Extract the user from the authentication tuple
+            except AuthenticationFailed as e:
+                error_message = f"Authentication error: {str(e)}"
+                print(error_message)
+                #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+                return
+
+
+            role = "dtorto"
+            uo = get_user_object(user, role)
+
+            if not uo:
+                error_message = f"Request must be from {role}"
+                print(error_message)
+                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+                return
+            
+
+            user.last_activity = timezone.now()
+            user.login = True
+            user.save() 
+            print(user)
+            try:
+                alerts = AlertsLog.objects.order_by('-id')[:10]
                 if alerts:
                     serializer = AlertsLogSerializer(alerts, many=True)
      
@@ -358,6 +430,10 @@ def on_message(client, userdata, msg):
             Process_sosEx_Data(msg,topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'owner':
             Process_owner_Data(msg,topic_parts)
+
+        elif len(topic_parts) == 2 and topic_parts[0] == 'dtorto':
+            Process_dtorto_Data(msg,topic_parts)
+ 
 
             
         else:

@@ -54,8 +54,43 @@ RUN pip install  \
     pdfkit \
     docx2pdf \ 
     django-filter \
-    django-cors-headers bleach python-magic\ 
-    gunicorn
+    django-cors-headers bleach python-magic gunicorn    bleach \
+    openpyxl \
+    djangorestframework \
+    markdown \
+    django-filter \
+    django-bootstrap4 \
+    django-bootstrap-datepicker-plus \
+    drf_spectacular \
+    django-cors-headers \
+    python-magic \
+    django-extensions \
+    psycopg2-binary \
+    pandas \
+    django-environ \
+    scipy \
+    pillow \
+    pycrypto \
+    django-csp \ 
+    python-docx \
+    pdfkit \
+    whitenoise \
+    gunicorn \
+    django \
+    djangorestframework \
+    requests \
+    numpy \
+    pandas \
+    scipy \
+    pycryptodome \
+    python-docx \
+    pdfkit \
+    docx2pdf \
+    django-filter \ 
+    django-redis \
+    django-cors-headers bleach\  
+    gunicorn \
+    PyJWT paho-mqtt pycryptodome cryptography==41.0.7
 
 # Set the working directory in the container
 WORKDIR /app
