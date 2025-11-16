@@ -4875,7 +4875,7 @@ def DEx_rcvMsg(request ):
         if not assignment:
             return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
         call=assignment.call 
-        ob=EMCallMessages.objects.filter(assignment=assignment,call=call).all()
+        ob=EMCallMessages.objects.filter(call=call).all()
         if ob:
             user.last_activity =  timezone.now()
             user.login=True
