@@ -9,18 +9,28 @@ bash setup_host_storage.sh
 # Path to host storage directory
 STORAGE_DIR="/var/skytrack_storage"
 
-"""
+# Ensure a dedicated Docker network exists so containers can resolve each other by name
+NETWORK_NAME="skytron-net"
+docker network create "$NETWORK_NAME" >/dev/null 2>&1 || true
 
-  --build-arg http_proxy=http://192.0.2.12:8080 \
-  --build-arg https_proxy=http://192.0.2.12:8080 \
-  --build-arg HTTP_PROXY=http://192.0.2.12:8080 \
-  --build-arg HTTPS_PROXY=http://192.0.2.12:8080 \
-  --build-arg ftp_proxy=http://192.0.2.12:8080 \
-  --build-arg FTP_PROXY=http://192.0.2.12:8080 \ 
-"""
+# Decide whether to use proxy for docker build based on DB_HOST
+PROXY_ARGS=""
+if [ "$DB_HOST" = "10.192.136.184" ]; then
+  echo "Detected production DB_HOST ($DB_HOST): enabling proxy for Docker build"
+  PROXY_ARGS="\
+    --build-arg http_proxy=http://192.0.2.12:8080 \
+    --build-arg https_proxy=http://192.0.2.12:8080 \
+    --build-arg HTTP_PROXY=http://192.0.2.12:8080 \
+    --build-arg HTTPS_PROXY=http://192.0.2.12:8080 \
+    --build-arg ftp_proxy=http://192.0.2.12:8080 \
+    --build-arg FTP_PROXY=http://192.0.2.12:8080"
+else
+  echo "Detected non-production DB_HOST ($DB_HOST): building without proxy"
+fi
 
 # Build the Docker image with build arguments
 docker build -t skytrack-mqtt-client -f Skytronsystem/dockerfile.mqtt \
+  $PROXY_ARGS \
   --build-arg MAIL_ID="$MAIL_ID" \
   --build-arg MAIL_PW="$MAIL_PW" \
   --build-arg DEBUG="$DEBUG" \
@@ -57,11 +67,15 @@ docker rm skytrack-mqtt-client-container || true
 
 # Run migrations first in a temporary container
 echo "Running database migrations..."
-docker run --rm --name skytrack-mqtt-migration skytrack-mqtt-client python manage.py makemigrations skytron_api
-docker run --rm --name skytrack-mqtt-migration skytrack-mqtt-client python manage.py migrate --run-syncdb
+docker run --rm --network "$NETWORK_NAME" --name skytrack-mqtt-migration skytrack-mqtt-client python manage.py makemigrations skytron_api
+docker run --rm --network "$NETWORK_NAME" --name skytrack-mqtt-migration skytrack-mqtt-client python manage.py migrate --run-syncdb
 
 # Run the container with the volume mount (environment variables are now baked into the image)
-sudo docker run -d --restart=always  -v $STORAGE_DIR:/host_storage --name skytrack-mqtt-client-container skytrack-mqtt-client
+sudo docker run -d --restart=always \
+  --network "$NETWORK_NAME" \
+  -v $STORAGE_DIR:/host_storage \
+  --name skytrack-mqtt-client-container \
+  skytrack-mqtt-client
 
 
 

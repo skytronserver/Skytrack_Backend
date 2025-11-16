@@ -9,8 +9,28 @@ bash setup_host_storage.sh
 # Path to host storage directory
 STORAGE_DIR="/var/skytrack_storage"
 
+# Ensure a dedicated Docker network exists so containers can resolve each other by name
+NETWORK_NAME="skytron-net"
+docker network create "$NETWORK_NAME" >/dev/null 2>&1 || true
+
+# Decide whether to use proxy for docker build based on DB_HOST
+PROXY_ARGS=""
+if [ "$DB_HOST" = "10.192.136.184" ]; then
+  echo "Detected production DB_HOST ($DB_HOST): enabling proxy for Docker build"
+  PROXY_ARGS="\
+    --build-arg http_proxy=http://192.0.2.12:8080 \
+    --build-arg https_proxy=http://192.0.2.12:8080 \
+    --build-arg HTTP_PROXY=http://192.0.2.12:8080 \
+    --build-arg HTTPS_PROXY=http://192.0.2.12:8080 \
+    --build-arg ftp_proxy=http://192.0.2.12:8080 \
+    --build-arg FTP_PROXY=http://192.0.2.12:8080"
+else
+  echo "Detected non-production DB_HOST ($DB_HOST): building without proxy"
+fi
+
 # Build the Docker image with build arguments
 docker build -t skytron-backend-gps -f Skytronsystem/dockerfile.gps \
+  $PROXY_ARGS \
   --build-arg MAIL_ID="$MAIL_ID" \
   --build-arg MAIL_PW="$MAIL_PW" \
   --build-arg DEBUG="$DEBUG" \
@@ -46,7 +66,12 @@ docker stop skytron-backend-gps-container || true
 docker rm skytron-backend-gps-container || true
 
 # Run the container with the volume mount (environment variables are now baked into the image)
-sudo docker run -d --restart=always -p 6000:6000 -v $STORAGE_DIR:/host_storage --name skytron-backend-gps-container skytron-backend-gps
+sudo docker run -d --restart=always \
+  --network "$NETWORK_NAME" \
+  -p 6000:6000 \
+  -v $STORAGE_DIR:/host_storage \
+  --name skytron-backend-gps-container \
+  skytron-backend-gps
 
 
 
@@ -54,8 +79,9 @@ sudo docker run -d --restart=always -p 6000:6000 -v $STORAGE_DIR:/host_storage -
 
 
 
-# Build the Docker image with build arguments
+# Build the Docker image with build arguments (EM container)
 docker build -t skytron-backend-em -f Skytronsystem/dockerfile.em \
+  $PROXY_ARGS \
   --build-arg MAIL_ID="$MAIL_ID" \
   --build-arg MAIL_PW="$MAIL_PW" \
   --build-arg DEBUG="$DEBUG" \
@@ -91,7 +117,12 @@ docker stop skytron-backend-em-container || true
 docker rm skytron-backend-em-container || true
 
 # Run the container with the volume mount (environment variables are now baked into the image)
-sudo docker run -d --restart=always -p 5001:5001 -v $STORAGE_DIR:/host_storage --name skytron-backend-em-container skytron-backend-em
+sudo docker run -d --restart=always \
+  --network "$NETWORK_NAME" \
+  -p 5001:5001 \
+  -v $STORAGE_DIR:/host_storage \
+  --name skytron-backend-em-container \
+  skytron-backend-em
 
 
 
