@@ -12,12 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy requirements file
-COPY ../requirements.txt /app/requirements.txt
-
-# Install Python dependencies
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
 
 # Create keys directory first
 RUN mkdir -p /app/keys
@@ -30,6 +24,12 @@ COPY keys/ca.crt /app/keys/ca.crt
 # Copy your Django project files into the container
 COPY . /app
 
+# Copy requirements file
+COPY requirements.txt /app/requirements.txt
+
+# Install Python dependencies
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 # (Optional) If you need to collect static files, uncomment the line below:
 #RUN python manage.py collectstatic --noinput
 

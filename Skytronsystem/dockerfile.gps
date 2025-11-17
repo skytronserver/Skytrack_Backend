@@ -21,15 +21,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set the working directory in the container
 WORKDIR /app
 
+
+# Copy your Django project files into the container (including cert.pem & key.pem if needed)
+COPY . /app
+
+
+
+
 # Copy requirements file
-COPY ../requirements.txt /app/requirements.txt
+COPY requirements.txt /app/requirements.txt
 
 # Install Python dependencies
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Copy your Django project files into the container (including cert.pem & key.pem if needed)
-COPY . /app
 
 # (Optional) If you need to collect static files, uncomment the line below:
 RUN python manage.py collectstatic --noinput

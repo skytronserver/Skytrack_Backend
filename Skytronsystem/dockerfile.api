@@ -27,13 +27,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy requirements file
-COPY ../requirements.txt /app/requirements.txt
-
-# Install Python dependencies
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
-
 # Setup MQTT certificates directory and copy CA certificate
 # Create directories for certificates
 RUN mkdir -p /app/keys
@@ -66,6 +59,15 @@ RUN chmod 644 /app/Skytronsystem/keys/jwt_public_key.pem
 # Then copy root CA: cp ../mqtt_certificates/root_ca/root_ca.crt ./root_ca.crt
 COPY root_ca.crt /app/Skytronsystem/root_ca.crt
 RUN chmod 644 /app/Skytronsystem/root_ca.crt
+
+
+# Copy requirements file
+COPY requirements.txt /app/requirements.txt
+
+# Install Python dependencies
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
+
 
 # Ensure certificates are available in both locations for compatibility
 RUN cp /app/keys/ca.crt /etc/mosquitto/certs/ca.crt || cp /app/ca.crt /etc/mosquitto/certs/ca.crt || echo "Warning: CA certificate setup may need manual configuration"
