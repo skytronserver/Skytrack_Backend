@@ -16872,6 +16872,117 @@ def list_gps_data_archives(request):
                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_cell_tower_info(request):
+    """
+    Get cell tower and network information from the latest GPS data entry for a given device tag.
+    Returns IMEI, network operator, signal strength, MCC, MNC, LAC, Cell IDs, and neighboring cell tower info.
+    """
+    try: 
+        device_tag_id = request.data.get('device_tag_id')
+        if not device_tag_id:
+            return Response({'status': 'error', 'message': 'device_tag_id is required'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get the device tag
+        try:
+            device_tag = DeviceTag.objects.select_related('device', 'device__model').get(id=device_tag_id)
+        except DeviceTag.DoesNotExist:
+            return Response({'status': 'error', 'message': 'Device tag not found'}, 
+                          status=status.HTTP_404_NOT_FOUND)
+        
+        # Get the latest GPS data entry for this device tag
+        latest_gps = GPSData.objects.filter(device_tag=device_tag).order_by('-entry_time').first()
+        
+        if not latest_gps:
+            return Response({
+                'status': 'error', 
+                'message': 'No GPS data found for this device tag'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Extract IMEI from device stock
+        imei = device_tag.device.imei if device_tag.device else None
+        
+        # Prepare cell tower information
+        cell_tower_info = {
+            'device_info': {
+                'device_tag_id': device_tag.id,
+                'vehicle_reg_no': device_tag.vehicle_reg_no,
+                'imei': imei,
+                'device_esn': device_tag.device.device_esn if device_tag.device else None,
+                'msisdn1': device_tag.device.msisdn1 if device_tag.device else None,
+                'msisdn2': device_tag.device.msisdn2 if device_tag.device else None,
+            },
+            'gps_data_info': {
+                'entry_time': latest_gps.entry_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'date': latest_gps.date,
+                'time': latest_gps.time,
+                'latitude': latest_gps.latitude,
+                'latitude_dir': latest_gps.latitude_dir,
+                'longitude': latest_gps.longitude,
+                'longitude_dir': latest_gps.longitude_dir,
+                'gps_status': latest_gps.gps_status,
+            },
+            'network_info': {
+                'network_operator': latest_gps.network_operator,
+                'gsm_signal_strength': latest_gps.gsm_signal_strength,
+                'mcc': latest_gps.mcc,  # Mobile Country Code
+                'mnc': latest_gps.mnc,  # Mobile Network Code
+            },
+            'primary_cell_tower': {
+                'lac': latest_gps.lac,  # Location Area Code
+                'cell_id': latest_gps.cell_id,  # Cell Tower ID
+            },
+            'neighboring_cell_towers': [
+                {
+                    'neighbor': 1,
+                    'cell_id': latest_gps.nbr1_cell_id,
+                    'lac': latest_gps.nbr1_lac,
+                    'signal_strength': latest_gps.nbr1_signal_strength
+                },
+                {
+                    'neighbor': 2,
+                    'cell_id': latest_gps.nbr2_cell_id,
+                    'lac': latest_gps.nbr2_lac,
+                    'signal_strength': latest_gps.nbr2_signal_strength
+                },
+                {
+                    'neighbor': 3,
+                    'cell_id': latest_gps.nbr3_cell_id,
+                    'lac': latest_gps.nbr3_lac,
+                    'signal_strength': latest_gps.nbr3_signal_strength
+                },
+                {
+                    'neighbor': 4,
+                    'cell_id': latest_gps.nbr4_cell_id,
+                    'lac': latest_gps.nbr4_lac,
+                    'signal_strength': latest_gps.nbr4_signal_strength
+                }
+            ],
+            'additional_info': {
+                'satellites': latest_gps.satellites,
+                'altitude': latest_gps.altitude,
+                'speed': latest_gps.speed,
+                'heading': latest_gps.heading,
+                'pdop': latest_gps.pdop,
+                'hdop': latest_gps.hdop,
+            }
+        }
+        
+        return Response({
+            'status': 'success',
+            'message': 'Cell tower information retrieved successfully',
+            'data': cell_tower_info
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in get_cell_tower_info: {str(e)}")
+        return Response({'status': 'error', 'message': f'An error occurred: {str(e)}'}, 
+                      status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 
 
 

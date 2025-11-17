@@ -404,6 +404,9 @@ urlpatterns = [
     path('gpsdata/archive/', archive_gps_data_log, name='archive_gps_data_log'),
     path('gpsdata/restore/', restore_gps_data_log, name='restore_gps_data_log'),
     path('gpsdata/archives/list/', list_gps_data_archives, name='list_gps_data_archives'),
+    
+    # Cell Tower Information API
+    path('gpsdata/agps-info/', get_cell_tower_info, name='get_cell_tower_info'),
 
 ]  
 
