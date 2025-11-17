@@ -16645,6 +16645,234 @@ def update_notification_preferences(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@csrf_exempt
+@api_view(['POST']) 
+@permission_classes([IsAuthenticated])
+def archive_gps_data_log(request):
+    """
+    Archive GPSDataLog records up to a specific date (must be at least 2 years old).
+    Saves data to JSON file and removes from database.
+    """
+    try: 
+        archive_date_str = request.data.get('archive_date')
+        if not archive_date_str:
+            return Response({'status': 'error', 'message': 'archive_date is required in format YYYY-MM-DD'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            archive_date = datetime.strptime(archive_date_str, '%Y-%m-%d')
+            archive_date = timezone.make_aware(archive_date.replace(hour=23, minute=59, second=59))
+        except ValueError:
+            return Response({'status': 'error', 'message': 'Invalid date format. Use YYYY-MM-DD'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if date is at least 2 years old
+        two_years_ago = timezone.now() - timedelta(days=730)
+        if archive_date > two_years_ago:
+            return Response({
+                'status': 'error',
+                'message': f'Archive date must be at least 2 years old. Data must be from before {two_years_ago.strftime("%Y-%m-%d")}',
+                'two_years_ago_date': two_years_ago.strftime('%Y-%m-%d')
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get records to archive
+        records_to_archive = GPSDataLog.objects.filter(timestamp__lte=archive_date).order_by('timestamp')
+        record_count = records_to_archive.count()
+        
+        if record_count == 0:
+            return Response({'status': 'error', 'message': 'No records found to archive'}, 
+                          status=status.HTTP_404_NOT_FOUND)
+        
+        first_record = records_to_archive.first()
+        last_record = records_to_archive.last()
+        date_from = first_record.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        date_to = last_record.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Create archive directory
+        archive_dir = os.path.join(settings.BASE_DIR, 'gps_data_archives')
+        os.makedirs(archive_dir, exist_ok=True)
+        
+        # Generate archive filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        archive_filename = f'gps_data_log_archive_{timestamp}.json'
+        archive_filepath = os.path.join(archive_dir, archive_filename)
+        
+        # Prepare data for archiving
+        archive_data = {
+            'metadata': {
+                'archive_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'date_range': {'from': date_from, 'to': date_to},
+                'records_count': record_count,
+                'archived_by': payload.get('email', 'unknown')
+            },
+            'records': []
+        }
+        
+        # Batch process records
+        batch_size = 1000
+        for i in range(0, record_count, batch_size):
+            batch = records_to_archive[i:i+batch_size]
+            for record in batch:
+                archive_data['records'].append({
+                    'id': record.id,
+                    'timestamp': record.timestamp.isoformat(),
+                    'raw_data': record.raw_data
+                })
+        
+        # Save to JSON file
+        with open(archive_filepath, 'w') as f:
+            json.dump(archive_data, f, indent=2)
+        
+        # Delete archived records
+        deleted_count = records_to_archive.delete()[0]
+        
+        file_size = os.path.getsize(archive_filepath)
+        file_size_mb = round(file_size / (1024 * 1024), 2)
+        
+        logger.info(f"Archived {deleted_count} GPS data log records to {archive_filename}")
+        
+        return Response({
+            'status': 'success',
+            'message': 'Data archived and removed from table successfully',
+            'archive_file': archive_filename,
+            'records_archived': record_count,
+            'records_deleted': deleted_count,
+            'date_range': {'from': date_from, 'to': date_to},
+            'file_size_mb': file_size_mb,
+            'archived_by': payload.get('email', 'unknown'),
+            'archived_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in archive_gps_data_log: {str(e)}")
+        return Response({'status': 'error', 'message': f'An error occurred: {str(e)}'}, 
+                      status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def restore_gps_data_log(request):
+    """
+    Restore GPSDataLog records from an archive JSON file.
+    """
+    try: 
+        
+        archive_filename = request.data.get('archive_file')
+        if not archive_filename:
+            return Response({'status': 'error', 'message': 'archive_file is required'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        archive_dir = os.path.join(settings.BASE_DIR, 'gps_data_archives')
+        archive_filepath = os.path.join(archive_dir, archive_filename)
+        
+        if not os.path.exists(archive_filepath):
+            available_files = [f for f in os.listdir(archive_dir) if f.endswith('.json')] if os.path.exists(archive_dir) else []
+            return Response({
+                'status': 'error',
+                'message': 'Archive file not found',
+                'available_archives': available_files
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Load archive data
+        with open(archive_filepath, 'r') as f:
+            archive_data = json.load(f)
+        
+        count_before = GPSDataLog.objects.count()
+        
+        # Restore records in batches
+        batch_size = 1000
+        records = archive_data.get('records', [])
+        total_records = len(records)
+        
+        for i in range(0, total_records, batch_size):
+            batch = records[i:i+batch_size]
+            objects_to_create = []
+            
+            for record_data in batch:
+                objects_to_create.append(GPSDataLog(
+                    id=record_data['id'],
+                    timestamp=datetime.fromisoformat(record_data['timestamp']),
+                    raw_data=record_data['raw_data']
+                ))
+            
+            GPSDataLog.objects.bulk_create(objects_to_create, ignore_conflicts=True)
+        
+        count_after = GPSDataLog.objects.count()
+        records_restored = count_after - count_before
+        
+        logger.info(f"Restored {records_restored} GPS data log records from {archive_filename}")
+        
+        return Response({
+            'status': 'success',
+            'message': 'Data restored successfully',
+            'archive_file': archive_filename,
+            'records_before_restore': count_before,
+            'records_after_restore': count_after,
+            'records_restored': records_restored,
+            'archive_metadata': archive_data.get('metadata', {}),
+            'restored_by': payload.get('email', 'unknown'),
+            'restored_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in restore_gps_data_log: {str(e)}")
+        return Response({'status': 'error', 'message': f'An error occurred: {str(e)}'}, 
+                      status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@csrf_exempt
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_gps_data_archives(request):
+    """
+    List all available GPS data archive files.
+    """
+    try: 
+        
+        archive_dir = os.path.join(settings.BASE_DIR, 'gps_data_archives')
+        archive_files = []
+        
+        if os.path.exists(archive_dir):
+            for filename in os.listdir(archive_dir):
+                if filename.endswith('.json'):
+                    filepath = os.path.join(archive_dir, filename)
+                    file_stat = os.stat(filepath)
+                    file_size_mb = round(file_stat.st_size / (1024 * 1024), 2)
+                    created_at = datetime.fromtimestamp(file_stat.st_ctime).strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Read metadata
+                    metadata = {}
+                    try:
+                        with open(filepath, 'r') as f:
+                            data = json.load(f)
+                            metadata = data.get('metadata', {})
+                    except:
+                        pass
+                    
+                    archive_files.append({
+                        'filename': filename,
+                        'size_mb': file_size_mb,
+                        'created_at': created_at,
+                        'metadata': metadata
+                    })
+        
+        archive_files.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        return Response({
+            'status': 'success',
+            'total_archives': len(archive_files),
+            'archive_directory': archive_dir,
+            'archives': archive_files
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in list_gps_data_archives: {str(e)}")
+        return Response({'status': 'error', 'message': f'An error occurred: {str(e)}'}, 
+                      status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
 
 
 

@@ -399,6 +399,11 @@ urlpatterns = [
     
     # Notification Preferences API
     path('user/notification-preferences/', update_notification_preferences, name='update_notification_preferences'),
+    
+    # GPS Data Archive/Restore APIs
+    path('gpsdata/archive/', archive_gps_data_log, name='archive_gps_data_log'),
+    path('gpsdata/restore/', restore_gps_data_log, name='restore_gps_data_log'),
+    path('gpsdata/archives/list/', list_gps_data_archives, name='list_gps_data_archives'),
 
 ]  
 
