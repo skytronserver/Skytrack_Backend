@@ -104,10 +104,10 @@ def Process_sosEx_Data(msg,topic_parts):
             return
             
         print("Parsed data:", data)
-        token=data.get("token")
+        token=topic_parts[1]  #data.get("token")
         if token:
             # Use Token token format for JWT tokens
-            auth_header = f"Bearer {token}"
+            auth_header = f"Token {token}"
             client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "update", "message": "user authentication in progress"}))
 
             # Authenticate the token using HybridAuthentication
@@ -131,7 +131,7 @@ def Process_sosEx_Data(msg,topic_parts):
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status":"update", "message": "user found"}))
                 user = user_auth_tuple[0]  # Extract the user from the authentication tuple
             except AuthenticationFailed as e:
-                error_message = f"Authentication error: {str(e)}"
+                error_message = f"Authentication mqtt error: {topic_parts[0]} {topic_parts[1]} {str(e)}"
                 print(error_message)
                 #client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": error_message}))
                 #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
@@ -231,7 +231,7 @@ def Process_owner_Data(msg,topic_parts):
         
         if token:
             # Use Token token format for JWT tokens
-            auth_header = f"Bearer {token}"
+            auth_header = f"Token {token}"
  
             try: 
                 class FakeRequest:
@@ -249,7 +249,7 @@ def Process_owner_Data(msg,topic_parts):
 
                 user = user_auth_tuple[0]  # Extract the user from the authentication tuple
             except AuthenticationFailed as e:
-                error_message = f"Authentication error: {str(e)}"
+                error_message = f"Authentication mqtt error: {topic_parts[0]} {topic_parts[1]} {str(e)}"
                 print(error_message)
                 #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
                 return
@@ -302,7 +302,7 @@ def Process_dtorto_Data(msg,topic_parts):
         
         if token:
             # Use Token token format for JWT tokens
-            auth_header = f"Bearer {token}"
+            auth_header = f"Toekn {token}"
  
             try: 
                 class FakeRequest:
@@ -320,7 +320,7 @@ def Process_dtorto_Data(msg,topic_parts):
 
                 user = user_auth_tuple[0]  # Extract the user from the authentication tuple
             except AuthenticationFailed as e:
-                error_message = f"Authentication error: {str(e)}"
+                error_message = f"Authentication mqtt error: {topic_parts[0]} {topic_parts[1]} {str(e)}"
                 print(error_message)
                 #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
                 return
