@@ -1425,7 +1425,9 @@ class GPSemDataLog(models.Model):
 class AlertsLog(models.Model):
     objects = SafeCreateManager()
     TYPE_CHOICES = [
-        ('Route', 'Route'), 
+        ('Route', 'Route'),
+        ('Permit', 'Permit'), 
+        ('Incident', 'Incident'), 
         ('Em', 'Em'), 
         ('Eng', 'Eng'), 
         ('OverSpeed', 'OverSpeed'), 
