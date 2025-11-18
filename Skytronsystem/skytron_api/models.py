@@ -836,6 +836,7 @@ class DeviceStock(models.Model):
     device_esn = models.CharField(max_length=55,unique=True)
     iccid = models.CharField(max_length=55,unique=True)
     imei = models.CharField(max_length=55,unique=True)
+    imei2 = models.CharField(max_length=55,unique=True)
     telecom_provider1 = models.CharField(max_length=25)
     telecom_provider2 = models.CharField(max_length=25, blank=True, null=True)
     msisdn1 = models.CharField(max_length=255,unique=True)

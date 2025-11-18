@@ -7661,6 +7661,7 @@ def deviceStockCreateBulk(request ):
             'model': model_id,
             'device_esn': row.get('device_esn', ''),
             'iccid': row.get('iccid', ''),
+            'iccid2': row.get('iccid2', ''),
             'imei': row.get('imei', ''),
             'telecom_provider1': row.get('telecom_provider1', ''),
             'telecom_provider2': row.get('telecom_provider2', ''),
@@ -9351,6 +9352,15 @@ def homepage_Manufacturer(request ):
                 status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed']
             ).count()
             
+            total_returns = DeviceTag.objects.filter(
+                device__created_by=manufacturer_user,
+                device__stock_status__in=['Returned_to_manufacturer']
+            ).count()
+            total_faulty = DeviceTag.objects.filter(
+                device__created_by=manufacturer_user,
+                device__stock_status__in=['Device_Defective']
+            ).count()
+            
             # Calculate eSIM statistics
             esim_activation_requests = stock.filter(
                 esim_status='ESIM_Active_Req_Sent'
@@ -9414,6 +9424,8 @@ def homepage_Manufacturer(request ):
                 'Total_Stock_Created': stock.count(),
                 'Total_Stock_Allocated': stock.filter(assigned__isnull=False).count(),
                 'Total_Activation': total_activations,
+                'Total_Return': total_returns,
+                'Total_Faulty': total_faulty,
                 
                 'Total_esim_activation_request': esim_activation_requests,
                 'Total_1year_renewal_request': one_year_renewals,
