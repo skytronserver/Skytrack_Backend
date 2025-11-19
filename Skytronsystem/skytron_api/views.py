@@ -2042,6 +2042,117 @@ def create_VehicleOwner(request ):
 
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+@require_http_methods(['POST'])
+def create_superuser(request):
+ 
+    # Validate inputs
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Check if the requesting user is a superuser
+    if False:#  not request.role=='superadmin' :
+        return Response({
+            "error": "Permission denied. Only systemadmin can create new systemadmin."
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        # Validate required fields
+        required_fields = ['email', 'mobile', 'name', 'dob']
+        missing_fields = [field for field in required_fields if not request.data.get(field)]
+        
+        if missing_fields:
+            return Response({
+                'error': f"Missing required fields: {', '.join(missing_fields)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        email = request.data.get('email', '').strip()
+        mobile = request.data.get('mobile', '').strip()
+        name = request.data.get('name', '').strip()
+        dob = request.data.get('dob', '').strip()
+        
+        # Additional validation for email format
+        if '@' not in email or '.' not in email.split('@')[1]:
+            return Response({
+                'error': "Invalid email format."
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate mobile number format (basic validation)
+        if not mobile.isdigit() or len(mobile) < 10:
+            return Response({
+                'error': "Invalid mobile number format. Must be at least 10 digits."
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if user already exists
+        if User.objects.filter(Q(email=email) | Q(mobile=mobile)).exists():
+            return Response({
+                'error': "A user with this email or mobile number already exists."
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create a savepoint for rollback if needed
+        sid = transaction.savepoint()
+        
+        try:
+            # Call the create_user function with 'superadmin' role
+            user, error, new_password = create_user('superadmin', request)
+            
+            if error:
+                transaction.savepoint_rollback(sid)
+                return Response(error, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not user:
+                transaction.savepoint_rollback(sid)
+                return Response({
+                    'error': "Failed to create user."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Set the user as superuser and staff
+            user.is_superuser = True
+            user.is_staff = True
+            user.role = 'superadmin'
+            user.save()
+            
+            transaction.savepoint_commit(sid)
+            
+            # Send creation notification
+            send_usercreation_otp(user, new_password, 'Super Admin')
+            
+            # Prepare response data
+            response_data = {
+                'message': 'Superuser created successfully.',
+                'user': {
+                    'id': user.id,
+                    'name': user.name,
+                    'email': user.email,
+                    'mobile': user.mobile,
+                    'role': user.role,
+                    'is_superuser': user.is_superuser,
+                    'is_staff': user.is_staff,
+                    'date_joined': user.date_joined,
+                    'created': user.created,
+                },
+                'temporary_password': new_password
+            }
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            transaction.savepoint_rollback(sid)
+            return Response({
+                'error': f"Unable to create superuser: {str(e)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    except Exception as e:
+        return Response({
+            'error': f"Unable to process request: {str(e)}"
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 

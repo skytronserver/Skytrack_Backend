@@ -26,6 +26,7 @@ urlpatterns = [
      
     path('deactivateUser/', deactivate_user, name='user_dactivate'),
     path('user_logout/', user_logout, name='user_logout'),
+    path('create_systemadmin/', create_superuser, name='create_superuser'),
     #path('user_get_parent/<int:user_id>/', user_get_parent, name='user_get_parent'),
     path('get_list/', get_list, name='get_list'),
     #path('get_details/<int:user_id>/', get_details, name='get_details'),
