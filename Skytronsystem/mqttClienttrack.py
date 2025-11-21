@@ -278,6 +278,10 @@ def Process_owner_Data(msg,topic_parts):
                     client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory":serializer.data}))
                     print("data sent")
                     return 0
+                else:
+                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory":[]}))
+                    print("no data")
+                    return 0
             except Exception as e :
                     print(e)
             return 0
@@ -347,6 +351,10 @@ def Process_dtorto_Data(msg,topic_parts):
      
                     client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory":serializer.data}))
                     print("data sent")
+                    return 0
+                else:
+                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory":[]}))
+                    print("no data")
                     return 0
             except Exception as e :
                     print(e)
