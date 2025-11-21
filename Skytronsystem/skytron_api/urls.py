@@ -217,8 +217,7 @@ urlpatterns = [
 
 
     path('list-alerts/', list_alert_logs, name='list_alert_logs'),
-    path('gps-data-table/', gps_data_table, name='gps-data-table'),
-    path('gps_history_map/',gps_history_map , name='gps_history_map'),
+    path('gps-data-table/', gps_data_table, name='gps-data-table'), 
     path('gps_history_map_data/',gps_history_map_data , name='gps_history_map_data'),
     
     path('get_live_vehicle_no/',get_live_vehicle_no , name='get_live_vehicle_no'),#

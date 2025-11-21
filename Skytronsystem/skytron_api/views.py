@@ -1185,47 +1185,41 @@ def gps_track_data_api(request ):
         distinct_registration_numbers = gps_queryset.values('device_tag').distinct() #vehicle_registration_number
         data = []
 
+        from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
+
         for x in distinct_registration_numbers:
             latest_entry = gps_queryset.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time') 
-            
-            #if regno:
-            #    if regno!="None":
-            #        #.filter(vehicle_registration_number=x['vehicle_registration_number'])
-            #        latest_entry = latest_entry.filter(device_tag__vehicle_reg_no__icontains=regno).filter(gps_status=1).order_by('-entry_time') 
             if imei:
                 if imei !="None":
-                    #filter(device_tag__vehicle_reg_no=x['vehicle_registration_number']).
                     latest_entry = latest_entry.filter(device_tag__device__imei__icontains=imei).filter(gps_status=1).order_by('-entry_time')
             latest_entry=latest_entry.first()
-            excluded_fields = []   
             if latest_entry:
-                # Use the GPSData_Serializer which properly handles entry_time field
                 serializer = GPSData_Serializer(latest_entry)
                 dd = serializer.data.copy()  # Make a copy so we can modify it
-                
-                # Debug: Print the keys to see what fields are included
-                print(f"DEBUG: Fields in serializer.data: {list(dd.keys())}")
-                print(f"DEBUG: entry_time present: {'entry_time' in dd}")
-                if 'entry_time' in dd:
-                    print(f"DEBUG: entry_time value: {dd['entry_time']}")
-                    print(f"DEBUG: entry_time type: {type(dd['entry_time'])}")
-                
-                # Fallback: manually add entry_time if it's missing from serializer
                 if 'entry_time' not in dd and hasattr(latest_entry, 'entry_time'):
                     dd['entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
-                    print(f"DEBUG: Manually added entry_time: {dd['entry_time']}")
-                
                 if latest_entry.device_tag:
                     dd['vehicle_registration_number']=latest_entry.device_tag.vehicle_reg_no
                     dd['imei']=latest_entry.device_tag.device.imei
+                    # Add device tag info (with owner and owner user data)
+                    device_tag_obj = latest_entry.device_tag
+                    device_tag_data = DeviceTagSerializer(device_tag_obj).data
+                    # Add owner data
+                    if device_tag_obj.vehicle_owner:
+                        owner_data = VehicleOwnerSerializer(device_tag_obj.vehicle_owner).data
+                        # Add owner user data
+                        if 'users' in owner_data:
+                            # Already included by VehicleOwnerSerializer
+                            pass
+                        else:
+                            owner_data['users'] = UserSerializer(device_tag_obj.vehicle_owner.users.all(), many=True).data
+                        device_tag_data['vehicle_owner'] = owner_data
+                    dd['device_tag_info'] = device_tag_data
                 else:
                     dd['vehicle_registration_number']=""
                     dd['imei']=""
+                    dd['device_tag_info'] = None
                 data.append(dd)
-            
-          
-          
-
 
         data_list = list(data)
         return JsonResponse({'data': data_list})
@@ -1252,80 +1246,8 @@ def get_size(obj, seen=None):
     elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
         size += sum([get_size(i, seen) for i in obj])
     return size
-#@csrf_exempt   
-#@csrf_exempt
-@require_http_methods(['GET', 'POST'])
-def gps_history_map(request ): 
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-     
-    t = time.time()
-    #print("Timer init",time.time() - t )   
-
-    mapdata=[]
-    data=[]     
-    mapdata=[]
-    data=[]
-    try:
-        vehicle_registration_number ="L89_003-0000"
-        start_datetime = "2024-07-11"
-        end_datetime = "2024-08-12" 
-        
-        
-        try:
-            vehicle_registration_number = request.GET.get('vehicle_registration_number', None)
-            start_datetime = request.GET.get('start_datetime', None)
-            end_datetime = request.GET.get('end_datetime', None)
-        except:
-            vehicle_registration_number ="L89_003-0000"
-            #start_datetime = "2024-04-11"
-            #end_datetime = "2024-04-12"
-
-        #return JsonResponse({"eg":vehicle_registration_number})
-        if vehicle_registration_number:
-            pass
-        else:
-            vehicle_registration_number ="L89_003-0000"
-            start_datetime = "2024-04-11"
-            end_datetime = "2024-04-12"
-        
-        
-        if vehicle_registration_number!="":
-            if vehicle_registration_number: 
-                return render(request, 'map_history.html',{'start_datetime':start_datetime,"end_datetime":end_datetime,"vehicle_registration_number":vehicle_registration_number})
-               
-                #print("Timer input",time.time() - t ) 
-                data = GPSData.objects.all().filter(gps_status=1).filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).filter(vehicle_registration_number__icontains=vehicle_registration_number)
-                 
-                #print("Data select done")
-                #print("filter1 ",time.time() - t ) 
-                if start_datetime and end_datetime:
-                        data = data.filter(entry_time__range=(start_datetime, end_datetime))   
-                         
-                        #print("Date fileter done")  
-                        #print("filter2 ",time.time() - t )                    
-                        data=data.filter(gps_status=1).order_by('entry_time')#[:17280]  
-                        #print("sorting done")  
-                        #print("sort ",time.time() - t ) 
-                        mapdata=apply_low_pass_filter(data, ['longitude', 'latitude'])#[3:]  
-                        #print("lpf done done")  
-                        #print("lpf ",time.time() - t ) 
-                        #print("total dataSize ",get_size(data))
-                try:    #return JsonResponse({"eg":vehicle_registration_number})     
-                    return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
-                except:
-                    return JsonResponse({"error": "No Record Found: "+str(vehicle_registration_number)}, status=403) 
-            else:
-                return JsonResponse({'error': "Invalid  Search "}, status=403) 
-        return JsonResponse({'error': "Invalid Search"}, status=403) 
-        return Response({'error': "Invalid Search"}, status=403)
-        return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
-        return Response({'error': "Invalid Search"}, status=403)
-    except Exception as e: 
-        return JsonResponse({'error': e}) 
-        return Response({'error': "ww"}, status=400)
+ 
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
@@ -1396,30 +1318,35 @@ def gps_history_map_data(request ):
                 #print("Timer input",time.time() - t ) 
                 #filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).
                 data = GPSData.objects.all().filter(gps_status=1).filter(device_tag__vehicle_reg_no__icontains=vehicle_registration_number)
-                 
-                #print("Data select done")
-                #print("filter1 ",time.time() - t ) 
                 if start_datetime and end_datetime:
-                        data = data.filter(entry_time__range=(start_datetime, end_datetime))   
-                         
-                        #print("Date fileter done")  
-                        #print("filter2 ",time.time() - t )                    
-                        data=data.filter(gps_status=1).order_by('entry_time')#[:17280]  
-                        datalen=len(data)-1
-                        #print("sorting done")  
-                        #print("sort ",time.time() - t ) 
-                        #mapdata=apply_low_pass_filter(data, ['longitude', 'latitude'])#[3:]  
-                        #print("lpf done done")  
-                        #print("lpf ",time.time() - t ) 
-                        #print("total dataSize ",get_size(data))
-                        data=GPSData_modSerializer(data, many=True).data
-                        #mapdata=GPSData_modSerializer(mapdata, many=True).data
-                try:    #return JsonResponse({"eg":vehicle_registration_number})     
-                    return JsonResponse( {'data': data,'mapdata': mapdata,'mapdata_length': datalen })
-                except Exception as e:
-                    return JsonResponse({"error": "Unable to process request." +"No Record Found 1: "+vehicle_registration_number}, status=403) 
-            else:
-                return JsonResponse({'error': "Invalid Search 22"}, status=403) 
+                    data = data.filter(entry_time__range=(start_datetime, end_datetime))   
+                    data=data.filter(gps_status=1).order_by('entry_time')#[:17280]  
+                    datalen=len(data)-1
+                    # Add device tag, owner, and owner user data to each entry
+                    from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
+                    data_serialized = []
+                    for entry in data:
+                        entry_data = GPSData_modSerializer(entry).data
+                        if entry.device_tag:
+                            device_tag_obj = entry.device_tag
+                            device_tag_data = DeviceTagSerializer(device_tag_obj).data
+                            if device_tag_obj.vehicle_owner:
+                                owner_data = VehicleOwnerSerializer(device_tag_obj.vehicle_owner).data
+                                if 'users' in owner_data:
+                                    pass
+                                else:
+                                    owner_data['users'] = UserSerializer(device_tag_obj.vehicle_owner.users.all(), many=True).data
+                                device_tag_data['vehicle_owner'] = owner_data
+                            entry_data['device_tag_info'] = device_tag_data
+                        else:
+                            entry_data['device_tag_info'] = None
+                        data_serialized.append(entry_data)
+                    try:
+                        return JsonResponse( {'data': data_serialized,'mapdata': mapdata,'mapdata_length': datalen })
+                    except Exception as e:
+                        return JsonResponse({"error": "Unable to process request." +"No Record Found 1: "+vehicle_registration_number}, status=403) 
+                else:
+                    return JsonResponse({'error': "Invalid Search 22"}, status=403) 
         return JsonResponse({'error': "Invalid Search"}, status=403) 
         #return Response({'error': "Invalid Search"}, status=403)
         #return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
