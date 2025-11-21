@@ -6478,9 +6478,11 @@ def Tag_ownerlist(request ):
                 else:
                     # If user is not associated with any vehicles, return empty queryset
                     devices = DeviceTag.objects.none()
+                    return Response({"error":"Owner account not verified."}, status=status.HTTP_400_BAD_REQUEST)
             else:
                 # For other roles, return empty queryset for security
                 devices = DeviceTag.objects.none()
+                return Response({"error":"User role .is not authorised for this api."}, status=status.HTTP_400_BAD_REQUEST)
         else:
             # If user is not authenticated, return empty queryset
             devices = DeviceTag.objects.none()
@@ -8538,30 +8540,39 @@ def create_Settings_ip(request ):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])  # Allow both authenticated and anonymous users
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
 def filter_Settings_District(request): 
     try:
         user = request.user
-        user_role = getattr(user, 'role', None)
         
-        # Fast role-based filtering
-        if user_role == 'stateadmin':
-            # Get user's state efficiently
-            uo = get_user_object(user, "stateadmin")
-            if uo and uo.state:
-                # Use values() for maximum performance - only get required fields
-                districts = Settings_District.objects.filter(
-                    state=uo.state
-                ).select_related('state').values(
+        # Check if user is authenticated
+        if user and user.is_authenticated:
+            user_role = getattr(user, 'role', None)
+            
+            # Fast role-based filtering for authenticated users
+            if user_role == 'stateadmin':
+                # Get user's state efficiently
+                uo = get_user_object(user, "stateadmin")
+                if uo and uo.state:
+                    # Use values() for maximum performance - only get required fields
+                    districts = Settings_District.objects.filter(
+                        state=uo.state
+                    ).select_related('state').values(
+                        'id', 'district', 
+                        'state__id', 'state__state'
+                    ).distinct()
+                else:
+                    districts = Settings_District.objects.none().values()
+            else:
+                # For other authenticated roles, get all districts with optimized query
+                districts = Settings_District.objects.select_related('state').values(
                     'id', 'district', 
                     'state__id', 'state__state'
                 ).distinct()
-            else:
-                districts = Settings_District.objects.none().values()
         else:
-            # For other roles, get all districts with optimized query
+            # For non-registered/anonymous users, show all districts
             districts = Settings_District.objects.select_related('state').values(
                 'id', 'district', 
                 'state__id', 'state__state'
@@ -11671,9 +11682,15 @@ def reset_password(request ):
             print("sms sent to",user.mobile,text)
             return Response({'Success': "Password reset sms sent", 'mobile': user.mobile}, status=200)
         except Exception as e: 
+            print(f"SMS/Email error: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return Response({'error': "Error in sendig sms/email "+str(e)}, status=400)
     except Exception as e:
-        return Response({'error': "Something went wrong."}, status=400)
+        print(f"Reset password error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({'error': "Something went wrong: "+str(e)}, status=400)
                
 
 
@@ -16222,14 +16239,19 @@ def filter_ota_settings(request):
 # ================================
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])  # Allow public access for incident registration
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['POST'])
 def register_incident(request):
-    """Register a new incident"""
+    """Register a new incident - allows both authenticated and public/anonymous users"""
     try:
         data = request.data.copy()
-        data['registered_by'] = request.user.id
+        
+        # If user is authenticated, use their ID; otherwise set to None for anonymous
+        if request.user and request.user.is_authenticated:
+            data['registered_by'] = request.user.id
+        else:
+            data['registered_by'] = None  # Anonymous/public registration
         
         # Handle file upload if present
         if 'image' in request.FILES:
