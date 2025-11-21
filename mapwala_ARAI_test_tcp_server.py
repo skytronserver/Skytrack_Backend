@@ -8,7 +8,7 @@ def handle_client(conn, addr):
     stop_event = threading.Event()
     
     # Check for initial authentication string
-    REQUIRED_SUBSTRING = "6973"    #Hamre"84747"        # mapwala1"287104"  # You can change this to your required substring
+    REQUIRED_SUBSTRING = "42240"    #Hamre"84747"        # mapwala1"287104"  # You can change this to your required substring
     try:
         initial_data = conn.recv(1024)
         print(f"\033[47m\033[30m{initial_data}\033[0m")
@@ -77,7 +77,7 @@ def set_terminal_color():
     # Set entire terminal background to white and text to black
     print('\033[47m\033[30m\033[2J\033[H', end='')
 
-def start_server(host='0.0.0.0', port=8883):
+def start_server(host='0.0.0.0', port=6000):
     set_terminal_color()  # Set terminal colors when server starts
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Add this line
