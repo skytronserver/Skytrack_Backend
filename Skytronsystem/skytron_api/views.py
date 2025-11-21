@@ -8963,6 +8963,34 @@ def user_statistics(request):
         for role_data in roles:
             users_by_role[role_data['role']] = role_data['count']
         
+        # Logged-in users by role breakdown (users with login=True)
+        logged_in_users_by_role = {}
+        logged_in_roles = User.objects.filter(
+            status='active',
+            login=True
+        ).values('role').annotate(count=Count('role'))
+        for role_data in logged_in_roles:
+            logged_in_users_by_role[role_data['role']] = role_data['count']
+        
+        # Online users by role breakdown (users with recent activity in last 15 minutes)
+        online_users_by_role = {}
+        online_roles = User.objects.filter(
+            status='active',
+            last_activity__gte=online_threshold
+        ).values('role').annotate(count=Count('role'))
+        for role_data in online_roles:
+            online_users_by_role[role_data['role']] = role_data['count']
+        
+        # Currently active sessions by role (session status = login and recent activity)
+        active_sessions_by_role = {}
+        active_session_roles = Session.objects.filter(
+            status='login',
+            lastactivity__gte=online_threshold
+        ).select_related('user').values('user__role').annotate(count=Count('user__role'))
+        for role_data in active_session_roles:
+            if role_data['user__role']:
+                active_sessions_by_role[role_data['user__role']] = role_data['count']
+        
         # Recent logins (last 24 hours)
         last_24_hours = timezone.now() - timedelta(hours=24)
         recent_logins_24h = Session.objects.filter(
@@ -8990,6 +9018,9 @@ def user_statistics(request):
             'total_logins': total_logins,
             'currently_logged_in_registered_users': currently_logged_in_registered,
             'users_by_role': users_by_role,
+            'logged_in_users_by_role': logged_in_users_by_role,
+            'online_users_by_role': online_users_by_role,
+            'active_sessions_by_role': active_sessions_by_role,
             'recent_logins_24h': recent_logins_24h,
             'recent_logins_7d': recent_logins_7d,
             'recent_temp_users_24h': recent_temp_users_24h,
@@ -12734,6 +12765,30 @@ def deactivate_user(request):
         user.is_active = False
         user.save()
         return Response({"message": f"User with ID {user_id} has been deactivated successfully."}, status=status.HTTP_200_OK)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def activate_user(request):
+    # Ensure only superadmin can access this API
+    if request.user.role != "superadmin":
+        return Response({"error": "Access denied. Only superadmins can perform this action."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Get the user ID from the request
+    user_id = request.data.get('userid')
+    if not user_id:
+        return Response({"error": "User ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        # Fetch the user and activate them
+        user = User.objects.get(id=user_id)
+        user.is_active = True
+        user.save()
+        return Response({"message": f"User with ID {user_id} has been activated successfully."}, status=status.HTTP_200_OK)
     except User.DoesNotExist:
         return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
@@ -17128,6 +17183,190 @@ def get_cell_tower_info(request):
                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
+def public_contact_form(request):
+    """
+    Public API for contact form submissions.
+    Accepts contact information and sends email to contact@aaa.com
+    """
+    try:
+        # Extract data from request
+        name = request.data.get('name', '').strip()
+        org_name = request.data.get('org_name', '').strip()
+        user_type = request.data.get('user_type', '').strip()
+        email = request.data.get('email', '').strip()
+        mobile = request.data.get('mobile', '').strip()
+        dob = request.data.get('dob', '').strip()
+        request_detail = request.data.get('request_detail', '').strip()
+        
+        # Validate required fields
+        if not all([name, email, mobile]):
+            return Response({
+                'status': 'error',
+                'message': 'Name, email, and mobile are required fields.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate email format
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email):
+            return Response({
+                'status': 'error',
+                'message': 'Invalid email format.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create email content
+        email_subject = f'New Contact Form Submission - {name}'
+        email_body = f"""
+        New Contact Form Submission
+        ================================
+        
+        Name: {name}
+        Organization: {org_name if org_name else 'N/A'}
+        User Type: {user_type if user_type else 'N/A'}
+        Email: {email}
+        Mobile: {mobile}
+        Date of Birth: {dob if dob else 'N/A'}
+        
+        Request Details:
+        {request_detail if request_detail else 'N/A'}
+        
+        ================================
+        This is an automated message from the contact form.
+        """
+        
+        # Send email using Django's send_mail
+        from django.core.mail import send_mail as django_send_mail
+        
+        django_send_mail(
+            email_subject,
+            email_body,
+            'noreply@skytron.in',  # From email
+            ['contact@aaa.com'],  # To email
+            fail_silently=False,
+        )
+        
+        return Response({
+            'status': 'success',
+            'message': 'Your request has been submitted successfully. We will contact you soon.'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in public_contact_form: {str(e)}")
+        return Response({
+            'status': 'error',
+            'message': 'Failed to submit contact form. Please try again later.'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def list_logged_in_users(request):
+    """
+    API to get list of logged-in users with filtering and pagination.
+    Filters: name, role, mobile, email
+    Pagination: default 100 per page
+    """
+    try:
+        # Only allow superadmin and stateadmin to access this API
+        if request.user.role not in ['superadmin', 'stateadmin']:
+            return Response({
+                'status': 'error',
+                'message': 'Access denied. Only superadmin and stateadmin can view logged-in users.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Get pagination parameters
+        page = int(request.data.get('page', 1)) if request.method == 'POST' else int(request.GET.get('page', 1))
+        page_size = int(request.data.get('page_size', 100)) if request.method == 'POST' else int(request.GET.get('page_size', 100))
+        
+        # Limit page size to maximum 500
+        page_size = min(page_size, 500)
+        
+        # Get filter parameters
+        if request.method == 'POST':
+            name_filter = request.data.get('name', '').strip()
+            role_filter = request.data.get('role', '').strip()
+            mobile_filter = request.data.get('mobile', '').strip()
+            email_filter = request.data.get('email', '').strip()
+        else:
+            name_filter = request.GET.get('name', '').strip()
+            role_filter = request.GET.get('role', '').strip()
+            mobile_filter = request.GET.get('mobile', '').strip()
+            email_filter = request.GET.get('email', '').strip()
+        
+        # Start with users who have login=True (currently logged in)
+        users_query = User.objects.filter(login=True, is_active=True)
+        
+        # Apply filters
+        if name_filter:
+            users_query = users_query.filter(name__icontains=name_filter)
+        
+        if role_filter:
+            users_query = users_query.filter(role__icontains=role_filter)
+        
+        if mobile_filter:
+            users_query = users_query.filter(mobile__icontains=mobile_filter)
+        
+        if email_filter:
+            users_query = users_query.filter(email__icontains=email_filter)
+        
+        # Order by last_activity (most recent first)
+        users_query = users_query.order_by('-last_activity')
+        
+        # Get total count before pagination
+        total_count = users_query.count()
+        
+        # Apply pagination
+        paginator = Paginator(users_query, page_size)
+        
+        try:
+            paginated_users = paginator.get_page(page)
+        except:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid page number.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Prepare user data
+        users_data = []
+        for user in paginated_users:
+            users_data.append({
+                'id': user.id,
+                'name': user.name,
+                'email': user.email,
+                'mobile': user.mobile,
+                'role': user.role,
+                'usertype': user.usertype,
+                'last_login': user.last_login.isoformat() if user.last_login else None,
+                'last_activity': user.last_activity.isoformat() if user.last_activity else None,
+                'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+                'address_State': user.address_State,
+                'is_active': user.is_active,
+                'login': user.login
+            })
+        
+        return Response({
+            'status': 'success',
+            'data': users_data,
+            'pagination': {
+                'current_page': paginated_users.number,
+                'page_size': page_size,
+                'total_pages': paginator.num_pages,
+                'total_results': total_count,
+                'has_next': paginated_users.has_next(),
+                'has_previous': paginated_users.has_previous()
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in list_logged_in_users: {str(e)}")
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 

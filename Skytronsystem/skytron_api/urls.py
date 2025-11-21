@@ -25,6 +25,7 @@ urlpatterns = [
     path('reset_password_request/', reset_password, name='reset_password'),
      
     path('deactivateUser/', deactivate_user, name='user_dactivate'),
+    path('activateUser/', activate_user, name='user_activate'),
     path('user_logout/', user_logout, name='user_logout'),
     path('create_systemadmin/', create_superuser, name='create_superuser'),
     #path('user_get_parent/<int:user_id>/', user_get_parent, name='user_get_parent'),
@@ -408,6 +409,12 @@ urlpatterns = [
     
     # Cell Tower Information API
     path('gpsdata/agps-info/', get_cell_tower_info, name='get_cell_tower_info'),
+    
+    # Public Contact Form API
+    path('public/user_registration/', public_contact_form, name='public_contact_form'),
+    
+    # Logged-in Users List API
+    path('users/logged-in/', list_logged_in_users, name='list_logged_in_users'),
 
 ]  
 

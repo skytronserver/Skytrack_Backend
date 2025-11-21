@@ -306,7 +306,7 @@ def Process_dtorto_Data(msg,topic_parts):
         
         if token:
             # Use Token token format for JWT tokens
-            auth_header = f"Toekn {token}"
+            auth_header = f"Token {token}"
  
             try: 
                 class FakeRequest:
