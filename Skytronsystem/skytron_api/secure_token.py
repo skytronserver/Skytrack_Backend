@@ -25,8 +25,9 @@ class SecureTokenManager:
     def __init__(self):
         # Use RS256 algorithm with RSA keys for enhanced security
         self.algorithm = "RS256"
-        self.access_token_lifetime = 60*60*24*10 # 10 days (for testing/security)
-        self.refresh_token_lifetime = 60*60*24*10 # 10 days (for testing/security)
+        # Default token lifetimes (can be overridden per-request)
+        self.default_access_token_lifetime = 60*60*24*2  # 2 days default
+        self.default_refresh_token_lifetime = 60*60*24*7  # 7 days default
 
         # Load RSA keys from files
         self.private_key = self._load_private_key()
@@ -92,7 +93,7 @@ class SecureTokenManager:
             print(f"ERROR loading JWT public key: {e}")
             raise
         
-    def generate_jwt_token(self, user_id, user_mobile=None, session_data=None, token_type="access"):
+    def generate_jwt_token(self, user_id, user_mobile=None, session_data=None, token_type="access", expiry_minutes=None):
         """
         Generate a secure JWT token with user information
         
@@ -101,17 +102,21 @@ class SecureTokenManager:
             user_mobile (str): User mobile number (optional)
             session_data (dict): Additional session data (optional)
             token_type (str): "access" or "refresh"
+            expiry_minutes (int): Custom expiry time in minutes (optional, defaults to 2880 minutes = 2 days)
         
         Returns:
             str: Signed JWT token
         """
         current_time = timezone.now()
         
-        # Choose expiration based on token type
-        if token_type == "refresh":
-            expiration_time = current_time + timedelta(seconds=self.refresh_token_lifetime)
+        # Choose expiration based on token type and custom expiry
+        if expiry_minutes is not None:
+            # Use custom expiry time from login settings
+            expiration_time = current_time + timedelta(minutes=expiry_minutes)
+        elif token_type == "refresh":
+            expiration_time = current_time + timedelta(seconds=self.default_refresh_token_lifetime)
         else:
-            expiration_time = current_time + timedelta(seconds=self.access_token_lifetime)
+            expiration_time = current_time + timedelta(seconds=self.default_access_token_lifetime)
         
         # Create payload with user information and security features
         payload = {
@@ -258,9 +263,9 @@ class SecureTokenManager:
 token_manager = SecureTokenManager()
 
 # Convenience functions for easy use
-def generate_jwt_token(user_id, user_mobile=None, session_data=None, token_type="access"):
-    """Generate a secure JWT token"""
-    return token_manager.generate_jwt_token(user_id, user_mobile, session_data, token_type)
+def generate_jwt_token(user_id, user_mobile=None, session_data=None, token_type="access", expiry_minutes=None):
+    """Generate a secure JWT token with optional custom expiry"""
+    return token_manager.generate_jwt_token(user_id, user_mobile, session_data, token_type, expiry_minutes)
 
 def verify_jwt_token(token):
     """Verify if a JWT token is valid"""

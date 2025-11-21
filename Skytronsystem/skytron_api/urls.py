@@ -6,10 +6,14 @@ from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from .mqtt_auth_views import prepare_mqtt_auth, prepare_mqtt_auth_with_token, mqtt_dual_auth
 from .mqtt_validate_views import mqtt_validate_connection, mqtt_validate_acl
 
+
 # ... the rest of your URLconf goes here ...
 
 
 urlpatterns = [
+
+    path('set_login_settings/', set_login_settings, name='set_login_settings'),
+    path('get_login_settings/', get_login_settings, name='get_login_settings'),
     path('get_settings/', get_settings, name='settings'),
     
     path('EM/DEx/get-media/', DEx_getMedia, name='get_media'),
@@ -415,6 +419,10 @@ urlpatterns = [
     
     # Logged-in Users List API
     path('users/logged-in/', list_logged_in_users, name='list_logged_in_users'),
+    
+    # Login Settings Management APIs
+    path('login-settings/set/', set_login_settings, name='set_login_settings'),
+    path('login-settings/get/', get_login_settings, name='get_login_settings'),
 
 ]  
 

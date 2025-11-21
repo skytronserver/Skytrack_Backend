@@ -1355,6 +1355,90 @@ class Settings(models.Model):
     def __str__(self):
         return f"Settings {self.id}"
 
+
+class LoginSettings(models.Model):
+    """
+    Model to store login restrictions and settings per user type/role.
+    These settings control login behavior including limits, expiry, and time boundaries.
+    """
+    objects = SafeCreateManager()
+    
+    # User role this setting applies to
+    user_role = models.CharField(
+        max_length=20,
+        unique=True,
+        choices=[
+            ("superadmin", "Super Admin"),
+            ("stateadmin", "State Admin"),
+            ("devicemanufacture", "Device Manufacture"),
+            ("dealer", "Dealer"),
+            ("owner", "Owner"),
+            ("esimprovider", "eSimProvider"),
+            ("filment", "Filment"),
+            ("sosadmin", "SOS Admin"),
+            ("teamleader", "Team Leader"),
+            ("sosexecutive", "SOS Executive"),
+            ("default", "Default"),  # Fallback for any role not explicitly configured
+        ],
+        verbose_name="User Role"
+    )
+    
+    # 1. Per day login limit (how many times a user can login per day)
+    daily_login_limit = models.IntegerField(
+        default=0,
+        verbose_name="Daily Login Limit",
+        help_text="Maximum number of logins allowed per day per user. 0 = unlimited"
+    )
+    
+    # 2. Session expiry time in minutes (how long a session stays active)
+    session_expiry_minutes = models.IntegerField(
+        default=2880,  # 2 days (48 hours) default
+        verbose_name="Session Expiry (Minutes)",
+        help_text="Session expiry time in minutes. After this time, user must login again"
+    )
+    
+    # 3. Maximum simultaneous active sessions
+    max_simultaneous_sessions = models.IntegerField(
+        default=0,
+        verbose_name="Max Simultaneous Sessions",
+        help_text="Maximum number of simultaneous active sessions allowed. 0 = unlimited"
+    )
+    
+    # 4. Login time boundaries (allowed login hours)
+    login_start_time = models.TimeField(
+        default="00:00:00",
+        verbose_name="Login Start Time",
+        help_text="Start time for allowed login period (24-hour format, e.g., 08:00:00)"
+    )
+    
+    login_end_time = models.TimeField(
+        default="23:59:59",
+        verbose_name="Login End Time",
+        help_text="End time for allowed login period (24-hour format, e.g., 18:00:00)"
+    )
+    
+    # Enable/disable time boundary check
+    enforce_time_boundary = models.BooleanField(
+        default=False,
+        verbose_name="Enforce Time Boundary",
+        help_text="If True, users can only login between start and end times"
+    )
+    
+    # Metadata
+    created_by = models.CharField(max_length=255, blank=True, null=True, verbose_name="Created By")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Created At")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Updated At")
+    is_active = models.BooleanField(default=True, verbose_name="Is Active")
+    
+    class Meta:
+        verbose_name = "Login Setting"
+        verbose_name_plural = "Login Settings"
+        ordering = ['user_role']
+    
+    def __str__(self):
+        return f"LoginSettings for {self.user_role}"
+
+
 class GPSData(models.Model):
     objects = SafeCreateManager()
     entry_time = models.DateTimeField(auto_now_add=True)

@@ -1,3 +1,230 @@
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.utils import timezone
+from datetime import datetime, time
+import logging
+from .models import LoginSettings, User
+from .login_settings_cache import (
+    cache_login_settings,
+    get_login_settings_from_cache,
+)
+
+logger = logging.getLogger(__name__)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def set_login_settings(request):
+    """
+    API to create or update login settings for a user role.
+    Saves to database and updates Redis cache.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        user = request.user
+        if user.role != 'superadmin':
+            return Response({
+                'success': False,
+                'error': 'Only Super Admin can configure login settings'
+            }, status=status.HTTP_403_FORBIDDEN)
+        user_role = request.data.get('user_role')
+        if not user_role:
+            return Response({
+                'success': False,
+                'error': 'user_role is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        valid_roles = [
+            "superadmin", "stateadmin", "devicemanufacture", "dealer",
+            "owner", "esimprovider", "filment", "sosadmin",
+            "teamleader", "sosexecutive", "default"
+        ]
+        if user_role not in valid_roles:
+            return Response({
+                'success': False,
+                'error': f'Invalid user_role. Must be one of: {", ".join(valid_roles)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        settings, created = LoginSettings.objects.get_or_create(
+            user_role=user_role,
+            defaults={
+                'created_by': user.email,
+                'daily_login_limit': 0,
+                'session_expiry_minutes': 2880,
+                'max_simultaneous_sessions': 0,
+                'login_start_time': time(0, 0, 0),
+                'login_end_time': time(23, 59, 59),
+                'enforce_time_boundary': False,
+            }
+        )
+        if 'daily_login_limit' in request.data:
+            daily_limit = request.data.get('daily_login_limit')
+            try:
+                settings.daily_login_limit = int(daily_limit)
+                if settings.daily_login_limit < 0:
+                    return Response({
+                        'success': False,
+                        'error': 'daily_login_limit must be >= 0'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except (ValueError, TypeError):
+                return Response({
+                    'success': False,
+                    'error': 'daily_login_limit must be a valid integer'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        if 'session_expiry_minutes' in request.data:
+            expiry = request.data.get('session_expiry_minutes')
+            try:
+                settings.session_expiry_minutes = int(expiry)
+                if settings.session_expiry_minutes <= 0:
+                    return Response({
+                        'success': False,
+                        'error': 'session_expiry_minutes must be > 0'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except (ValueError, TypeError):
+                return Response({
+                    'success': False,
+                    'error': 'session_expiry_minutes must be a valid integer'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        if 'max_simultaneous_sessions' in request.data:
+            max_sessions = request.data.get('max_simultaneous_sessions')
+            try:
+                settings.max_simultaneous_sessions = int(max_sessions)
+                if settings.max_simultaneous_sessions < 0:
+                    return Response({
+                        'success': False,
+                        'error': 'max_simultaneous_sessions must be >= 0'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except (ValueError, TypeError):
+                return Response({
+                    'success': False,
+                    'error': 'max_simultaneous_sessions must be a valid integer'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        if 'login_start_time' in request.data:
+            try:
+                start_time_str = request.data.get('login_start_time')
+                settings.login_start_time = datetime.strptime(start_time_str, '%H:%M:%S').time()
+            except (ValueError, TypeError):
+                return Response({
+                    'success': False,
+                    'error': 'login_start_time must be in HH:MM:SS format (e.g., 08:00:00)'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        if 'login_end_time' in request.data:
+            try:
+                end_time_str = request.data.get('login_end_time')
+                settings.login_end_time = datetime.strptime(end_time_str, '%H:%M:%S').time()
+            except (ValueError, TypeError):
+                return Response({
+                    'success': False,
+                    'error': 'login_end_time must be in HH:MM:SS format (e.g., 18:00:00)'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        if 'enforce_time_boundary' in request.data:
+            settings.enforce_time_boundary = bool(request.data.get('enforce_time_boundary'))
+        if 'is_active' in request.data:
+            settings.is_active = bool(request.data.get('is_active'))
+        if not created:
+            settings.created_by = user.email
+        settings.save()
+        cache_success = cache_login_settings(settings)
+        response_data = {
+            'success': True,
+            'message': f'Login settings {"created" if created else "updated"} successfully',
+            'cached': cache_success,
+            'data': {
+                'user_role': settings.user_role,
+                'daily_login_limit': settings.daily_login_limit,
+                'session_expiry_minutes': settings.session_expiry_minutes,
+                'max_simultaneous_sessions': settings.max_simultaneous_sessions,
+                'login_start_time': settings.login_start_time.strftime('%H:%M:%S'),
+                'login_end_time': settings.login_end_time.strftime('%H:%M:%S'),
+                'enforce_time_boundary': settings.enforce_time_boundary,
+                'is_active': settings.is_active,
+                'created_by': settings.created_by,
+                'updated_at': settings.updated_at.isoformat(),
+            }
+        }
+        return Response(response_data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Error in set_login_settings: {str(e)}")
+        return Response({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def get_login_settings(request):
+    """
+    API to retrieve login settings from Redis cache.
+    For GET: Returns all cached settings
+    For POST with user_role: Returns specific role settings
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        if request.method == 'GET':
+            all_settings = LoginSettings.objects.filter(is_active=True).order_by('user_role')
+            settings_list = []
+            for settings in all_settings:
+                settings_list.append({
+                    'user_role': settings.user_role,
+                    'daily_login_limit': settings.daily_login_limit,
+                    'session_expiry_minutes': settings.session_expiry_minutes,
+                    'max_simultaneous_sessions': settings.max_simultaneous_sessions,
+                    'login_start_time': settings.login_start_time.strftime('%H:%M:%S'),
+                    'login_end_time': settings.login_end_time.strftime('%H:%M:%S'),
+                    'enforce_time_boundary': settings.enforce_time_boundary,
+                    'is_active': settings.is_active,
+                    'created_by': settings.created_by,
+                    'updated_at': settings.updated_at.isoformat(),
+                })
+            return Response({
+                'success': True,
+                'count': len(settings_list),
+                'data': settings_list
+            }, status=status.HTTP_200_OK)
+        else:
+            user_role = request.data.get('user_role')
+            if not user_role:
+                user_role = request.user.role
+            cached_settings = get_login_settings_from_cache(user_role)
+            if cached_settings:
+                return Response({
+                    'success': True,
+                    'source': 'cache',
+                    'data': cached_settings
+                }, status=status.HTTP_200_OK)
+            else:
+                try:
+                    settings = LoginSettings.objects.get(user_role=user_role, is_active=True)
+                    cache_login_settings(settings)
+                    return Response({
+                        'success': True,
+                        'source': 'database',
+                        'message': 'Settings loaded from database and cached',
+                        'data': {
+                            'user_role': settings.user_role,
+                            'daily_login_limit': settings.daily_login_limit,
+                            'session_expiry_minutes': settings.session_expiry_minutes,
+                            'max_simultaneous_sessions': settings.max_simultaneous_sessions,
+                            'login_start_time': settings.login_start_time.strftime('%H:%M:%S'),
+                            'login_end_time': settings.login_end_time.strftime('%H:%M:%S'),
+                            'enforce_time_boundary': settings.enforce_time_boundary,
+                            'is_active': settings.is_active,
+                        }
+                    }, status=status.HTTP_200_OK)
+                except LoginSettings.DoesNotExist:
+                    return Response({
+                        'success': False,
+                        'error': f'No login settings found for role: {user_role}'
+                    }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error in get_login_settings: {str(e)}")
+        return Response({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 # skytron_api/views.py
 from rest_framework.authtoken.models import Token 
 from django.http import HttpResponseBadRequest, JsonResponse,HttpResponse  
@@ -11783,6 +12010,28 @@ def user_login(request ):
         if not user or not  check_password(password, user.password):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         
+        # ===== LOGIN SETTINGS VALIDATION =====
+        # Import here to avoid circular imports
+        from .login_settings_cache import (
+            validate_login_allowed,
+            increment_daily_login_count,
+            get_session_expiry_minutes
+        )
+        
+        # Check if user is allowed to login based on settings
+        is_allowed, error_message = validate_login_allowed(user.id, user.role)
+        if not is_allowed:
+            return Response({
+                'success': False,
+                'error': error_message
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Increment daily login count
+        increment_daily_login_count(user.id)
+        
+        # Get session expiry from login settings
+        session_expiry_mins = get_session_expiry_minutes(user.role)
+        # ===== END LOGIN SETTINGS VALIDATION =====
 
         user.is_active=True
         user.login=True
@@ -11798,11 +12047,12 @@ def user_login(request ):
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
         
-        # Generate secure JWT token instead of random string
+        # Generate secure JWT token with custom expiry from login settings
         jwt_token = generate_jwt_token(
             user_id=user.id,
             user_mobile=user.mobile,
-            session_data={"login_type": "otp_flow", "status": "otpsent"}
+            session_data={"login_type": "otp_flow", "status": "otpsent"},
+            expiry_minutes=session_expiry_mins
         )
         
         # Prefer returning JWT directly; only create a legacy Token when
@@ -11815,6 +12065,9 @@ def user_login(request ):
              
 
         
+        # Get session expiry from settings
+        session_expiry_mins = get_session_expiry_minutes(user.role)
+        
         session_data = {
             'user': user.id,
             'token': token_value,
@@ -11824,7 +12077,10 @@ def user_login(request ):
         } 
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
-            session_serializer.save()     
+            session_serializer.save()
+            
+            # Add session to Redis for tracking (will be updated to 'login' status after OTP validation)
+            # Note: Session tracking is done in validate_otp after OTP confirmation     
 
             
             try:
@@ -12463,6 +12719,28 @@ def user_login_app(request ):
         if not user or not  check_password(password, user.password):
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         
+        # ===== LOGIN SETTINGS VALIDATION =====
+        # Import here to avoid circular imports
+        from .login_settings_cache import (
+            validate_login_allowed,
+            increment_daily_login_count,
+            get_session_expiry_minutes
+        )
+        
+        # Check if user is allowed to login based on settings
+        is_allowed, error_message = validate_login_allowed(user.id, user.role)
+        if not is_allowed:
+            return Response({
+                'success': False,
+                'error': error_message
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Increment daily login count
+        increment_daily_login_count(user.id)
+        
+        # Get session expiry from settings
+        session_expiry_mins = get_session_expiry_minutes(user.role)
+        # ===== END LOGIN SETTINGS VALIDATION =====
 
         user.is_active=True
         user.save()
@@ -12472,11 +12750,12 @@ def user_login_app(request ):
        
         Token.objects.filter(user=user).delete()
 
-        # Generate secure JWT token for web OTP flow
+        # Generate secure JWT token for web OTP flow with custom expiry
         jwt_token = generate_jwt_token(
             user_id=user.id,
             user_mobile=user.mobile,
-            session_data={"login_type": "web_otp_flow", "status": "otpsent"}
+            session_data={"login_type": "web_otp_flow", "status": "otpsent"},
+            expiry_minutes=session_expiry_mins
         )
         
         if jwt_token:
@@ -12494,7 +12773,10 @@ def user_login_app(request ):
         } 
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
-            session_serializer.save()         
+            session_serializer.save()
+            
+            # Add session to Redis for tracking (will be updated to 'login' status after OTP validation)
+            # Note: Session tracking is done in validate_otp after OTP confirmation
             text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             send_SMS(user.mobile,text,tpid) 
@@ -12578,8 +12860,14 @@ def validate_otp(request ):
         if str(otp) == str(session.otp) or str(otp) == "111111" :
             session.status = 'login'
             Token.objects.filter(user=session.user).delete()
+            
+            # ===== GET SESSION EXPIRY FROM LOGIN SETTINGS =====
+            from .login_settings_cache import add_active_session, get_session_expiry_minutes
+            
+            # Get session expiry for user's role
+            session_expiry_mins = get_session_expiry_minutes(session.user.role)
 
-            # Generate secure JWT token for authenticated session
+            # Generate secure JWT token for authenticated session with custom expiry
             jwt_token = generate_jwt_token(
                 user_id=session.user.id,
                 user_mobile=session.user.mobile,
@@ -12588,7 +12876,8 @@ def validate_otp(request ):
                     "status": "authenticated",
                     "login_time": timezone.now().isoformat(),
                     "role": session.user.role
-                }
+                },
+                expiry_minutes=session_expiry_mins
             )
             
             # Prefer returning the JWT directly. Only create a legacy Token
@@ -12604,6 +12893,13 @@ def validate_otp(request ):
             session.loginTime=timezone.now()
       
             session.save()
+            
+            # ===== ADD SESSION TO REDIS FOR TRACKING =====
+            
+            # Add session to Redis for simultaneous session tracking
+            add_active_session(session.user.id, token_value, session_expiry_mins)
+            # ===== END SESSION TRACKING =====
+            
             try:
                 timenow= timezone.now()
                 session.user.last_login =   timenow
@@ -12894,6 +13190,11 @@ def user_logout(request ):
         # Update session status to logout
         session.status = 'logout'
         session.save()
+
+        # ===== REMOVE SESSION FROM REDIS =====
+        from .login_settings_cache import remove_active_session
+        remove_active_session(session.user.id, token)
+        # ===== END SESSION REMOVAL =====
 
         # SECURITY FIX: Blacklist the JWT token to prevent reuse
         try:
