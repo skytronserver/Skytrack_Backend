@@ -216,16 +216,12 @@ urlpatterns = [
     #path('SOS/filter_SOSteam/', filter_SOS_team, name='filter_SOSteam'),
 
 
-    path('list-alerts/', list_alert_logs, name='list_alert_logs'),
-    path('gps-data-table/', gps_data_table, name='gps-data-table'), 
+    path('list-alerts/', list_alert_logs, name='list_alert_logs'), 
     path('gps_history_map_data/',gps_history_map_data , name='gps_history_map_data'),
     
     path('get_live_vehicle_no/',get_live_vehicle_no , name='get_live_vehicle_no'),#
-    path('gps-data-map/',gps_data_allmap , name='gps_data_map'),
-    path('gps-data-log-table/', gps_data_log_table, name='gps_data_log_table'),
-    path('gps-em-data-log-table/', gps_em_data_log_table, name='gps_em_data_log_table'),
-    path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),
-    path('setRoute/',setRoute, name='setRout'), 
+      
+    path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'), 
     path('saveRoute/',saveRoute, name='saveRout'), 
     path('delRoute/',delRoute, name='delRout'), 
     path('getRoute/',getRoute, name='getRout'), 

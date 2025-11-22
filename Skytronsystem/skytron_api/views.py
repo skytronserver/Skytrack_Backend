@@ -298,19 +298,17 @@ from django.conf import settings
      
 import ast 
 from django.views.static import serve
-from django.conf import settings 
-from django.shortcuts import render  
+from django.conf import settings  
 import json
 from django.db.models import Subquery, OuterRef, Max, F,Subquery, OuterRef,Q  
 from django.forms.models import model_to_dict
 from scipy.signal import butter, lfilter,lfilter
 from .forms import GPSDataFilterForm
-import numpy as np
-from django.shortcuts import render
+import numpy as np 
 from django.views import View 
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
-from django.shortcuts import render, get_object_or_404 
+from django.shortcuts import  get_object_or_404 
 from django.contrib.auth.views import LoginView
 from django.shortcuts import redirect
 import requests
@@ -1030,43 +1028,7 @@ def median_filter(data, kernel_size=3):
     return filtered_data.tolist()
  
 
-
-@require_http_methods(['GET', 'POST'])
-def gps_data_table(request ): 
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    
-    form = GPSDataFilterForm(request.GET)
-    data = GPSData.objects.all()#.order_by('-entry_time')[:200]
-
-    if form.is_valid():
-        vehicle_registration_number = form.cleaned_data.get('vehicle_registration_number')
-        start_datetime = form.cleaned_data.get('start_datetime')
-        end_datetime = form.cleaned_data.get('end_datetime')
-
-        if vehicle_registration_number:
-            data = data.filter(device_tag__vehicle_reg_no__icontains=vehicle_registration_number)
-
-        if start_datetime and end_datetime:
-            data = data.filter(entry_time__range=(start_datetime, end_datetime))
-    data=data.order_by('-entry_time')[:200]
-    return render(request, 'gps_data_table.html', {'data': data, 'form': form})
-
-@require_http_methods(['GET', 'POST'])
-def gps_data_table1(request ): 
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    
-    data = GPSData.objects.all().order_by('-entry_time')[:200]
-    #print("data", flush=True)
-    #print(data, flush=True)
-    return render(request, 'gps_data_table.html', {'data': data})
-
-
+  
 
 from itertools import chain
 
@@ -1349,37 +1311,11 @@ def gps_history_map_data(request ):
                     return JsonResponse({'error': "Invalid Search 22"}, status=403) 
         return JsonResponse({'error': "Invalid Search"}, status=403) 
         #return Response({'error': "Invalid Search"}, status=403)
-        #return render(request, 'map_history.html', {'data': data,'mapdata': mapdata,'mapdata_length': len(data)-1 })
         #return Response({'error': "Invalid Search"}, status=403)
     except Exception as e: 
         return JsonResponse({'error': "Unable to process request."+str(e)}) 
         return Response({'error': "ww"}, status=400)
 
-
-
-@require_http_methods(['GET', 'POST'])
-def setRoute(request ): 
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    
-    # Get the latest entry for each unique vehicle_registration_number
-    #latest_data = GPSData.objects.filter(
-    #    vehicle_registration_number=OuterRef('vehicle_registration_number')
-    #).filter(gps_status=1).order_by('-entry_time').values('id')#[:1]
-
-
-    # Retrieve the complete GPSData objects using the latest entry IDs
-    #data = GPSData.objects.filter(id__in=Subquery(latest_data))
-    if request.method == 'GET':
-        device_id =  request.GET.get('device_id')
-        device = DeviceStock.objects.get(id=device_id)   
-        route = Route.objects.filter(device=device,status="Active" ) 
-        return render(request, 'map_rout.html',{"routs": route } )
-    
-    else:
-        return JsonResponse({"error": "Method not allowed"}, status=405)
 
  
 
@@ -1761,83 +1697,7 @@ def getRoutelist(request ):
             return JsonResponse({"error": "Unable to get route list"}, status=400)
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
-
-@require_http_methods(['GET', 'POST'])
-def gps_data_allmap(request ): 
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    
-
-    if request.method == 'GET':
-        imei=False
-        regno=False
-        try:
-            imei = request.GET.get('imei')
-        except:
-            pass
-        try:
-            regno = request.GET.get('regno')
-        except:
-            pass
-        # Get the latest entry for each unique vehicle_registration_number
-        latest_data = GPSData.objects.filter(
-            device_tag=OuterRef('device_tag')
-        ).filter(gps_status=1).order_by('-entry_time').values('id')[:1]
-        data=None
-        #if imei:
-        #    data = GPSData.objects.filter(imei=imei,id__in=Subquery(latest_data))
-        #elif regno:
-        #    data = GPSData.objects.filter(vehicle_registration_number=regno,id__in=Subquery(latest_data))
-        #else:
-        data = GPSData.objects.filter(id__in=Subquery(latest_data))
-
-    return render(request, 'map.html', {'data': data,'regno':regno,'imei':imei})
-
-@require_http_methods(['GET', 'POST'])
-def gps_data_log_table(request ): 
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    
-    # Filter data based on the search query
-    search_query = request.GET.get('search', '')
-    if search_query:
-        data = GPSDataLog.objects.filter(raw_data__contains=search_query).order_by('-timestamp')[:200]
-    else:
-        data = GPSDataLog.objects.all().order_by('-timestamp')[:200]
-    serialized_data = serialize('json', data)
-    
-    return JsonResponse({
-        'data': serialized_data,
-        'search_query': search_query
-    }, status=200)
-    
-    return render(request, 'gps_data_log_table.html', {'data': data, 'search_query': search_query})
-
-@require_http_methods(['GET', 'POST'])
-def gps_em_data_log_table(request ): 
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    
-    # Filter data based on the search query
-    search_query = request.GET.get('search', '')
-    if search_query:
-        data = GPSemDataLog.objects.filter(raw_data__contains=search_query).order_by('-timestamp')[:200]
-    else:
-        data = GPSemDataLog.objects.all().order_by('-timestamp')[:200]
-    serialized_data = serialize('json', data)
-    
-    return JsonResponse({
-        'data': serialized_data,
-        'search_query': search_query
-    }, status=200)
-    return render(request, 'gps_data_log_table.html', {'data': data, 'search_query': search_query})
-
+   
         
 #1     Registration of new user-
 #tpid ="1007135935525313027"
