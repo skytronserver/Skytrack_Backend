@@ -1041,150 +1041,180 @@ from itertools import chain
 @csrf_exempt   
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
-def gps_track_data_api(request ): 
-    #errors = validate_inputs(request)
-    #if errors:
-    #    return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
+def gps_track_data_api(request ):  
     
     if request.method == 'GET':
-        # Debug authentication status
-        print(f"DEBUG: request.user = {request.user}")
-        print(f"DEBUG: request.user.is_authenticated = {request.user.is_authenticated}")
-        print(f"DEBUG: request.user type = {type(request.user)}")
+        # Debug authentication status 
         if hasattr(request.user, 'role'):
             print(f"DEBUG: request.user.role = {request.user.role}")
         else:
             print("DEBUG: request.user has no role attribute")
-        
         # Check authentication headers
         auth_header = request.META.get('HTTP_AUTHORIZATION', None)
         print(f"DEBUG: Authorization header = {auth_header}")
-        
-        imei=False
-        regno=False
-        try:
-            imei = request.GET.get('imei')
-            
-        except:
-            pass
-        try:
-            regno = request.GET.get('regno')
-        except:
-            pass
-        
+
+        imei = request.GET.get('imei', None)
+        regno = request.GET.get('regno', None)
+        # New geofence filter params
+        route_id = request.GET.get('route_id', None)
+        poi_id = request.GET.get('poi_id', None)
+        polygon_param = request.GET.get('polygon', None)  # Expects JSON string: [[lat,lon],[lat,lon],...]
+        in_range = True
+        in_range_param = request.GET.get('in_range', None)
+        if in_range_param is not None:
+            in_range = str(in_range_param).lower() == 'true'
+
         # Get base queryset
         gps_queryset = GPSData.objects.exclude(device_tag=None)
-        
-        # Apply role-based filtering
+
+        # Apply role-based filtering (unchanged)
         if request.user and request.user.is_authenticated:
             user_role = getattr(request.user, 'role', None)
-            
             if not user_role:
-                # If user doesn't have a role, return empty queryset
                 gps_queryset = GPSData.objects.none()
                 return JsonResponse({'error': 'User role not found.'}, status=400)
-            
             if user_role == 'superadmin':
-                # Superadmin sees all data - no additional filtering
                 pass
             elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive', 'dtorto','dealer']:
-                # Get user's state(s) based on role
                 user_states = []
-                
                 if user_role == 'stateadmin':
-                    # Get states from StateAdmin relationship
                     state_admins = StateAdmin.objects.filter(users=request.user, status='UserVerified')
                     user_states = [sa.state.id for sa in state_admins]
                 elif user_role == 'sosadmin':
-                    # Get states from EM_admin relationship  
                     em_admins = EM_admin.objects.filter(users=request.user, status='StateAdminVerified')
                     user_states = [ea.state.id for ea in em_admins]
                 elif user_role == 'sosexecutive':
-                    # Get states from EM_ex relationship
                     em_exs = EM_ex.objects.filter(users=request.user, status='StateAdminVerified')
                     user_states = [ee.state.id for ee in em_exs]
                 elif user_role == 'dtorto':
-                    # Get states from dto_rto relationship
                     dto_rtos = dto_rto.objects.filter(users=request.user, status='StateAdminVerified')
                     user_states = [dr.state.id for dr in dto_rtos]
                 elif user_role == 'dealer':
-                    # Get states from dto_rto relationship
                     dlrs = Dealer.objects.filter(users=request.user)
                     user_states = [dr.manufacturer.state.id for dr in dlrs]
-                
                 if user_states:
-                    # Filter GPSData for vehicles belonging to owners in user's states
-                    # This requires checking the state through the device district's state
-                    gps_queryset = gps_queryset.filter(
-                        device_tag__district__state__id__in=user_states
-                    )
+                    gps_queryset = gps_queryset.filter(device_tag__district__state__id__in=user_states)
                 else:
-                    # If no states found, return empty queryset
                     gps_queryset = GPSData.objects.none()
                     return JsonResponse({'error':  'No user states found.'}, status=400)
-                    
             elif user_role == 'owner':
-                # Get vehicles owned by this user
                 vehicle_owners = VehicleOwner.objects.filter(users=request.user, status='UserVerified')
                 if vehicle_owners.exists():
-                    # Get device tags for vehicles owned by this user
                     owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners)
                     gps_queryset = gps_queryset.filter(device_tag__in=owned_device_tags)
                 else:
-                    # If user is not associated with any vehicles, return empty queryset
                     gps_queryset = GPSData.objects.none()
                     return JsonResponse({'error':  'User is not linked to any vehicles.'}, status=400)
             else:
-                # For other roles, return empty queryset for security
                 gps_queryset = GPSData.objects.none()
                 return JsonResponse({'error':  'User not Authorised for this api.'}, status=400)
         else:
-            # If user is not authenticated, return error
             gps_queryset = GPSData.objects.none()
             return JsonResponse({'error': 'User not authenticated.'}, status=401)
-        
-        distinct_registration_numbers = gps_queryset.values('device_tag').distinct() #vehicle_registration_number
+
+        # --- Geofence filter logic ---
+        polygon = None
+        geofence_message = None
+        buffer_distance = 0.1  # 0.1 km = 100m
+        from shapely.geometry import Point, Polygon, LineString
+        import json
+        # Only one geofence filter can be active at a time
+        geofence_count = sum([1 if x else 0 for x in [route_id, poi_id, polygon_param]])
+        if geofence_count > 1:
+            geofence_message = "Only one of route_id, poi_id, or polygon can be used at a time. Geofence filter not applied."
+        elif route_id:
+            try:
+                route = Route.objects.get(id=route_id)
+                points = []
+                if hasattr(route, 'routepoints'):
+                    if isinstance(route.routepoints, str):
+                        points = json.loads(route.routepoints)
+                    else:
+                        points = route.routepoints
+                coords = []
+                for pt in points:
+                    if isinstance(pt, dict):
+                        coords.append((float(pt['lon']), float(pt['lat'])))
+                    elif isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                        coords.append((float(pt[1]), float(pt[0])))
+                if coords:
+                    line = LineString(coords)
+                    polygon = line.buffer(buffer_distance)
+                else:
+                    geofence_message = "Route has no valid points. Geofence filter not applied."
+            except Exception as e:
+                geofence_message = f"Route geofence error: {e}. Geofence filter not applied."
+        elif poi_id:
+            try:
+                poi = pointofinterests.objects.get(id=poi_id)
+                loc = poi.location
+                coords = []
+                if isinstance(loc, str):
+                    coords = json.loads(loc)
+                elif isinstance(loc, list):
+                    coords = loc
+                poly_coords = [(float(lon), float(lat)) for lat, lon in coords]
+                if poly_coords:
+                    polygon = Polygon(poly_coords)
+                else:
+                    geofence_message = "POI has no valid polygon points. Geofence filter not applied."
+            except Exception as e:
+                geofence_message = f"POI geofence error: {e}. Geofence filter not applied."
+        elif polygon_param:
+            try:
+                coords = json.loads(polygon_param)
+                poly_coords = [(float(lon), float(lat)) for lat, lon in coords]
+                if poly_coords:
+                    polygon = Polygon(poly_coords)
+                else:
+                    geofence_message = "Custom polygon has no valid points. Geofence filter not applied."
+            except Exception as e:
+                geofence_message = f"Custom polygon geofence error: {e}. Geofence filter not applied."
+        # --- End geofence logic ---
+
+        distinct_registration_numbers = gps_queryset.values('device_tag').distinct()
         data = []
-
         from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
-
         for x in distinct_registration_numbers:
-            latest_entry = gps_queryset.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time') 
-            if imei:
-                if imei !="None":
-                    latest_entry = latest_entry.filter(device_tag__device__imei__icontains=imei).filter(gps_status=1).order_by('-entry_time')
-            latest_entry=latest_entry.first()
+            latest_entry = gps_queryset.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time')
+            if imei and imei != "None":
+                latest_entry = latest_entry.filter(device_tag__device__imei__icontains=imei).filter(gps_status=1).order_by('-entry_time')
+            latest_entry = latest_entry.first()
             if latest_entry:
+                # Geofence filter: check if this point is inside/outside polygon
+                if polygon:
+                    lat = getattr(latest_entry, 'latitude', None)
+                    lon = getattr(latest_entry, 'longitude', None)
+                    if lat is not None and lon is not None:
+                        pt = Point(float(lon), float(lat))
+                        inside = polygon.contains(pt)
+                        if (in_range and not inside) or (not in_range and inside):
+                            continue  # skip this point
                 serializer = GPSData_Serializer(latest_entry)
-                dd = serializer.data.copy()  # Make a copy so we can modify it
+                dd = serializer.data.copy()
                 if 'entry_time' not in dd and hasattr(latest_entry, 'entry_time'):
                     dd['entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
                 if latest_entry.device_tag:
-                    dd['vehicle_registration_number']=latest_entry.device_tag.vehicle_reg_no
-                    dd['imei']=latest_entry.device_tag.device.imei
-                    # Add device tag info (with owner and owner user data)
+                    dd['vehicle_registration_number'] = latest_entry.device_tag.vehicle_reg_no
+                    dd['imei'] = latest_entry.device_tag.device.imei
                     device_tag_obj = latest_entry.device_tag
                     device_tag_data = DeviceTagSerializer(device_tag_obj).data
-                    # Add owner data
                     if device_tag_obj.vehicle_owner:
                         owner_data = VehicleOwnerSerializer(device_tag_obj.vehicle_owner).data
-                        # Add owner user data
-                        if 'users' in owner_data:
-                            # Already included by VehicleOwnerSerializer
-                            pass
-                        else:
+                        if 'users' not in owner_data:
                             owner_data['users'] = UserSerializer(device_tag_obj.vehicle_owner.users.all(), many=True).data
                         device_tag_data['vehicle_owner'] = owner_data
                     dd['device_tag_info'] = device_tag_data
                 else:
-                    dd['vehicle_registration_number']=""
-                    dd['imei']=""
+                    dd['vehicle_registration_number'] = ""
+                    dd['imei'] = ""
                     dd['device_tag_info'] = None
                 data.append(dd)
-
         data_list = list(data)
-        return JsonResponse({'data': data_list})
+        response = {'data': data_list}
+        if geofence_message:
+            response['geofence_message'] = geofence_message
+        return JsonResponse(response)
     return JsonResponse({'error':  'Invalid request method. Only GET is allowed.'}, status=400)
 
 

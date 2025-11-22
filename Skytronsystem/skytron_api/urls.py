@@ -237,9 +237,7 @@ urlpatterns = [
     
     #path('emergency-call-listener-admin/',emergency_call_listener_admin, name='emergency-call-listener-admin'), 
 
-
-    path('emergency-call-listener-deskexecutive/',setRoute, name='emergency-call-listener-deskexecutive'), 
-
+ 
     #path('SOSTeamLead/create_SOSTeamLead/', create_SOSTeamLead, name='create_SOSTeamLead'),
     #path('SOSTeamLead/filter_SOSTeamLead/', filter_SOSTeamLead, name='filter_SOSTeamLead'),
 
