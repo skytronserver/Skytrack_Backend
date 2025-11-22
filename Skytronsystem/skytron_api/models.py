@@ -238,6 +238,28 @@ class pointofinterests(models.Model):
 def get_logged_in_users_with_min_assignments(): 
     eight_hours_ago = timezone.now() - timezone.timedelta(hours=8) 
     return 0
+
+
+# Trip model for trip management
+class Trip(models.Model):
+    STATUS_CHOICES = [
+        ("created", "Created"),
+        ("ended", "Ended"),
+        ("canceled", "Canceled"),
+    ]
+
+    created_by = models.ForeignKey('User', on_delete=models.CASCADE, related_name='trips_created')
+    created_at = models.DateTimeField(auto_now_add=True)
+    trip_name = models.CharField(max_length=255)
+    trip_route = models.TextField(help_text="List of lat,long as text")
+    tripvehical_tag = models.CharField(max_length=255)
+    updated_at = models.DateTimeField(auto_now=True)
+    expected_time_of_travel = models.DurationField()
+    distance_travel = models.FloatField()
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="created")
+
+    def __str__(self):
+        return f"Trip {self.id} - {self.trip_name} ({self.status})"
 """
     #
     #role='sosadmin',

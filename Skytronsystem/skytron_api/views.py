@@ -1,3 +1,84 @@
+from .models import Trip
+from .serializers import TripSerializer
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework import status
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from django.db.models import Q
+
+# Create Trip
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_trip(request):
+    serializer = TripSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(created_by=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# Get Trip(s)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_trip(request, trip_id=None):
+    if trip_id:
+        trip = get_object_or_404(Trip, id=trip_id)
+        if trip.created_by != request.user:
+            return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = TripSerializer(trip)
+        return Response(serializer.data)
+    else:
+        trips = Trip.objects.filter(created_by=request.user)
+        serializer = TripSerializer(trips, many=True)
+        return Response(serializer.data)
+
+# Update Trip (only name and route, only by creator, only if not ended/canceled)
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def update_trip(request, trip_id):
+    trip = get_object_or_404(Trip, id=trip_id)
+    if trip.created_by != request.user:
+        return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+    if trip.status != 'created':
+        return Response({'error': 'Cannot update ended or canceled trip'}, status=status.HTTP_400_BAD_REQUEST)
+    data = {}
+    if 'trip_name' in request.data:
+        data['trip_name'] = request.data['trip_name']
+    if 'trip_route' in request.data:
+        data['trip_route'] = request.data['trip_route']
+    serializer = TripSerializer(trip, data=data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# End Trip (only by creator, only if not ended/canceled)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def end_trip(request, trip_id):
+    trip = get_object_or_404(Trip, id=trip_id)
+    if trip.created_by != request.user:
+        return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+    if trip.status != 'created':
+        return Response({'error': 'Trip already ended or canceled'}, status=status.HTTP_400_BAD_REQUEST)
+    trip.status = 'ended'
+    trip.save()
+    serializer = TripSerializer(trip)
+    return Response(serializer.data)
+
+# Cancel Trip (only by creator, only if not ended/canceled)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cancel_trip(request, trip_id):
+    trip = get_object_or_404(Trip, id=trip_id)
+    if trip.created_by != request.user:
+        return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+    if trip.status != 'created':
+        return Response({'error': 'Trip already ended or canceled'}, status=status.HTTP_400_BAD_REQUEST)
+    trip.status = 'canceled'
+    trip.save()
+    serializer = TripSerializer(trip)
+    return Response(serializer.data)
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response

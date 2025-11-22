@@ -773,6 +773,7 @@ class IncidentRegisterSerializer(SanitizingModelSerializer):
 
 
 class NotificationPreferencesSerializer(serializers.Serializer):
+
     """
     Serializer for updating user notification preferences.
     All fields are optional and accept boolean values.
@@ -788,3 +789,11 @@ class NotificationPreferencesSerializer(serializers.Serializer):
         return data
 
 
+
+# Trip Serializer
+from .models import Trip
+
+class TripSerializer(serializers.ModelSerializer):
+        class Meta:
+            model = Trip
+            fields = '__all__'
