@@ -217,7 +217,8 @@ urlpatterns = [
 
 
     
-    
+    path('gps-data-log-table/', gps_data_log_table, name='gps_data_log_table'),
+    path('gps-em-data-log-table/', gps_em_data_log_table, name='gps_em_data_log_table'),
     
 
   

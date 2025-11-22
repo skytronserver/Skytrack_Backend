@@ -6,6 +6,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+from django.shortcuts import render
+
 
 # Create Trip
 @api_view(['POST'])
@@ -17160,6 +17162,47 @@ def archive_gps_data_log(request):
                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@require_http_methods(['GET', 'POST'])
+def gps_data_log_table(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
+    # Filter data based on the search query
+    search_query = request.GET.get('search', '')
+    if search_query:
+        data = GPSDataLog.objects.filter(raw_data__contains=search_query).order_by('-timestamp')[:200]
+    else:
+        data = GPSDataLog.objects.all().order_by('-timestamp')[:200]
+    serialized_data = serialize('json', data)
+    
+    return JsonResponse({
+        'data': serialized_data,
+        'search_query': search_query
+    }, status=200)
+    
+@require_http_methods(['GET', 'POST'])
+def gps_em_data_log_table(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
+    # Filter data based on the search query
+    search_query = request.GET.get('search', '')
+    if search_query:
+        data = GPSemDataLog.objects.filter(raw_data__contains=search_query).order_by('-timestamp')[:200]
+    else:
+        data = GPSemDataLog.objects.all().order_by('-timestamp')[:200]
+    serialized_data = serialize('json', data)
+    
+    return JsonResponse({
+        'data': serialized_data,
+        'search_query': search_query
+    }, status=200)
+     
+        
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
