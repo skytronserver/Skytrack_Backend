@@ -1267,8 +1267,9 @@ def gps_history_map_data(request ):
             vehicle_registration_number = request.GET.get('vehicle_registration_number', None)
             start_datetime = request.GET.get('start_datetime', None)
             end_datetime = request.GET.get('end_datetime', None)
+            owner_name_substr = request.GET.get('owner_name_substr', None)
         except:
-             pass
+            pass
 
         if not vehicle_registration_number or vehicle_registration_number == "":
             return JsonResponse({'error': "Vehicle registration number is required"}, status=400)
@@ -1290,25 +1291,18 @@ def gps_history_map_data(request ):
         has_access = False
         
         if user_role == 'superadmin':
-            # Super admin can access any registration number
             has_access = True
-            
         elif user_role == 'stateadmin':
-            # State admin can access vehicles from their state only
             state_admins = StateAdmin.objects.filter(users=request.user, status='UserVerified')
             user_states = [sa.state.id for sa in state_admins]
             if user_states and device_tag.district and device_tag.district.state.id in user_states:
                 has_access = True
-                
         elif user_role == 'dtorto':
-            # DTO can access vehicles from same district only
             dto_rtos = dto_rto.objects.filter(users=request.user, status='StateAdminVerified')
             user_districts = [dr.district.id for dr in dto_rtos if dr.district]
             if user_districts and device_tag.district and device_tag.district.id in user_districts:
                 has_access = True
-                
         elif user_role == 'owner':
-            # Owner can access only their own vehicles
             vehicle_owners = VehicleOwner.objects.filter(users=request.user, status='UserVerified')
             if vehicle_owners.exists():
                 owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners)
@@ -1317,20 +1311,28 @@ def gps_history_map_data(request ):
 
         if not has_access:
             return JsonResponse({'error': "Unauthorised access to history data"}, status=403)
-        
-        if vehicle_registration_number!="":
+
+        if vehicle_registration_number != "":
             if vehicle_registration_number:
-                #print("Timer input",time.time() - t ) 
-                #filter(longitude__range =[80,100]).filter(latitude__range =[20,30]).
                 data = GPSData.objects.all().filter(gps_status=1).filter(device_tag__vehicle_reg_no__icontains=vehicle_registration_number)
                 if start_datetime and end_datetime:
-                    data = data.filter(entry_time__range=(start_datetime, end_datetime))   
-                    data=data.filter(gps_status=1).order_by('entry_time')#[:17280]  
-                    datalen=len(data)-1
-                    # Add device tag, owner, and owner user data to each entry
+                    data = data.filter(entry_time__range=(start_datetime, end_datetime))
+                    data = data.filter(gps_status=1).order_by('entry_time')
+                    datalen = len(data) - 1
                     from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
                     data_serialized = []
                     for entry in data:
+                        # Owner name substring filter
+                        if owner_name_substr:
+                            owner_obj = getattr(getattr(entry.device_tag, 'vehicle_owner', None), 'users', None)
+                            owner_match = False
+                            if owner_obj:
+                                for user in owner_obj.all():
+                                    if owner_name_substr.lower() in (user.name or '').lower():
+                                        owner_match = True
+                                        break
+                            if not owner_match:
+                                continue  # skip if no owner matches substring
                         entry_data = GPSData_modSerializer(entry).data
                         if entry.device_tag:
                             device_tag_obj = entry.device_tag
@@ -1347,17 +1349,14 @@ def gps_history_map_data(request ):
                             entry_data['device_tag_info'] = None
                         data_serialized.append(entry_data)
                     try:
-                        return JsonResponse( {'data': data_serialized,'mapdata': mapdata,'mapdata_length': datalen })
+                        return JsonResponse({'data': data_serialized, 'mapdata': mapdata, 'mapdata_length': datalen})
                     except Exception as e:
-                        return JsonResponse({"error": "Unable to process request." +"No Record Found 1: "+vehicle_registration_number}, status=403) 
+                        return JsonResponse({"error": "Unable to process request." + "No Record Found 1: " + vehicle_registration_number}, status=403)
                 else:
-                    return JsonResponse({'error': "Invalid Search 22"}, status=403) 
-        return JsonResponse({'error': "Invalid Search"}, status=403) 
-        #return Response({'error': "Invalid Search"}, status=403)
-        #return Response({'error': "Invalid Search"}, status=403)
-    except Exception as e: 
-        return JsonResponse({'error': "Unable to process request."+str(e)}) 
-        return Response({'error': "ww"}, status=400)
+                    return JsonResponse({'error': "Invalid Search 22"}, status=403)
+        return JsonResponse({'error': "Invalid Search"}, status=403)
+    except Exception as e:
+        return JsonResponse({'error': "Unable to process request." + str(e)})
 
 
  
