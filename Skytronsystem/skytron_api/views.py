@@ -1063,6 +1063,8 @@ def gps_track_data_api(request ):
         in_range_param = request.GET.get('in_range', None)
         if in_range_param is not None:
             in_range = str(in_range_param).lower() == 'true'
+        # New owner name substring filter
+        owner_name_substr = request.GET.get('owner', None)
 
         # Get base queryset
         gps_queryset = GPSData.objects.exclude(device_tag=None)
@@ -1181,6 +1183,17 @@ def gps_track_data_api(request ):
                 latest_entry = latest_entry.filter(device_tag__device__imei__icontains=imei).filter(gps_status=1).order_by('-entry_time')
             latest_entry = latest_entry.first()
             if latest_entry:
+                # Owner name substring filter
+                if owner_name_substr:
+                    owner_obj = getattr(getattr(latest_entry.device_tag, 'vehicle_owner', None), 'users', None)
+                    owner_match = False
+                    if owner_obj:
+                        for user in owner_obj.all():
+                            if owner_name_substr.lower() in (user.name or '').lower():
+                                owner_match = True
+                                break
+                    if not owner_match:
+                        continue  # skip if no owner matches substring
                 # Geofence filter: check if this point is inside/outside polygon
                 if polygon:
                     lat = getattr(latest_entry, 'latitude', None)
