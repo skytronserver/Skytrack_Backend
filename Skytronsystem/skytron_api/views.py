@@ -1,3 +1,8 @@
+from rest_framework.pagination import PageNumberPagination
+from math import radians, sin, cos, sqrt, asin
+# --- API: Get latest EMUserLocation for all unique field executives ---
+from django.db.models import OuterRef, Subquery, Max
+
 from .models import Trip
 from .serializers import TripSerializer
 from rest_framework.permissions import IsAuthenticated
@@ -438,6 +443,72 @@ from .throttles import AuthRateThrottle, LoginRateThrottle, OTPRateThrottle, Pas
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_latest_emuser_locations(request):
+    """
+    Returns the latest EMUserLocation for each unique field executive, with filters:
+    - fEM_ex__user__name (partial match)
+    - em_ex_id (exact)
+    - em_ex__user_type (exact)
+    - location search: latest entry within 10km of input lat/lon
+    """
+    # Get query params
+    name = request.GET.get('name')
+    em_ex_id = request.GET.get('em_ex_id')
+    user_type = request.GET.get('user_type')
+    lat = request.GET.get('lat')
+    lon = request.GET.get('lon')
+    radius_km = float(request.GET.get('radius_km', 10))
+
+    # Subquery to get latest EMUserLocation id for each field_ex
+    latest_ids = EMUserLocation.objects.values('field_ex').annotate(max_id=Max('id')).values_list('max_id', flat=True)
+    qs = EMUserLocation.objects.filter(id__in=latest_ids).select_related('field_ex', 'field_ex__createdby')
+
+    # Filter by field executive user name
+    if name:
+        qs = qs.filter(field_ex__users__name__icontains=name)
+    # Filter by EM_ex id
+    if em_ex_id:
+        qs = qs.filter(field_ex__id=em_ex_id)
+    # Filter by EM_ex user_type
+    if user_type:
+        qs = qs.filter(field_ex__user_type=user_type)
+
+    # Location filter (within radius_km of lat/lon)
+    if lat and lon:
+        try:
+            lat = float(lat)
+            lon = float(lon)
+            def haversine(lat1, lon1, lat2, lon2):
+                # Earth radius in km
+                R = 6371.0
+                dlat = radians(lat2 - lat1)
+                dlon = radians(lon2 - lon1)
+                a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
+                c = 2 * asin(sqrt(a))
+                return R * c
+            filtered_ids = []
+            for loc in qs:
+                if loc.em_lat is not None and loc.em_lon is not None:
+                    dist = haversine(lat, lon, loc.em_lat, loc.em_lon)
+                    if dist <= radius_km:
+                        filtered_ids.append(loc.id)
+            qs = qs.filter(id__in=filtered_ids)
+        except Exception:
+            return Response({'status': 'error', 'message': 'Invalid lat/lon for location search'}, status=400)
+
+    # Pagination (optional, default page size 100)
+    paginator = PageNumberPagination()
+    paginator.page_size = int(request.GET.get('page_size', 100))
+    result_page = paginator.paginate_queryset(qs.order_by('-time'), request)
+
+    # Use EMUserLocationSerializer (includes field_ex details)
+    serializer = EMUserLocationSerializer(result_page, many=True)
+    return paginator.get_paginated_response({'status': 'success', 'data': serializer.data})
+
 
 
 def send_sos_mqtt_message(imei):

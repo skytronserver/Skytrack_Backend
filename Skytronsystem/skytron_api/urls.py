@@ -1,3 +1,4 @@
+
 from django.urls import path
 from .views import *
 from .views import create_trip, get_trip, update_trip, end_trip, cancel_trip
@@ -17,13 +18,13 @@ from .mqtt_validate_views import mqtt_validate_connection, mqtt_validate_acl
 
 
 urlpatterns = [
+    path('emuser-locations/', get_latest_emuser_locations, name='get_latest_emuser_locations'),
     path('trip/create/', create_trip, name='create_trip'),
     path('trip/<int:trip_id>/', get_trip, name='get_trip'),
     path('trip/', get_trip, name='get_trips'),
     path('trip/<int:trip_id>/update/', update_trip, name='update_trip'),
     path('trip/<int:trip_id>/end/', end_trip, name='end_trip'),
     path('trip/<int:trip_id>/cancel/', cancel_trip, name='cancel_trip'),
-    # ...existing code...
 
     path('set_login_settings/', set_login_settings, name='set_login_settings'),
     path('get_login_settings/', get_login_settings, name='get_login_settings'),
