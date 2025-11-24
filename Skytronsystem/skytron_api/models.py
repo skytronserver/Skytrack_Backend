@@ -1168,7 +1168,7 @@ def create_emergency_call(sender, instance, created, **kwargs):
         # Check if an EmergencyCall entry already exists for the given vehicle and IMEI
         existing_emergency_call =EMCall.objects.filter(
             device=instance.device_tag
-        ).exclude(status__in=["closed_false_allert",  "closed"]).last()
+        ).exclude(status__in=["closed_false_alert",  "closed"]).last()
         
         if existing_emergency_call:
             pass
@@ -1574,7 +1574,9 @@ class AlertsLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     gps_ref=models.ForeignKey(GPSData, on_delete=models.CASCADE)
     route_ref=models.ForeignKey(Route, on_delete=models.CASCADE,null=True, blank=True)
+    poi_ref=models.ForeignKey(pointofinterests, on_delete=models.CASCADE,null=True, blank=True)
     em_ref=models.ForeignKey("EMCall", on_delete=models.CASCADE,null=True, blank=True)
+    alert_details = models.TextField()
     #dummnyuser=models.ForeignKey(User, on_delete=models.CASCADE,null=True,blank=True) 
     deviceTag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE) 
     #district=models.ForeignKey(dto_rto, on_delete=models.CASCADE,null=True, blank=True) 
@@ -1612,7 +1614,7 @@ class EMTeams(models.Model):
 
 class EMCall(models.Model): 
     objects = SafeCreateManager()
-    choices=[("pending", "pending"), ("desk_ex_assigned", "desk_ex_assigned"), ("broadcast_pending", "broadcast_pending"), ("field_ex_aproaching", "field_ex_aproaching"), ("field_ex_arrived", "field_ex_arrived"), ("closed_false_allert", "closed_false_allert"), ("closed", "closed")]
+    choices=[("pending", "pending"), ("desk_ex_assigned", "desk_ex_assigned"), ("broadcast_pending", "broadcast_pending"), ("field_ex_aproaching", "field_ex_aproaching"), ("field_ex_arrived", "field_ex_arrived"), ("closed_false_alert", "closed_false_alert"), ("closed", "closed")]
     team  = models.ForeignKey(EMTeams, null=True,  on_delete=models.CASCADE,related_name='EMTeams_id')
     device = models.ForeignKey(DeviceTag,  on_delete=models.CASCADE,related_name='DeviceTag_id')
     start_time =   models.DateTimeField(auto_now_add=True, verbose_name="start_time")
@@ -1628,7 +1630,7 @@ class EMCall(models.Model):
 
 class EMCallAssignment(models.Model):
     objects = SafeCreateManager() 
-    status=[("pending", "pending"), ("accepted", "accepted"), ("rejected", "rejected"), ("arriving", "arriving"), ("arrived", "arrived"), ("closed_false_allert", "closed_false_allert"), ("closed", "closed")]
+    status=[("pending", "pending"), ("accepted", "accepted"), ("rejected", "rejected"), ("arriving", "arriving"), ("arrived", "arrived"), ("closed_false_alert", "closed_false_alert"), ("closed", "closed")]
     types=[("teamlead", "teamlead"), ("desk_ex", "desk_ex"), ("police_ex", "police_ex"), ("ambulance_ex", "ambulance_ex") , ("pcr", "pcr") , ("acr", "acr") ]
     admin = models.ForeignKey(EM_admin,  on_delete=models.CASCADE,related_name='emcalladmin')
     ex = models.ForeignKey(EM_ex,  on_delete=models.CASCADE,related_name='exec_id')
@@ -1789,11 +1791,11 @@ class EMCall(models.Model):
     device 
     start_time  
     end_time  
-    status = [("pending", "pending"), ("desk_ex_assigned", "desk_ex_assigned"), ("broadcast_pending", "broadcast_pending"), ("field_ex_aproaching", "field_ex_aproaching"), ("field_ex_arrived", "field_ex_arrived"), ("closed_false_allert", "closed_false_allert"), ("closed", "closed")]
+    status = [("pending", "pending"), ("desk_ex_assigned", "desk_ex_assigned"), ("broadcast_pending", "broadcast_pending"), ("field_ex_aproaching", "field_ex_aproaching"), ("field_ex_arrived", "field_ex_arrived"), ("closed_false_alert", "closed_false_alert"), ("closed", "closed")]
     closer_comment  
 
 class EMCallAssignment(models.Model): 
-    status=[("pending", "pending"), ("accepted", "accepted"), ("rejected", "rejected"), ("arriving", "arriving"), ("arrived", "arrived"), ("closed_false_allert", "closed_false_allert"), ("closed", "closed")]
+    status=[("pending", "pending"), ("accepted", "accepted"), ("rejected", "rejected"), ("arriving", "arriving"), ("arrived", "arrived"), ("closed_false_alert", "closed_false_alert"), ("closed", "closed")]
     types=[("teamlead", "teamlead"), ("desk_ex", "desk_ex"), ("police_ex", "police_ex"), ("ambulance_ex", "ambulance_ex") ]
     call 
     start_time   

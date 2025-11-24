@@ -7625,6 +7625,7 @@ def StockAssignToDealer(request ):
 
     stock_assignments = []
     error=[]
+    success_count=0
     for device_id in device_ids:
         #print(int(device_id),dealer_id, assigned_by_id, assigned_at, data.get('shipping_remark'), stock_status)
        
@@ -7639,12 +7640,15 @@ def StockAssignToDealer(request ):
                 assignment.stock_status=stock_status                
                 assignment.save()                
                 stock_assignments.append( DeviceStockSerializer(assignment).data)
+                success_count+=1
             else:
                 error.append({'id':int(device_id),'error':"unavaialble non assigned devicewith given id under this manufature"})
 
         except Exception as e:
              
             return JsonResponse({'error': "Unable to process request."+str(e)}, status=400)
+        if success_count==0:
+            return JsonResponse({'error': "No device assigned. All provided devices are invalid." }, status=400)
     if len(error)==0:
         return JsonResponse({'data': stock_assignments , 'message': 'Stock assigned successfully.'}, status=201)
     else:
@@ -8274,8 +8278,21 @@ def filter_devicemodel(request):
     
     # Serialize the data - maintaining original response format
     serializer = DeviceModelSerializer_disp(device_models, many=True)
-
-    return Response(serializer.data)
+    data = serializer.data
+    # Add COPs for each device model (like in deviceStockFilter)
+    model_ids = [dm['id'] for dm in data]
+    device_model_cop_map = {}
+    if model_ids:
+        from .serializers import DeviceCOPSerializer
+        all_cops = DeviceCOP.objects.filter(device_model_id__in=model_ids).order_by('-created')
+        for cop in all_cops:
+            model_id = cop.device_model_id
+            if model_id not in device_model_cop_map:
+                device_model_cop_map[model_id] = []
+            device_model_cop_map[model_id].append(DeviceCOPSerializer(cop).data)
+    for dm in data:
+        dm['cops'] = device_model_cop_map.get(dm['id'], [])
+    return Response(data)
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -8339,8 +8356,22 @@ def filter_devicemodel(request):
     total_count = device_models.count()
     total_pages = (total_count + page_size - 1) // page_size
     
+    # Add COPs for each device model (like in deviceStockFilter)
+    data = serializer.data
+    model_ids = [dm['id'] for dm in data]
+    device_model_cop_map = {}
+    if model_ids:
+        from .serializers import DeviceCOPSerializer
+        all_cops = DeviceCOP.objects.filter(device_model_id__in=model_ids).order_by('-created')
+        for cop in all_cops:
+            model_id = cop.device_model_id
+            if model_id not in device_model_cop_map:
+                device_model_cop_map[model_id] = []
+            device_model_cop_map[model_id].append(DeviceCOPSerializer(cop).data)
+    for dm in data:
+        dm['cops'] = device_model_cop_map.get(dm['id'], [])
     return Response({
-        'results': serializer.data,
+        'results': data,
         'pagination': {
             'total_count': total_count,
             'total_pages': total_pages,

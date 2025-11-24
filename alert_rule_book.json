@@ -1,0 +1,176 @@
+[
+    {
+        "type": "Route",
+        "status": "in/out",
+        "reason": "Entered or exited a predefined route assigned to the vehicale",
+        "trigger": "route table and device data"
+    },
+    {
+        "type": "Geofence",
+        "status": "in/out",
+        "reason": "Entered or exited a POI like State, district, City, Restricted area",
+        "trigger": "geofence_boundary and device data"
+    },
+    {
+        "type": "Idling",
+        "status": "in",
+        "reason": "Vehicle has been stationary for too long with engine on",
+        "trigger": "device data"
+    },
+    {
+        "type": "OfflineDevice",
+        "status": "out",
+        "reason": "Device went offline (no communication)",
+        "trigger": "continous scan for devices with no latest data for last 15 min"
+    },
+    {
+        "type": "Overtime",
+        "status": "in",
+        "reason": "Engine on outside the given time limit for the vehical type",
+        "trigger": "vehical type and engine status from device data"
+    },
+    {
+        "type": "UnauthorizedStop",
+        "status": "in",
+        "reason": "Stopped at an unauthorized location",
+        "trigger": "location is over 5 min in a stoprestricted poi"
+    },
+    {
+        "type": "UnauthorizedSkip",
+        "status": "in",
+        "reason": "Skipped a required stop",
+        "trigger": "location is not static for min 30 sec at a required stop poi"
+    },
+    {
+        "type": "NetworkLoss",
+        "status": "in/out",
+        "reason": "Lost network connectivity",
+        "trigger": "continous scan for devices with no latest data for last 5 min"
+    },
+    {
+        "type": "GPSLoss",
+        "status": "in/out",
+        "reason": "Lost GPS signal",
+        "trigger": "device data with no gps fix"
+    },
+    {
+        "type": "Incident",
+        "status": "in",
+        "reason": "Incident reported by public or enforecement  (accident etc.)",
+        "trigger": "incident_detected"
+    },
+    {
+        "type": "Em",
+        "status": "in",
+        "reason": "Emergency alert triggered via emergency button",
+        "trigger": "emergency_alert"
+    },
+    {
+        "type": "EmPublicApp",
+        "status": "in",
+        "reason": "Emergency triggered via public app without login",
+        "trigger": "emergency_public_app"
+    },
+    {
+        "type": "EmRegisteredApp",
+        "status": "in",
+        "reason": "Emergency triggered via registered account app",
+        "trigger": "emergency_registered_app"
+    },
+    {
+        "type": "EmMonitorTripSOS",
+        "status": "in",
+        "reason": "SOS triggered during monitored trip from app",
+        "trigger": "monitor_trip_sos"
+    },
+    {
+        "type": "EmMonitorTripInvalidPw",
+        "status": "in",
+        "reason": "Invalid password during monitored trip",
+        "trigger": "monitor_trip_invalid_pw"
+    },
+    {
+        "type": "EmMonitorTripBLEDisconnect",
+        "status": "out",
+        "reason": "BLE device disconnected during monitored trip",
+        "trigger": "monitor_trip_ble_disconnect"
+    },
+    {
+        "type": "EmMonitorTripDeviated",
+        "status": "in",
+        "reason": "Trip Route deviation during monitored trip",
+        "trigger": "monitor_trip_deviated"
+    },
+    {
+        "type": "Eng",
+        "status": "in/out",
+        "reason": "Engine event (start/stop)",
+        "trigger": "device data"
+    },
+    {
+        "type": "OverSpeed",
+        "status": "in",
+        "reason": "Speed exceeded vehicale type threshold",
+        "trigger": "device data"
+    },
+    {
+        "type": "OverSpeed_route",
+        "status": "in",
+        "reason": "Speed exceeded route threshold",
+        "trigger": "device data"
+    },
+    {
+        "type": "LowIntBat",
+        "status": "in/out",
+        "reason": "Internal battery voltage low",
+        "trigger": "device data"
+    },
+    {
+        "type": "LowExtBat",
+        "status": "in/out",
+        "reason": "External battery voltage low",
+        "trigger": "device data"
+    },
+    {
+        "type": "ExtBatDiscnt",
+        "status": "in/out",
+        "reason": "External battery disconnected",
+        "trigger": "device data"
+    },
+    {
+        "type": "BoxTemp",
+        "status": "in",
+        "reason": "Box tempering detected",
+        "trigger": "device data"
+    },
+    {
+        "type": "EmTemp",
+        "status": "in",
+        "reason": "Emergency cable temoering detected",
+        "trigger": "device data"
+    },
+    {
+        "type": "Tilt",
+        "status": "in",
+        "reason": "Device tilt detected",
+        "trigger": "device data"
+    },
+    {
+        "type": "HarshBreak",
+        "status": "in",
+        "reason": "Harsh braking event detected",
+        "trigger": "device data"
+    },
+    {
+        "type": "HarshTurn",
+        "status": "in",
+        "reason": "Harsh turning event detected",
+        "trigger": "device data"
+    },
+    {
+        "type": "HarshAccileration",
+        "status": "in",
+        "reason": "Harsh acceleration event detected",
+        "trigger": "device data"
+    }
+]
