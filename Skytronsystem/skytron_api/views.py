@@ -6905,7 +6905,7 @@ def TagGetVehicle(request ):
             }, status=400)
     else:
         return JsonResponse({
-            'error': "Device not found with Status:Owner_OTP_Sent"
+            'error': "Device not found"
         }, status=400)
 
 @api_view(['POST'])
@@ -7167,7 +7167,7 @@ def ActivateTag(request ):
         return JsonResponse({'data': serializer.data,"message":"Temporery activation request Sent.Please wait untile live data is visisble on map."}, status=201)
     else: 
     
-        return JsonResponse({'error': "Device not found with Status:Owner_OTP_Sent"}, status=400)
+        return JsonResponse({'error': "Device not found"}, status=400)
 
 
 @api_view(['POST'])
@@ -7206,7 +7206,7 @@ def TagVerifyOwnerOtp(request ):
         else: 
             return JsonResponse({'error': "Invalid OTP"}, status=400)
     else:
-        return JsonResponse({'error': "Device not found with Status:Owner_OTP_Sent"}, status=400)
+        return JsonResponse({'error': "Device not found"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -7243,7 +7243,7 @@ def TagVerifyOwnerOtpFinal(request ):
             return JsonResponse({'error': "Invalid OTP"}, status=400)
     else: 
     
-        return JsonResponse({'error': "Device not found with Status:Owner_OTP_Sent"}, status=400)
+        return JsonResponse({'error': "Device not found"}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -7296,7 +7296,7 @@ def TagVerifyDealerOtp(request  ):
             else:
                 return JsonResponse({'error': "Invalid OTP"}, status=400)
         else: 
-            return JsonResponse({'error': "Device not found with Status:Dealer_OTP_Sent"}, status=400)
+            return JsonResponse({'error': "Device not found"}, status=400)
     except Exception as e:
             return Response({"message": "Unable to process request."+str(e)}, status=200)
 
@@ -7324,7 +7324,7 @@ def TagVerifyDTOOtp(request  ):
             else:
                 return JsonResponse({'error': "Invalid OTP"}, status=400)
         else:
-            return JsonResponse({'error': "Device not found with Status:Dealer_OTP_Sent"}, status=400)
+            return JsonResponse({'error': "Device not found"}, status=400)
     except Exception as e:
             
             return JsonResponse({'error': "Unable to process request."+str(e)}, status=400)
