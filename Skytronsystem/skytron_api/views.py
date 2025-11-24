@@ -7787,22 +7787,27 @@ def deviceStockFilter(request ):
     has_next = page < total_pages
     has_previous = page > 1
 
-    # Prefetch all COPs for all devices in this page
-    device_cop_map = {}
-    if device_ids:
-        from .serializers import DeviceCOPSerializer 
-        all_cops = DeviceCOP.objects.filter(device_id__in=device_ids).order_by('-created')
-        # Group by device_id
+    # Prefetch all COPs for all device models in this page
+    device_model_ids = set()
+    for item in result_data:
+        if item.get('model__id'):
+            device_model_ids.add(item['model__id'])
+    device_model_cop_map = {}
+    if device_model_ids:
+        from .serializers import DeviceCOPSerializer
+        all_cops = DeviceCOP.objects.filter(device_model_id__in=device_model_ids).order_by('-created')
+        # Group by device_model_id
         for cop in all_cops:
-            device_id = cop.device_id
-            if device_id not in device_cop_map:
-                device_cop_map[device_id] = []
-            device_cop_map[device_id].append(DeviceCOPSerializer(cop).data)
+            model_id = cop.device_model_id
+            if model_id not in device_model_cop_map:
+                device_model_cop_map[model_id] = []
+            device_model_cop_map[model_id].append(DeviceCOPSerializer(cop).data)
 
     # Format the response to match the expected structure
     formatted_data = []
     for item in result_data:
         device_id = item['id']
+        model_id = item.get('model__id')
         formatted_item = {
             'id': item['id'],
             'device_esn': item['device_esn'],
@@ -7840,8 +7845,8 @@ def deviceStockFilter(request ):
                 'name': item['created_by__name'],
                 'email': item['created_by__email'],
             } if item['created_by__id'] else None,
-            # Add all COPs for this device, latest first
-            'cops': device_cop_map.get(device_id, []),
+            # Add all COPs for this device model, latest first
+            'cops': device_model_cop_map.get(model_id, []),
         }
         formatted_data.append(formatted_item)
 
