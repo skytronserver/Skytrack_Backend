@@ -339,8 +339,7 @@ from .models import *
 from .serializers import *
 import xml.etree.ElementTree as ET
 import json
-import html
-from django.db.models import Q
+import html 
 import random
 from itertools import islice 
 from django.utils import timezone     
@@ -7788,9 +7787,22 @@ def deviceStockFilter(request ):
     has_next = page < total_pages
     has_previous = page > 1
 
+    # Prefetch all COPs for all devices in this page
+    device_cop_map = {}
+    if device_ids:
+        from .serializers import DeviceCOPSerializer 
+        all_cops = DeviceCOP.objects.filter(device_id__in=device_ids).order_by('-created')
+        # Group by device_id
+        for cop in all_cops:
+            device_id = cop.device_id
+            if device_id not in device_cop_map:
+                device_cop_map[device_id] = []
+            device_cop_map[device_id].append(DeviceCOPSerializer(cop).data)
+
     # Format the response to match the expected structure
     formatted_data = []
     for item in result_data:
+        device_id = item['id']
         formatted_item = {
             'id': item['id'],
             'device_esn': item['device_esn'],
@@ -7828,6 +7840,8 @@ def deviceStockFilter(request ):
                 'name': item['created_by__name'],
                 'email': item['created_by__email'],
             } if item['created_by__id'] else None,
+            # Add all COPs for this device, latest first
+            'cops': device_cop_map.get(device_id, []),
         }
         formatted_data.append(formatted_item)
 
