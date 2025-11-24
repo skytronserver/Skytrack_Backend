@@ -1162,16 +1162,16 @@ def gps_track_data_api(request ):
             elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive', 'dtorto','dealer']:
                 user_states = []
                 if user_role == 'stateadmin':
-                    state_admins = StateAdmin.objects.filter(users=request.user, status='UserVerified')
+                    state_admins = StateAdmin.objects.filter(users=request.user)
                     user_states = [sa.state.id for sa in state_admins]
                 elif user_role == 'sosadmin':
-                    em_admins = EM_admin.objects.filter(users=request.user, status='StateAdminVerified')
+                    em_admins = EM_admin.objects.filter(users=request.user)
                     user_states = [ea.state.id for ea in em_admins]
                 elif user_role == 'sosexecutive':
-                    em_exs = EM_ex.objects.filter(users=request.user, status='StateAdminVerified')
+                    em_exs = EM_ex.objects.filter(users=request.user)
                     user_states = [ee.state.id for ee in em_exs]
                 elif user_role == 'dtorto':
-                    dto_rtos = dto_rto.objects.filter(users=request.user, status='StateAdminVerified')
+                    dto_rtos = dto_rto.objects.filter(users=request.user)
                     user_states = [dr.state.id for dr in dto_rtos]
                 elif user_role == 'dealer':
                     dlrs = Dealer.objects.filter(users=request.user)
