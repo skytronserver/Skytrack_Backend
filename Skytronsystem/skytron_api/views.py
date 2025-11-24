@@ -16001,37 +16001,66 @@ def get_device_health_status(request):
         
         # Get unique device tags
         device_tags = device_tags_query.distinct()
-        
-        if not device_tags.exists():
+
+        # Pagination parameters
+        try:
+            page = int(request.GET.get('page', 1))
+            page_size = int(request.GET.get('page_size', 20))
+        except Exception:
+            page = 1
+            page_size = 20
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 20
+
+        total_devices_count = device_tags.count()
+        if not total_devices_count:
             return Response({
                 'status': 'success',
                 'total_devices': 0,
                 'online_devices': 0,
                 'offline_devices': 0,
-                'devices': []
+                'devices': [],
+                'page': page,
+                'page_size': page_size,
+                'total_pages': 0
             })
-        
-        # Process each device tag
+
+        # Pagination logic
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated_device_tags = device_tags[start:end]
+
         now = timezone.now()
         offline_threshold = now - timedelta(minutes=10)
-        
+
         devices_health = []
         online_count = 0
         offline_count = 0
-        
+
+        # For total online/offline, we need to check all devices (not just paginated)
+        # So, calculate counts for all devices
+        all_online_count = 0
+        all_offline_count = 0
+        all_no_data_count = 0
         for device_tag in device_tags:
-            # Get the latest GPS data for this device
-            latest_gps = GPSData.objects.filter(
-                device_tag=device_tag
-            ).order_by('-entry_time').first()
-            
+            latest_gps = GPSData.objects.filter(device_tag=device_tag).order_by('-entry_time').first()
             if not latest_gps:
-                # No GPS data found
+                all_no_data_count += 1
+            elif latest_gps.entry_time >= offline_threshold:
+                all_online_count += 1
+            else:
+                all_offline_count += 1
+
+        # Now, build the paginated device health list
+        for device_tag in paginated_device_tags:
+            latest_gps = GPSData.objects.filter(device_tag=device_tag).order_by('-entry_time').first()
+            if not latest_gps:
                 device_status = 'no_data'
                 last_seen = None
                 offline_duration_minutes = None
             else:
-                # Check if device is online or offline
                 if latest_gps.entry_time >= offline_threshold:
                     device_status = 'online'
                     online_count += 1
@@ -16039,10 +16068,8 @@ def get_device_health_status(request):
                     device_status = 'offline'
                     offline_count += 1
                     offline_duration_minutes = int((now - latest_gps.entry_time).total_seconds() / 60)
-                
                 last_seen = latest_gps.entry_time
-            
-            # Prepare device information
+
             device_info = {
                 'device_tag_id': device_tag.id,
                 'vehicle_reg_no': device_tag.vehicle_reg_no,
@@ -16083,8 +16110,7 @@ def get_device_health_status(request):
                     'company_name': device_tag.vehicle_owner.company_name if device_tag.vehicle_owner else 'N/A'
                 }
             }
-            
-            # Add latest GPS data if available
+
             if latest_gps:
                 device_info['latest_gps_data'] = {
                     'packet_type': latest_gps.packet_type,
@@ -16108,17 +16134,18 @@ def get_device_health_status(request):
                 }
             else:
                 device_info['latest_gps_data'] = None
-            
+
             devices_health.append(device_info)
-        
-        # Prepare response
+
+        total_pages = (total_devices_count + page_size - 1) // page_size
+
         response_data = {
             'status': 'success',
             'query_time': now,
-            'total_devices': len(devices_health),
-            'online_devices': online_count,
-            'offline_devices': offline_count,
-            'no_data_devices': len(devices_health) - online_count - offline_count,
+            'total_devices': total_devices_count,
+            'online_devices': all_online_count,
+            'offline_devices': all_offline_count,
+            'no_data_devices': all_no_data_count,
             'offline_threshold_minutes': 10,
             'applied_filters': {
                 'vehicle_reg_no': vehicle_reg_no if vehicle_reg_no else None,
@@ -16131,9 +16158,12 @@ def get_device_health_status(request):
                 'vehicle_owner_id': vehicle_owner_id if vehicle_owner_id else None,
             },
             'user_role': user.role,
-            'devices': devices_health
+            'devices': devices_health,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': total_pages
         }
-        
+
         return Response(response_data, status=status.HTTP_200_OK)
         
     except Exception as e:
