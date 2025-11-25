@@ -212,6 +212,7 @@ class pointofinterests(models.Model):
             ( 'Hospital',  'Hospital'), 
             ( 'PoliceStation',  'PoliceStation'), 
             ( 'BusStop',  'BusStop'),  
+            ( 'NoParking',  'NoParking'),  
             ( 'RailwayStation',  'RailwayStation'), 
             ( 'Airport',  'Airport'), 
             ( 'FuelStation',  'FuelStation'), 
@@ -225,6 +226,15 @@ class pointofinterests(models.Model):
     radius = models.FloatField(blank=True, null=True)
     name = models.CharField(max_length=50, unique=True)
     description = models.TextField()
+    # New fields
+    ALERT_TYPE_CHOICES = [
+        ('in', 'In'),
+        ('out', 'Out'),
+        ('both', 'Both'),
+        ('none', 'None'),
+    ]
+    alert_type = models.CharField(max_length=10, choices=ALERT_TYPE_CHOICES, default='none')
+    speed_limit = models.IntegerField(blank=True, null=True)
     created_by = models.ForeignKey('User', on_delete=models.CASCADE,related_name='POI_created_by')
     updated_by = models.ForeignKey('User', on_delete=models.CASCADE,related_name='POI_updated_by')
     created = models.DateTimeField(auto_now_add=True)

@@ -47,6 +47,17 @@ class DeviceStockSerializer(SanitizingModelSerializer):
 
 
 class DeviceTagSerializer(SanitizingModelSerializer):
+    category_info = serializers.SerializerMethodField()
+    def get_category_info(self, obj):
+        # Map DeviceTag.category (assumed to be an ID) to Settings_VehicleCategory
+        try:
+            cat_obj = Settings_VehicleCategory.objects.filter(id=obj.category).first()
+            if cat_obj:
+                from .serializers import Settings_VehicleCategorySerializer
+                return Settings_VehicleCategorySerializer(cat_obj).data
+        except Exception:
+            pass
+        return None
     class Meta:
         model =DeviceTag        
         exclude = ['otp','otp_time'] 

@@ -5897,6 +5897,8 @@ def create_poi(request):
             radius=data.get('radius'),
             name=data.get('name'),
             description=data.get('description'),
+            alert_type=data.get('alert_type', 'none'),
+            speed_limit=data.get('speed_limit'),
             created_by=request.user,
             updated_by=request.user
         )
@@ -5920,6 +5922,8 @@ def update_poi(request):
         poi.radius = data.get('radius', poi.radius)
         poi.name = data.get('name', poi.name)
         poi.description = data.get('description', poi.description)
+        poi.alert_type = data.get('alert_type', poi.alert_type)
+        poi.speed_limit = data.get('speed_limit', poi.speed_limit)
         poi.updated_by = request.user
         poi.save()
         return Response({'message': 'poi updated successfully', 'data': model_to_dict(poi)}, status=200)
@@ -5953,6 +5957,10 @@ def list_pois(request):
     try:
         pois = pointofinterests.objects.all()
         data = list(pois.values())
+        # Add alert_type and speed_limit to output if not present
+        for d, poi in zip(data, pois):
+            d['alert_type'] = poi.alert_type
+            d['speed_limit'] = poi.speed_limit
         return Response({'data': data}, status=200)
     except Exception as e:
         return Response({'error': str(e)}, status=400)
