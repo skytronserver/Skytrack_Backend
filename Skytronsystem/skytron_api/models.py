@@ -1123,7 +1123,7 @@ class EMGPSLocation(models.Model): #imergency tracking data
             print(f"  - Status: {tag.status}, Vehicle: {tag.vehicle_reg_no}")
         
         # Try to find an active device tag
-        device_tag = DeviceTag.objects.filter(device__imei=str(data_list[1]), status='Device_Active').last()
+        device_tag = DeviceTag.objects.filter(device__imei=str(data_list[1])).last()
         if not device_tag:
             # If no active device found, try other valid statuses
             device_tag = DeviceTag.objects.filter(
@@ -1151,17 +1151,17 @@ class EMGPSLocation(models.Model): #imergency tracking data
                 packet_status=data_list[2],
                 date=data_list[3],
                 time=data_list[4],
-                gps_validity=data_list[5],
-                latitude=float(data_list[6]),
-                latitude_direction=data_list[7],
-                longitude=float(data_list[8]),
-                longitude_direction=data_list[9],
-                altitude=float(data_list[10]),
-                speed=float(data_list[11]),
-                distance=float(data_list[12]),
+                gps_validity=data_list[12],
+                latitude=float(data_list[5]),
+                latitude_direction=data_list[6],
+                longitude=float(data_list[7]),
+                longitude_direction=data_list[8],
+                altitude=float(data_list[9]),
+                speed=float(data_list[10]),
+                distance=float(data_list[11]),
                 provider=data_list[13],
-                vehicle_reg_no=data_list[14],
-                reply_mob_no=data_list[15],
+                vehicle_reg_no=data_list[13],
+                reply_mob_no=data_list[14],
                 device_tag=device_tag,
             )
 

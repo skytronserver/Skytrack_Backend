@@ -38,6 +38,8 @@ def processEM(str_data):
             GPSemDataLog.objects.create(raw_data=str_data)
         except Exception as e:
             print("Data processing error log:", e, flush=True)
+        print("EM Data processing :", str_data, flush=True)
+        print("EM Data processing :", str_data)
 
         data_l = str_data.split('$')
         for dat in data_l:
@@ -46,13 +48,12 @@ def processEM(str_data):
                 print("Data processing 32323 :", dat, flush=True)
                 try:
                     data_list = dat.split(',')
-                    if len(data_list)==20:
+                    if len(data_list)>10:
                         data_list=data_list[2:]
                         print(data_list)
                         location = EMGPSLocation.create_from_string(data_list)
                         if location is not None:
-                            location.save()
-                            RegNo=data_list[14]
+                            location.save() 
                         else:
                             print(f"Warning: No device tag found for IMEI {data_list[1]}, skipping save")
                 except Exception as e :

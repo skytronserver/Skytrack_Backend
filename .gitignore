@@ -87,3 +87,4 @@ mqtt_deployment/mqtt_backup_20251018_133053.tar.gz
 mqtt_deployment/mqtt_backup_20251018_134355.tar.gz
 mqtt_deployment/deploy_mqtt.sh
 data_arai/*.*
+olddb.dump

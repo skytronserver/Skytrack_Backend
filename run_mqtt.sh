@@ -67,8 +67,8 @@ docker rm skytrack-mqtt-client-container || true
 
 # Run migrations first in a temporary container
 echo "Running database migrations..."
-docker run --rm --network "$NETWORK_NAME" --name skytrack-mqtt-migration skytrack-mqtt-client python manage.py makemigrations skytron_api
-docker run --rm --network "$NETWORK_NAME" --name skytrack-mqtt-migration skytrack-mqtt-client python manage.py migrate --run-syncdb
+#docker run --rm --network "$NETWORK_NAME" --name skytrack-mqtt-migration skytrack-mqtt-client python manage.py makemigrations skytron_api
+#docker run --rm --network "$NETWORK_NAME" --name skytrack-mqtt-migration skytrack-mqtt-client python manage.py migrate --run-syncdb
 
 # Run the container with the volume mount (environment variables are now baked into the image)
 sudo docker run -d --restart=always \
