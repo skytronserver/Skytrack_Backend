@@ -805,6 +805,6 @@ class NotificationPreferencesSerializer(serializers.Serializer):
 from .models import Trip
 
 class TripSerializer(serializers.ModelSerializer):
-        class Meta:
-            model = Trip
-            fields = '__all__'
+    class Meta:
+        model = Trip
+        fields = '__all__'

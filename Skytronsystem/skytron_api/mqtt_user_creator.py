@@ -16,7 +16,7 @@ import time
 def create_mqtt_user(username, password): 
     # MQTT broker configuration - using environment variables for deployment flexibility
     import os
-    CA_FILE = "/app/keys/ca.crt"  # Updated certificate path
+    CA_FILE = "/home/azureuser/Skytrack_Backend/Skytronsystem/keys/ca.crt" # "/app/keys/ca.crt"  # Updated certificate path
     #HOST = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")  # Default fallback
     HOST = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")  # Default fallback
     PORT = os.getenv("MQTT_BROKER_PORT", "8883")

@@ -182,7 +182,7 @@ urlpatterns = [
 
     path('EM/DEx/listBroadcast/', DEx_broadcastlist, name='DEx_broadcastlist'),
     path('EM/DEx/closeCase/', DEx_closeCase, name='DEx_closeCase'),
-    path('EM/DEx/closeCase/', DEx_closeCase, name='DEx_closeCase'),
+    #path('EM/DEx/closeCase/', DEx_closeCase, name='DEx_closeCase'),
     path('EM/DEx/sendMsg/', DEx_sendMsg, name='DEx_sendMsg'),
     path('EM/DEx/rcvMsg/', DEx_rcvMsg, name='DEx_rcvMsg'),
     path('EM/DEx/commentFE/', DEx_commentFE, name='DEx_commentFE'),
@@ -236,7 +236,7 @@ urlpatterns = [
     
     path('get_live_vehicle_no/',get_live_vehicle_no , name='get_live_vehicle_no'),#
       
-    path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'), 
+    path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),  # live tracking api
     path('saveRoute/',saveRoute, name='saveRout'), 
     path('delRoute/',delRoute, name='delRout'), 
     path('getRoute/',getRoute, name='getRout'), 

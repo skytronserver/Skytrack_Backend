@@ -258,7 +258,8 @@ class Trip(models.Model):
         ("canceled", "Canceled"),
     ]
 
-    created_by = models.ForeignKey('User', on_delete=models.CASCADE, related_name='trips_created')
+    created_by = models.ForeignKey('User', on_delete=models.CASCADE, related_name='trips_created', null=True, blank=True)
+    mobile_no = models.CharField(max_length=15, null=True, blank=True, help_text="Mobile number for temp user")
     created_at = models.DateTimeField(auto_now_add=True)
     trip_name = models.CharField(max_length=255)
     trip_route = models.TextField(help_text="List of lat,long as text")
@@ -269,7 +270,8 @@ class Trip(models.Model):
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="created")
 
     def __str__(self):
-        return f"Trip {self.id} - {self.trip_name} ({self.status})"
+        user_info = self.created_by if self.created_by else self.mobile_no
+        return f"Trip {self.id} - {self.trip_name} ({self.status}) [{user_info}]"
 """
     #
     #role='sosadmin',

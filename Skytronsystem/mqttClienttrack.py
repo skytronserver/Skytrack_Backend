@@ -93,17 +93,17 @@ def Process_sosEx_Data(msg,topic_parts):
     try:
         # Print raw message for debugging
         raw_message = msg.payload.decode()
-        print(f"Raw message received: {raw_message}")
+        #print(f"Raw message received: {raw_message}")
         
         try:
             data = json.loads(raw_message)
         except json.JSONDecodeError as je:
             print(f"JSON Decode Error: {je}")
-            print(f"Raw message that failed: '{raw_message}'")
+            #print(f"Raw message that failed: '{raw_message}'")
             client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": f"Invalid JSON format: {str(je)}"}))
             return
             
-        print("Parsed data:", data)
+        #print("Parsed data:", data)
         token=topic_parts[1]  #data.get("token")
         if token:
             # Use Token token format for JWT tokens
@@ -118,7 +118,7 @@ def Process_sosEx_Data(msg,topic_parts):
                         self.META = {'HTTP_AUTHORIZATION': auth_header}
                         self.data = {}  # Add empty data dict for compatibility
                         self.GET = {}   # Add empty GET dict for compatibility
-                        print(f"Authorization Header: {auth_header}")
+                        #print(f"Authorization Header: {auth_header}")
                 
                 fake_request = FakeRequest(auth_header)
                 user_auth_tuple = authenticator.authenticate(fake_request)
@@ -226,7 +226,7 @@ def Process_sosEx_Data(msg,topic_parts):
 def Process_owner_Data(msg,topic_parts): 
     try:
         data = json.loads(msg.payload.decode())
-        print(data)
+        #print(data)
         token=data.get("token")
         
         if token:
@@ -268,7 +268,7 @@ def Process_owner_Data(msg,topic_parts):
             user.last_activity = timezone.now()
             user.login = True
             user.save() 
-            print(user)
+            #print(user)
             try:
                 #alerts = AlertsLog.objects.filter(deviceTag__vehicle_owner=uo).order_by('-id')[:10] for demo testing 
                 alerts = AlertsLog.objects.order_by('-id')[:10]
@@ -301,7 +301,7 @@ def Process_owner_Data(msg,topic_parts):
 def Process_dtorto_Data(msg,topic_parts): 
     try:
         data = json.loads(msg.payload.decode())
-        print(data)
+        #print(data)
         token=data.get("token")
         
         if token:
@@ -343,7 +343,7 @@ def Process_dtorto_Data(msg,topic_parts):
             user.last_activity = timezone.now()
             user.login = True
             user.save() 
-            print(user)
+            #print(user)
             try:
                 alerts = AlertsLog.objects.order_by('-id')[:10]
                 if alerts:
@@ -373,7 +373,7 @@ def Process_Device_Data(msg):
     """Process device tracking data using common processor and send response"""
     try:
         data_str = str(msg.payload.decode())
-        print(f"[MQTT] Processing device tracking data: {data_str}", flush=True)
+        #print(f"[MQTT] Processing device tracking data: {data_str}", flush=True)
         
         # Process the GPS data
         process_device_tracking_data(data_str, source="MQTT")
@@ -386,7 +386,7 @@ def Process_Device_Data(msg):
             if len(data_parts) > 7:
                 # For PVT format: $,PVT,HPSP,1.0.0,NR,01,L,860269065242240,...
                 imei = data_parts[7]  # IMEI is at index 7
-                print(f"[MQTT] Extracted IMEI for response: {imei}", flush=True)
+                #print(f"[MQTT] Extracted IMEI for response: {imei}", flush=True)
         except Exception as e:
             print(f"[MQTT] Error extracting IMEI: {e}", flush=True)
         
@@ -401,7 +401,7 @@ def Process_Device_Data(msg):
                 response_json = json.dumps(response_data)
                 
                 client.publish(response_topic, response_json)
-                print(f"[MQTT] Sent response to {response_topic}: {response_json}", flush=True)
+                #print(f"[MQTT] Sent response to {response_topic}: {response_json}", flush=True)
                 
             except Exception as e:
                 print(f"[MQTT] Error sending device response: {e}", flush=True)
@@ -413,7 +413,7 @@ def Process_Device_Data(msg):
 def Process_EM_Data(msg):
     """Process emergency data using common processor"""
     data_str = str(msg.payload.decode())
-    print(f"[MQTT] Processing emergency data: {data_str}", flush=True)
+    #print(f"[MQTT] Processing emergency data: {data_str}", flush=True)
     process_emergency_data(data_str, source="MQTT")
 
 def on_message(client, userdata, msg):
@@ -425,13 +425,13 @@ def on_message(client, userdata, msg):
             user_id = topic_parts[1]
             print(f"Message received for user ID: {user_id}")
             print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
-            print(f"Message received payload: {msg.payload.decode()}")
+            #print(f"Message received payload: {msg.payload.decode()}")
             Process_Device_Data(msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'deviceEM':
             user_id = topic_parts[1]
             print(f"Message received for user ID: {user_id}")
             print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
-            print(f"Message received payload: {msg.payload.decode()}")
+            #print(f"Message received payload: {msg.payload.decode()}")
             Process_EM_Data(msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'sosEx':
             #print("message payload decode" ,msg.payload.decode())
@@ -442,6 +442,8 @@ def on_message(client, userdata, msg):
         elif len(topic_parts) == 2 and topic_parts[0] == 'dtorto':
             Process_dtorto_Data(msg,topic_parts)
  
+        elif len(topic_parts) == 2 and topic_parts[0] == 'deviceResponse':
+            return
 
             
         else:

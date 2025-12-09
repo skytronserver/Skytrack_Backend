@@ -5,7 +5,7 @@ from django.db.models import OuterRef, Subquery, Max
 
 from .models import Trip
 from .serializers import TripSerializer
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework import status
 from rest_framework.response import Response
@@ -16,36 +16,73 @@ from django.shortcuts import render
 
 # Create Trip
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def create_trip(request):
-    serializer = TripSerializer(data=request.data)
+    data = request.data.copy()
+    user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
+    if not user:
+        # Temp user logic using sessionid from headers
+        sessionid = request.headers.get('sessionid')
+        from .models import TempUser
+        temp_user = TempUser.objects.filter(session_key=sessionid).first()
+        if not temp_user:
+            return Response({'error': 'Invalid temp user sessionid'}, status=status.HTTP_400_BAD_REQUEST)
+        data['created_by'] = None
+        data['mobile_no'] = temp_user.mobile
+    else:
+        data['created_by'] = user.id
+        data['mobile_no'] = None
+    serializer = TripSerializer(data=data)
     if serializer.is_valid():
-        serializer.save(created_by=request.user)
+        serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # Get Trip(s)
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def get_trip(request, trip_id=None):
+    user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
+    from .models import TempUser
     if trip_id:
         trip = get_object_or_404(Trip, id=trip_id)
-        if trip.created_by != request.user:
-            return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+        if trip.created_by:
+            if user and trip.created_by != user:
+                return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            sessionid = request.headers.get('sessionid')
+            temp_user = TempUser.objects.filter(session_key=sessionid).first()
+            if not temp_user or trip.mobile_no != temp_user.mobile:
+                return Response({'error': 'Not allowed for temp user'}, status=status.HTTP_403_FORBIDDEN)
         serializer = TripSerializer(trip)
         return Response(serializer.data)
     else:
-        trips = Trip.objects.filter(created_by=request.user)
+        if user:
+            trips = Trip.objects.filter(created_by=user)
+        else:
+            sessionid = request.headers.get('sessionid')
+            temp_user = TempUser.objects.filter(session_key=sessionid).first()
+            if not temp_user:
+                return Response({'error': 'Invalid temp user sessionid'}, status=status.HTTP_400_BAD_REQUEST)
+            trips = Trip.objects.filter(mobile_no=temp_user.mobile)
         serializer = TripSerializer(trips, many=True)
         return Response(serializer.data)
 
 # Update Trip (only name and route, only by creator, only if not ended/canceled)
-@api_view(['PUT', 'PATCH'])
-@permission_classes([IsAuthenticated])
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def update_trip(request, trip_id):
     trip = get_object_or_404(Trip, id=trip_id)
-    if trip.created_by != request.user:
-        return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+    user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
+    from .models import TempUser
+    if trip.created_by:
+        if not user or trip.created_by != user:
+            return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+    else:
+        sessionid = request.headers.get('sessionid')
+        temp_user = TempUser.objects.filter(session_key=sessionid).last()
+        if not temp_user or trip.mobile_no != temp_user.mobile:
+            return Response({'error': 'Not allowed for temp user'}, status=status.HTTP_403_FORBIDDEN)
     if trip.status != 'created':
         return Response({'error': 'Cannot update ended or canceled trip'}, status=status.HTTP_400_BAD_REQUEST)
     data = {}
@@ -61,11 +98,19 @@ def update_trip(request, trip_id):
 
 # End Trip (only by creator, only if not ended/canceled)
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def end_trip(request, trip_id):
     trip = get_object_or_404(Trip, id=trip_id)
-    if trip.created_by != request.user:
-        return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+    user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
+    from .models import TempUser
+    if trip.created_by:
+        if not user or trip.created_by != user:
+            return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+    else:
+        sessionid = request.headers.get('sessionid')
+        temp_user = TempUser.objects.filter(session_key=sessionid).first()
+        if not temp_user or trip.mobile_no != temp_user.mobile:
+            return Response({'error': 'Not allowed for temp user'}, status=status.HTTP_403_FORBIDDEN)
     if trip.status != 'created':
         return Response({'error': 'Trip already ended or canceled'}, status=status.HTTP_400_BAD_REQUEST)
     trip.status = 'ended'
@@ -75,11 +120,19 @@ def end_trip(request, trip_id):
 
 # Cancel Trip (only by creator, only if not ended/canceled)
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def cancel_trip(request, trip_id):
     trip = get_object_or_404(Trip, id=trip_id)
-    if trip.created_by != request.user:
-        return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+    user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
+    from .models import TempUser
+    if trip.created_by:
+        if not user or trip.created_by != user:
+            return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+    else:
+        sessionid = request.headers.get('sessionid')
+        temp_user = TempUser.objects.filter(session_key=sessionid).first()
+        if not temp_user or trip.mobile_no != temp_user.mobile:
+            return Response({'error': 'Not allowed for temp user'}, status=status.HTTP_403_FORBIDDEN)
     if trip.status != 'created':
         return Response({'error': 'Trip already ended or canceled'}, status=status.HTTP_400_BAD_REQUEST)
     trip.status = 'canceled'
@@ -1221,6 +1274,9 @@ def gps_track_data_api(request ):
 
         # Get base queryset
         gps_queryset = GPSData.objects.exclude(device_tag=None)
+        # Filter by regno if provided (partial match)
+        if regno and regno != "None":
+            gps_queryset = gps_queryset.filter(device_tag__vehicle_reg_no__icontains=regno)
 
         # Apply role-based filtering (unchanged)
         if request.user and request.user.is_authenticated:
@@ -1253,7 +1309,7 @@ def gps_track_data_api(request ):
                     gps_queryset = GPSData.objects.none()
                     return JsonResponse({'error':  'No user states found.'}, status=400)
             elif user_role == 'owner':
-                vehicle_owners = VehicleOwner.objects.filter(users=request.user, status='UserVerified')
+                vehicle_owners = VehicleOwner.objects.filter(users=request.user)#, status='UserVerified')
                 if vehicle_owners.exists():
                     owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners)
                     gps_queryset = gps_queryset.filter(device_tag__in=owned_device_tags)
@@ -1446,7 +1502,7 @@ def gps_history_map_data(request ):
         if user_role == 'superadmin':
             has_access = True
         elif user_role == 'stateadmin':
-            state_admins = StateAdmin.objects.filter(users=request.user, status='UserVerified')
+            state_admins = StateAdmin.objects.filter(users=request.user)#, status='UserVerified')
             user_states = [sa.state.id for sa in state_admins]
             if user_states and device_tag.district and device_tag.district.state.id in user_states:
                 has_access = True
@@ -1456,7 +1512,7 @@ def gps_history_map_data(request ):
             if user_districts and device_tag.district and device_tag.district.id in user_districts:
                 has_access = True
         elif user_role == 'owner':
-            vehicle_owners = VehicleOwner.objects.filter(users=request.user, status='UserVerified')
+            vehicle_owners = VehicleOwner.objects.filter(users=request.user)#, status='UserVerified')
             if vehicle_owners.exists():
                 owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners)
                 if device_tag in owned_device_tags:
@@ -1634,7 +1690,8 @@ def validate_bhuvan_response(response_json):
 
 @csrf_exempt
 @api_view(['POST'])
-@permission_classes([IsAuthenticated]) #@permission_classes([AllowAny])
+#@permission_classes([IsAuthenticated]) #
+@permission_classes([AllowAny])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])   
 def get_routePath(request): 
@@ -5108,7 +5165,7 @@ def  DEx_closeCase(request ):
     #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
         assignment =request.data.get("assignment_id")  
-        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=["accepted"]).last()
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo).last()
         if not assignment:
             return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
         ee=EMCallBroadcast.objects.filter(
@@ -6654,7 +6711,7 @@ def Tag_ownerlist(request ):
                 
                 if user_role == 'stateadmin':
                     # Get states from StateAdmin relationship
-                    state_admins = StateAdmin.objects.filter(users=request.user, status='UserVerified')
+                    state_admins = StateAdmin.objects.filter(users=request.user)#, status='UserVerified')
                     user_states = [sa.state.id for sa in state_admins]
                 elif user_role == 'sosadmin':
                     # Get states from EM_admin relationship  
@@ -6666,7 +6723,7 @@ def Tag_ownerlist(request ):
                     user_states = [ee.state.id for ee in em_exs]
                 elif user_role == 'dtorto':
                     # Get districts from DTO/RTO relationship
-                    dto_rtos = dto_rto.objects.filter(users=request.user, status='UserVerified')
+                    dto_rtos = dto_rto.objects.filter(users=request.user)#, status='UserVerified')
                     user_district_names = [dr.district for dr in dto_rtos if dr.district]
                     
                     if user_district_names:
@@ -6688,7 +6745,7 @@ def Tag_ownerlist(request ):
                     
             elif user_role == 'owner':
                 # Get vehicles owned by this user
-                vehicle_owners = VehicleOwner.objects.filter(users=request.user, status='UserVerified')
+                vehicle_owners = VehicleOwner.objects.filter(users=request.user)#, status='UserVerified')
                 if vehicle_owners.exists():
                     # Filter devices for vehicles owned by this user
                     devices = devices.filter(vehicle_owner__in=vehicle_owners)
