@@ -1,4 +1,3 @@
-
 from django.urls import path
 from .views import *
 from .views import create_trip, get_trip, update_trip, end_trip, cancel_trip
@@ -439,6 +438,7 @@ urlpatterns = [
     path('login-settings/set/', set_login_settings, name='set_login_settings'),
     path('login-settings/get/', get_login_settings, name='get_login_settings'),
 
+    path('update_vehicle_owner_expiry/', update_vehicle_owner_expiry, name='update_vehicle_owner_expiry'),
 ]  
 
 

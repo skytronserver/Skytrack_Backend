@@ -10528,6 +10528,50 @@ def homepage_VehicleOwner(request ):
         return Response({'error': f"Unable to process request: {str(e)}"}, status=400)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+@require_http_methods(['POST'])
+def update_vehicle_owner_expiry(request):
+    """
+    API to update the expiry date of a given Vehicle Owner.
+    Only the dealer who created the Vehicle Owner can update the expiry date.
+    """
+    try:
+        # Validate input
+        owner_id = request.data.get('owner_id')
+        new_expiry_date = request.data.get('new_expiry_date')
+
+        if not owner_id or not new_expiry_date:
+            return Response({"error": "Both 'owner_id' and 'new_expiry_date' are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Parse the new expiry date
+        try:
+            new_expiry_date = timezone.datetime.strptime(new_expiry_date, '%Y-%m-%d').date()
+        except ValueError:
+            return Response({"error": "Invalid date format. Use 'YYYY-MM-DD'."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get the dealer (requesting user)
+        dealer = request.user
+
+        # Check if the Vehicle Owner exists and was created by the dealer
+        try:
+            vehicle_owner = VehicleOwner.objects.get(id=owner_id, createdby=dealer)
+        except VehicleOwner.DoesNotExist:
+            return Response({"error": "Vehicle Owner not found or you do not have permission to update this owner."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Update the expiry date
+        vehicle_owner.expirydate = new_expiry_date
+        vehicle_owner.save()
+
+        return Response({
+            "message": "Expiry date updated successfully.",
+            "vehicle_owner": VehicleOwnerSerializer(vehicle_owner).data
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": f"Unable to process request: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
