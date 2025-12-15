@@ -25,6 +25,12 @@ urlpatterns = [
     path('trip/<int:trip_id>/update/', update_trip, name='update_trip'),
     path('trip/<int:trip_id>/end/', end_trip, name='end_trip'),
     path('trip/<int:trip_id>/cancel/', cancel_trip, name='cancel_trip'),
+    
+    path('cell_location/', cell_location_average, name='cell_location_average'),
+
+
+    path('geocode/', geocode_poi, name='geocode_poi'),
+    path('reverse_geocode/', reverse_geocode_poi, name='reverse_geocode_poi'),
 
     path('set_login_settings/', set_login_settings, name='set_login_settings'),
     path('get_login_settings/', get_login_settings, name='get_login_settings'),
@@ -78,6 +84,7 @@ urlpatterns = [
     path('poi/update/', update_poi, name='update_poi'),
     path('poi/delete/', delete_poi, name='delete_poi'),
     path('poi/list/', list_pois, name='list_pois'),
+    path('mqtt/send_command/', send_mqtt_command, name='send_mqtt_command'),
 
     
     path('manufacturer/create_manufacturer/', create_manufacturer, name='create_manufacturer'),

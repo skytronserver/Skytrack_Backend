@@ -223,8 +223,19 @@ class pointofinterests(models.Model):
         ]
     use_type = models.CharField(max_length=20, choices=use_type_choices)
     location = models.TextField()
+    lat = models.FloatField(blank=True, null=True)
+    lon = models.FloatField(blank=True, null=True)
     radius = models.FloatField(blank=True, null=True)
     name = models.CharField(max_length=50, unique=True)
+    address = models.CharField(max_length=255)
+    pluscode = models.CharField(max_length=50, blank=True, null=True)
+    area= models.CharField(max_length=100, blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    pincode = models.CharField(max_length=20, blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    website = models.CharField(max_length=100, blank=True, null=True)
+    
     description = models.TextField()
     # New fields
     ALERT_TYPE_CHOICES = [

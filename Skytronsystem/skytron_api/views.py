@@ -1,3 +1,6 @@
+
+import threading, os, ssl, json
+import paho.mqtt.client as mqtt
 from rest_framework.pagination import PageNumberPagination
 from math import radians, sin, cos, sqrt, asin
 # --- API: Get latest EMUserLocation for all unique field executives ---
@@ -13,6 +16,115 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.shortcuts import render
 
+
+from django.utils import timezone
+from datetime import timedelta
+from django.utils.dateparse import parse_datetime
+
+from .models import pointofinterests
+from .serializers import PointOfInterestSerializer
+from django.db.models import F, Value as V
+from django.db.models.functions import Concat
+from django.db.models import FloatField
+from django.db.models.functions import Cast
+import math
+
+
+
+
+
+
+
+
+# API: Get average lat/lon for given mcc, mnc, lac (cell location)
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def cell_location_average(request):
+    serializer = GSMCellInfoInputSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({'error': serializer.errors}, status=400)
+    mcc = serializer.validated_data['mcc']
+    mnc = serializer.validated_data['mnc']
+    lac = serializer.validated_data['lac']
+    # Filter GPSData by mcc, mnc, lac
+    qs = GPSData.objects.filter(mcc=mcc, mnc=mnc, lac=lac)
+    count = qs.count()
+    if count == 0:
+        return Response({'error': 'No data found for given mcc, mnc, lac.'}, status=404)
+    avg_lat = qs.aggregate(avg_lat=models.Avg('latitude'))['avg_lat']
+    avg_lon = qs.aggregate(avg_lon=models.Avg('longitude'))['avg_lon']
+    return Response({
+        'count': count,
+        'average_latitude': avg_lat,
+        'average_longitude': avg_lon
+    })
+    
+    
+    
+# Geocoding API: Search POIs by text query
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def geocode_poi(request):
+    query = request.GET.get('q', '').strip()
+    if not query:
+        return Response({'error': 'Query parameter "q" is required.'}, status=400)
+    # Search in name, city, state, address, description, area, pluscode, etc.
+    filters = (
+        Q(name__icontains=query) |
+        Q(city__icontains=query) |
+        Q(state__icontains=query) |
+        Q(address__icontains=query) |
+        Q(description__icontains=query) |
+        Q(area__icontains=query) |
+        Q(pluscode__icontains=query)
+    )
+    pois = pointofinterests.objects.filter(filters)
+    serializer = PointOfInterestSerializer(pois, many=True)
+    # Only return lat/lon and name for geocoding
+    results = [
+        {
+            'id': poi['id'],
+            'name': poi['name'],
+            'lat': poi['lat'],
+            'lon': poi['lon'],
+            'address': poi['address'],
+            'city': poi['city'],
+            'state': poi['state'],
+            'description': poi['description'],
+        }
+        for poi in serializer.data
+    ]
+    return Response({'results': results})
+
+# Reverse Geocoding API: Find nearest POI to given lat/lon
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def reverse_geocode_poi(request):
+    try:
+        lat = float(request.GET.get('lat'))
+        lon = float(request.GET.get('lon'))
+    except (TypeError, ValueError):
+        return Response({'error': 'lat and lon query parameters are required and must be float.'}, status=400)
+    # Only consider POIs with valid lat/lon
+    pois = pointofinterests.objects.exclude(lat__isnull=True).exclude(lng__isnull=True)
+    min_dist = None
+    nearest_poi = None
+    for poi in pois:
+        if poi.lat is not None and poi.lon is not None:
+            # Haversine formula for distance in km
+            dlat = math.radians(poi.lat - lat)
+            dlng = math.radians(poi.lon - lon)
+            a = math.sin(dlat/2)**2 + math.cos(math.radians(lat)) * math.cos(math.radians(poi.lat)) * math.sin(dlng/2)**2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+            dist = 6371 * c
+            if min_dist is None or dist < min_dist:
+                min_dist = dist
+                nearest_poi = poi
+    if nearest_poi:
+        serializer = PointOfInterestSerializer(nearest_poi)
+        return Response(serializer.data)
+    else:
+        return Response({'error': 'No POI found.'}, status=404)
 
 # Create Trip
 @api_view(['POST'])
@@ -563,6 +675,100 @@ def get_latest_emuser_locations(request):
     return paginator.get_paginated_response({'status': 'success', 'data': serializer.data})
 
 
+
+def send_general_mqtt_message(imei, message_json):
+    """
+    Send a general JSON message to device via MQTT deviceResponse topic
+    This function runs in a separate thread to avoid blocking the API response
+    imei: device IMEI (str)
+    message_json: dict or JSON-serializable object
+    """
+    
+
+    def mqtt_publisher():
+        try:
+            BROKER_URL = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")
+            BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
+            MQTT_USERNAME = os.getenv("MQTT_USERNAME", "6026969588")
+            MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h")
+            ROOT_CA = "/app/keys/ca.crt"
+
+            client = mqtt.Client()
+            client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+            client.tls_set(ca_certs=ROOT_CA, tls_version=ssl.PROTOCOL_TLS)
+            client.connect(BROKER_URL, BROKER_PORT, 60)
+
+            response_topic = f"deviceResponse/{imei}"
+            response_json = json.dumps(message_json)
+            result = client.publish(response_topic, response_json)
+            result.wait_for_publish()
+            print(f"[MQTT] Sent message to {response_topic}: {response_json}", flush=True)
+            client.disconnect()
+        except Exception as e:
+            print(f"[MQTT] Error sending message to {imei}: {e}", flush=True)
+
+    mqtt_thread = threading.Thread(target=mqtt_publisher)
+    mqtt_thread.daemon = True
+    mqtt_thread.start()
+
+
+# API: Concatenate command_base + value and send to device via MQTT
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def send_mqtt_command(request):
+    """
+    POST body:
+    - imei: string (required)
+    - command_base: string (required)
+    - value: string (required)
+
+    Builds final_command = command_base + value and publishes as JSON to
+    topic deviceResponse/{imei} using send_general_mqtt_message.
+    """
+    imei = (request.data.get('imei') or request.GET.get('imei'))
+    command_base = (
+        request.data.get('command_base')
+        or request.data.get('commandBase')
+        or request.GET.get('command_base')
+        or request.GET.get('commandBase')
+    )
+    value = (request.data.get('value') or request.GET.get('value'))
+
+    if not imei or not command_base or value is None:
+        return Response(
+            {
+                'status': 'error',
+                'message': 'Missing required fields: imei, command_base, value.'
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    final_command = f"{str(command_base)}:{str(value)}"
+
+    payload = { 
+        'command': final_command,
+        
+    }
+
+    try:
+        send_general_mqtt_message(imei, payload)
+        return Response(
+            {
+                'status': 'queued',
+                'imei': imei,
+                'final_command': final_command,
+            },
+            status=status.HTTP_200_OK,
+        )
+    except Exception as e:
+        return Response(
+            {
+                'status': 'error',
+                'message': f'Failed to publish MQTT command: {e}'
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+ 
 
 def send_sos_mqtt_message(imei):
     """
@@ -6037,22 +6243,50 @@ def search_request_logs(request):
     
     query = request.GET.get('q', '')  # Get the search query from the request
     page = request.GET.get('page', 1)  # Get the page number from the request
-    per_page = request.GET.get('per_page', 10)  # Number of items per page (default: 10)
+    per_page = int(request.GET.get('per_page', 25))  # Default per page: 25
 
-    # Filter the RequestLog model based on the search query
-    logs = RequestLog.objects.filter(
+    # Time window: default to last 1 day; allow override via from/to (ISO string)
+    from_str = request.GET.get('from')
+    to_str = request.GET.get('to')
+
+    now = timezone.now()
+    start_dt = now - timedelta(days=1)
+    end_dt = now
+    if from_str:
+        parsed = parse_datetime(from_str)
+        if parsed:
+            start_dt = parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
+    if to_str:
+        parsed = parse_datetime(to_str)
+        if parsed:
+            end_dt = parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
+
+    # Build base queryset within time window
+    logs_qs = RequestLog.objects.filter(timestamp__gte=start_dt, timestamp__lte=end_dt)
+
+    # Apply text filters
+    text_filter = (
         Q(ip_address__icontains=query) |
         Q(system_info__icontains=query) |
         Q(request_url__icontains=query) |
         Q(request_type__icontains=query) |
         Q(headers__icontains=query) |
         Q(incoming_data__icontains=query) |
-        Q(response_type__icontains=query) |
-        Q(error_code__icontains=query)
-    ).order_by('-timestamp')  # Order by timestamp (descending)
+        Q(response_type__icontains=query)
+    )
+    # Keep original behavior for error_code match using icontains-equivalent by casting to str via DB is not portable;
+    # retain simple OR to avoid changing expectations.
+    try:
+        # If numeric, try exact match as an additional condition
+        if str(query).isdigit():
+            text_filter = text_filter | Q(error_code=int(query))
+    except Exception:
+        pass
+
+    #logs_qs = logs_qs.filter(text_filter).order_by('-timestamp')
 
     # Paginate the results
-    paginator = Paginator(logs, per_page)
+    paginator = Paginator(logs_qs, per_page)
     paginated_logs = paginator.get_page(page)
 
     # Prepare the response data
@@ -6061,6 +6295,10 @@ def search_request_logs(request):
         'page': paginated_logs.number,
         'total_pages': paginator.num_pages,
         'total_results': paginator.count,
+        'window': {
+            'from': start_dt.isoformat(),
+            'to': end_dt.isoformat(),
+        }
     }
 
     return JsonResponse(data)

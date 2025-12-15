@@ -1,3 +1,5 @@
+# Serializer for GSM cell info input (cell location API)
+
 # skytron_api/serializers.py
 from rest_framework import serializers
 from .models import User, Manufacturer, Dealer, Device, DeviceModel, FOTA,  Session, OTPRequest, EditRequest, Settings
@@ -10,6 +12,26 @@ from .models import *
 
 import bleach
 from .models import VehicleOwner
+
+
+class GSMCellInfoInputSerializer(serializers.Serializer):
+    gsm_signal_strength = serializers.CharField(max_length=5, required=False)
+    mcc = serializers.CharField(max_length=6)
+    mnc = serializers.CharField(max_length=6)
+    lac = serializers.CharField(max_length=6)
+    cell_id = serializers.CharField(max_length=6, required=False)
+    nbr1_cell_id = serializers.CharField(max_length=6, required=False)
+    nbr1_lac = serializers.CharField(max_length=6, required=False)
+    nbr1_signal_strength = serializers.CharField(max_length=6, required=False)
+    nbr2_cell_id = serializers.CharField(max_length=6, required=False)
+    nbr2_lac = serializers.CharField(max_length=6, required=False)
+    nbr2_signal_strength = serializers.CharField(max_length=4, required=False)
+    nbr3_cell_id = serializers.CharField(max_length=6, required=False)
+    nbr3_lac = serializers.CharField(max_length=6, required=False)
+    nbr3_signal_strength = serializers.CharField(max_length=6, required=False)
+    nbr4_cell_id = serializers.CharField(max_length=6, required=False)
+    nbr4_lac = serializers.CharField(max_length=6, required=False)
+    nbr4_signal_strength = serializers.CharField(max_length=6, required=False)
 
 
 class SanitizingModelSerializer(serializers.ModelSerializer ):
@@ -807,4 +829,9 @@ from .models import Trip
 class TripSerializer(serializers.ModelSerializer):
     class Meta:
         model = Trip
+        fields = '__all__'
+        
+class PointOfInterestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = pointofinterests
         fields = '__all__'
