@@ -770,13 +770,7 @@ def send_mqtt_command(request):
         )
  
 
-def send_sos_mqtt_message(imei):
-    """
-    Send SOS=1 message to device via MQTT deviceResponse topic
-    This function runs in a separate thread to avoid blocking the API response
-    """
-    
-     
+def send_sos_mqtt_message(imei, i):     
     def mqtt_publisher():
         try:
             # MQTT Configuration (matching the existing mqttClienttrack.py)
@@ -795,19 +789,27 @@ def send_sos_mqtt_message(imei):
             # Connect to broker
             client.connect(BROKER_URL, BROKER_PORT, 60)
             
-            # Create SOS message
-            sos_message = {
-                "sos": 1
-            }
-            
-            # Publish to device response topic
+            # Determine text string based on 'i'
+            tstring = None
+            try:
+                ival = int(str(i).strip())
+                if ival == -1:
+                    tstring = "@SETSOSDIS-1*"
+                elif ival == 1:
+                    tstring = "@SETSOSEN-1*"
+            except Exception:
+                pass
+
+            if not tstring:
+                # Fallback (no publish) if input is invalid
+                raise ValueError(f"Invalid SOS command input i={i}. Expected 1 or -1.")
+
+            # Publish to device response topic as plain text
             response_topic = f"deviceResponse/{imei}"
-            response_json = json.dumps(sos_message)
-            
-            result = client.publish(response_topic, response_json)
+            result = client.publish(response_topic, tstring)
             result.wait_for_publish()
             
-            print(f"[SOS MQTT] Successfully sent SOS message to {response_topic}: {response_json}", flush=True)
+            print(f"[SOS MQTT] Sent text to {response_topic}: {tstring}", flush=True)
             
             client.disconnect()
             
@@ -5385,6 +5387,11 @@ def  DEx_closeCase(request ):
             a.save()
         assignment.call.status="closed"
         assignment.call.save()
+        try:
+            send_sos_mqtt_message(assignment.call.device.device.imei, -1)
+            
+        except:
+            pass
         
 
         
@@ -6235,15 +6242,24 @@ def list_pois(request):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def search_request_logs(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    
+    
     role="superadmin"
     user=request.user
     uo=get_user_object(user,role)
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
     
-    query = request.GET.get('q', '')  # Get the search query from the request
+    # Support both POST body and query params for flexibility
+    query = (request.data.get('q')
+             if hasattr(request, 'data') else None) or request.GET.get('q', '')
     page = request.GET.get('page', 1)  # Get the page number from the request
-    per_page = int(request.GET.get('per_page', 25))  # Default per page: 25
+    # Cap per_page to a sane upper bound to avoid heavy queries
+    try:
+        per_page = int(request.GET.get('per_page', 25))
+    except (TypeError, ValueError):
+        per_page = 25
+    per_page = max(1, min(per_page, 100))
 
     # Time window: default to last 1 day; allow override via from/to (ISO string)
     from_str = request.GET.get('from')
@@ -6261,29 +6277,28 @@ def search_request_logs(request):
         if parsed:
             end_dt = parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
 
-    # Build base queryset within time window
-    logs_qs = RequestLog.objects.filter(timestamp__gte=start_dt, timestamp__lte=end_dt)
-
+    # Build base queryset
+    logs_qs = RequestLog.objects.order_by('-id')
+  
     # Apply text filters
-    text_filter = (
-        Q(ip_address__icontains=query) |
-        Q(system_info__icontains=query) |
-        Q(request_url__icontains=query) |
-        Q(request_type__icontains=query) |
-        Q(headers__icontains=query) |
-        Q(incoming_data__icontains=query) |
-        Q(response_type__icontains=query)
-    )
-    # Keep original behavior for error_code match using icontains-equivalent by casting to str via DB is not portable;
-    # retain simple OR to avoid changing expectations.
-    try:
-        # If numeric, try exact match as an additional condition
-        if str(query).isdigit():
-            text_filter = text_filter | Q(error_code=int(query))
-    except Exception:
-        pass
+    # Apply text filter only when query is provided and meaningful
+    query = (query or '').strip()
+    if query:
+        # icontains can be expensive on large tables. Restrict to recent records first
+        # Strategy: limit to a window of recent IDs to avoid scanning the entire table
+        try:
+            recent_window = int(request.GET.get('recent_window', 50000))
+        except (TypeError, ValueError):
+            recent_window = 50000
+        recent_window = max(1000, min(recent_window, 200000))
 
-    #logs_qs = logs_qs.filter(text_filter).order_by('-timestamp')
+        latest_id = RequestLog.objects.order_by('-id').values_list('id', flat=True).first()
+        if latest_id:
+            threshold_id = max(0, latest_id - recent_window)
+            logs_qs = logs_qs.filter(id__gt=threshold_id)
+
+        # Now apply the text filter
+        logs_qs = logs_qs.filter(Q(request_url__icontains=query))
 
     # Paginate the results
     paginator = Paginator(logs_qs, per_page)
@@ -12877,7 +12892,7 @@ def temp_user_emcall(request ):
                 lookup = RegNoLookupLog.objects.filter(sessionid=incoming_session).order_by('-created_at').first()
                 if lookup and lookup.imei:
                     imei_used = str(lookup.imei)
-                    send_sos_mqtt_message(imei_used)
+                    send_sos_mqtt_message(imei_used,1)
                     sos_sent = True
         except Exception:
             # Do not fail the main flow on SOS send issues
