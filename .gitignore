@@ -89,3 +89,4 @@ mqtt_deployment/deploy_mqtt.sh
 data_arai/*.*
 olddb.dump
 mapLayers/
+north-eastern-zone-251218.osm.pbf

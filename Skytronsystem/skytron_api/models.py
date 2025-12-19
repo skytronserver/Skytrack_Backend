@@ -2,6 +2,7 @@
 from django.db import models
 import hashlib
 from django.utils import timezone  # Add this line
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
@@ -393,6 +394,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     nf_popup = models.BooleanField(default=True, verbose_name="Notification Popup")
     nf_sms = models.BooleanField(default=True, verbose_name="Notification SMS")
     nf_email = models.BooleanField(default=True, verbose_name="Notification Email")
+    # Notification frequency per day (integer): how many times notifications can be sent daily
+    # 0 means disabled/suppressed by frequency (still governed by nf_* flags)
+    nf_frequency = models.IntegerField(
+        default=1,
+        validators=[MinValueValidator(0), MaxValueValidator(24)],
+        verbose_name="Notification Frequency Per Day",
+        help_text="Number of times per day notifications can be sent (0-1440)",
+    )
     objects = CustomUserManager()
 
     USERNAME_FIELD = 'email'

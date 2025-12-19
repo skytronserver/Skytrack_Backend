@@ -809,11 +809,17 @@ class NotificationPreferencesSerializer(serializers.Serializer):
 
     """
     Serializer for updating user notification preferences.
-    All fields are optional and accept boolean values.
+    All fields are optional.
     """
     nf_popup = serializers.BooleanField(required=False, help_text="Enable/disable popup notifications")
     nf_sms = serializers.BooleanField(required=False, help_text="Enable/disable SMS notifications")
     nf_email = serializers.BooleanField(required=False, help_text="Enable/disable email notifications")
+    nf_frequency = serializers.IntegerField(
+        required=False,
+        min_value=0,
+        max_value=1440,
+        help_text="Notification frequency per day (0-1440). 0 disables by frequency.",
+    )
     
     def validate(self, data):
         # Ensure at least one field is provided

@@ -106,15 +106,15 @@ def reverse_geocode_poi(request):
     except (TypeError, ValueError):
         return Response({'error': 'lat and lon query parameters are required and must be float.'}, status=400)
     # Only consider POIs with valid lat/lon
-    pois = pointofinterests.objects.exclude(lat__isnull=True).exclude(lng__isnull=True)
+    pois = pointofinterests.objects.exclude(lat__isnull=True).exclude(lon__isnull=True)
     min_dist = None
     nearest_poi = None
     for poi in pois:
         if poi.lat is not None and poi.lon is not None:
             # Haversine formula for distance in km
             dlat = math.radians(poi.lat - lat)
-            dlng = math.radians(poi.lon - lon)
-            a = math.sin(dlat/2)**2 + math.cos(math.radians(lat)) * math.cos(math.radians(poi.lat)) * math.sin(dlng/2)**2
+            dlon = math.radians(poi.lon - lon)
+            a = math.sin(dlat/2)**2 + math.cos(math.radians(lat)) * math.cos(math.radians(poi.lat)) * math.sin(dlon/2)**2
             c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
             dist = 6371 * c
             if min_dist is None or dist < min_dist:
@@ -1691,6 +1691,19 @@ def gps_history_map_data(request ):
         if not vehicle_registration_number or vehicle_registration_number == "":
             return JsonResponse({'error': "Vehicle registration number is required"}, status=400)
 
+        # Validate datetime inputs and enforce 24-hour window
+        if not start_datetime or not end_datetime:
+            return JsonResponse({'error': "Invalid Search 22"}, status=403)
+
+        start_dt = parse_datetime(start_datetime)
+        end_dt = parse_datetime(end_datetime)
+        if not start_dt or not end_dt:
+            return JsonResponse({'error': "Invalid datetime format for start_datetime/end_datetime"}, status=400)
+        if end_dt < start_dt:
+            return JsonResponse({'error': "end_datetime must be after start_datetime"}, status=400)
+        if (end_dt - start_dt) > timedelta(hours=24):
+            return JsonResponse({'error': "Time range cannot exceed 24 hours"}, status=400)
+
         # User authentication and authorization checks
         if not request.user or not request.user.is_authenticated:
             return JsonResponse({'error': "Authentication required"}, status=401)
@@ -1715,9 +1728,9 @@ def gps_history_map_data(request ):
             if user_states and device_tag.district and device_tag.district.state.id in user_states:
                 has_access = True
         elif user_role == 'dtorto':
-            dto_rtos = dto_rto.objects.filter(users=request.user, status='StateAdminVerified')
-            user_districts = [dr.district.id for dr in dto_rtos if dr.district]
-            if user_districts and device_tag.district and device_tag.district.id in user_districts:
+            dto_rtos = dto_rto.objects.filter(users=request.user )
+            user_districts = [dr.district for dr in dto_rtos if dr.district]
+            if user_districts and device_tag.district and device_tag.district.district_code in user_districts:
                 has_access = True
         elif user_role == 'owner':
             vehicle_owners = VehicleOwner.objects.filter(users=request.user)#, status='UserVerified')
@@ -1729,48 +1742,59 @@ def gps_history_map_data(request ):
         if not has_access:
             return JsonResponse({'error': "Unauthorised access to history data"}, status=403)
 
-        if vehicle_registration_number != "":
-            if vehicle_registration_number:
-                data = GPSData.objects.all().filter(gps_status=1).filter(device_tag__vehicle_reg_no__icontains=vehicle_registration_number)
-                if start_datetime and end_datetime:
-                    data = data.filter(entry_time__range=(start_datetime, end_datetime))
-                    data = data.filter(gps_status=1).order_by('entry_time')
-                    datalen = len(data) - 1
-                    from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
-                    data_serialized = []
-                    for entry in data:
-                        # Owner name substring filter
-                        if owner_name_substr:
-                            owner_obj = getattr(getattr(entry.device_tag, 'vehicle_owner', None), 'users', None)
-                            owner_match = False
-                            if owner_obj:
-                                for user in owner_obj.all():
-                                    if owner_name_substr.lower() in (user.name or '').lower():
-                                        owner_match = True
-                                        break
-                            if not owner_match:
-                                continue  # skip if no owner matches substring
-                        entry_data = GPSData_modSerializer(entry).data
-                        if entry.device_tag:
-                            device_tag_obj = entry.device_tag
-                            device_tag_data = DeviceTagSerializer(device_tag_obj).data
-                            if device_tag_obj.vehicle_owner:
-                                owner_data = VehicleOwnerSerializer(device_tag_obj.vehicle_owner).data
-                                if 'users' in owner_data:
-                                    pass
-                                else:
-                                    owner_data['users'] = UserSerializer(device_tag_obj.vehicle_owner.users.all(), many=True).data
-                                device_tag_data['vehicle_owner'] = owner_data
-                            entry_data['device_tag_info'] = device_tag_data
+        if vehicle_registration_number:
+            # Base queryset with essential filters
+            # Use exact device_tag FK filter for index utilization
+            data = (
+                GPSData.objects
+                .filter(gps_status=1)
+                .filter(device_tag=device_tag)
+                .filter(entry_time__range=(start_dt, end_dt))
+            )
+
+            # Apply owner name filter at DB level if provided
+            if owner_name_substr:
+                data = data.filter(device_tag__vehicle_owner__users__name__icontains=owner_name_substr)
+
+            # Avoid N+1 queries; ensure unique rows if M2M filter applied
+            data = (
+                data.select_related('device_tag', 'device_tag__vehicle_owner')
+                    .prefetch_related('device_tag__vehicle_owner__users')
+                    .order_by('entry_time')
+            )
+            if owner_name_substr:
+                data = data.distinct()
+
+            # Use count() instead of len(queryset) to avoid evaluation
+            total_count = data.count()
+            datalen = total_count - 1
+
+            from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
+            data_serialized = []
+
+            # Stream rows to keep memory in check
+            for entry in data.iterator(chunk_size=1000):
+                entry_data = GPSData_modSerializer(entry).data
+                if entry.device_tag:
+                    device_tag_obj = entry.device_tag
+                    device_tag_data = DeviceTagSerializer(device_tag_obj).data
+                    if device_tag_obj.vehicle_owner:
+                        owner_data = VehicleOwnerSerializer(device_tag_obj.vehicle_owner).data
+                        if 'users' in owner_data:
+                            pass
                         else:
-                            entry_data['device_tag_info'] = None
-                        data_serialized.append(entry_data)
-                    try:
-                        return JsonResponse({'data': data_serialized, 'mapdata': mapdata, 'mapdata_length': datalen})
-                    except Exception as e:
-                        return JsonResponse({"error": "Unable to process request." + "No Record Found 1: " + vehicle_registration_number}, status=403)
+                            owner_data['users'] = UserSerializer(device_tag_obj.vehicle_owner.users.all(), many=True).data
+                        device_tag_data['vehicle_owner'] = owner_data
+                    entry_data['device_tag_info'] = device_tag_data
                 else:
-                    return JsonResponse({'error': "Invalid Search 22"}, status=403)
+                    entry_data['device_tag_info'] = None
+                data_serialized.append(entry_data)
+
+            try:
+                return JsonResponse({'data': data_serialized, 'mapdata': mapdata, 'mapdata_length': datalen})
+            except Exception as e:
+                return JsonResponse({"error": "Unable to process request." + "No Record Found 1: " + vehicle_registration_number}, status=403)
+
         return JsonResponse({'error': "Invalid Search"}, status=403)
     except Exception as e:
         return JsonResponse({'error': "Unable to process request." + str(e)})
@@ -6159,16 +6183,40 @@ def arriving_EMassignment(request ):
 def create_poi(request):
     try:
         data = request.data
+
+        # Required fields per model
+        required_fields = ['status2', 'status', 'mark_type', 'use_type', 'lat', 'lon', 'location', 'name', 'address', 'description']
+        missing = [f for f in required_fields if not (str(data.get(f)).strip() if data.get(f) is not None else '')]
+        if missing:
+            return Response({'error': f"Missing required fields: {', '.join(missing)}"}, status=400)
+
+        def to_float(v):
+            try:
+                return float(v) if v not in [None, ''] else None
+            except (TypeError, ValueError):
+                return None
+
         poi = pointofinterests.objects.create(
+            status2=data.get('status2'),
             status=data.get('status'),
             mark_type=data.get('mark_type'),
             use_type=data.get('use_type'),
             location=data.get('location'),
-            radius=data.get('radius'),
+            lat=to_float(data.get('lat')),
+            lon=to_float(data.get('lon')),
+            radius=to_float(data.get('radius')),
             name=data.get('name'),
+            address=data.get('address'),
+            pluscode=data.get('pluscode'),
+            area=data.get('area'),
+            city=data.get('city'),
+            state=data.get('state'),
+            pincode=data.get('pincode'),
+            phone=data.get('phone'),
+            website=data.get('website'),
             description=data.get('description'),
             alert_type=data.get('alert_type', 'none'),
-            speed_limit=data.get('speed_limit'),
+            speed_limit=(int(data.get('speed_limit')) if str(data.get('speed_limit')).isdigit() else None),
             created_by=request.user,
             updated_by=request.user
         )
@@ -6185,15 +6233,36 @@ def update_poi(request):
         poi_id = request.data.get('poi_id')
         poi = pointofinterests.objects.get(id=poi_id)
         data = request.data
+        # Optional updates for all editable fields
+        poi.status2 = data.get('status2', poi.status2)
         poi.status = data.get('status', poi.status)
         poi.mark_type = data.get('mark_type', poi.mark_type)
         poi.use_type = data.get('use_type', poi.use_type)
         poi.location = data.get('location', poi.location)
-        poi.radius = data.get('radius', poi.radius)
+        # numeric conversions
+        def to_float(v, default):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return default
+        poi.lat = to_float(data.get('lat', poi.lat), poi.lat)
+        poi.lon = to_float(data.get('lon', poi.lon), poi.lon)
+        poi.radius = to_float(data.get('radius', poi.radius), poi.radius)
         poi.name = data.get('name', poi.name)
+        poi.address = data.get('address', poi.address)
+        poi.pluscode = data.get('pluscode', poi.pluscode)
+        poi.area = data.get('area', poi.area)
+        poi.city = data.get('city', poi.city)
+        poi.state = data.get('state', poi.state)
+        poi.pincode = data.get('pincode', poi.pincode)
+        poi.phone = data.get('phone', poi.phone)
+        poi.website = data.get('website', poi.website)
         poi.description = data.get('description', poi.description)
         poi.alert_type = data.get('alert_type', poi.alert_type)
-        poi.speed_limit = data.get('speed_limit', poi.speed_limit)
+        try:
+            poi.speed_limit = int(data.get('speed_limit')) if data.get('speed_limit') is not None else poi.speed_limit
+        except (TypeError, ValueError):
+            pass
         poi.updated_by = request.user
         poi.save()
         return Response({'message': 'poi updated successfully', 'data': model_to_dict(poi)}, status=200)
@@ -10551,7 +10620,9 @@ def homepage_VehicleOwner(request ):
 def update_vehicle_owner_expiry(request):
     """
     API to update the expiry date of a given Vehicle Owner.
-    Only the dealer who created the Vehicle Owner can update the expiry date.
+    Permissions:
+    - superadmin/stateadmin: can update any Vehicle Owner
+    - dealer (retailer): can update only Vehicle Owners created by themselves
     """
     try:
         # Validate input
@@ -10567,12 +10638,22 @@ def update_vehicle_owner_expiry(request):
         except ValueError:
             return Response({"error": "Invalid date format. Use 'YYYY-MM-DD'."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Get the dealer (requesting user)
-        dealer = request.user
+        # Determine permissions based on role
+        user = request.user
+        is_super = bool(get_user_object(user, "superadmin")) if hasattr(user, 'role') else False
+        is_state = bool(get_user_object(user, "stateadmin")) if hasattr(user, 'role') else False
+        is_dealer = bool(get_user_object(user, "dealer")) if hasattr(user, 'role') else False
 
-        # Check if the Vehicle Owner exists and was created by the dealer
+        # Fetch target VehicleOwner with appropriate restrictions
         try:
-            vehicle_owner = VehicleOwner.objects.get(id=owner_id, createdby=dealer)
+            if is_super or is_state:
+                # Super/state admin can update any owner
+                vehicle_owner = VehicleOwner.objects.get(id=owner_id)
+            elif is_dealer:
+                # Dealer can only update owners they created
+                vehicle_owner = VehicleOwner.objects.get(id=owner_id, createdby=user)
+            else:
+                return Response({"error": "You do not have permission to update this owner's expiry date."}, status=status.HTTP_403_FORBIDDEN)
         except VehicleOwner.DoesNotExist:
             return Response({"error": "Vehicle Owner not found or you do not have permission to update this owner."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -17503,7 +17584,8 @@ def update_notification_preferences(request):
     {
         "nf_popup": true/false,
         "nf_sms": true/false,
-        "nf_email": true/false
+        "nf_email": true/false,
+        "nf_frequency": 0-1440  // integer: times per day (0 disables by frequency)
     }
     
     Response:
@@ -17513,7 +17595,8 @@ def update_notification_preferences(request):
         "data": {
             "nf_popup": true,
             "nf_sms": true,
-            "nf_email": true
+            "nf_email": true,
+            "nf_frequency": 3
         }
     }
     """
@@ -17527,7 +17610,8 @@ def update_notification_preferences(request):
                 'data': {
                     'nf_popup': user.nf_popup,
                     'nf_sms': user.nf_sms,
-                    'nf_email': user.nf_email
+                    'nf_email': user.nf_email,
+                    'nf_frequency': getattr(user, 'nf_frequency', 1)
                 }
             }, status=status.HTTP_200_OK)
         
@@ -17545,6 +17629,9 @@ def update_notification_preferences(request):
                 
                 if 'nf_email' in serializer.validated_data:
                     user.nf_email = serializer.validated_data['nf_email']
+
+                if 'nf_frequency' in serializer.validated_data:
+                    user.nf_frequency = serializer.validated_data['nf_frequency']
                 
                 user.save()
                 
@@ -17554,7 +17641,8 @@ def update_notification_preferences(request):
                     'data': {
                         'nf_popup': user.nf_popup,
                         'nf_sms': user.nf_sms,
-                        'nf_email': user.nf_email
+                        'nf_email': user.nf_email,
+                        'nf_frequency': user.nf_frequency
                     }
                 }, status=status.HTTP_200_OK)
             else:
