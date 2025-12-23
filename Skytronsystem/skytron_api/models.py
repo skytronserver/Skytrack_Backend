@@ -381,6 +381,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     created = models.DateTimeField(auto_now_add=True, verbose_name="Created")
     Access = models.JSONField(default=list,blank=True, null=True, verbose_name="Access")  
     password = models.CharField(max_length=100,default='12345678')  # Assuming 32 characters for MD5 hash
+    lat = models.FloatField(blank=True, null=True, verbose_name="User_lat") 
+    lon = models.FloatField(blank=True, null=True, verbose_name="User_lon") 
+    
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     address = models.CharField(max_length=255, blank=True, null=True, verbose_name="Address")
@@ -1019,7 +1022,7 @@ class DeviceTag(models.Model):
     chassis_no = models.CharField(max_length= 55,unique=True)
     vehicle_make = models.CharField(max_length= 55)
     vehicle_model = models.CharField(max_length= 55)
-    category = models.CharField(max_length= 55)
+    category = models.ForeignKey(Settings_VehicleCategory, on_delete=models.CASCADE)
     rc_file = models.CharField(max_length=255)
     receipt_file_or = models.CharField(max_length=255)
     receipt_file_ul = models.CharField(max_length=255)
@@ -1574,7 +1577,11 @@ class AlertsLog(models.Model):
         ('NetworkLoss', 'NetworkLoss'), 
         ('GPSLoss', 'GPSLoss'), 
         ('Permit', 'Permit'), 
-        ('Permit', 'Permit'), 
+        ('Permit_3day', 'Permit_3day'), 
+        ('Route_overspeed', 'Route_overspeed'),
+        ('state_border_cross', 'state_border_cross'),
+        ('district_border_cross', 'district_border_cross'),
+        ('city_border_cross', 'city_border_cross'),
         ('Incident', 'Incident'), 
         ('Em', 'Em'), 
         ('EmPublicApp', 'EmPublicApp'), 
@@ -1593,7 +1600,7 @@ class AlertsLog(models.Model):
         ('Tilt', 'Tilt'), 
         ('HarshBreak', 'HarshBreak'),
         ('HarshTurn', 'HarshTurn'),
-        ('HarshAccileration', 'HarshAccileration'), 
+        ('HarshAcceleration', 'HarshAccileration'), 
     ]
     status_CHOICES = [
         ('in', 'in'), 

@@ -6609,21 +6609,51 @@ def TagDevice2Vehicle(request ):
             with open(file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
-            district= Settings_District.objects.filter(id=request.data['district']).last()
+            # Resolve district (accept id as str/int)
+            district_input = request.data.get('district')
+            district = None
+            try:
+                district = Settings_District.objects.filter(id=int(str(district_input))).first()
+            except (TypeError, ValueError):
+                district = None
             if not district:
                 return Response({"error":"District not found."}, status=status.HTTP_400_BAD_REQUEST)
+            # Resolve category FK from input (id or name); also accept category_id
+            cat_input = request.data.get('category') or request.data.get('category_id')
+            category_obj = None
+            if cat_input is not None:
+                try:
+                    # Try treat as integer id
+                    category_obj = Settings_VehicleCategory.objects.filter(id=int(str(cat_input))).first()
+                except (TypeError, ValueError):
+                    # Fallback: treat as category name
+                    category_obj = Settings_VehicleCategory.objects.filter(category=str(cat_input)).first()
+            if not category_obj:
+                return Response({"error": "Invalid category. Provide valid Settings_VehicleCategory id or name."}, status=status.HTTP_400_BAD_REQUEST)
+            # Normalize identifiers and pre-check unique constraints to avoid misleading IntegrityError mapping
+            vehicle_reg_no = (request.data.get('vehicle_reg_no') or '').strip().upper()
+            engine_no = (request.data.get('engine_no') or '').strip().upper()
+            chassis_no = (request.data.get('chassis_no') or '').strip().upper()
+            if vehicle_reg_no and DeviceTag.objects.filter(vehicle_reg_no=vehicle_reg_no).exists():
+                return Response({"error": "vehicle_reg_no already exists"}, status=status.HTTP_400_BAD_REQUEST)
+            if engine_no and DeviceTag.objects.filter(engine_no=engine_no).exists():
+                return Response({"error": "engine_no already exists"}, status=status.HTTP_400_BAD_REQUEST)
+            if chassis_no and DeviceTag.objects.filter(chassis_no=chassis_no).exists():
+                return Response({"error": "chassis_no already exists"}, status=status.HTTP_400_BAD_REQUEST)
             otp = str(secrets.randbelow(1000000)).zfill(6)
             device_tag ,error= DeviceTag.objects.safe_create(
             device_id=device_id,
             vehicle_owner =vehicle_owner ,
-            vehicle_reg_no=request.data['vehicle_reg_no'],
-            engine_no=request.data['engine_no'],
-            chassis_no=request.data['chassis_no'],
+            vehicle_reg_no=vehicle_reg_no,
+            engine_no=engine_no,
+            chassis_no=chassis_no,
             vehicle_make=request.data['vehicle_make'],
             vehicle_model=request.data['vehicle_model'],
-            category=request.data['category'],
-            district=district,
+            category_id=category_obj.id, 
+            district_id=district.id,
             rc_file=file_path,
+            receipt_file_or='',
+            receipt_file_ul='',
             status='Dealer_OTP_Sent',
             tagged_by=user,
             tagged=current_datetime,
@@ -6648,8 +6678,13 @@ def TagDevice2Vehicle(request ):
                 [user.email],
                 fail_silently=False,
             )
-        serializer = DeviceTagSerializer(device_tag)
-        return JsonResponse({'data': serializer.data, 'message': 'Device taging successful.'}, status=201)
+            
+            serializer = DeviceTagSerializer(device_tag)
+            return JsonResponse({'data': serializer.data, 'message': 'Device taging successful.'}, status=201)
+            
+        else:
+            return Response({"error": "rcFile is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
     else:
         return JsonResponse({  'message': 'Device not avaialble for Tagging'}, status=201)
 
@@ -7566,7 +7601,11 @@ def GetVahanAPIInfo(request):
                     "regnNo": device_tag.vehicle_reg_no,
                     "tacNo": device_tag.device.model.tac_no if device_tag.device.model else "TEST_BASE_222111",
                     "tacValidUpto": str(device_tag.device.model.tac_validity) if device_tag.device.model else "2027-02-03",
-                    "vehClass": device_tag.category if device_tag.category else "Motor Cab"
+                    "vehClass": (
+                        device_tag.category.category
+                        if getattr(device_tag, "category", None)
+                        else "Motor Cab"
+                    )
                 }
             }
             
@@ -14855,7 +14894,7 @@ def get_device_tags(request):
                 'chassis_no': device_tag.chassis_no,
                 'vehicle_make': device_tag.vehicle_make,
                 'vehicle_model': device_tag.vehicle_model,
-                'category': device_tag.category,
+                    'category': (device_tag.category.category if device_tag.category else None),
                 'status': device_tag.status,
                 'tagged': device_tag.tagged.isoformat() if device_tag.tagged else None,
                 'rc_file': device_tag.rc_file,
@@ -15139,7 +15178,7 @@ def activated_device_list(request):
                     'chassis_no': device_tag.chassis_no,
                     'vehicle_make': device_tag.vehicle_make,
                     'vehicle_model': device_tag.vehicle_model,
-                    'vehicle_category': device_tag.category,
+                    'vehicle_category': (device_tag.category.category if device_tag.category else None),
                     
                     # District and state information
                     'dto_district_code': district_code,
@@ -16611,7 +16650,7 @@ def get_device_health_status(request):
                 'vehicle_details': {
                     'vehicle_make': device_tag.vehicle_make,
                     'vehicle_model': device_tag.vehicle_model,
-                    'category': device_tag.category,
+                    'category': (device_tag.category.category if device_tag.category else None),
                     'engine_no': device_tag.engine_no,
                     'chassis_no': device_tag.chassis_no,
                 },

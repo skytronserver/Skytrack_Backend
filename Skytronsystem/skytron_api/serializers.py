@@ -73,9 +73,9 @@ class DeviceTagSerializer(SanitizingModelSerializer):
     def get_category_info(self, obj):
         # Map DeviceTag.category (assumed to be an ID) to Settings_VehicleCategory
         try:
-            cat_obj = Settings_VehicleCategory.objects.filter(id=obj.category).first()
+            # Use the FK instance directly to avoid unnecessary queries
+            cat_obj = obj.category
             if cat_obj:
-                from .serializers import Settings_VehicleCategorySerializer
                 return Settings_VehicleCategorySerializer(cat_obj).data
         except Exception:
             pass

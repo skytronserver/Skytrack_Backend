@@ -100,15 +100,16 @@ def Process_sosEx_Data(msg,topic_parts):
         except json.JSONDecodeError as je:
             print(f"JSON Decode Error: {je}")
             #print(f"Raw message that failed: '{raw_message}'")
-            client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": f"Invalid JSON format: {str(je)}"}))
+            client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": f"Invalid JSON format: {str(je)}"}))
             return
             
         #print("Parsed data:", data)
+        
         token=topic_parts[1]  #data.get("token")
         if token:
             # Use Token token format for JWT tokens
             auth_header = f"Token {token}"
-            client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "update", "message": "user authentication in progress"}))
+            client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "update", "message": "user authentication in progress"}))
 
             # Authenticate the token using HybridAuthentication
             try:
@@ -128,7 +129,7 @@ def Process_sosEx_Data(msg,topic_parts):
  
                
                     raise AuthenticationFailed("Invalid token.")
-                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status":"update", "message": "user found"}))
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status":"update", "message": "user found"}))
                 user = user_auth_tuple[0]  # Extract the user from the authentication tuple
             except AuthenticationFailed as e:
                 error_message = f"Authentication mqtt error: {topic_parts[0]} {topic_parts[1]} {str(e)}"
@@ -145,7 +146,7 @@ def Process_sosEx_Data(msg,topic_parts):
             if not uo:
                 error_message = f"Request must be from {role}"
                 print(error_message)
-                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": error_message}))
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
                 return
             
             # Optional role validation for specific user types
@@ -154,12 +155,22 @@ def Process_sosEx_Data(msg,topic_parts):
             #     error_message = "Request must be from police_ex or ambulance_ex."
             #     print(error_message)
             #     client.publish("field_ex/location_update_response", json.dumps({"status": "error", "message": error_message}))
-            #     return
-
+            #     return 
             # Create EMUserLocation object
-            em_lat = float(data.get("em_lat"))
-            em_lon = float(data.get("em_lon"))
-            speed = float(data.get("speed"))
+            try:
+                em_lat = float(data.get("em_lat"))
+                em_lon = float(data.get("em_lon"))
+                speed = float(data.get("speed"))
+            except (TypeError, ValueError) as ve:
+                error_message = f"Invalid location or speed data: {ve}"
+                print(error_message)
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
+                return
+            except Exception as e:
+                error_message = f"Error processing location or speed data: {e}"
+                print(error_message)
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
+                return
 
             ob = EMUserLocation.objects.create(field_ex=uo, em_lat=em_lat, em_lon=em_lon, speed=speed)
             if ob:
@@ -173,7 +184,7 @@ def Process_sosEx_Data(msg,topic_parts):
 
                     assignment =EMCallAssignment.objects.filter(id=assignment_id,ex=uo,status__in=["accepted"]).last()
                     if not assignment and assignment_id!=None:
-                        client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": "Invalid assignment id"}))
+                        client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": "Invalid assignment id"}))
                         return 0
                     else:
                         deviceloc=list(EMGPSLocation.objects.filter(device_tag= assignment.call.device).order_by('-id')[:100].values())
@@ -182,10 +193,10 @@ def Process_sosEx_Data(msg,topic_parts):
              
                         msg=EMCallMessages.objects.filter(call=assignment.call).all()
         
-                        client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "locationHistory":deviceloc,"broadcast":EMCallBroadcastSerializer(ee,many=False).data,"groupMSG":EMCallMessagesSerializer(msg,many=True).data,"message": success_message}))
+                        client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "success", "locationHistory":deviceloc,"broadcast":EMCallBroadcastSerializer(ee,many=False).data,"groupMSG":EMCallMessagesSerializer(msg,many=True).data,"message": success_message}))
                         return 0
                 except Exception as e:
-                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message":"  "+str(e)}))
+                    client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message":"  "+str(e)}))
                      
 
 
@@ -195,7 +206,7 @@ def Process_sosEx_Data(msg,topic_parts):
                 # Check for active broadcasts for this user type
                 ee = EMCallBroadcast.objects.filter(type=uo.user_type, status="pending")
                 print(f"Found {ee.count()} pending broadcasts for user type: {uo.user_type}")
-                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "update", "message": f"Found {ee.count()} pending broadcasts for user type: {uo.user_type}"}))
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "update", "message": f"Found {ee.count()} pending broadcasts for user type: {uo.user_type}"}))
                 if ee.exists():
                     dat = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee, many=True).data, "message": success_message}
                     print(f"Sending broadcast response: {dat}")
@@ -204,11 +215,11 @@ def Process_sosEx_Data(msg,topic_parts):
                     dat = {"status": "success", "broadcast": [], "message": success_message}
                     print("No pending broadcasts found, sending empty broadcast array")
                 
-                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps(dat))
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(dat))
             else:
                 error_message = "Location not updated. Value error."
                 print(error_message)
-                client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": error_message}))
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
         
         else:
  
@@ -217,7 +228,7 @@ def Process_sosEx_Data(msg,topic_parts):
 
                
     except Exception as e:
-            client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": "Something went wrong."}))
+            client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": "Something went wrong."}))
                
             raise e
             print("data processign error function ",e, flush=True)
@@ -421,6 +432,9 @@ def on_message(client, userdata, msg):
         # Split the topic to extract the user ID
         topic_parts = msg.topic.split('/')
         print(f"Message Topic: {topic_parts}")
+        # Early ignore to prevent loops on server replies
+        if len(topic_parts) >= 3 and topic_parts[-1] in ("server", "response", "noLocal"):
+            return
         if len(topic_parts) == 2 and topic_parts[0] == 'deviceTracking':
             user_id = topic_parts[1]
             print(f"Message received for user ID: {user_id}")

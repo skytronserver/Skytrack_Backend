@@ -426,11 +426,40 @@ def process_alerts(gps_data, loc_id):
             al = lastnormal_alerts.filter(type=alert_type).last()
             if not al or al.status == "out":
                 create_alert(alert_type, "in", loc_id, device_tag)
+
+            # Overtime: trigger along with Eng 'in' when outside working hours
+            try:
+                cat = getattr(device_tag, "category", None)
+                wh_start = getattr(cat, "working_hour_start_time", None) if cat else None
+                wh_end = getattr(cat, "working_hour_end_time", None) if cat else None
+
+                if wh_start and wh_end:
+                    now_ist_time = django_timezone.localtime(django_timezone.now(), ist_timezone).time()
+
+                    def _in_working_hours(t, start, end):
+                        return (start <= t <= end) if (start <= end) else (t >= start or t <= end)
+
+                    in_hours = _in_working_hours(now_ist_time, wh_start, wh_end)
+                    if not in_hours:
+                        ot_last = lastnormal_alerts.filter(type="Overtime").last()
+                        if not ot_last or (ot_last.status or "") != "in":
+                            create_alert("Overtime", "in", loc_id, device_tag)
+                # If no working hours configured, skip Overtime
+            except Exception as _e:
+                print(f"Overtime check error: {_e}", flush=True)
         elif gps_data["ignition_status"] == "0":
             alert_type = "Eng"
             al = lastnormal_alerts.filter(type=alert_type).last()
             if not al or al.status == "in":
                 create_alert(alert_type, "out", loc_id, device_tag)
+
+            # Close Overtime on engine off
+            try:
+                ot_last = lastnormal_alerts.filter(type="Overtime").last()
+                if ot_last and (ot_last.status or "") == "in":
+                    create_alert("Overtime", "out", loc_id, device_tag)
+            except Exception as _e:
+                print(f"Overtime close error: {_e}", flush=True)
 
         # Speed Alerts
         if gps_data["speed"] > 80:
@@ -469,12 +498,12 @@ def process_alerts(gps_data, loc_id):
                 create_alert(alert_type, "out", loc_id, device_tag)
 
         # Battery Disconnect Alerts
-        if gps_data["internal_battery_voltage"] < 2:
+        if gps_data["main_input_voltage"] < 2:
             alert_type = "ExtBatDiscnt"
             al = lastnormal_alerts.filter(type=alert_type).last()
             if not al or al.status == "out":
                 create_alert(alert_type, "in", loc_id, device_tag)
-        elif gps_data["internal_battery_voltage"] >= 2:
+        elif gps_data["main_input_voltage"] >= 2:
             alert_type = "ExtBatDiscnt"
             al = lastnormal_alerts.filter(type=alert_type).last()
             if not al or al.status == "in":
@@ -492,19 +521,45 @@ def process_alerts(gps_data, loc_id):
             if not al or al.status == "in":
                 create_alert(alert_type, "out", loc_id, device_tag)
 
+        # GPS Loss Alerts
+        try:
+            gps_fix_ok = str(gps_data.get("gps_status", "")).strip() == "1"
+        except Exception:
+            gps_fix_ok = False
+        alert_type = "GPSLoss"
+        desired_status = "out" if gps_fix_ok else "in"
+        al = lastnormal_alerts.filter(type=alert_type).last()
+        if not al or (al.status or "") != desired_status:
+            create_alert(alert_type, desired_status, loc_id, device_tag)
+
+        # Network Loss Alerts (based on GSM signal strength < 15)
+        signal_raw = gps_data.get("gsm_signal_strength", 0)
+        try:
+            signal_val = float(signal_raw)
+        except Exception:
+            # If unparsable, treat as very low signal
+            signal_val = 0.0
+        alert_type = "NetworkLoss"
+        desired_status = "in" if signal_val < 15 else "out"
+        al = lastnormal_alerts.filter(type=alert_type).last()
+        if not al or (al.status or "") != desired_status:
+            create_alert(alert_type, desired_status, loc_id, device_tag)
+
         # Alert ID based alerts
         alert_mappings = {
-            "15": ("EmTemp", "in"),
-            "16": ("EmTemp", "out"),
-            "17": ("Tilt", "in"),
-            "18": ("Tilt", "out"),
-            "19": ("HarshBreak", "in"),
-            "20": ("HarshBreak", "out"),
-            "21": ("HarshTurn", "in"),
-            "22": ("HarshTurn", "out"),
-            "23": ("HarshAcceleration", "in"),
-            "24": ("HarshAcceleration", "out"),
+            "20": ('EmPublicApp', "in"), 
+            "21": ('EmRegisteredApp', "in"), 
+            "22": ('EmMonitorTripInvalidPw', "in"), 
+            "23": ('EmMonitorTripBLEDisconnect', "in"), 
+            "24": ('EmMonitorTripDeviated', "in"), 
+            "09": ("EmTemp", "in"), 
+            "17": ("Tilt", "in"), 
+            "13": ("HarshBreak", "in"), 
+            "15": ("HarshTurn", "in"), 
+            "14": ("HarshAcceleration", "in"), 
         }
+        
+  
 
         if alert_id in alert_mappings:
             alert_type, status = alert_mappings[alert_id]
