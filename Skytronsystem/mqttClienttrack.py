@@ -93,17 +93,21 @@ def Process_sosEx_Data(msg,topic_parts):
     try:
         # Print raw message for debugging
         raw_message = msg.payload.decode()
-        #print(f"Raw message received: {raw_message}")
+        if len(topic_parts)>2:
+            print(f"Topic parts: {topic_parts}")    
+            print(f"Raw message received: {raw_message}")
+            return 0
         
         try:
             data = json.loads(raw_message)
+            
         except json.JSONDecodeError as je:
             print(f"JSON Decode Error: {je}")
             #print(f"Raw message that failed: '{raw_message}'")
             client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": f"Invalid JSON format: {str(je)}"}))
             return
             
-        #print("Parsed data:", data)
+        print("Parsed data:", data)
         
         token=topic_parts[1]  #data.get("token")
         if token:
@@ -129,6 +133,7 @@ def Process_sosEx_Data(msg,topic_parts):
  
                
                     raise AuthenticationFailed("Invalid token.")
+                
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status":"update", "message": "user found"}))
                 user = user_auth_tuple[0]  # Extract the user from the authentication tuple
             except AuthenticationFailed as e:
@@ -141,14 +146,14 @@ def Process_sosEx_Data(msg,topic_parts):
             # Get user object and validate roles
             role = "sosexecutive"
             uo = get_user_object(user, role)
-            
+            print("Userverified:")
 
             if not uo:
                 error_message = f"Request must be from {role}"
                 print(error_message)
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
                 return
-            
+            print("User verified:")
             # Optional role validation for specific user types
             # Uncomment if needed
             # if not (uo.user_type == 'police_ex' or uo.user_type == 'ambulance_ex'):
@@ -161,6 +166,7 @@ def Process_sosEx_Data(msg,topic_parts):
                 em_lat = float(data.get("em_lat"))
                 em_lon = float(data.get("em_lon"))
                 speed = float(data.get("speed"))
+                print("em_lat, em_lon, speed:", em_lat, em_lon, speed)
             except (TypeError, ValueError) as ve:
                 error_message = f"Invalid location or speed data: {ve}"
                 print(error_message)
@@ -180,7 +186,7 @@ def Process_sosEx_Data(msg,topic_parts):
                 success_message = f"Location updated successfully: {ob.id}"
                 try:
                     assignment_id =data.get("assignment_id")  
-                    print(assignment_id)
+                    print(f"assignmentid:{assignment_id}")
 
                     assignment =EMCallAssignment.objects.filter(id=assignment_id,ex=uo,status__in=["accepted"]).last()
                     if not assignment and assignment_id!=None:
@@ -194,9 +200,11 @@ def Process_sosEx_Data(msg,topic_parts):
                         msg=EMCallMessages.objects.filter(call=assignment.call).all()
         
                         client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "success", "locationHistory":deviceloc,"broadcast":EMCallBroadcastSerializer(ee,many=False).data,"groupMSG":EMCallMessagesSerializer(msg,many=True).data,"message": success_message}))
+                        print(f"Sending broadcast response: ")
                         return 0
                 except Exception as e:
-                    client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message":"  "+str(e)}))
+                    pass #client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message":"  "+str(e)}))
+                    
                      
 
 
@@ -209,13 +217,14 @@ def Process_sosEx_Data(msg,topic_parts):
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "update", "message": f"Found {ee.count()} pending broadcasts for user type: {uo.user_type}"}))
                 if ee.exists():
                     dat = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee, many=True).data, "message": success_message}
-                    print(f"Sending broadcast response: {dat}")
+                    #print(f"Sending broadcast response: {dat}")
                 else:
                     # If no pending broadcasts, send success without broadcast data
                     dat = {"status": "success", "broadcast": [], "message": success_message}
                     print("No pending broadcasts found, sending empty broadcast array")
-                
+                print(f"Sending broadcast response: ",topic_parts[0]+"/"+topic_parts[1]+"/server")
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(dat))
+       
             else:
                 error_message = "Location not updated. Value error."
                 print(error_message)
@@ -431,7 +440,7 @@ def on_message(client, userdata, msg):
     try:
         # Split the topic to extract the user ID
         topic_parts = msg.topic.split('/')
-        print(f"Message Topic: {topic_parts}")
+        #print(f"Message Topic: {topic_parts}")
         # Early ignore to prevent loops on server replies
         if len(topic_parts) >= 3 and topic_parts[-1] in ("server", "response", "noLocal"):
             return
@@ -447,7 +456,7 @@ def on_message(client, userdata, msg):
             print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
             #print(f"Message received payload: {msg.payload.decode()}")
             Process_EM_Data(msg)
-        elif len(topic_parts) == 2 and topic_parts[0] == 'sosEx':
+        elif len(topic_parts) >= 2 and topic_parts[0] == 'sosEx':
             #print("message payload decode" ,msg.payload.decode())
             Process_sosEx_Data(msg,topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'owner':
