@@ -209,6 +209,7 @@ class pointofinterests(models.Model):
             ( 'CityBoundary',  'CityBoundary'), 
             ( 'VillageBoundary',  'VillageBoundary'), 
             ( 'PermitRoute',  'PermitRoute'), 
+            ( 'Police',  'Police'), 
             ( 'School',  'School'), 
             ( 'Hospital',  'Hospital'), 
             ( 'PoliceStation',  'PoliceStation'), 
@@ -1660,6 +1661,8 @@ class EMCall(models.Model):
     end_time =   models.DateTimeField(blank=True, null=True)
     status = models.CharField(max_length=30,choices=choices)
     closer_comment = models.TextField(blank=True, null=True)
+    em_type=models.CharField(max_length=50,null=True, blank=True)
+    
     def __str__(self):
         return f"EMCall {self.id}"
  

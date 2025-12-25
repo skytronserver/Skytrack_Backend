@@ -655,6 +655,8 @@ class DeviceTagSerializer2(SanitizingModelSerializer):
     device = DeviceStockSerializer2(many=False, read_only=True)
     vehicle_owner = VehicleOwnerSerializer(many=False, read_only=True)
     drivers = DriverSerializer(many=True, read_only=True)
+    # Return full category details instead of just the FK id
+    category = Settings_VehicleCategorySerializer(many=False, read_only=True)
     deviceloc = serializers.SerializerMethodField()
 
     class Meta:

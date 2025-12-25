@@ -1469,10 +1469,55 @@ def gps_track_data_api(request ):
 
         imei = request.GET.get('imei', None)
         regno = request.GET.get('regno', None)
+        # New filters
+        manufacturer_id = request.GET.get('manufacturer_id', None)
+        category_text = request.GET.get('category', None)
+        district_id = request.GET.get('district_id', None)
         # New geofence filter params
         route_id = request.GET.get('route_id', None)
         poi_id = request.GET.get('poi_id', None)
         polygon_param = request.GET.get('polygon', None)  # Expects JSON string: [[lat,lon],[lat,lon],...]
+
+        # Normalize geofence params: treat '', 'None', 'null', 'undefined' as absent
+        import json
+        def _norm(v):
+            if v is None:
+                return None
+            if isinstance(v, str) and v.strip().lower() in ('', 'none', 'null', 'undefined'):
+                return None
+            return v
+        route_id = _norm(route_id)
+        poi_id = _norm(poi_id)
+        polygon_param = _norm(polygon_param)
+        manufacturer_id = _norm(manufacturer_id)
+        category_text = _norm(category_text)
+        district_id = _norm(district_id)
+        # If polygon is a JSON string, treat empty/short polygons as absent
+        if isinstance(polygon_param, str):
+            try:
+                _poly_tmp = json.loads(polygon_param)
+                if isinstance(_poly_tmp, list) and len(_poly_tmp) < 3:
+                    polygon_param = None
+            except Exception:
+                # Invalid JSON polygon -> ignore
+                polygon_param = None
+        # Attempt to coerce IDs to int when present
+        try:
+            route_id = int(route_id) if route_id is not None else None
+        except Exception:
+            route_id = None
+        try:
+            poi_id = int(poi_id) if poi_id is not None else None
+        except Exception:
+            poi_id = None
+        try:
+            manufacturer_id = int(manufacturer_id) if manufacturer_id is not None else None
+        except Exception:
+            manufacturer_id = None
+        try:
+            district_id = int(district_id) if district_id is not None else None
+        except Exception:
+            district_id = None
         in_range = True
         in_range_param = request.GET.get('in_range', None)
         if in_range_param is not None:
@@ -1485,6 +1530,15 @@ def gps_track_data_api(request ):
         # Filter by regno if provided (partial match)
         if regno and regno != "None":
             gps_queryset = gps_queryset.filter(device_tag__vehicle_reg_no__icontains=regno)
+        # Filter by manufacturer id via DeviceTag -> DeviceStock -> Dealer -> Manufacturer
+        if manufacturer_id is not None:
+            gps_queryset = gps_queryset.filter(device_tag__device__dealer__manufacturer__id=manufacturer_id)
+        # Filter by vehicle category text (case-insensitive contains)
+        if category_text is not None:
+            gps_queryset = gps_queryset.filter(device_tag__category__category__icontains=category_text)
+        # Filter by district id on DeviceTag.district
+        if district_id is not None:
+            gps_queryset = gps_queryset.filter(device_tag__district__id=district_id)
 
         # Apply role-based filtering (unchanged)
         if request.user and request.user.is_authenticated:
@@ -1533,15 +1587,23 @@ def gps_track_data_api(request ):
 
         # --- Geofence filter logic ---
         polygon = None
+        geofence_center = None  # (lat, lon) center for POI radius filter
         geofence_message = None
         buffer_distance = 0.1  # 0.1 km = 100m
         from shapely.geometry import Point, Polygon, LineString
         import json
-        # Only one geofence filter can be active at a time
-        geofence_count = sum([1 if x else 0 for x in [route_id, poi_id, polygon_param]])
-        if geofence_count > 1:
-            geofence_message = "Only one of route_id, poi_id, or polygon can be used at a time. Geofence filter not applied."
-        elif route_id:
+        # Select active geofence with precedence: POI > Route > Polygon
+        geofence_count = sum([1 if x is not None else 0 for x in [route_id, poi_id, polygon_param]])
+        active_type = 'poi' if poi_id is not None else ('route' if route_id is not None else ('polygon' if polygon_param is not None else None))
+        if geofence_count > 1 and active_type:
+            geofence_message = f"Multiple geofence params provided; using {active_type}."
+        # Debug: show geofence selection
+        try:
+            print(f"DEBUG: geofence active_type={active_type}, poi_id={poi_id}, route_id={route_id}, polygon_present={(polygon_param is not None)}")
+        except Exception:
+            pass
+
+        if active_type == 'route':
             try:
                 route = Route.objects.get(id=route_id)
                 points = []
@@ -1563,23 +1625,51 @@ def gps_track_data_api(request ):
                     geofence_message = "Route has no valid points. Geofence filter not applied."
             except Exception as e:
                 geofence_message = f"Route geofence error: {e}. Geofence filter not applied."
-        elif poi_id:
+        elif active_type == 'poi':
+            # POI geofence: prefer polygon from POI.location when available or requested; otherwise fall back to 100m radius
             try:
                 poi = pointofinterests.objects.get(id=poi_id)
-                loc = poi.location
-                coords = []
-                if isinstance(loc, str):
-                    coords = json.loads(loc)
-                elif isinstance(loc, list):
-                    coords = loc
-                poly_coords = [(float(lon), float(lat)) for lat, lon in coords]
-                if poly_coords:
-                    polygon = Polygon(poly_coords)
-                else:
-                    geofence_message = "POI has no valid polygon points. Geofence filter not applied."
+                poi_location = getattr(poi, 'location', None)
+                poi_as_polygon_param = request.GET.get('poi_as_polygon', None)
+                use_polygon = False
+                if poi_as_polygon_param is not None:
+                    use_polygon = str(poi_as_polygon_param).strip().lower() == 'true'
+
+                built_polygon = False
+                if poi_location and (use_polygon or (getattr(poi, 'lat', None) is None or getattr(poi, 'lon', None) is None)):
+                    try:
+                        loc_coords = json.loads(poi_location) if isinstance(poi_location, str) else poi_location
+                        poly_coords = []
+                        if isinstance(loc_coords, list):
+                            for item in loc_coords:
+                                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                                    # Expect [lat, lon]
+                                    lat_i = float(item[0])
+                                    lon_i = float(item[1])
+                                    poly_coords.append((lon_i, lat_i))
+                                elif isinstance(item, dict) and 'lat' in item and 'lon' in item:
+                                    poly_coords.append((float(item['lon']), float(item['lat'])))
+                        if len(poly_coords) >= 3:
+                            polygon = Polygon(poly_coords)
+                            built_polygon = True
+                            geofence_message = 'Using POI location polygon geofence.'
+                        else:
+                            geofence_message = 'POI location polygon invalid or too few points; falling back to radius.'
+                    except Exception as e:
+                        geofence_message = f'POI polygon parse error: {e}; falling back to radius.'
+
+                if not built_polygon:
+                    poi_lat = getattr(poi, 'lat', None)
+                    poi_lon = getattr(poi, 'lon', None)
+                    if poi_lat is not None and poi_lon is not None:
+                        geofence_center = (float(poi_lat), float(poi_lon))
+                    else:
+                        # Neither valid polygon nor lat/lon available -> return blank per request
+                        return JsonResponse({'data': [], 'geofence_message': 'POI has neither lat/lon nor valid polygon. Returning blank.'})
             except Exception as e:
-                geofence_message = f"POI geofence error: {e}. Geofence filter not applied."
-        elif polygon_param:
+                # POI lookup failed -> return blank
+                return JsonResponse({'data': [], 'geofence_message': f'POI lookup error: {e}. Returning blank.'})
+        elif active_type == 'polygon':
             try:
                 coords = json.loads(polygon_param)
                 poly_coords = [(float(lon), float(lat)) for lat, lon in coords]
@@ -1590,6 +1680,107 @@ def gps_track_data_api(request ):
             except Exception as e:
                 geofence_message = f"Custom polygon geofence error: {e}. Geofence filter not applied."
         # --- End geofence logic ---
+
+        # --- Helper utilities for nearest POI / Route proximity ---
+        # Haversine distance in kilometers
+        def haversine_km(lat1, lon1, lat2, lon2):
+            R = 6371.0
+            dlat = radians(lat2 - lat1)
+            dlon = radians(lon2 - lon1)
+            a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+            return 2 * R * asin(sqrt(a))
+
+        # Resolve a representative point for a POI
+        def poi_coord(poi):
+            try:
+                if getattr(poi, 'lat', None) is not None and getattr(poi, 'lon', None) is not None:
+                    return float(poi.lat), float(poi.lon)
+                loc = getattr(poi, 'location', None)
+                if not loc:
+                    return None
+                coords = json.loads(loc) if isinstance(loc, str) else loc
+                lats, lons = [], []
+                if isinstance(coords, list):
+                    for item in coords:
+                        if isinstance(item, (list, tuple)) and len(item) >= 2:
+                            lats.append(float(item[0]))
+                            lons.append(float(item[1]))
+                        elif isinstance(item, dict) and 'lat' in item and 'lon' in item:
+                            lats.append(float(item['lat']))
+                            lons.append(float(item['lon']))
+                if lats and lons:
+                    return sum(lats) / len(lats), sum(lons) / len(lons)
+            except Exception:
+                return None
+            return None
+
+        # Preload POIs and Routes once for efficiency
+        try:
+            all_pois = list(pointofinterests.objects.all())
+        except Exception:
+            all_pois = []
+        police_pois = [p for p in all_pois if getattr(p, 'use_type', None) == 'Police']
+
+        try:
+            all_routes = list(Route.objects.all())
+        except Exception:
+            all_routes = []
+
+        def nearest_poi_info(lat, lon, poi_list):
+            best = None
+            best_dist = None
+            for poi in poi_list:
+                pc = poi_coord(poi)
+                if not pc:
+                    continue
+                plat, plon = pc
+                d = haversine_km(lat, lon, plat, plon)
+                if best_dist is None or d < best_dist:
+                    best = poi
+                    best_dist = d
+            if best is None:
+                return None
+            # Return full POI data using standard serializer with distance metadata
+            return {
+                'data': PointOfInterestSerializer(best).data,
+                'distance_meters': int(round((best_dist or 0) * 1000)),
+            }
+
+        def routes_within_100m(lat, lon):
+            results = []
+            for r in all_routes:
+                pts_raw = None
+                if hasattr(r, 'route') and getattr(r, 'route') is not None:
+                    pts_raw = getattr(r, 'route')
+                elif hasattr(r, 'routepoints') and getattr(r, 'routepoints') is not None:
+                    pts_raw = getattr(r, 'routepoints')
+                if not pts_raw:
+                    continue
+                try:
+                    pts = json.loads(pts_raw) if isinstance(pts_raw, str) else pts_raw
+                except Exception:
+                    continue
+                min_km = None
+                if isinstance(pts, list):
+                    for pt in pts:
+                        # Expect [lon, lat, altitude] or [lon, lat]
+                        if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                            lon_r = float(pt[0])
+                            lat_r = float(pt[1])
+                            d = haversine_km(lat, lon, lat_r, lon_r)
+                            if min_km is None or d < min_km:
+                                min_km = d
+                        elif isinstance(pt, dict) and 'lat' in pt and 'lon' in pt:
+                            d = haversine_km(lat, lon, float(pt['lat']), float(pt['lon']))
+                            if min_km is None or d < min_km:
+                                min_km = d
+                if min_km is not None and min_km <= 0.1:  # within 100 meters
+                    results.append({
+                        'data': routeSerializer(r).data,
+                        'min_distance_meters': int(round(min_km * 1000)),
+                    })
+            return results
+        # --- End helper utilities ---
 
         distinct_registration_numbers = gps_queryset.values('device_tag').distinct()
         data = []
@@ -1611,8 +1802,8 @@ def gps_track_data_api(request ):
                                 break
                     if not owner_match:
                         continue  # skip if no owner matches substring
-                # Geofence filter: check if this point is inside/outside polygon
-                if polygon:
+                # Geofence filter: check polygon containment OR POI radius
+                if polygon is not None:
                     lat = getattr(latest_entry, 'latitude', None)
                     lon = getattr(latest_entry, 'longitude', None)
                     if lat is not None and lon is not None:
@@ -1620,6 +1811,15 @@ def gps_track_data_api(request ):
                         inside = polygon.contains(pt)
                         if (in_range and not inside) or (not in_range and inside):
                             continue  # skip this point
+                elif geofence_center is not None:
+                    lat = getattr(latest_entry, 'latitude', None)
+                    lon = getattr(latest_entry, 'longitude', None)
+                    if lat is not None and lon is not None:
+                        center_lat, center_lon = geofence_center
+                        d_km = haversine_km(float(lat), float(lon), center_lat, center_lon)
+                        inside = d_km <= 0.1  # within 100 meters
+                        if (in_range and not inside) or (not in_range and inside):
+                            continue
                 serializer = GPSData_Serializer(latest_entry)
                 dd = serializer.data.copy()
                 if 'entry_time' not in dd and hasattr(latest_entry, 'entry_time'):
@@ -1629,6 +1829,28 @@ def gps_track_data_api(request ):
                     dd['imei'] = latest_entry.device_tag.device.imei
                     device_tag_obj = latest_entry.device_tag
                     device_tag_data = DeviceTagSerializer(device_tag_obj).data
+                    # Attach concise device/manufacturer summary for convenience
+                    try:
+                        ds = device_tag_obj.device  # DeviceStock
+                        dealer_obj = getattr(ds, 'dealer', None)
+                        man_obj = getattr(dealer_obj, 'manufacturer', None) if dealer_obj else None
+                        device_summary = {
+                            'id': ds.id,
+                            'imei': ds.imei,
+                        }
+                        if dealer_obj:
+                            device_summary['dealer'] = {
+                                'id': dealer_obj.id,
+                                'company_name': getattr(dealer_obj, 'company_name', None),
+                            }
+                        if man_obj:
+                            device_summary['manufacturer'] = {
+                                'id': man_obj.id,
+                                'company_name': getattr(man_obj, 'company_name', None),
+                            }
+                        device_tag_data['device_info'] = device_summary
+                    except Exception:
+                        pass
                     if device_tag_obj.vehicle_owner:
                         owner_data = VehicleOwnerSerializer(device_tag_obj.vehicle_owner).data
                         if 'users' not in owner_data:
@@ -1639,6 +1861,21 @@ def gps_track_data_api(request ):
                     dd['vehicle_registration_number'] = ""
                     dd['imei'] = ""
                     dd['device_tag_info'] = None
+
+                # Attach nearest POI, nearest Police POI, and nearby Routes (<=100m)
+                lat = getattr(latest_entry, 'latitude', None)
+                lon = getattr(latest_entry, 'longitude', None)
+                if lat is not None and lon is not None:
+                    np_info = nearest_poi_info(float(lat), float(lon), all_pois)
+                    npp_info = nearest_poi_info(float(lat), float(lon), police_pois)
+                    near_rs = routes_within_100m(float(lat), float(lon))
+                else:
+                    np_info = None
+                    npp_info = None
+                    near_rs = []
+                dd['nearest_poi'] = np_info
+                dd['nearest_police'] = npp_info
+                dd['nearby_routes_within_100m'] = near_rs
                 data.append(dd)
         data_list = list(data)
         response = {'data': data_list}
