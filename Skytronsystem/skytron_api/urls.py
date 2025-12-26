@@ -238,6 +238,8 @@ urlpatterns = [
 
 
     path('list-alerts/', list_alert_logs, name='list_alert_logs'), 
+    # Global dashboard aggregated summary
+    path('central_api/', global_counts_summary, name='global_counts_summary'),
     path('gps_history_map_data/',gps_history_map_data , name='gps_history_map_data'),
     
     path('get_live_vehicle_no/',get_live_vehicle_no , name='get_live_vehicle_no'),#

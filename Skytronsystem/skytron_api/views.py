@@ -1885,6 +1885,58 @@ def gps_track_data_api(request ):
     return JsonResponse({'error':  'Invalid request method. Only GET is allowed.'}, status=400)
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def global_counts_summary(request):
+    """
+    Aggregated global counts for dashboard:
+    - totalPanicPress: EMCall count
+    - panicActionTaken: EMCall where status != 'pending'
+    - alerts: counts for key categories
+    - vltStatus: DeviceTag totals by status (active/inactive) and defective devices as maintenance
+    
+    Returns global counts without user-based filtering.
+    """
+    try:
+        # Panic stats (SOS) - global
+        total_panic = EMCall.objects.count()
+        action_taken = EMCall.objects.exclude(status='pending').count()
+
+        # Alerts counts (key categories) - global
+        alert_type_map = {
+            'Overspeed': 'OverSpeed',
+            'Harsh Breaking': 'HarshBreak',
+            'Route Deviation': 'EmMonitorTripDeviated',
+            'Tampering': 'BoxTemp',
+            'Geofence Violation': 'Geofence',
+        }
+        alerts = []
+        for label, al_type in alert_type_map.items():
+            cnt = AlertsLog.objects.filter(type=al_type).count()
+            alerts.append({'category': label, 'count': cnt})
+
+        # VLT status - global
+        total_vlt = DeviceTag.objects.count()
+        active_vlt = DeviceTag.objects.filter(status='Device_Active').count()
+        inactive_vlt = DeviceTag.objects.filter(status='Device_Not_Active').count()
+        maintenance_vlt = DeviceStock.objects.filter(stock_status='Device_Defective').count()
+
+        result = {
+            'totalPanicPress': total_panic,
+            'panicActionTaken': action_taken,
+            'alerts': alerts,
+            'vltStatus': {
+                'total': total_vlt,
+                'active': active_vlt,
+                'inactive': inactive_vlt,
+                'maintenance': maintenance_vlt,
+            },
+        }
+        return JsonResponse(result)
+    except Exception as e:
+        return JsonResponse({'error': f'Failed to compute summary: {e}'}, status=500)
+
+
 
 def get_size(obj, seen=None):
     """Recursively finds size of objects"""
