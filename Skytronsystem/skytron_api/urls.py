@@ -337,6 +337,7 @@ urlpatterns = [
     
     
     path('tag/untag/', unTagDevice2Vehicle, name='unTagDevice2Vehicle'),
+    path('tag/retag/', reTagDevice2Vehicle, name='reTagDevice2Vehicle'),
     path('tag/TagAwaitingOwnerApproval/', TagAwaitingOwnerApproval, name='TagAwaitingOwnerApproval'),
     path('tag/TagSendOwnerOtp/', TagSendOwnerOtp, name='TagSendOwnerOtp'),
     path('tag/TagVerifyOwnerOtp/', TagVerifyOwnerOtp, name='TagVerifyOwnerOtpe'),

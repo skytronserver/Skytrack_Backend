@@ -90,3 +90,4 @@ data_arai/*.*
 olddb.dump
 mapLayers/
 north-eastern-zone-251218.osm.pbf
+tester_bundle/.venv/*

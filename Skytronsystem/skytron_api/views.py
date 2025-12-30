@@ -6996,17 +6996,106 @@ def unTagDevice2Vehicle(request ):
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
     # Extract data from the request or adjust as needed
-    if request.method == 'POST': 
-        tag_id = request.POST.get('tag_id') 
-        if not tag_id:
-            return JsonResponse({'error': 'tag_id is required'}, status=400)
-        try: 
-            device_tag = DeviceTag.objects.get(id=tag_id)
+    if request.method == 'POST':
+        # Use DRF's request.data to support JSON payloads
+        data = getattr(request, 'data', {})
+        tag_id = data.get('tag_id')
+        device_id = data.get('device_id')
+
+        # Require at least one identifier
+        if not tag_id and not device_id:
+            return JsonResponse({'error': 'Provide either tag_id or device_id'}, status=400)
+
+        try:
+            if tag_id is not None:
+                device_tag = DeviceTag.objects.get(id=int(str(tag_id)))
+            else:
+                # Find most recent tag record for the given device_id
+                device_tag = DeviceTag.objects.filter(device_id=int(str(device_id))).order_by('-id').first()
+                if not device_tag:
+                    raise DeviceTag.DoesNotExist()
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'Invalid identifier format'}, status=400)
         except DeviceTag.DoesNotExist:
-            return JsonResponse({'error': 'DeviceTag with the given tag_id does not exist'}, status=404)
+            return JsonResponse({'error': 'DeviceTag not found'}, status=404)
+
         device_tag.status = 'Device_Untagged'
+        device_tag.device.stock_status= 'Device_Untagged'
+        device_tag.device.save()
         device_tag.save()
-        return JsonResponse({'message': 'Device successfully untagged'}) 
+        return JsonResponse({'message': 'Device successfully untagged', 'tag_id': device_tag.id})
+    return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
+def reTagDevice2Vehicle(request):
+    """
+    Re-tag endpoint: undo the untag action by restoring a previous status.
+    Accepts JSON body with either `tag_id` or `device_id` and optional `restore_status`.
+    Default `restore_status` is 'Dealer_OTP_Sent'. Also attempts to set stock back to 'Fitted'.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = request.user
+    role = "dealer"
+    man = get_user_object(user, role)
+    if not man:
+        return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if request.method == 'POST':
+        data = getattr(request, 'data', {})
+        tag_id = data.get('tag_id')
+        device_id = data.get('device_id')
+        restore_status = (data.get('restore_status') or 'Dealer_OTP_Sent').strip()
+
+        if not tag_id and not device_id:
+            return JsonResponse({'error': 'Provide either tag_id or device_id'}, status=400)
+
+        try:
+            if tag_id is not None:
+                device_tag = DeviceTag.objects.get(id=int(str(tag_id)))
+            else:
+                device_tag = DeviceTag.objects.filter(device_id=int(str(device_id))).order_by('-id').first()
+                if not device_tag:
+                    raise DeviceTag.DoesNotExist()
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'Invalid identifier format'}, status=400)
+        except DeviceTag.DoesNotExist:
+            return JsonResponse({'error': 'DeviceTag not found'}, status=404)
+
+        # Only allow re-tag if current status is untagged
+        if (device_tag.status or '').strip() != 'Device_Untagged':
+            return JsonResponse({'error': 'Device is not in untagged state'}, status=400)
+
+        # Restore the status
+        device_tag.status = restore_status
+        device_tag.save()
+
+        # Attempt to restore stock status to 'Fitted'
+        try:
+            # If Device model has stock_status, restore it
+            if hasattr(device_tag.device, 'stock_status'):
+                device_tag.device.stock_status = 'Fitted'
+                device_tag.device.save()
+        except Exception:
+            pass
+
+        try:
+            # Also try updating latest DeviceStock record for this device under this dealer
+            ds = DeviceStock.objects.filter(dealer=man, device_id=device_tag.device_id).order_by('-id').first()
+            if ds:
+                ds.stock_status = 'Fitted'
+                ds.save()
+        except Exception:
+            pass
+
+        return JsonResponse({'message': 'Device successfully re-tagged', 'tag_id': device_tag.id, 'status': device_tag.status})
+
     return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
 
 

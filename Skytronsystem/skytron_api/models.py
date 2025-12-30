@@ -923,6 +923,8 @@ class DeviceStock(models.Model):
         ('SMS_GATEWAY_NO_Configured', 'SMS Gateway No Configured'),
         ('Device_Defective', 'Device Defective'),
         ('Returned_to_manufacturer', 'Returned to Manufacturer'),
+        ('Device_Untagged', 'Device Untagged'),
+        
     ]
  
     dealer =  models.ForeignKey(Dealer, on_delete=models.CASCADE,null=True,blank=True)
