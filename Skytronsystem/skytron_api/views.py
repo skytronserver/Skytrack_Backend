@@ -1719,7 +1719,7 @@ def gps_track_data_api(request ):
             all_pois = list(pointofinterests.objects.all())
         except Exception:
             all_pois = []
-        police_pois = [p for p in all_pois if getattr(p, 'use_type', None) == 'Police']
+        police_pois = [p for p in all_pois if getattr(p, 'use_type', None) == 'police']
 
         try:
             all_routes = list(Route.objects.all())
@@ -10876,7 +10876,14 @@ def homepage_VehicleOwner(request ):
             
             # Get all devices owned by this vehicle owner
             owned_devices = DeviceTag.objects.filter(vehicle_owner=profile)
-            activated_devices = owned_devices.filter(status="Device_Active")
+            # Support multiple activation-like statuses; optional override via request 
+
+            active_statuses = [
+                "Device_Active",
+                "Owner_Final_OTP_Verified",
+                "Owner_OTP_Verified",
+            ] 
+            activated_devices = owned_devices.filter(status__in=active_statuses)
             
             # Current time for calculations
             now = timezone.now()
@@ -17861,7 +17868,7 @@ def update_alert_log(request):
 def filter_alert_log(request):
     """Filter alert logs with multiple parameters and pagination"""
     try:
-        # Get filter parameters
+        # Get filter parameters (supports single value or list/comma-separated)
         alert_type = request.data.get('type')
         alert_status = request.data.get('status')
         vehicle_reg_no = request.data.get('vehicle_reg_no')
@@ -17874,29 +17881,68 @@ def filter_alert_log(request):
         radius = request.data.get('radius', 10)  # Default 10 km
         page = request.data.get('page', 1)
         page_size = request.data.get('page_size', 10)
+
+        # Helper: parse list or comma-separated string to list
+        def _parse_multi(val, cast=None):
+            if val is None:
+                return []
+            items = []
+            if isinstance(val, (list, tuple)):
+                items = list(val)
+            elif isinstance(val, str):
+                # Split comma-separated string, strip whitespace
+                items = [v.strip() for v in val.split(',') if v.strip() != '']
+            else:
+                # Single primitive value
+                items = [val]
+
+            if cast is not None:
+                parsed = []
+                for v in items:
+                    try:
+                        parsed.append(cast(v))
+                    except (ValueError, TypeError):
+                        # skip values that cannot be cast
+                        continue
+                return parsed
+            return items
         
         # Build query
         query = AlertsLog.objects.all()
         
-        # Filter by type
-        if alert_type:
-            query = query.filter(type=alert_type)
+        # Import Q for OR queries
+        from django.db.models import Q
+
+        # Filter by type (supports list)
+        types = _parse_multi(alert_type)
+        if types:
+            query = query.filter(type__in=types)
         
-        # Filter by status
-        if alert_status:
-            query = query.filter(status=alert_status)
+        # Filter by status (supports list)
+        statuses = _parse_multi(alert_status)
+        if statuses:
+            query = query.filter(status__in=statuses)
         
-        # Filter by vehicle registration number
-        if vehicle_reg_no:
-            query = query.filter(deviceTag__vehicle_reg_no__icontains=vehicle_reg_no)
+        # Filter by vehicle registration number (supports list, OR icontains)
+        vehicle_regs = _parse_multi(vehicle_reg_no)
+        if vehicle_regs:
+            vr_q = Q()
+            for vr in vehicle_regs:
+                vr_q |= Q(deviceTag__vehicle_reg_no__icontains=vr)
+            query = query.filter(vr_q)
         
-        # Filter by state
-        if state_id:
-            query = query.filter(state_id=state_id)
+        # Filter by state (supports list)
+        state_ids = _parse_multi(state_id, cast=int)
+        if state_ids:
+            query = query.filter(state_id__in=state_ids)
         
-        # Filter by district from device tag
-        if district:
-            query = query.filter(deviceTag__district__district__icontains=district)
+        # Filter by district from device tag (supports list, OR icontains)
+        districts = _parse_multi(district)
+        if districts:
+            dist_q = Q()
+            for d in districts:
+                dist_q |= Q(deviceTag__district__district__icontains=d)
+            query = query.filter(dist_q)
         
         # Filter by date range
         if start_date:
@@ -17960,6 +18006,15 @@ def filter_alert_log(request):
         query = query.order_by('-timestamp')
         
         # Pagination
+        try:
+            page = int(page)
+        except (ValueError, TypeError):
+            page = 1
+        try:
+            page_size = int(page_size)
+        except (ValueError, TypeError):
+            page_size = 10
+
         paginator = Paginator(query, page_size)
         try:
             alerts = paginator.page(page)
