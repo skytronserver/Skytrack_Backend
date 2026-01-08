@@ -1526,7 +1526,7 @@ def gps_track_data_api(request ):
         owner_name_substr = request.GET.get('owner', None)
 
         # Get base queryset
-        gps_queryset = GPSData.objects.exclude(device_tag=None)
+        gps_queryset = GPSData.objects.exclude(device_tag=None).filter(gps_status=1)
         # Filter by regno if provided (partial match)
         if regno and regno != "None":
             gps_queryset = gps_queryset.filter(device_tag__vehicle_reg_no__icontains=regno)
@@ -7759,7 +7759,7 @@ def TagGetVehicle(request ):
             # and return local data:
             serializer = DeviceTagSerializer2(device_tag)
 
-            last_loc = GPSData.objects.filter(device_tag=device_tag).last()
+            last_loc = GPSData.objects.filter(device_tag=device_tag, gps_status=1).last()
             if last_loc:
                 last_loc_serializer = GPSData_Serializer(last_loc)
                 last_loc_data = last_loc_serializer.data
@@ -17747,14 +17747,14 @@ def create_alert_log(request):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Validate foreign key references
-        gps_ref = GPSData.objects.filter(id=gps_ref_id).first()
+        gps_ref = GPSData.objects.filter(id=gps_ref_id, gps_status=1).last()
         if not gps_ref:
             return Response({
                 'status': 'error',
                 'message': 'Invalid gps_ref_id'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        device_tag = DeviceTag.objects.filter(id=device_tag_id).first()
+        device_tag = DeviceTag.objects.filter(id=device_tag_id, gps_status=1).last()
         if not device_tag:
             return Response({
                 'status': 'error',
@@ -18422,7 +18422,7 @@ def get_cell_tower_info(request):
                           status=status.HTTP_404_NOT_FOUND)
         
         # Get the latest GPS data entry for this device tag
-        latest_gps = GPSData.objects.filter(device_tag=device_tag).order_by('-entry_time').first()
+        latest_gps = GPSData.objects.filter(device_tag=device_tag,gps_status=1).order_by('-entry_time').first()
         
         if not latest_gps:
             return Response({
