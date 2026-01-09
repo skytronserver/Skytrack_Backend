@@ -604,6 +604,7 @@ from pathlib import Path
 import os  
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from .throttles import AuthRateThrottle, LoginRateThrottle, OTPRateThrottle, PasswordResetRateThrottle
+from django.core.cache import cache
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -5332,6 +5333,8 @@ def TLEx_getPendingCallList(request ):
 
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
+    
+    
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
@@ -5352,20 +5355,129 @@ def DEx_getPendingCallList(request ):
     uo3=get_user_object(user,role3)
     if not (uo or uo2 or uo3):
         return Response({"error":"Request must be from  "+role+' or '+role2+' or '+role3+'.'}, status=status.HTTP_400_BAD_REQUEST)
-    try: 
-        if uo2:
-            ee=EMCallAssignment.objects.filter(  ex__state = uo2.state  ).exclude(status="closed") 
-        elif uo3:
-            ee=EMCallAssignment.objects.filter(  ex__state = uo3.state  ).exclude(status="closed")
-        else:
-            ee=EMCallAssignment.objects.filter(  ex = uo  ).exclude(status="closed")  
+    try:
+        # Base queryset: only pending calls and excluding closed assignments
+        qs_base = EMCallAssignment.objects.filter(call__status="pending").exclude(status="closed")
 
-        if ee: 
-            return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(dealer).data)
-        return Response({'call': str('Not found')}, status=200)#Response(SOS_userSerializer(dealer).data)
+        # Scope selection based on role
+        if uo2:
+            qs = qs_base.filter(ex__state=uo2.state)
+            cache_scope = f"state:{getattr(uo2.state, 'id', uo2.state_id)}"
+        elif uo3:
+            qs = qs_base.filter(ex__state=uo3.state)
+            cache_scope = f"state:{getattr(uo3.state, 'id', uo3.state_id)}"
+        else:
+            qs = qs_base.filter(ex=uo)
+            cache_scope = f"ex:{getattr(uo, 'id', None)}"
+
+        # Attempt to reduce N+1 queries by joining common FKs used in serializers
+        try:
+            qs = qs.select_related(
+                'ex',
+                'ex__state',
+                'call',
+                'call__team',
+                'call__team__teamlead',
+            )
+        except Exception:
+            # If any relation path is invalid, skip silently to avoid breaking behavior
+            pass
+
+        # Short-lived cache to avoid repeated heavy serialization for the same scope
+        cache_key = f"DEx_getPendingCallList:pending:{cache_scope}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response({"calls": cached}, status=200)
+
+        # Serialize once, then branch on data length (avoid extra exists/evaluation)
+        data = EMCallAssignmentSerializer(qs, many=True).data
+
+        # Cache for a brief period (e.g., 10 seconds)
+        cache.set(cache_key, data, timeout=10)
+
+        if data:
+            return Response({"calls": data}, status=200)
+        return Response({'call': 'Not found'}, status=200)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
+
+
+
+
+
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
+def DEx_getCallList(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    role="sosexecutive"
+    user=request.user
+    uo=get_user_object(user,role)
+    role2="stateadmin" 
+    uo2=get_user_object(user,role2)
+    role3="sosadmin"
+    uo3=get_user_object(user,role3)
+    if not (uo or uo2 or uo3):
+        return Response({"error":"Request must be from  "+role+' or '+role2+' or '+role3+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        # Base queryset excluding closed to keep result set small
+        qs_base = EMCallAssignment.objects.exclude(status="closed")
+
+        # Scope selection based on role
+        if uo2:
+            qs = qs_base.filter(ex__state=uo2.state)
+            cache_scope = f"state:{getattr(uo2.state, 'id', uo2.state_id)}"
+        elif uo3:
+            qs = qs_base.filter(ex__state=uo3.state)
+            cache_scope = f"state:{getattr(uo3.state, 'id', uo3.state_id)}"
+        else:
+            qs = qs_base.filter(ex=uo)
+            cache_scope = f"ex:{getattr(uo, 'id', None)}"
+
+        # Attempt to reduce N+1 queries by joining common FKs used in serializers
+        try:
+            qs = qs.select_related(
+                'ex',
+                'ex__state',
+                'call',
+                'call__team',
+                'call__team__teamlead',
+            )
+        except Exception:
+            # If any relation path is invalid, skip silently to avoid breaking behavior
+            pass
+
+        # Short-lived cache to avoid repeated heavy serialization for the same scope
+        cache_key = f"DEx_getCallList:{cache_scope}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response({"calls": cached}, status=200)
+
+        # Serialize once, then branch on data length (avoid extra exists/evaluation)
+        data = EMCallAssignmentSerializer(qs, many=True).data
+
+        # Cache for a brief period (e.g., 10 seconds)
+        cache.set(cache_key, data, timeout=10)
+
+        if data:
+            return Response({"calls": data}, status=200)
+        return Response({'call': 'Not found'}, status=200)
+
+    except Exception as e:
+        return Response({'error': "Unable to process request."+str(e)}, status=400)
+
+
+
+
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

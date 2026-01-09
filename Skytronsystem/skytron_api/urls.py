@@ -179,6 +179,9 @@ urlpatterns = [
     path('device/activated_device_list/', activated_device_list, name='activated_device_list'),
 
     path('EM/DEx/getPendingCallList/', DEx_getPendingCallList, name='DEx_getPendingCallList'),
+    
+    path('EM/DEx/getCallList/', DEx_getCallList, name='DEx_getCallList'),
+    
     path('EM/DEx/getLiveCallList/', DEx_getLiveCallList, name='DEx_getLiveCallList'),
     path('EM/DEx/replyCall/', DEx_replyCall, name='DEx_replyCall'),
 
