@@ -140,7 +140,7 @@ def Process_sosEx_Data(msg,topic_parts):
                 user = user_auth_tuple[0]  # Extract the user from the authentication tuple
             except AuthenticationFailed as e:
                 error_message = f"Authentication mqtt error: {topic_parts[0]} {topic_parts[1]} {str(e)}"
-                print(error_message)
+                #print(error_message)
                 #client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": error_message}))
                 #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
                 return
@@ -148,14 +148,14 @@ def Process_sosEx_Data(msg,topic_parts):
             # Get user object and validate roles
             role = "sosexecutive"
             uo = get_user_object(user, role)
-            print("Userverified:")
+            #print("Userverified:")
 
             if not uo:
                 error_message = f"Request must be from {role}"
                 print(error_message)
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
                 return
-            print("User verified:")
+            #print("User verified:")
             # Optional role validation for specific user types
             # Uncomment if needed
             # if not (uo.user_type == 'police_ex' or uo.user_type == 'ambulance_ex'):
@@ -168,7 +168,7 @@ def Process_sosEx_Data(msg,topic_parts):
                 em_lat = float(data.get("em_lat"))
                 em_lon = float(data.get("em_lon"))
                 speed = float(data.get("speed"))
-                print("em_lat, em_lon, speed:", em_lat, em_lon, speed)
+                #print("em_lat, em_lon, speed:", em_lat, em_lon, speed)
             except (TypeError, ValueError) as ve:
                 error_message = f"Invalid location or speed data: {ve}"
                 print(error_message)
@@ -191,14 +191,14 @@ def Process_sosEx_Data(msg,topic_parts):
                     assignment_id =data.get("assignment_id")  
                     print(f"assignmentid:{assignment_id}")
 
-                    assignment =EMCallAssignment.objects.filter(id=assignment_id,ex=uo,status__in=["accepted"]).last()
+                    assignment =EMCallAssignment.objects.filter(id=assignment_id,ex=uo,status__in=["accepted"],call__status="pending").last()
                     if not assignment and assignment_id!=None:
                         client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": "Invalid assignment id"}))
                         return 0
                     else:
                         deviceloc=list(EMGPSLocation.objects.filter(device_tag= assignment.call.device).order_by('-id')[:100].values())
         
-                        ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted").last
+                        ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted",call__status="pending").last
              
                         msg=EMCallMessages.objects.filter(call=assignment.call).all()
         
