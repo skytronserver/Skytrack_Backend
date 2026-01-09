@@ -214,7 +214,7 @@ def process_em_data(data_str):
             try:
                 # Parse the timestamp (DDMMYYYYHHMMSS format)
                 timestamp_str = data_list[5]  # 24102025062501
-                print(f"[MQTT] Parsing timestamp: {timestamp_str}", flush=True)
+                #print(f"[MQTT] Parsing timestamp: {timestamp_str}", flush=True)
                 
                 if len(timestamp_str) == 14:
                     # Extract components: DD MM YYYY HH MM SS
@@ -225,7 +225,7 @@ def process_em_data(data_str):
                     minute = timestamp_str[10:12] # 25
                     second = timestamp_str[12:14] # 01
                     
-                    print(f"[MQTT] Extracted: {day}/{month}/{year} {hour}:{minute}:{second}", flush=True)
+                    #print(f"[MQTT] Extracted: {day}/{month}/{year} {hour}:{minute}:{second}", flush=True)
                     
                     # Create datetime object directly
                     gmt_datetime = datetime(
@@ -238,7 +238,7 @@ def process_em_data(data_str):
                     )
                     
                     ist_datetime = gmt_timezone.localize(gmt_datetime).astimezone(ist_timezone)
-                    print(f"[MQTT] Parsed datetime: {ist_datetime}", flush=True)
+                    #print(f"[MQTT] Parsed datetime: {ist_datetime}", flush=True)
                     
                     # Create EM location data
                     em_data = {
@@ -311,14 +311,15 @@ def process_em_data(data_str):
                         # Find device by IMEI
                         imei = data_list[3]
                         device = DeviceStock.objects.filter(imei__contains=str(imei)).last()
-                        print(f"#{imei}# -> Device: {device}", flush=True)
+                        #print(f"#{imei}# -> Device: {device}", flush=True)
                         
                         device_tag = None
                         if device:
                             device_tag = DeviceTag.objects.filter(device=device).last()
-                            print(f"Device tag found: {device_tag}", flush=True)
+                            #print(f"Device tag found: {device_tag}", flush=True)
                         else:
-                            print(f"No device found for IMEI: {imei}", flush=True)
+                            #print(f"No device found for IMEI: {imei}", flush=True)
+                            return None
                         
                         # Create EMGPSLocation directly
                         location = EMGPSLocation.objects.create(
@@ -336,7 +337,7 @@ def process_em_data(data_str):
                             distance=float(data_list[12]),    # 0.0 (course)
                             altitude=float(data_list[13]),    # 0.000
                             provider=data_list[14],           # G
-                            vehicle_reg_no=data_list[15],     # DL01AB1234
+                            vehicle_reg_no= device_tag.vehicle_reg_no,  #  data_list[15],     # DL01AB1234
                             reply_mob_no=data_list[16] if len(data_list) > 16 else '9401633421', # phone
                             device_tag=device_tag             # DeviceTag or None
                         )
@@ -734,20 +735,22 @@ def process_emergency_data(data_str, source="unknown"):
                     if data_list[0] == '$':
                         data_list = data_list[1:]
                     
-                    print(f"[{source}] EM data list:", data_list, flush=True)
+                    #print(f"[{source}] EM data list:", data_list, flush=True)
                     
                     # Use the new EM data processor instead of create_from_string
                     location = process_em_data(formatted_data)
                     
                     if location is not None:
                         # location is already saved in process_em_data
-                        print(f"[{source}] EM location processed successfully:", location, flush=True)
+                        #print(f"[{source}] EM location processed successfully:", location, flush=True)
+                        pass
                         
                         # You can add EM-specific alert processing here if needed
                         # process_em_alerts(location)
                         
                     else:
-                        print(f"[{source}] Failed to create EM location from data", flush=True)
+                        #print(f"[{source}] Failed to create EM location from data", flush=True)
+                        pass
                 else:
                     print(f"[{source}] Invalid EM data format (insufficient fields):", formatted_data, flush=True)
                     

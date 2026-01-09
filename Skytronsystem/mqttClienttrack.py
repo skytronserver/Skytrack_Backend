@@ -198,7 +198,7 @@ def Process_sosEx_Data(msg,topic_parts):
                     else:
                         deviceloc=list(EMGPSLocation.objects.filter(device_tag= assignment.call.device).order_by('-id')[:100].values())
         
-                        ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted",call__status="pending").last
+                        ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted",call__status="pending").last()
              
                         msg=EMCallMessages.objects.filter(call=assignment.call).all()
         
@@ -213,19 +213,13 @@ def Process_sosEx_Data(msg,topic_parts):
 
 
         
-
-                # Check for active broadcasts for this user type
-                ee = EMCallBroadcast.objects.filter(type=uo.user_type, status="pending")
-                print(f"Found {ee.count()} pending broadcasts for user type: {uo.user_type}")
-                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "update", "message": f"Found {ee.count()} pending broadcasts for user type: {uo.user_type}"}))
-                if ee.exists():
-                    dat = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee, many=True).data, "message": success_message}
-                    #print(f"Sending broadcast response: {dat}")
+                # Check for active broadcasts for this user type (optimized, single evaluation)
+                ee_qs = EMCallBroadcast.objects.filter(type=uo.user_type, status="pending").order_by('-id')[:10]
+                ee_list = list(ee_qs)
+                if ee_list:
+                    dat = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee_list, many=True).data, "message": success_message}
                 else:
-                    # If no pending broadcasts, send success without broadcast data
                     dat = {"status": "success", "broadcast": [], "message": success_message}
-                    print("No pending broadcasts found, sending empty broadcast array")
-                print(f"Sending broadcast response: ",topic_parts[0]+"/"+topic_parts[1]+"/server")
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(dat))
        
             else:
