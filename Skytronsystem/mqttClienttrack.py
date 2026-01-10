@@ -186,10 +186,10 @@ def Process_sosEx_Data(msg,topic_parts):
                 user.last_activity = timezone.now()
                 user.login = True
                 user.save()
-                success_message = f"Location updated successfully: {ob.id}"
+                success_message = f"Location updated successfully"
                 try:
                     assignment_id =data.get("assignment_id")  
-                    print(f"assignmentid:{assignment_id}")
+                    #print(f"assignmentid:{assignment_id}")
 
                     assignment =EMCallAssignment.objects.filter(id=assignment_id,ex=uo,status__in=["accepted"],call__status="pending").last()
                     if not assignment and assignment_id!=None:
@@ -526,7 +526,7 @@ def on_message(client, userdata, msg):
             user.last_activity = timezone.now()
             user.login = True
             user.save()
-            success_message = f"Location updated successfully: {ob.id}"
+            success_message = f"Location updated successfully"
             print(success_message)
             client.publish("field_ex/location_update_response", json.dumps({"status": "success", "message": success_message}))
         else:
