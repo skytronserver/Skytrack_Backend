@@ -81,13 +81,13 @@ def process_gps_data(data_str):
                     'pdop': float(groups[20]),   # 0.6 (GPS accuracy)
                     'hdop': float(groups[21]),   # 56.8 (HDOP)
                     'network_operator': groups[22][:20], # AIRTEL (limit length)
-                    'ignition_status': groups[27][:1],  # 1 (ignition status, limit to 1 char)
+                    'ignition_status': groups[23][:1],  # 1 (ignition status, limit to 1 char)
                     'main_power_status': groups[24][:1], # 1 (GPRS status, using as main power)
                     'main_input_voltage': float(groups[25]), # 11.6 (main power voltage)
                     'internal_battery_voltage': float(groups[26]), # 4.2 (backup battery)
-                    'emergency_status': '0',     # Default, not in new format
-                    'box_tamper_alert': 'O',     # Default Open, not in new format
-                    'gsm_signal_strength': groups[23][:10], # 1 (GSM signal strength)
+                    'emergency_status': groups[27][:1],     # Default, not in new format
+                    'box_tamper_alert': groups[28][:1],     # Default Open, not in new format
+                    'gsm_signal_strength': groups[29][:2], # 1 (GSM signal strength)
                     'mcc': groups[30][:10],           # 405 (Mobile Country Code)
                     'mnc': groups[31][:10],           # 56 (Mobile Network Code)
                     'lac': groups[32][:10],           # 1BDA (Location Area Code)
