@@ -204,7 +204,7 @@ def Process_sosEx_Data(msg,topic_parts):
                             gps_vals = list(
                                 GPSData.objects
                                 .filter(device_tag=assignment.call.device,gps_status='1')
-                                .order_by('-id')[:100]
+                                .order_by('-id')[:10]
                                 .values(
                                     'id',
                                     'packet_status',
@@ -248,11 +248,12 @@ def Process_sosEx_Data(msg,topic_parts):
                                 for g in gps_vals
                             ]
         
-                        ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted",call__status="pending").last()
+                        ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted",call__status="pending").order_by('-id')[:1]
              
                         msg=EMCallMessages.objects.filter(call=assignment.call).all()
+                        #"locationHistory":deviceloc,
                         
-                        data_to_send={"status": "success", "locationHistory":deviceloc,"broadcast":EMCallBroadcastSerializer(ee,many=False).data,"groupMSG":EMCallMessagesSerializer(msg,many=True).data,"message": success_message}
+                        data_to_send={"status": "success", "broadcast":EMCallBroadcastSerializer(list(ee),many=False).data,"groupMSG":EMCallMessagesSerializer(msg,many=True).data,"message": success_message}
         
                         client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(data_to_send))
                         print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
