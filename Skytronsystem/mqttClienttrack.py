@@ -200,7 +200,7 @@ def Process_sosEx_Data(msg,topic_parts):
                         #em_qs = list(EMGPSLocation.objects.filter(device_tag=assignment.call.device).order_by('-id')[:100].values())
                         #if em_qs:
                         #    deviceloc = em_qs
-                        if True:
+                        if False:
                             gps_vals = list(
                                 GPSData.objects
                                 .filter(device_tag=assignment.call.device,gps_status='1')
@@ -224,36 +224,36 @@ def Process_sosEx_Data(msg,topic_parts):
                                 )
                             )
                             # Map GPSData fields to EMGPSLocation-like keys to preserve frontend expectations
-                            deviceloc = [
-                                {
-                                    'id': g.get('id'),
-                                    'message_type': 'EMR', 
-                                    'packet_status': "NM",
-                                    'date': g.get('date'),
-                                    'time': g.get('time'),
-                                    'gps_validity': 'A',
-                                    'latitude': g.get('latitude'),
-                                    'latitude_direction': g.get('latitude_dir'),
-                                    'longitude': g.get('longitude'),
-                                    'longitude_direction': g.get('longitude_dir'),
-                                    'altitude': g.get('altitude'),
-                                    'speed': g.get('speed'),
-                                    'distance': '0',
-                                    'provider': g.get('network_operator'),
-                                    'vehicle_reg_no': g.get('device_tag__vehicle_reg_no'),
-                                    'reply_mob_no': '9401633421',
-                                    'device_imei': g.get('device_tag__device__imei'),
-                                    'device_tag_id': g.get('device_tag_id'),
-                                }
-                                for g in gps_vals
-                            ]
+                            #deviceloc = [
+                            #    {
+                            #        'id': g.get('id'),
+                            #        'message_type': 'EMR', 
+                            #        'packet_status': "NM",
+                            #        'date': g.get('date'),
+                            #        'time': g.get('time'),
+                            #        'gps_validity': 'A',
+                            #        'latitude': g.get('latitude'),
+                            #        'latitude_direction': g.get('latitude_dir'),
+                            #        'longitude': g.get('longitude'),
+                            #        'longitude_direction': g.get('longitude_dir'),
+                            #        'altitude': g.get('altitude'),
+                            #        'speed': g.get('speed'),
+                            #        'distance': '0',
+                            #        'provider': g.get('network_operator'),
+                            #        'vehicle_reg_no': g.get('device_tag__vehicle_reg_no'),
+                            #        'reply_mob_no': '9401633421',
+                            #        'device_imei': g.get#('device_tag__device__imei'),
+                            #        'device_tag_id': g.get('device_tag_id'),
+                            #    }
+                            #    for g in gps_vals
+                            #]
         
                         ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted",call__status="pending").order_by('-id')[:1]
              
                         msg=EMCallMessages.objects.filter(call=assignment.call).all()
                         #"locationHistory":deviceloc,
                         
-                        data_to_send={"status": "success", "broadcast":EMCallBroadcastSerializer(list(ee),many=False).data,"groupMSG":EMCallMessagesSerializer(msg,many=True).data,"message": success_message}
+                        data_to_send={"status": "success", "broadcast":EMCallBroadcastSerializer(ee, many=True).data, "groupMSG":EMCallMessagesSerializer(msg, many=True).data, "message": success_message}
         
                         client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(data_to_send))
                         print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
