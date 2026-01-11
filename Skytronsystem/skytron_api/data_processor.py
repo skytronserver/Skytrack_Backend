@@ -680,8 +680,8 @@ def process_device_tracking_data(data_str, source="unknown"):
                             # Process alerts
                             process_alerts(gps_data, gps_record.id)
                             
-                            print(f"[{source}] GPS data processed:", formatted_data, flush=True)
-                            print(f"[{source}] GPS record created:", gps_data, flush=True)
+                            #print(f"[{source}] GPS data processed:", formatted_data, flush=True)
+                            #print(f"[{source}] GPS record created:", gps_data, flush=True)
                         else:
                             print(f"[{source}] No device tag found for device: {device}", flush=True)
                     else:

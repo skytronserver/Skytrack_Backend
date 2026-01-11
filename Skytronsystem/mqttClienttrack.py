@@ -136,7 +136,7 @@ def Process_sosEx_Data(msg,topic_parts):
                 
                 
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status":"update", "message": "user found"}))
-                print("user found")
+                #print("user found")
                 user = user_auth_tuple[0]  # Extract the user from the authentication tuple
             except AuthenticationFailed as e:
                 error_message = f"Authentication mqtt error: {topic_parts[0]} {topic_parts[1]} {str(e)}"
@@ -147,8 +147,7 @@ def Process_sosEx_Data(msg,topic_parts):
 
             # Get user object and validate roles
             role = "sosexecutive"
-            uo = get_user_object(user, role)
-            #print("Userverified:")
+            uo = get_user_object(user, role) 
 
             if not uo:
                 error_message = f"Request must be from {role}"
@@ -168,7 +167,7 @@ def Process_sosEx_Data(msg,topic_parts):
                 em_lat = float(data.get("em_lat"))
                 em_lon = float(data.get("em_lon"))
                 speed = float(data.get("speed"))
-                #print("em_lat, em_lon, speed:", em_lat, em_lon, speed)
+                print("em_lat, em_lon, speed:", em_lat, em_lon, speed)
             except (TypeError, ValueError) as ve:
                 error_message = f"Invalid location or speed data: {ve}"
                 print(error_message)
@@ -190,12 +189,12 @@ def Process_sosEx_Data(msg,topic_parts):
                 assignment_id=None
                 try:
                     assignment_id =data.get("assignment_id")  
-                    #print(f"assignmentid:{assignment_id}")
+                    print(f"assignmentid:{assignment_id}")
 
                     assignment =EMCallAssignment.objects.filter(id=assignment_id,ex=uo,status__in=["accepted"],call__status="pending").last()
                     if not assignment and assignment_id!=None:
                         client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": "Invalid assignment id"}))
-                        return 0
+                        return 
                     else:
                         # Prefer EMGPSLocation, but fall back to GPSData with a compatible shape
                         #em_qs = list(EMGPSLocation.objects.filter(device_tag=assignment.call.device).order_by('-id')[:100].values())
@@ -252,12 +251,35 @@ def Process_sosEx_Data(msg,topic_parts):
                         ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted",call__status="pending").last()
              
                         msg=EMCallMessages.objects.filter(call=assignment.call).all()
+                        
+                        data_to_send={"status": "success", "locationHistory":deviceloc,"broadcast":EMCallBroadcastSerializer(ee,many=False).data,"groupMSG":EMCallMessagesSerializer(msg,many=True).data,"message": success_message}
         
-                        client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "success", "locationHistory":deviceloc,"broadcast":EMCallBroadcastSerializer(ee,many=False).data,"groupMSG":EMCallMessagesSerializer(msg,many=True).data,"message": success_message}))
-                        print(f"Sending broadcast response: ")
-                        return 0
+                        client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(data_to_send))
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print(f"{data_to_send}")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                         
+                        return 
                 except Exception as e:
-                    pass #client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message":"  "+str(e)}))
+                    if assignment_id!=None:
+                        print(f"assignmentid error:{assignment_id} ")
+                        client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "update","logseq": "2", "message":"  "+str(e)}))
                     
                      
 
@@ -267,19 +289,20 @@ def Process_sosEx_Data(msg,topic_parts):
                 # Check for active broadcasts for this user type (optimized, single evaluation)
                 ee_qs = EMCallBroadcast.objects.filter(type=uo.user_type, status="pending").order_by('-id')[:1]
                 ee_list = list(ee_qs)
-                if ee_list and assignment_id is None and len(ee_list)>0:
+                print("pendning broadcast list :",ee_list)
+                if ee_list :
                     dat = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee_list, many=True).data, "message": success_message}
-                    return 0
+                    
                 else:
                     dat = {"status": "success", "broadcast": [], "message": success_message}
-                    client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(dat))
-                    return 0
-                return 0
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(dat)) 
+                return 
        
             else:
                 error_message = "Location not updated. Value error."
                 print(error_message)
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
+                return 
         
         else:
  
@@ -497,14 +520,14 @@ def on_message(client, userdata, msg):
             return
         if len(topic_parts) == 2 and topic_parts[0] == 'deviceTracking':
             user_id = topic_parts[1]
-            print(f"Message received for user ID: {user_id}")
-            print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
+            #print(f"Message received for user ID: {user_id}")
+            #print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
             #print(f"Message received payload: {msg.payload.decode()}")
             Process_Device_Data(msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'deviceEM':
             user_id = topic_parts[1]
-            print(f"Message received for user ID: {user_id}")
-            print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
+            #print(f"Message received for user ID: {user_id}")
+            #print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
             #print(f"Message received payload: {msg.payload.decode()}")
             Process_EM_Data(msg)
         elif len(topic_parts) >= 2 and topic_parts[0] == 'sosEx':
