@@ -6166,9 +6166,56 @@ def  DEx_getloc(request ):
         assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status__in=["accepted"]).last()
         if not assignment:
             return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
-        #device loc histry
-       
-        deviceloc=list(EMGPSLocation.objects.filter(device_tag= assignment.call.device).order_by('-id')[:1].values())
+        # device loc history with fallback to GPSData while preserving structure
+        #em_qs = list(EMGPSLocation.objects.filter(device_tag=assignment.call.device).order_by('-id')[:1].values())
+        #if em_qs:
+        #    deviceloc = em_qs
+        if True:#else:
+            gps_vals = list(
+                GPSData.objects
+                .filter(device_tag=assignment.call.device, gps_status='1')
+                .order_by('-id')[:1]
+                .values(
+                    'id',
+                    'packet_status',
+                    'date',
+                    'time',
+                    'latitude',
+                    'latitude_dir',
+                    'longitude',
+                    'longitude_dir',
+                    'altitude',
+                    'speed',
+                    'gps_status',
+                    'network_operator',
+                    'device_tag_id',
+                    'device_tag__vehicle_reg_no',
+                    'device_tag__device__imei'
+                )
+            )
+            deviceloc = [
+                {
+                    'id': g.get('id'),
+                    'message_type': 'EMR',
+                    'packet_status':  'NM',
+                    'date': g.get('date'),
+                    'time': g.get('time'),
+                    'gps_validity':   'A',
+                    'latitude': g.get('latitude'),
+                    'latitude_direction': g.get('latitude_dir'),
+                    'longitude': g.get('longitude'),
+                    'longitude_direction': g.get('longitude_dir'),
+                    'altitude': g.get('altitude'),
+                    'speed': g.get('speed'),
+                    'distance': '0',
+                    'provider': g.get('network_operator'),
+                    'vehicle_reg_no': g.get('device_tag__vehicle_reg_no'),
+                    'reply_mob_no': '9401633421',
+                    'device_imei': g.get('device_tag__device__imei'),
+                    'device_tag_id': g.get('device_tag_id'),
+                }
+                for g in gps_vals
+            ]
         fieldEx=[]
          
         assignments =EMCallAssignment.objects.filter(call=assignment.call ).all()

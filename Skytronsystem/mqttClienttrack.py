@@ -187,6 +187,7 @@ def Process_sosEx_Data(msg,topic_parts):
                 user.login = True
                 user.save()
                 success_message = f"Location updated successfully"
+                assignment_id=None
                 try:
                     assignment_id =data.get("assignment_id")  
                     #print(f"assignmentid:{assignment_id}")
@@ -196,7 +197,57 @@ def Process_sosEx_Data(msg,topic_parts):
                         client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": "Invalid assignment id"}))
                         return 0
                     else:
-                        deviceloc=list(EMGPSLocation.objects.filter(device_tag= assignment.call.device).order_by('-id')[:100].values())
+                        # Prefer EMGPSLocation, but fall back to GPSData with a compatible shape
+                        #em_qs = list(EMGPSLocation.objects.filter(device_tag=assignment.call.device).order_by('-id')[:100].values())
+                        #if em_qs:
+                        #    deviceloc = em_qs
+                        if True:
+                            gps_vals = list(
+                                GPSData.objects
+                                .filter(device_tag=assignment.call.device,gps_status='1')
+                                .order_by('-id')[:100]
+                                .values(
+                                    'id',
+                                    'packet_status',
+                                    'date',
+                                    'time',
+                                    'latitude',
+                                    'latitude_dir',
+                                    'longitude',
+                                    'longitude_dir',
+                                    'altitude',
+                                    'speed',
+                                    'gps_status',
+                                    'network_operator',
+                                    'device_tag_id',
+                                    'device_tag__vehicle_reg_no',
+                                    'device_tag__device__imei'
+                                )
+                            )
+                            # Map GPSData fields to EMGPSLocation-like keys to preserve frontend expectations
+                            deviceloc = [
+                                {
+                                    'id': g.get('id'),
+                                    'message_type': 'EMR', 
+                                    'packet_status': "NM",
+                                    'date': g.get('date'),
+                                    'time': g.get('time'),
+                                    'gps_validity': 'A',
+                                    'latitude': g.get('latitude'),
+                                    'latitude_direction': g.get('latitude_dir'),
+                                    'longitude': g.get('longitude'),
+                                    'longitude_direction': g.get('longitude_dir'),
+                                    'altitude': g.get('altitude'),
+                                    'speed': g.get('speed'),
+                                    'distance': '0',
+                                    'provider': g.get('network_operator'),
+                                    'vehicle_reg_no': g.get('device_tag__vehicle_reg_no'),
+                                    'reply_mob_no': '9401633421',
+                                    'device_imei': g.get('device_tag__device__imei'),
+                                    'device_tag_id': g.get('device_tag_id'),
+                                }
+                                for g in gps_vals
+                            ]
         
                         ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted",call__status="pending").last()
              
@@ -214,13 +265,16 @@ def Process_sosEx_Data(msg,topic_parts):
 
         
                 # Check for active broadcasts for this user type (optimized, single evaluation)
-                ee_qs = EMCallBroadcast.objects.filter(type=uo.user_type, status="pending").order_by('-id')[:10]
+                ee_qs = EMCallBroadcast.objects.filter(type=uo.user_type, status="pending").order_by('-id')[:1]
                 ee_list = list(ee_qs)
-                if ee_list:
+                if ee_list and assignment_id is None and len(ee_list)>0:
                     dat = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee_list, many=True).data, "message": success_message}
+                    return 0
                 else:
                     dat = {"status": "success", "broadcast": [], "message": success_message}
-                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(dat))
+                    client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(dat))
+                    return 0
+                return 0
        
             else:
                 error_message = "Location not updated. Value error."
