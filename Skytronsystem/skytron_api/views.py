@@ -11625,6 +11625,95 @@ def SOS_TLreport(request ):
         return Response({'error': "Unable to process request."+str(e)}, status=400)
 
 
+@api_view(['get'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
+def SOS_TLreport2(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
+    try: 
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+        role="sosexecutive" 
+        user=request.user
+        profile=get_user_object(user,role)
+        if not profile:
+            return Response({"error":"Request must be from  teamlead"}, status=status.HTTP_400_BAD_REQUEST)
+        print(profile.user_type)
+        if 'teamlead' not in profile.user_type:#, 'desk_ex',
+            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    
+        #print('profile',profile.state.state)
+   
+        
+
+        # Create a dictionary to hold the filter parameters
+        filters = {}
+        # Add ID filter if provided
+
+
+        if profile:
+            team=EMTeams.objects.filter(teamlead=profile,status="Active").last()
+            a=0
+            b=0
+            if team:
+                a=team.members.count()
+                b=team.members.count()
+            # AlertsLog statistics (total + by type/status for the teamlead's state)
+            from django.db.models import Count
+            alerts_qs = AlertsLog.objects.filter(state=profile.state)
+            total_alertslog = alerts_qs.count()
+            alerts_breakdown = list(
+                alerts_qs.values('type', 'status').annotate(count=Count('id')).order_by('type', 'status')
+            )
+            count_dict = {
+ 
+                 
+                'Total_DeskExecutives':a, 
+                'Live_DeskExecutives':b,
+
+                'Total_AlertsLog': total_alertslog,
+                'AlertsLog_ByTypeStatus': alerts_breakdown,
+
+                'Total_Incoming_Calls':EMCall.objects.filter(team__teamlead=profile,team__state=profile.state).count(),
+                'Total_Incoming_Calls_thismonth':EMCall.objects.filter(team__teamlead=profile,team__state=profile.state).count(),
+                'Total_Incoming_Calls_thisweek':EMCall.objects.filter(team__teamlead=profile,team__state=profile.state).count(),
+                'Total_Incoming_Calls_today':EMCall.objects.filter(team__teamlead=profile,team__state=profile.state).count(),
+
+                'Total_Closed_Calls':EMCall.objects.filter(team__teamlead=profile,status="closed",team__state=profile.state).count(),
+                'Total_Closed_Calls_thismonth':EMCall.objects.filter(team__teamlead=profile,status="closed",team__state=profile.state).count(),
+                'Total_Closed_Calls_thisweek':EMCall.objects.filter(team__teamlead=profile,status="closed",team__state=profile.state).count(),
+                'Total_Closed_Calls_today':EMCall.objects.filter(team__teamlead=profile,status="closed",team__state=profile.state).count(),
+
+                'Total_Fake_Calls':EMCall.objects.filter(team__teamlead=profile,status="closed_false_allert",team__state=profile.state).count(),
+                'Total_Fake_Calls_thismonth':EMCall.objects.filter(team__teamlead=profile,status="closed_false_allert",team__state=profile.state).count(),
+                'Total_Fake_Calls_thisweek':EMCall.objects.filter(team__teamlead=profile,status="closed_false_allert",team__state=profile.state).count(),
+                'Total_Fake_Calls_today':EMCall.objects.filter(team__teamlead=profile,status="closed_false_allert",team__state=profile.state).count(),
+
+
+                'Total_Active_Calls':EMCall.objects.filter(team__teamlead=profile,team__state=profile.state,status__in=["desk_ex_assigned","broadcast_pending", "field_ex_aproaching" , "field_ex_arrived"]).count(),  
+                'Total_Pending_Calls':EMCall.objects.filter(team__teamlead=profile,status="pending",team__state=profile.state).count(),
+
+                'Total_Rejected_Assignemnt':EMCallAssignment.objects.filter(status="rejected",call__team__teamlead=profile).count(),
+                'Total_Rejected_Assignemn_thistmonth':EMCallAssignment.objects.filter(status="rejected",call__team__teamlead=profile).count(),
+                'Total_Rejected_Assignemn_thisweek':EMCallAssignment.objects.filter(status="rejected",call__team__teamlead=profile).count(),
+                'Total_Rejected_Assignemn_today':EMCallAssignment.objects.filter(status="rejected",call__team__teamlead=profile).count(),
+
+                'Average_time_to_Accept':EMCallAssignment.objects.filter(status="accepted",call__team__teamlead=profile).count(),
+
+             
+            }
+            # Return the serialized data as JSON response
+            return Response(count_dict)
+        else:
+            return Response({'error': "Unauthorised user"}, status=400)
+
+    except Exception as e:
+        return Response({'error': "Unable to process request."+str(e)}, status=400)
+
 
 @api_view(['get'])
 @permission_classes([IsAuthenticated])

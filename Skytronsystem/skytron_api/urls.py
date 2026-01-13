@@ -153,6 +153,8 @@ urlpatterns = [
     path('SOS/SOS_Admin_report/', SOS_adminreport, name='SOS_adminreport'),
     path('SOS/SOS_TL_report/', SOS_TLreport, name='SOS_TLreport'),
     path('SOS/SOS_EX_report/', SOS_EXreport, name='SOS_EXreport'),
+    
+    path('SOS/SOS_TL_report2/', SOS_TLreport2, name='SOS_TLreport'),
 
     
     path('homepageandstat/homepage_user1/', homepage_user1, name='homepage_user1'),
