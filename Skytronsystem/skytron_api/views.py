@@ -29,6 +29,319 @@ from django.db.models import FloatField
 from django.db.models.functions import Cast
 import math
 
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper
+from django.db.models.functions import TruncMonth
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def sos_monthly_metrics(request):
+    """
+    Unauthenticated API providing month-wise SOS metrics for a given year.
+
+    Output includes per-month:
+    - total SOS calls
+    - genuine SOS calls (status != 'closed_false_alert')
+    - fake SOS calls (status == 'closed_false_alert')
+    - average response time of police (arrived_time - accept_time for assignments type in ['police_ex','pcr'])
+    - average response time of ambulance (arrived_time - accept_time for assignments type in ['ambulance_ex','acr'])
+    - average acceptance time of desk executives (accept_time - start_time for assignments type == 'desk_ex')
+
+    Optional query param: year (defaults to current year)
+    """
+    from .models import EMCall, EMCallAssignment
+    try:
+        year = int(request.GET.get('year', timezone.now().year))
+    except ValueError:
+        return Response({'error': 'Invalid year parameter'}, status=400)
+
+    tz = timezone.get_current_timezone()
+    start_dt = timezone.make_aware(datetime(year, 1, 1), tz)
+    end_dt = timezone.make_aware(datetime(year + 1, 1, 1), tz)
+
+    months_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    # Base response structure
+    data = {
+        'year': year,
+        'months': months_order,
+        'calls': {
+            'total': [0] * 12,
+            'genuine': [0] * 12,
+            'fake': [0] * 12,
+        },
+        'performance': {
+            'police_avg_seconds': [None] * 12,
+            'ambulance_avg_seconds': [None] * 12,
+            'executive_accept_avg_seconds': [None] * 12,
+        }
+    }
+
+    # --- Counts: total, genuine, fake ---
+    calls_qs = EMCall.objects.filter(start_time__gte=start_dt, start_time__lt=end_dt)
+
+    totals = (
+        calls_qs
+        .annotate(month=TruncMonth('start_time'))
+        .values('month')
+        .annotate(total=Count('id'))
+        .order_by('month')
+    )
+    for row in totals:
+        idx = row['month'].month - 1
+        data['calls']['total'][idx] = row['total']
+
+    fake = (
+        calls_qs.filter(status='closed_false_alert')
+        .annotate(month=TruncMonth('start_time'))
+        .values('month')
+        .annotate(count=Count('id'))
+        .order_by('month')
+    )
+    for row in fake:
+        idx = row['month'].month - 1
+        data['calls']['fake'][idx] = row['count']
+
+    # Genuine = total - fake (simple heuristic based on status)
+    for i in range(12):
+        data['calls']['genuine'][i] = max(0, data['calls']['total'][i] - data['calls']['fake'][i])
+
+    # --- Performance: average durations ---
+    # Helper to aggregate average duration per month
+    def assign_avg_duration(queryset, diff_expr_field, month_by='call__start_time'):
+        return (
+            queryset
+            .exclude(**{diff_expr_field.split(' - ')[0] + '__isnull': True})
+            .exclude(**{diff_expr_field.split(' - ')[2] + '__isnull': True})
+            .annotate(
+                month=TruncMonth(month_by),
+                diff=ExpressionWrapper(
+                    F(diff_expr_field.split(' - ')[2]) - F(diff_expr_field.split(' - ')[0]),
+                    output_field=DurationField()
+                )
+            )
+            .values('month')
+            .annotate(avg=Avg('diff'))
+            .order_by('month')
+        )
+
+    # Police: arrived_time - accept_time, types in police family
+    police_qs = EMCallAssignment.objects.filter(
+        call__start_time__gte=start_dt,
+        call__start_time__lt=end_dt,
+        type__in=['police_ex', 'pcr']
+    )
+    police_avgs = (
+        police_qs
+        .exclude(accept_time__isnull=True)
+        .exclude(arrived_time__isnull=True)
+        .annotate(
+            month=TruncMonth('call__start_time'),
+            diff=ExpressionWrapper(F('arrived_time') - F('accept_time'), output_field=DurationField())
+        )
+        .values('month')
+        .annotate(avg=Avg('diff'))
+        .order_by('month')
+    )
+    for row in police_avgs:
+        idx = row['month'].month - 1
+        avg_seconds = row['avg'].total_seconds() if row['avg'] else None
+        data['performance']['police_avg_seconds'][idx] = avg_seconds
+
+    # Ambulance: arrived_time - accept_time, types in ambulance family
+    ambulance_qs = EMCallAssignment.objects.filter(
+        call__start_time__gte=start_dt,
+        call__start_time__lt=end_dt,
+        type__in=['ambulance_ex', 'acr']
+    )
+    ambulance_avgs = (
+        ambulance_qs
+        .exclude(accept_time__isnull=True)
+        .exclude(arrived_time__isnull=True)
+        .annotate(
+            month=TruncMonth('call__start_time'),
+            diff=ExpressionWrapper(F('arrived_time') - F('accept_time'), output_field=DurationField())
+        )
+        .values('month')
+        .annotate(avg=Avg('diff'))
+        .order_by('month')
+    )
+    for row in ambulance_avgs:
+        idx = row['month'].month - 1
+        avg_seconds = row['avg'].total_seconds() if row['avg'] else None
+        data['performance']['ambulance_avg_seconds'][idx] = avg_seconds
+
+    # Executives (desk): accept_time - start_time
+    desk_qs = EMCallAssignment.objects.filter(
+        call__start_time__gte=start_dt,
+        call__start_time__lt=end_dt,
+        type='desk_ex'
+    )
+    desk_avgs = (
+        desk_qs
+        .exclude(accept_time__isnull=True)
+        .exclude(start_time__isnull=True)
+        .annotate(
+            month=TruncMonth('call__start_time'),
+            diff=ExpressionWrapper(F('accept_time') - F('start_time'), output_field=DurationField())
+        )
+        .values('month')
+        .annotate(avg=Avg('diff'))
+        .order_by('month')
+    )
+    for row in desk_avgs:
+        idx = row['month'].month - 1
+        avg_seconds = row['avg'].total_seconds() if row['avg'] else None
+        data['performance']['executive_accept_avg_seconds'][idx] = avg_seconds
+
+    return Response(data)
+
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def ambulance_fleet_metrics(request):
+    """Alias of ambulace_fleet_metrics (typo-safe)."""
+    return ambulace_fleet_metrics(request)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def ambulace_fleet_metrics(request):
+    """
+    Unauthenticated Ambulance fleet metrics.
+    - total_executives: count of `EM_ex` with ambulance roles
+    - online_executives: unique `field_ex` seen in `EMUserLocation` in last 1 minute
+    - offline_executives: total - online
+    - standby_executives: total - online - total_emergency_calls_live
+    - total_emergency_calls_live: distinct live calls with an 'accepted' ambulance broadcast
+    """
+    from .models import EM_ex, EMCall, EMCallBroadcast, EMUserLocation
+    now = timezone.now()
+    window_start = now - timedelta(minutes=1)
+
+    ambulance_ex_types = ['ambulance_ex', 'ACR']  # EM_ex.user_type values (note ACR is uppercase in model)
+    ambulance_broadcast_types = ['ambulance_ex', 'acr']  # EMCallBroadcast.type values
+    open_statuses = [
+        'pending', 'desk_ex_assigned', 'broadcast_pending', 'field_ex_aproaching', 'field_ex_arrived'
+    ]
+
+    total_execs = EM_ex.objects.filter(user_type__in=ambulance_ex_types).count()
+
+    # Online executives: unique field_ex with a location update in last 1 minute, filtered to ambulance types
+    online = (
+        EMUserLocation.objects
+        .filter(time__gte=window_start)
+        .exclude(field_ex__isnull=True)
+        .filter(field_ex__user_type__in=ambulance_ex_types)
+        .values_list('field_ex_id', flat=True)
+        .distinct()
+        .count()
+    )
+
+    live_calls = (
+        EMCallBroadcast.objects
+        .filter(type__in=ambulance_broadcast_types, status='accepted', call__status__in=open_statuses)
+        .values('call_id').distinct().count()
+    )
+
+    offline = max(0, total_execs - online)
+    standby = max(0,  online - live_calls)
+
+    return Response({
+        'total_executives': total_execs,
+        'online_executives': online,
+        'offline_executives': offline,
+        'standby_executives': standby,
+        'total_emergency_calls_live': live_calls,
+    })
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def police_fleet_metrics(request):
+    """
+    Unauthenticated Police fleet metrics.
+    - total_executives: count of `EM_ex` with police roles
+    - online_executives: unique `field_ex` seen in `EMUserLocation` in last 1 minute
+    - offline_executives: total - online
+    - standby_executives: total - online - total_emergency_calls_live
+    - total_emergency_calls_live: distinct live calls with an 'accepted' police broadcast
+    """
+    from .models import EM_ex, EMCallBroadcast, EMUserLocation
+    now = timezone.now()
+    window_start = now - timedelta(minutes=1)
+
+    police_ex_types = ['police_ex', 'PCR']  # EM_ex.user_type values (PCR uppercase per model)
+    police_broadcast_types = ['police_ex', 'pcr']  # EMCallBroadcast.type values
+    open_statuses = [
+        'pending', 'desk_ex_assigned', 'broadcast_pending', 'field_ex_aproaching', 'field_ex_arrived'
+    ]
+
+    total_execs = EM_ex.objects.filter(user_type__in=police_ex_types).count()
+
+    # Online executives: unique field_ex with a location update in last 1 minute, filtered to police types
+    online = (
+        EMUserLocation.objects
+        .filter(time__gte=window_start)
+        .exclude(field_ex__isnull=True)
+        .filter(field_ex__user_type__in=police_ex_types)
+        .values_list('field_ex_id', flat=True)
+        .distinct()
+        .count()
+    )
+
+    live_calls = (
+        EMCallBroadcast.objects
+        .filter(type__in=police_broadcast_types, status='accepted', call__status__in=open_statuses)
+        .values('call_id').distinct().count()
+    )
+
+    offline = max(0, total_execs - online)
+    standby = max(0, online - live_calls)
+
+    return Response({
+        'total_executives': total_execs,
+        'online_executives': online,
+        'offline_executives': offline,
+        'standby_executives': standby,
+        'total_emergency_calls_live': live_calls,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def vehicle_status_metrics(request):
+    """
+    Unauthenticated API: totals for registered vehicles, online, offline, and live SOS.
+
+    - total: count of DeviceTag
+    - online: distinct DeviceTag with GPSData entries in last 15 minutes
+    - offline: total - online
+    - live_sos: count of EMCall where status == 'pending'
+    """
+    from .models import DeviceTag, GPSData, EMCall
+    now = timezone.now()
+    window_start = now - timedelta(minutes=15)
+
+    total = DeviceTag.objects.count()
+    online = (
+        GPSData.objects
+        .filter(entry_time__gte=window_start)
+        .exclude(device_tag__isnull=True)
+        .values_list('device_tag_id', flat=True)
+        .distinct()
+        .count()
+    )
+    offline = max(0, total - online)
+    live_sos = EMCall.objects.filter(status='pending').count()
+
+    return Response({
+        'total_registered_vehicles': total,
+        'online_vehicles': online,
+        'offline_vehicles': offline,
+        'live_sos_calls': live_sos,
+        'window_minutes': 15,
+    })
+
 
 
 

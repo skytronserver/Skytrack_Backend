@@ -31,6 +31,17 @@ urlpatterns = [
     path('geocode/', geocode_poi, name='geocode_poi'),
     path('reverse_geocode/', reverse_geocode_poi, name='reverse_geocode_poi'),
 
+    # SOS monthly metrics (unauthenticated)
+    path('SOS/monthly_metrics/', sos_monthly_metrics, name='sos_monthly_metrics'),
+
+    # Fleet metrics (unauthenticated)
+    path('ambulance_fleet_metrics/', ambulace_fleet_metrics, name='ambulance_fleet_metrics'),
+    path('ambulance_fleet_metrics222/', ambulance_fleet_metrics, name='ambulance_fleet_metrics'),
+    path('police_fleet_metrics/', police_fleet_metrics, name='police_fleet_metrics'),
+
+    # Vehicle status metrics (unauthenticated)
+    path('vehicle_status_metrics/', vehicle_status_metrics, name='vehicle_status_metrics'),
+
     path('set_login_settings/', set_login_settings, name='set_login_settings'),
     path('get_login_settings/', get_login_settings, name='get_login_settings'),
     path('get_settings/', get_settings, name='settings'),
