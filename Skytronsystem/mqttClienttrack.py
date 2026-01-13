@@ -13,6 +13,7 @@ from skytron_api.models import * #EMCallAssignment, EMCallBroadcast, EMCallMessa
 
 from skytron_api.serializers import * #EMCallBroadcastSerializer, EMCallMessagesSerializer
 import threading
+import time
 
 from django.utils import timezone
 from skytron_api.models import EMUserLocation
@@ -88,6 +89,15 @@ def on_connect(client, userdata, flags, rc):
         client.subscribe("#") 
     else:
         print(f"Connection failed with code {rc}")
+
+# Lightweight execution time logger
+def log_exec_time(name, func, *args, **kwargs):
+    start = time.perf_counter()
+    try:
+        return func(*args, **kwargs)
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        print(f"[MQTT][Perf] {name} took {duration_ms:.2f} ms", flush=True)
 
 def Process_sosEx_Data(msg,topic_parts): 
     try:
@@ -256,25 +266,8 @@ def Process_sosEx_Data(msg,topic_parts):
                         data_to_send={"status": "success", "broadcast":EMCallBroadcastSerializer(ee, many=True).data, "groupMSG":EMCallMessagesSerializer(msg, many=True).data, "message": success_message}
         
                         client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(data_to_send))
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print(f"{data_to_send}")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-                        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+                        
+                        print("sending accepted call data ----","UserObject:",uo,"pendning broadcast list :",ee)
                          
                         return 
                 except Exception as e:
@@ -290,13 +283,14 @@ def Process_sosEx_Data(msg,topic_parts):
                 # Check for active broadcasts for this user type (optimized, single evaluation)
                 ee_qs = EMCallBroadcast.objects.filter(type=uo.user_type, status="pending").order_by('-id')[:1]
                 ee_list = list(ee_qs)
-                print("pendning broadcast list :",ee_list)
+                
                 if ee_list :
                     dat = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee_list, many=True).data, "message": success_message}
                     
                 else:
                     dat = {"status": "success", "broadcast": [], "message": success_message}
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(dat)) 
+                print("sending pending broadcast list----","UserObject:",uo,"pendning broadcast list :",ee_list)
                 return 
        
             else:
@@ -524,21 +518,21 @@ def on_message(client, userdata, msg):
             #print(f"Message received for user ID: {user_id}")
             #print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
             #print(f"Message received payload: {msg.payload.decode()}")
-            Process_Device_Data(msg)
+            log_exec_time("Process_Device_Data", Process_Device_Data, msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'deviceEM':
             user_id = topic_parts[1]
             #print(f"Message received for user ID: {user_id}")
             #print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
             #print(f"Message received payload: {msg.payload.decode()}")
-            Process_EM_Data(msg)
+            log_exec_time("Process_EM_Data", Process_EM_Data, msg)
         elif len(topic_parts) >= 2 and topic_parts[0] == 'sosEx':
             #print("message payload decode" ,msg.payload.decode())
-            Process_sosEx_Data(msg,topic_parts)
+            log_exec_time("Process_sosEx_Data", Process_sosEx_Data, msg, topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'owner':
-            Process_owner_Data(msg,topic_parts)
+            log_exec_time("Process_owner_Data", Process_owner_Data, msg, topic_parts)
 
         elif len(topic_parts) == 2 and topic_parts[0] == 'dtorto':
-            Process_dtorto_Data(msg,topic_parts)
+            log_exec_time("Process_dtorto_Data", Process_dtorto_Data, msg, topic_parts)
  
         elif len(topic_parts) == 2 and topic_parts[0] == 'deviceResponse':
             return
