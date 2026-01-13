@@ -266,8 +266,20 @@ def Process_sosEx_Data(msg,topic_parts):
                         data_to_send={"status": "success", "broadcast":EMCallBroadcastSerializer(ee, many=True).data, "groupMSG":EMCallMessagesSerializer(msg, many=True).data, "message": success_message}
         
                         client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(data_to_send))
-                        
-                        print("sending accepted call data ----","UserObject:",uo,"pendning broadcast list :",ee)
+
+                        lat = None
+                        lon = None
+                        try:
+                            b = data_to_send.get("broadcast") or []
+                            if b:
+                                dloc = b[0].get("call", {}).get("device", {}).get("deviceloc") or []
+                                if dloc:
+                                    lat = dloc[0].get("latitude")
+                                    lon = dloc[0].get("longitude")
+                        except Exception:
+                            pass
+
+                        print("sending accepted call data ----","UserObject:",uo,"pendning broadcast list :",ee,"first_device_lat_lon:",lat,lon)
                          
                         return 
                 except Exception as e:
