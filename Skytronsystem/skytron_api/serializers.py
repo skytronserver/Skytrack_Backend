@@ -665,8 +665,79 @@ class DeviceTagSerializer2(SanitizingModelSerializer):
         exclude = ['otp', 'otp_time']
 
     def get_deviceloc(self, obj):
-        locations = EMGPSLocation.objects.filter(device_tag=obj.id).order_by('-id')[:10]
-        return EMGPSLocationSerializer11(locations, many=True).data
+        def _format_date(date_value):
+            """Convert GPSData.date into EMGPSLocationSerializer11-like 'YYYY-MM-DD' string when possible."""
+            if not date_value:
+                return None
+            s = str(date_value).strip()
+            if len(s) != 8 or not s.isdigit():
+                return s
+            # Heuristic: YYYYMMDD if starts with plausible year, else DDMMYYYY
+            try:
+                year = int(s[:4])
+                if 2000 <= year <= 2100:
+                    return f"{s[0:4]}-{s[4:6]}-{s[6:8]}"
+                return f"{s[4:8]}-{s[2:4]}-{s[0:2]}"
+            except Exception:
+                return s
+
+        def _format_time(time_value):
+            """Convert GPSData.time into EMGPSLocationSerializer11-like 'HH:MM:SS' string when possible."""
+            if not time_value:
+                return None
+            s = str(time_value).strip()
+            if len(s) != 6 or not s.isdigit():
+                return s
+            return f"{s[0:2]}:{s[2:4]}:{s[4:6]}"
+
+        gps_vals = list(
+            GPSData.objects
+            .filter(device_tag=obj.id, gps_status='1')
+            .order_by('-id')[:10]
+            .values(
+                'id',
+                'date',
+                'time',
+                'latitude',
+                'latitude_dir',
+                'longitude',
+                'longitude_dir',
+                'altitude',
+                'speed',
+                'network_operator',
+                'device_tag_id',
+            )
+        )
+
+        device_imei = None
+        try:
+            device_imei = obj.device.imei if getattr(obj, 'device', None) else None
+        except Exception:
+            device_imei = None
+
+        return [
+            {
+                'id': g.get('id'),
+                'message_type': 'EMR',
+                'device_imei': device_imei,
+                'packet_status': 'NM',
+                'date': _format_date(g.get('date')),
+                'time': _format_time(g.get('time')),
+                'gps_validity': 'A',
+                'latitude': g.get('latitude'),
+                'latitude_direction': g.get('latitude_dir'),
+                'longitude': g.get('longitude'),
+                'longitude_direction': g.get('longitude_dir'),
+                'altitude': g.get('altitude'),
+                'speed': g.get('speed'),
+                'distance': 0,
+                'provider': g.get('network_operator'),
+                'vehicle_reg_no': getattr(obj, 'vehicle_reg_no', None),
+                'reply_mob_no': '9401633421',
+                'device_tag': g.get('device_tag_id') or obj.id,
+            }
+            for g in gps_vals
+        ]
 
 
 

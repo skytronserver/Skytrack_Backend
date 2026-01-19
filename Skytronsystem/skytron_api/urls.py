@@ -161,7 +161,8 @@ urlpatterns = [
     path('homepageandstat/homepage_esimProvider/', homepage_esimProvider, name='homepage_esimProvider'),
     
     path('homepageandstat/homepage/', homepage, name='homepage'),
-    path('SOS/SOS_Admin_report/', SOS_adminreport, name='SOS_adminreport'),
+    path('SOS/SOS_Admin_report/', SOS_adminreport2, name='SOS_adminreport'),
+    path('SOS/SOS_Admin_report2/', SOS_adminreport, name='SOS_adminreport'),
     path('SOS/SOS_TL_report/', SOS_TLreport, name='SOS_TLreport'),
     path('SOS/SOS_EX_report/', SOS_EXreport, name='SOS_EXreport'),
     
@@ -192,6 +193,11 @@ urlpatterns = [
     path('device/activated_device_list/', activated_device_list, name='activated_device_list'),
 
     path('EM/DEx/getPendingCallList/', DEx_getPendingCallList, name='DEx_getPendingCallList'),
+    
+    
+    
+    path('EM/DExTL/getPendingCallList/', DEx_getPendingCallListTL, name='DEx_getPendingCallList'),
+    
     
     path('EM/DEx/getCallList/', DEx_getCallList, name='DEx_getCallList'),
     

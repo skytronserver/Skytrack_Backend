@@ -548,6 +548,7 @@ def process_alerts(gps_data, loc_id):
 
         # Alert ID based alerts
         alert_mappings = {
+            "10": ('Em', "in"), 
             "20": ('EmPublicApp', "in"), 
             "21": ('EmRegisteredApp', "in"), 
             "22": ('EmMonitorTripInvalidPw', "in"), 
@@ -565,7 +566,7 @@ def process_alerts(gps_data, loc_id):
         if alert_id in alert_mappings:
             alert_type, status = alert_mappings[alert_id]
             al = lastnormal_alerts.filter(type=alert_type).last()
-            if not al or al.status != status:
+            if not al or al.status != status or  alert_id in ["10", "20", "21", "22", "23", "24"]:
                 create_alert(alert_type, status, loc_id, device_tag)
 
         # Route Alerts
@@ -633,67 +634,97 @@ def process_device_tracking_data(data_str, source="unknown"):
     Main function to process device tracking data
     Used by both TCP server and MQTT deviceTracking topic
     """
-    try:
-        # Close old database connections to prevent leaks
-        close_old_connections()
-        
-        # Log raw data
-        try:
-            GPSDataLog.objects.create(raw_data=data_str)
-        except Exception as e:
-            print(f"Data logging error ({source}):", e, flush=True)
+    # Close old database connections to prevent leaks
+    close_old_connections()
 
+    # For logging only: if we find a device_tag, replace the incoming default
+    # registration string with the mapped vehicle_reg_no in the raw data_str.
+    data_str_for_log = data_str
+
+    # Special-case logging format sometimes received like:
+    # $DL01AB1234,$866192070567266,$1.0.0,$1.0.1,$26.134123N91.803780E
+    # Here the second field is IMEI; replace ONLY the first token based on IMEI.
+    try:
+        def _swap_reg_by_imei(match):
+            imei_val = match.group(1)
+            device = DeviceStock.objects.filter(imei__contains=str(imei_val)).last()
+            if not device:
+                return match.group(0)
+            device_tag = DeviceTag.objects.filter(device=device).last()
+            reg_no = (getattr(device_tag, "vehicle_reg_no", None) or "").strip() if device_tag else ""
+            if not reg_no:
+                return match.group(0)
+            return f"${reg_no},${imei_val}"
+
+        data_str_for_log = re.sub(r"\$DL01AB1234,\$(\d{14,17})", _swap_reg_by_imei, data_str_for_log)
+    except Exception:
+        pass
+    try:
         # Split data by $ delimiter
         data_parts = data_str.split('$')
-        
+
         for part in data_parts:
             try:
-                if len(part) <= 4:
+                if part == "":
                     continue
-                    
+
                 # Add $ prefix back
                 formatted_data = '$' + part
-                
+
+                # Skip very small fragments but preserve them for logging
+                if len(part) <= 4:
+                    continue
+
                 # Process GPS data
                 gps_data = process_gps_data(formatted_data)
-                
+
                 if gps_data:
                     imei = gps_data['imei']
-                    
+
                     # Find device by IMEI
                     device = DeviceStock.objects.filter(imei__contains=str(imei)).last()
                     print(f"#{imei}# -> Device: {device}", flush=True)
-                    
+
                     if device:
                         device_tag = DeviceTag.objects.filter(device=device).last()
-                        
+
                         if device_tag:
+                            reg_no = (getattr(device_tag, "vehicle_reg_no", None) or "").strip()
+
+                            # Replace incoming default registration value in the full raw string (logging only)
+                            # str.replace replaces ALL occurrences.
+                            if reg_no:
+                                data_str_for_log = data_str_for_log.replace("DL01AB1234", reg_no)
+
                             # Add device tag and remove IMEI/vehicle info
                             gps_data['device_tag'] = device_tag
                             gps_data.pop('imei', None)
                             gps_data.pop('vehicle_registration_number', None)
-                            
+
                             # Save GPS data
                             gps_record = GPSData.objects.create(**gps_data)
                             gps_record.save()
-                            
+
                             # Process alerts
                             process_alerts(gps_data, gps_record.id)
-                            
-                            #print(f"[{source}] GPS data processed:", formatted_data, flush=True)
-                            #print(f"[{source}] GPS record created:", gps_data, flush=True)
                         else:
                             print(f"[{source}] No device tag found for device: {device}", flush=True)
                     else:
                         print(f"[{source}] No device found for IMEI: {imei}", flush=True)
                 else:
                     print(f"[{source}] Invalid GPS data format:", formatted_data, flush=True)
-                    
+
             except Exception as e:
                 print(f"[{source}] Data processing error:", e, flush=True)
-                
+
     except Exception as e:
-        print(f"[{source}] Main processing error:", e, flush=True)
+        print(f"[{source}] Data splitting error:", e, flush=True)
+
+    # Log raw data (with DL01AB1234 replaced when device_tag is present)
+    try:
+        GPSDataLog.objects.create(raw_data=data_str_for_log)
+    except Exception as e:
+        print(f"Data logging error ({source}):", e, flush=True)
     finally:
         # Close any remaining database connections
         close_old_connections()
@@ -707,13 +738,37 @@ def process_emergency_data(data_str, source="unknown"):
     try:
         # Close old database connections to prevent leaks
         close_old_connections()
-        
+
+        # For logging only: if we can resolve a device_tag from the EM payload,
+        # replace the incoming default registration string in the raw data_str.
+        data_str_for_log = data_str
+        try:
+            # Most common format: $,EPB,EMR,<imei>,...,DL01AB1234,...
+            parts = data_str.split('$')
+            for part in parts:
+                if not part:
+                    continue
+                formatted_data = '$' + part
+                fields = formatted_data.split(',')
+                if len(fields) >= 4 and fields[0] == '$' and fields[1] == 'EPB':
+                    imei = fields[3]
+                    device = DeviceStock.objects.filter(imei__contains=str(imei)).last()
+                    if device:
+                        device_tag = DeviceTag.objects.filter(device=device).last()
+                        reg_no = (getattr(device_tag, "vehicle_reg_no", None) or "").strip() if device_tag else ""
+                        if reg_no:
+                            data_str_for_log = data_str.replace("DL01AB1234", reg_no)
+                            break
+        except Exception:
+            # Never block EM processing due to log formatting
+            data_str_for_log = data_str
+
         # Log raw data
         try:
-            GPSemDataLog.objects.create(raw_data=data_str)
+            GPSemDataLog.objects.create(raw_data=data_str_for_log)
         except Exception as e:
             print(f"EM data logging error ({source}):", e, flush=True)
-
+        
         # Split data by $ delimiter
         data_parts = data_str.split('$')
         
