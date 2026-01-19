@@ -7154,9 +7154,13 @@ def search_request_logs(request):
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
     
     # Support both POST body and query params for flexibility
-    query = (request.data.get('q')
-             if hasattr(request, 'data') else None) or request.GET.get('q', '')
-    page = request.GET.get('page', 1)  # Get the page number from the request
+    query = (request.data.get('q') if hasattr(request, 'data') else None) or request.GET.get('q', '')
+    # Get the page number from the request
+    try:
+        page = int(request.GET.get('page', 1))
+    except (TypeError, ValueError):
+        page = 1
+    page = max(1, page)
     # Cap per_page to a sane upper bound to avoid heavy queries
     try:
         per_page = int(request.GET.get('per_page', 25))
@@ -7167,6 +7171,10 @@ def search_request_logs(request):
     # Time window: default to last 1 day; allow override via from/to (ISO string)
     from_str = request.GET.get('from')
     to_str = request.GET.get('to')
+
+    # By default, do NOT return/serialize huge payload fields.
+    # They dramatically slow down the endpoint even for a few rows.
+    include_payload = str(request.GET.get('include_payload', '0')).lower() in {'1', 'true', 'yes'}
 
     now = timezone.now()
     start_dt = now - timedelta(days=1)
@@ -7180,8 +7188,16 @@ def search_request_logs(request):
         if parsed:
             end_dt = parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
 
+    # Guard against swapped ranges (common UI mistake)
+    if start_dt and end_dt and start_dt > end_dt:
+        start_dt, end_dt = end_dt, start_dt
+
     # Build base queryset
     logs_qs = RequestLog.objects.order_by('-id')
+    # Apply time window filter (reduces scan + matches returned window metadata)
+    # RequestLog uses `timestamp` (auto_now_add)
+    if start_dt and end_dt:
+        logs_qs = logs_qs.filter(timestamp__range=(start_dt, end_dt))
   
     # Apply text filters
     # Apply text filter only when query is provided and meaningful
@@ -7195,7 +7211,8 @@ def search_request_logs(request):
             recent_window = 50000
         recent_window = max(1000, min(recent_window, 200000))
 
-        latest_id = RequestLog.objects.order_by('-id').values_list('id', flat=True).first()
+        # Reuse the same queryset so the window filter is respected
+        latest_id = logs_qs.values_list('id', flat=True).first()
         if latest_id:
             threshold_id = max(0, latest_id - recent_window)
             logs_qs = logs_qs.filter(id__gt=threshold_id)
@@ -7203,13 +7220,27 @@ def search_request_logs(request):
         # Now apply the text filter
         logs_qs = logs_qs.filter(Q(request_url__icontains=query))
 
+    # Select only the fields needed for the listing.
+    # NOTE: RequestLog contains large TextFields (system_info/headers/incoming_data) that are expensive
+    # to read and JSON-serialize; returning them only on demand speeds things up a lot.
+    if include_payload:
+        logs_qs = logs_qs.values(
+             'request_url', 'request_type',
+            'response_type', 'error_code',  'incoming_data'
+        )
+    else:
+        logs_qs = logs_qs.values(
+             'request_url', 'request_type',
+            'response_type', 'error_code'
+        )
+
     # Paginate the results
     paginator = Paginator(logs_qs, per_page)
     paginated_logs = paginator.get_page(page)
 
     # Prepare the response data
     data = {
-        'results': list(paginated_logs.object_list.values()),
+        'results': list(paginated_logs.object_list),
         'page': paginated_logs.number,
         'total_pages': paginator.num_pages,
         'total_results': paginator.count,
@@ -7878,11 +7909,26 @@ def driver_add(request ):
         try:
             uploaded_file = request.FILES.get('photo')
             if uploaded_file:
-                file_path = 'fileuploads/driver_' + str(device_tag.id) + '_' + uploaded_file.name
-                with open(file_path, 'wb') as file:
-                    for chunk in uploaded_file.chunks():
-                        file.write(chunk)
-                driver.photo= file_path
+                
+                
+                
+                
+                
+                if 'photo' in request.FILES:
+                    file_path = save_file(request, 'photo', 'fileuploads/driver/')
+                    if file_path:
+                        driver.photo= file_path
+                    else:
+                        return Response({
+                            'status': 'error',
+                            'message': 'File upload failed. Please check file size (max 1MB) and type (png, jpg)'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                
+                
+                
+                 
+                 
+                
                 driver.save()
                 device_tag.drivers.add(driver)
 
@@ -10825,9 +10871,34 @@ def homepage(request ):
 
     
     try:
-        # Create a dictionary to hold the filter parameters
-        filters = {}
-        # Add ID filter if provided
+        from datetime import timedelta
+        from django.utils import timezone
+
+        # Alerts (match `homepage_alart` semantics)
+        current_date = now().date()
+        current_month_start = current_date.replace(day=1)
+
+        total_alerts = AlertsLog.objects.filter(status="in").count()
+        total_alerts_month = AlertsLog.objects.filter(status="in", timestamp__gte=current_month_start).count()
+        total_alerts_today = AlertsLog.objects.filter(status="in", timestamp__date=current_date).count()
+
+        speed_alerts = AlertsLog.objects.filter(type='OverSpeed', status="in").count()
+        speed_alerts_month = AlertsLog.objects.filter(type='OverSpeed', status="in", timestamp__gte=current_month_start).count()
+        speed_alerts_today = AlertsLog.objects.filter(type='OverSpeed', status="in", timestamp__date=current_date).count()
+
+        # Device online/offline (15-min window, consistent with other dashboard code)
+        tagged_statuses = ['Device_Active', 'Owner_Final_OTP_Verified','Live_Location_Confirmed', 'SOS_Confirmed', 'RegNo_Configuration_Confirmed']
+        tagged_devices_qs = DeviceTag.objects.filter(status__in=tagged_statuses)
+        tagged_device_ids = tagged_devices_qs.values_list('id', flat=True)
+        total_tagged_devices = tagged_devices_qs.count()
+
+        online_threshold = timezone.now() - timedelta(minutes=15)
+        total_online_devices = GPSData.objects.filter(
+            device_tag_id__in=tagged_device_ids,
+            entry_time__gte=online_threshold
+        ).values('device_tag_id').distinct().count()
+        total_offline_devices = max(0, total_tagged_devices - total_online_devices)
+
         if True:
             count_dict = {
             'Manufacture': Manufacturer.objects.count(),
@@ -10839,38 +10910,35 @@ def homepage(request ):
             'SOS_user': EM_ex.objects.count(),
             'SOS_admin': EM_admin.objects.count(),
             
-            'TotalVehicles':DeviceTag.objects.count(),
+            'TotalVehicles': DeviceTag.objects.count(),
             
             'SOS_team': EMTeams.objects.count(),
             
-            'TotalAlerts':0,
-            'TotalAlerts_month':0,
-            'TotalAlerts_today':0,
-            'SpeedAlerts':0,
-            'SpeedAlerts_month':0,
-            'SpeedAlerts_today':0,
+            'TotalAlerts': total_alerts,
+            'TotalAlerts_month': total_alerts_month,
+            'TotalAlerts_today': total_alerts_today,
+            'SpeedAlerts': speed_alerts,
+            'SpeedAlerts_month': speed_alerts_month,
+            'SpeedAlerts_today': speed_alerts_today,
 
             'TotalDevice': DeviceStock.objects.count(),
-            'TotalTaggedDevice':0,
-            'TotalOnlineDevice':0,
-            'TotalOfflineDevice':0,
+            'TotalTaggedDevice': total_tagged_devices,
+            'TotalOnlineDevice': total_online_devices,
+            'TotalOfflineDevice': total_offline_devices,
             'TotalDeviceModel': DeviceModel.objects.count(),
-            
-          
-
-                'Total_device_stock':DeviceStock.objects.count(),
-                'unassigned_device_stock':DeviceStock.objects.filter(stock_status='NotAssigned').count(),
-                'Waiting_device_stock':DeviceStock.objects.filter(stock_status='Available_for_fitting').count(),
-                'Fitted_device_stock':DeviceStock.objects.filter(stock_status='Fitted').count(),
+            'Total_device_stock': DeviceStock.objects.count(),
+            'unassigned_device_stock': DeviceStock.objects.filter(stock_status='NotAssigned').count(),
+            'Waiting_device_stock': DeviceStock.objects.filter(stock_status='Available_for_fitting').count(),
+            'Fitted_device_stock': DeviceStock.objects.filter(stock_status='Fitted').count(),
                 
-                'Total_States':Settings_State.objects.all().count(),
-                'Active_States':Settings_State.objects.filter(status='active').count(),
-                'Inactive_States':Settings_State.objects.filter(status='discontinued').count(),
+            'Total_States': Settings_State.objects.all().count(),
+            'Active_States': Settings_State.objects.filter(status='active').count(),
+            'Inactive_States': Settings_State.objects.filter(status='discontinued').count(),
              
 
-                'Total_district':Settings_District.objects.all().count(),
-                'Active_district':Settings_District.objects.filter(status='active').count(),
-                'Active_district':Settings_District.objects.filter(status='discontinued').count(),
+            'Total_district': Settings_District.objects.all().count(),
+            'Active_district': Settings_District.objects.filter(status='active').count(),
+            'Discontinued_district': Settings_District.objects.filter(status='discontinued').count(),
 
         }
         # Return the serialized data as JSON response
@@ -12406,22 +12474,22 @@ def homepage_user1(request ):
 
     
     try:
-        # Create a dictionary to hold the filter parameters
-        filters = {}
-        # Add ID filter if provided
+        from django.contrib.auth import get_user_model
+        UserModel = get_user_model()
+
+        # User counts should be based on actual user accounts by role
         if True:
             count_dict = {
-            'total_user': Manufacturer.objects.count(),
-            'state_admin': StateAdmin.objects.count(),
-            'manufacturer_admin': Manufacturer.objects.count(),
-            'dtorto_admin': dto_rto.objects.count(),
-            'eSimProvider': eSimProvider.objects.count(),
-            'Dealer': Dealer.objects.count(),
-            'VehicleOwner': VehicleOwner.objects.count(),  
-            'SOS_ex': EM_ex.objects.count(),
-            'SOS_user': EM_ex.objects.count(),
-            'SOS_admin': EM_admin.objects.count(),
-             
+            'total_user': UserModel.objects.count(),
+            'state_admin': UserModel.objects.filter(role='stateadmin').count(),
+            'manufacturer_admin': UserModel.objects.filter(role='devicemanufacture').count(),
+            'dtorto_admin': UserModel.objects.filter(role='dtorto').count(),
+            'eSimProvider': UserModel.objects.filter(role='esimprovider').count(),
+            'Dealer': UserModel.objects.filter(role='dealer').count(),
+            'VehicleOwner': UserModel.objects.filter(role='owner').count(),
+            'SOS_ex': UserModel.objects.filter(role='sosexecutive').count(),
+            'SOS_user': UserModel.objects.filter(role='teamleader').count(),
+            'SOS_admin': UserModel.objects.filter(role='sosadmin').count(),
         }
         # Return the serialized data as JSON response
         return Response(count_dict)
@@ -17543,8 +17611,8 @@ def get_device_health_status(request):
     - Device details
     """
     try:
-        from datetime import datetime, timedelta
-        from django.db.models import Q, Max, Prefetch
+        from datetime import timedelta
+        from django.db.models import Case, Count, IntegerField, Max, Q, When
         
         user = request.user
         
@@ -17558,15 +17626,9 @@ def get_device_health_status(request):
         manufacturer_id = request.GET.get('manufacturer_id', '')
         vehicle_owner_id = request.GET.get('vehicle_owner_id', '')
         
-        # Base queryset
-        device_tags_query = DeviceTag.objects.select_related(
-            'device',
-            'device__model',
-            'device__model__created_by',
-            'vehicle_owner',
-            'district',
-            'district__state'
-        ).all()
+        # Base queryset: keep it light for counting/pagination.
+        # We'll add select_related only after we have the paginated IDs.
+        device_tags_query = DeviceTag.objects.all()
         
         # Apply user-based access control
         if user.role == 'devicemanufacture':
@@ -17629,8 +17691,8 @@ def get_device_health_status(request):
                 vehicle_owner__id=vehicle_owner_id
             )
         
-        # Get unique device tags
-        device_tags = device_tags_query.distinct()
+        now = timezone.now()
+        offline_threshold = now - timedelta(minutes=10)
 
         # Pagination parameters
         try:
@@ -17644,7 +17706,8 @@ def get_device_health_status(request):
         if page_size < 1:
             page_size = 20
 
-        total_devices_count = device_tags.count()
+        # Total count should be fast and should not include heavy joins/subqueries.
+        total_devices_count = device_tags_query.count()
         if not total_devices_count:
             return Response({
                 'status': 'success',
@@ -17657,35 +17720,70 @@ def get_device_health_status(request):
                 'total_pages': 0
             })
 
-        # Pagination logic
+        # Pagination logic: paginate by IDs first (cheap), then fetch related data for that page.
         start = (page - 1) * page_size
         end = start + page_size
-        paginated_device_tags = device_tags[start:end]
+        paginated_ids = list(
+            device_tags_query.order_by('-id').values_list('id', flat=True)[start:end]
+        )
 
-        now = timezone.now()
-        offline_threshold = now - timedelta(minutes=10)
+        # Fetch paginated DeviceTag rows with the required related objects.
+        # Preserve the original ordering from paginated_ids.
+        if paginated_ids:
+            order_case = Case(
+                *[When(id=pk, then=pos) for pos, pk in enumerate(paginated_ids)],
+                output_field=IntegerField(),
+            )
+            paginated_device_tags_list = list(
+                DeviceTag.objects.filter(id__in=paginated_ids)
+                .select_related(
+                    'device',
+                    'device__model',
+                    'device__model__created_by',
+                    'vehicle_owner',
+                    'category',
+                    'district',
+                    'district__state'
+                )
+                .order_by(order_case)
+            )
+        else:
+            paginated_device_tags_list = []
 
         devices_health = []
-        online_count = 0
-        offline_count = 0
 
-        # For total online/offline, we need to check all devices (not just paginated)
-        # So, calculate counts for all devices
-        all_online_count = 0
-        all_offline_count = 0
-        all_no_data_count = 0
-        for device_tag in device_tags:
-            latest_gps = GPSData.objects.filter(device_tag=device_tag).order_by('-entry_time').first()
-            if not latest_gps:
-                all_no_data_count += 1
-            elif latest_gps.entry_time >= offline_threshold:
-                all_online_count += 1
-            else:
-                all_offline_count += 1
+        # Compute online/offline/no_data counts based on each device's latest GPS timestamp.
+        # NOTE: Django does not support aggregate() on a queryset using distinct(fields)
+        # (DISTINCT ON), so we use GROUP BY + Max(entry_time) instead.
+        base_ids_subquery = device_tags_query.values('id')
+        latest_times_per_device = (
+            GPSData.objects
+            .filter(device_tag_id__in=base_ids_subquery)
+            .values('device_tag_id')
+            .annotate(latest_entry_time=Max('entry_time'))
+        )
+
+        # Count devices based on the grouped latest timestamp (each row == one device_tag_id with data).
+        with_data_count = latest_times_per_device.count()
+        all_online_count = latest_times_per_device.filter(latest_entry_time__gte=offline_threshold).count()
+        all_offline_count = latest_times_per_device.filter(latest_entry_time__lt=offline_threshold).count()
+        all_no_data_count = max(0, total_devices_count - with_data_count)
+
+        # Bulk fetch latest GPS rows for the paginated device tags using DISTINCT ON.
+        latest_gps_map = {}
+        if paginated_ids:
+            latest_for_page = (
+                GPSData.objects
+                .filter(device_tag_id__in=paginated_ids)
+                .order_by('device_tag_id', '-entry_time', '-id')
+                .distinct('device_tag_id')
+            )
+            for gps in latest_for_page:
+                latest_gps_map[gps.device_tag_id] = gps
 
         # Now, build the paginated device health list
-        for device_tag in paginated_device_tags:
-            latest_gps = GPSData.objects.filter(device_tag=device_tag).order_by('-entry_time').first()
+        for device_tag in paginated_device_tags_list:
+            latest_gps = latest_gps_map.get(device_tag.id)
             if not latest_gps:
                 device_status = 'no_data'
                 last_seen = None
@@ -17693,10 +17791,8 @@ def get_device_health_status(request):
             else:
                 if latest_gps.entry_time >= offline_threshold:
                     device_status = 'online'
-                    online_count += 1
                 else:
                     device_status = 'offline'
-                    offline_count += 1
                     offline_duration_minutes = int((now - latest_gps.entry_time).total_seconds() / 60)
                 last_seen = latest_gps.entry_time
 

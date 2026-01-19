@@ -113,7 +113,7 @@ class Help(models.Model):
 class RequestLog(models.Model):
     
     objects = SafeCreateManager()
-    timestamp = models.DateTimeField(auto_now_add=True)
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
     ip_address = models.CharField(max_length=70)  # Supports IPv6
     system_info = models.TextField()
     request_url = models.URLField()
@@ -1555,6 +1555,11 @@ class GPSData(models.Model):
     #checksum = models.CharField(max_length=8)
     #end_char = models.CharField(max_length=1) 
     device_tag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE,null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['device_tag', '-entry_time', '-id'], name='gpsdata_tag_time_id_idx'),
+        ]
 
 class GPSDataLog(models.Model):
     objects = SafeCreateManager()
