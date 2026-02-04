@@ -806,7 +806,7 @@ HOST_STORAGE_PATH = '/host_storage'
 e=""
 STATIC_OTP_CAP=False #True
 import os
-DEPLOY_URL = os.getenv("ROOT_URL", "skytron.in")   
+DEPLOY_URL = "skytron.in" #os.getenv("ROOT_URL", "skytron.in")   
 EMAIL_ACTIVE=False
 
 REMOVE_OTP_CAP=False #True
@@ -1003,9 +1003,11 @@ def send_general_mqtt_message(imei, message_json):
         try:
             BROKER_URL = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")
             BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
-            MQTT_USERNAME = os.getenv("MQTT_USERNAME", "6026969588")
-            MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h")
-            ROOT_CA = "/app/keys/ca.crt"
+            MQTT_USERNAME = os.getenv("MQTT_USERNAME", "admin")
+            MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "adminpass")
+
+         
+            ROOT_CA =  "/app/keys/ca.crt"
 
             client = mqtt.Client()
             client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
@@ -1013,8 +1015,11 @@ def send_general_mqtt_message(imei, message_json):
             client.connect(BROKER_URL, BROKER_PORT, 60)
 
             response_topic = f"deviceResponse/{imei}"
-            response_json = json.dumps(message_json)
-            result = client.publish(response_topic, response_json)
+            if isinstance(message_json, str):
+                response_json = message_json
+            else:
+                response_json = json.dumps(message_json, separators=(",", ":"))
+            result = client.publish(response_topic, response_json, qos=1)
             result.wait_for_publish()
             print(f"[MQTT] Sent message to {response_topic}: {response_json}", flush=True)
             client.disconnect()
@@ -1057,10 +1062,10 @@ def send_mqtt_command(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    final_command = f"{str(command_base)}:{str(value)}"
+    final_command = f"@{str(command_base)}*"
 
     payload = { 
-        'command': final_command,
+        'keys': final_command,
         
     }
 
@@ -1091,9 +1096,11 @@ def send_sos_mqtt_message(imei, i):
             #BROKER_URL = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")
             BROKER_URL = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")
             BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
-            MQTT_USERNAME = os.getenv("MQTT_USERNAME", "6026969588")
-            MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h")
-            ROOT_CA = "/app/keys/ca.crt"
+            MQTT_USERNAME = os.getenv("MQTT_USERNAME", "admin")
+            MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "adminpass")
+ 
+             
+            ROOT_CA =  "/app/keys/ca.crt"
             
             # Create MQTT client
             client = mqtt.Client()
@@ -1103,27 +1110,23 @@ def send_sos_mqtt_message(imei, i):
             # Connect to broker
             client.connect(BROKER_URL, BROKER_PORT, 60)
             
-            # Determine text string based on 'i'
-            tstring = None
+            # Determine JSON payload based on 'i'
             try:
                 ival = int(str(i).strip())
-                if ival == -1:
-                    tstring = "@SETSOSDIS-1*"
-                elif ival == 1:
-                    tstring = "@SETSOSEN-1*"
             except Exception:
-                pass
+                raise ValueError(f"Invalid SOS command input i={i}. Expected 1 or 2.")
 
-            if not tstring:
-                # Fallback (no publish) if input is invalid
-                raise ValueError(f"Invalid SOS command input i={i}. Expected 1 or -1.")
+            if ival not in (1, 2):
+                raise ValueError(f"Invalid SOS command input i={i}. Expected 1 (start) or 2 (stop).")
 
-            # Publish to device response topic as plain text
+            payload_str = json.dumps({"sos": ival}, separators=(",", ":"))
+
+            # Publish to device response topic as JSON string (QoS 1)
             response_topic = f"deviceResponse/{imei}"
-            result = client.publish(response_topic, tstring)
+            result = client.publish(response_topic, payload_str, qos=1)
             result.wait_for_publish()
             
-            print(f"[SOS MQTT] Sent text to {response_topic}: {tstring}", flush=True)
+            print(f"[SOS MQTT] Sent JSON to {response_topic}: {payload_str}", flush=True)
             
             client.disconnect()
             
@@ -6199,7 +6202,7 @@ def  DEx_closeCase(request ):
         assignment.call.status="closed"
         assignment.call.save()
         try:
-            send_sos_mqtt_message(assignment.call.device.device.imei, -1)
+            send_sos_mqtt_message(assignment.call.device.device.imei, 2)
             
         except:
             pass
