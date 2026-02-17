@@ -5112,6 +5112,81 @@ def send_usercreation_otp(user,new_password,type):
     except Exception as e:
         pass
         # Response({'error': "Error in sendig email  "+"Unable to process request."+str(e)}, status=400)
+
+
+def _role_to_account_type(role: str) -> str:
+    if not role:
+        return "User"
+    role_map = {
+        "superadmin": "Super Admin",
+        "stateadmin": "State Admin",
+        "devicemanufacture": "Device Manufacture",
+        "dealer": "Dealer",
+        "owner": "Vehicle Owner",
+        "esimprovider": "EsimProvider",
+        "dtorto": "DTO/RTO",
+        "sosadmin": "SOS Admin",
+        "teamleader": "Team Leader",
+        "sosexecutive": "SOS Executive",
+        "filment": "Filment",
+    }
+    return role_map.get(str(role).strip().lower(), str(role))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([OTPRateThrottle])
+@require_http_methods(['POST'])
+def resend_usercreation_otp(request):
+    """Resend the user creation OTP/link.
+
+    Input: {"user_id": <int>}
+    Role/type is derived from the User model.
+    """
+    errors = {}
+
+    # Only allow superadmin to resend creation OTPs (prevents abuse/spam)
+    requester = request.user
+    if not get_user_object(requester, "superadmin"):
+        return Response({"error": "Request must be from superadmin."}, status=status.HTTP_400_BAD_REQUEST)
+
+    user_id = request.data.get("user_id")
+    if user_id in [None, ""]:
+        errors["user_id"] = "user_id is required."
+    else:
+        try:
+            user_id = int(user_id)
+            if user_id <= 0:
+                errors["user_id"] = "user_id must be a positive integer."
+        except Exception:
+            errors["user_id"] = "user_id must be a valid integer."
+
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    target_user = User.objects.filter(id=user_id).last()
+    if not target_user:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # If the user is already active, don't resend creation OTP.
+    # (Creation OTP is intended only for pending/unverified onboarding.)
+    if str(getattr(target_user, "status", "")).lower() == "active" and bool(getattr(target_user, "is_active", False)):
+        return Response({"error": "User already active; creation OTP cannot be resent."}, status=status.HTTP_400_BAD_REQUEST)
+
+    token = getattr(target_user, "password", None)
+    if not token:
+        return Response({"error": "User activation token not available."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Avoid sending a hashed password/token as an activation link.
+    # If password reset was performed, the stored value may be hashed.
+    token_str = str(token)
+    if token_str.startswith("pbkdf2_") or "$" in token_str:
+        return Response({"error": "User token is not resendable (looks hashed)."}, status=status.HTTP_400_BAD_REQUEST)
+
+    account_type = _role_to_account_type(getattr(target_user, "role", ""))
+    send_usercreation_otp(target_user, token_str, account_type)
+
+    return Response({"message": "User creation OTP sent successfully."}, status=status.HTTP_200_OK)
     
 
 @api_view(['POST'])
