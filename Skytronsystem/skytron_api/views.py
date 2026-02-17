@@ -8,13 +8,15 @@ from django.db.models import OuterRef, Subquery, Max
 
 from .models import Trip
 from .serializers import TripSerializer
-from rest_framework.permissions import AllowAny
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework import status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.shortcuts import render
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+from django.views.decorators.http import require_http_methods
 
 
 from django.utils import timezone
@@ -31,6 +33,7 @@ import math
 
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper
 from django.db.models.functions import TruncMonth
+from django.db.models import Prefetch
 
 
 @api_view(['GET'])
@@ -194,6 +197,363 @@ def sos_monthly_metrics(request):
         data['performance']['executive_accept_avg_seconds'][idx] = avg_seconds
 
     return Response(data)
+
+
+class SOSReportPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 500
+    page_query_param = 'page'
+
+
+def _parse_dt_param(value):
+    """Parse datetime query params.
+
+    Accepts ISO-8601 strings (preferred) and returns an aware datetime when possible.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip().lower() in ('', 'none', 'null', 'undefined'):
+        return None
+    dt = parse_datetime(str(value))
+    if dt is None:
+        return None
+    if timezone.is_naive(dt):
+        try:
+            dt = timezone.make_aware(dt, timezone.get_current_timezone())
+        except Exception:
+            pass
+    return dt
+
+
+def _em_ex_display_name(ex_obj):
+    if not ex_obj:
+        return None
+    try:
+        u = ex_obj.users.first()
+        if u and getattr(u, 'name', None):
+            return u.name
+        if u and getattr(u, 'mobile', None):
+            return u.mobile
+        if u and getattr(u, 'email', None):
+            return u.email
+    except Exception:
+        pass
+    return str(getattr(ex_obj, 'id', None))
+
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    try:
+        lat1, lon1, lat2, lon2 = map(float, [lat1, lon1, lat2, lon2])
+    except Exception:
+        return None
+    r = 6371.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dl / 2) ** 2
+    c = 2 * math.asin(math.sqrt(a))
+    return r * c
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET'])
+def SOS_detailed_report(request):
+    """SOS report (one row per emergency call).
+
+    Filters (query params):
+    - start_datetime, end_datetime (ISO-8601)
+    - district_id
+    - call_id
+    - vehicle_reg_no
+    - device_imei
+
+    Pagination:
+    - page (default 1)
+    - page_size (default 50)
+    """
+    from .models import EMCall, EMCallAssignment, EMCallBroadcast, GPSData, pointofinterests
+
+    start_dt = _parse_dt_param(request.GET.get('start_datetime'))
+    end_dt = _parse_dt_param(request.GET.get('end_datetime'))
+    district_id = request.GET.get('district_id')
+    call_id = request.GET.get('call_id')
+    vehicle_reg_no = request.GET.get('vehicle_reg_no')
+    device_imei = request.GET.get('device_imei')
+
+    try:
+        district_id = int(district_id) if district_id not in (None, '', 'None', 'null', 'undefined') else None
+    except Exception:
+        district_id = None
+    try:
+        call_id_int = int(call_id) if call_id not in (None, '', 'None', 'null', 'undefined') else None
+    except Exception:
+        call_id_int = None
+
+    # Base queryset
+    qs = (
+        EMCall.objects
+        .select_related(
+            'device', 'device__device', 'device__category', 'device__district',
+            'team', 'team__teamlead', 'team__state'
+        )
+        .all()
+        .order_by('-start_time', '-id')
+    )
+
+    if start_dt:
+        qs = qs.filter(start_time__gte=start_dt)
+    if end_dt:
+        qs = qs.filter(start_time__lte=end_dt)
+    if district_id is not None:
+        qs = qs.filter(device__district_id=district_id)
+    if call_id_int is not None:
+        qs = qs.filter(id=call_id_int)
+    if vehicle_reg_no:
+        qs = qs.filter(device__vehicle_reg_no__icontains=str(vehicle_reg_no).strip())
+    if device_imei:
+        qs = qs.filter(device__device__imei__icontains=str(device_imei).strip())
+
+    # Prefetch assignments and broadcasts to avoid N+1 queries during row-building.
+    assignment_qs = (
+        EMCallAssignment.objects
+        .select_related('ex', 'admin')
+        .prefetch_related('ex__users')
+        .order_by('id')
+    )
+    broadcast_qs = (
+        EMCallBroadcast.objects
+        .select_related('acceted_by', 'created_by', 'admin')
+        .prefetch_related('acceted_by__users', 'created_by__users')
+        .order_by('id')
+    )
+    qs = qs.prefetch_related(
+        Prefetch('EMCall_id', queryset=assignment_qs, to_attr='__pref_assignments'),
+        Prefetch('EMCallb_id', queryset=broadcast_qs, to_attr='__pref_broadcasts'),
+    )
+
+    # GPS subqueries for trigger/closure coords (fast and DB-side)
+    trigger_gps = (
+        GPSData.objects
+        .filter(device_tag=OuterRef('device_id'), entry_time__gte=OuterRef('start_time'))
+        .order_by('entry_time')
+    )
+    closure_gps = (
+        GPSData.objects
+        .filter(device_tag=OuterRef('device_id'), entry_time__lte=OuterRef('end_time'))
+        .order_by('-entry_time')
+    )
+    qs = qs.annotate(
+        trigger_time=Subquery(trigger_gps.values('entry_time')[:1]),
+        trigger_latitude=Subquery(trigger_gps.values('latitude')[:1]),
+        trigger_longitude=Subquery(trigger_gps.values('longitude')[:1]),
+        closure_latitude=Subquery(closure_gps.values('latitude')[:1]),
+        closure_longitude=Subquery(closure_gps.values('longitude')[:1]),
+    )
+
+    paginator = SOSReportPagination()
+    page = paginator.paginate_queryset(qs, request)
+
+    # Pre-load police station POIs once (used per-row for nearest)
+    police_stations = list(
+        pointofinterests.objects.filter(use_type='PoliceStation')
+        .exclude(lat__isnull=True)
+        .exclude(lon__isnull=True)
+        .exclude(status__in=['Deleted', 'Deleted2'])
+        .values('id', 'name', 'lat', 'lon')
+    )
+
+    def nearest_police_station_name(lat, lon):
+        if lat is None or lon is None or not police_stations:
+            return None
+        best_name = None
+        best_dist = None
+        for ps in police_stations:
+            d = _haversine_km(lat, lon, ps.get('lat'), ps.get('lon'))
+            if d is None:
+                continue
+            if best_dist is None or d < best_dist:
+                best_dist = d
+                best_name = ps.get('name')
+        return best_name
+
+    def pick_first(qs_list, pred):
+        for item in qs_list:
+            try:
+                if pred(item):
+                    return item
+            except Exception:
+                continue
+        return None
+
+    def min_dt(values):
+        values = [v for v in values if v is not None]
+        return min(values) if values else None
+
+    results = []
+    for call in page:
+        device_tag = getattr(call, 'device', None)
+        assignments = getattr(call, '__pref_assignments', []) or []
+        broadcasts = getattr(call, '__pref_broadcasts', []) or []
+
+        desk_assignment = pick_first(assignments, lambda a: getattr(a, 'type', None) == 'desk_ex')
+        teamlead_ex = getattr(getattr(call, 'team', None), 'teamlead', None)
+
+        police_assignments = [a for a in assignments if getattr(a, 'type', None) in ('police_ex', 'pcr')]
+        amb_assignments = [a for a in assignments if getattr(a, 'type', None) in ('ambulance_ex', 'acr')]
+
+        # Broadcast times
+        police_bcasts = [b for b in broadcasts if getattr(b, 'type', None) in ('police_ex', 'pcr')]
+        amb_bcasts = [b for b in broadcasts if getattr(b, 'type', None) in ('ambulance_ex', 'acr')]
+
+        first_broadcast = broadcasts[0] if broadcasts else None
+        police_broadcast_time = min_dt([getattr(b, 'created_at', None) for b in police_bcasts])
+        amb_broadcast_time = min_dt([getattr(b, 'created_at', None) for b in amb_bcasts])
+        broadcast_initiated_time = min_dt([getattr(b, 'created_at', None) for b in broadcasts])
+
+        police_acceptance_time = min_dt([getattr(b, 'accept_at', None) for b in police_bcasts])
+        amb_acceptance_time = min_dt([getattr(b, 'accept_at', None) for b in amb_bcasts])
+
+        police_accept_bcast = pick_first(police_bcasts, lambda b: getattr(b, 'status', None) == 'accepted')
+        amb_accept_bcast = pick_first(amb_bcasts, lambda b: getattr(b, 'status', None) == 'accepted')
+
+        # Who attended? choose earliest arrived among police/ambulance assignments
+        arrived_assignments = [a for a in (police_assignments + amb_assignments) if getattr(a, 'arrived_time', None) is not None]
+        arrived_assignments.sort(key=lambda a: a.arrived_time)
+        attended_by = arrived_assignments[0].ex if arrived_assignments else None
+
+        # Closure times by type
+        police_case_closure_time = None
+        for a in reversed(police_assignments):
+            police_case_closure_time = getattr(a, 'complete_time', None) or getattr(a, 'arrived_time', None)
+            if police_case_closure_time:
+                break
+        amb_case_closure_time = None
+        for a in reversed(amb_assignments):
+            amb_case_closure_time = getattr(a, 'complete_time', None) or getattr(a, 'arrived_time', None)
+            if amb_case_closure_time:
+                break
+
+        # Durations
+        total_call_duration = None
+        if getattr(call, 'end_time', None) and getattr(call, 'start_time', None):
+            try:
+                total_call_duration = int((call.end_time - call.start_time).total_seconds())
+            except Exception:
+                total_call_duration = None
+
+        # Response times (mins)
+        police_resp_mins = None
+        for a in police_assignments:
+            if getattr(a, 'accept_time', None) and getattr(a, 'arrived_time', None):
+                police_resp_mins = (a.arrived_time - a.accept_time).total_seconds() / 60.0
+                break
+        amb_resp_mins = None
+        for a in amb_assignments:
+            if getattr(a, 'accept_time', None) and getattr(a, 'arrived_time', None):
+                amb_resp_mins = (a.arrived_time - a.accept_time).total_seconds() / 60.0
+                break
+
+        response_time = None
+        if police_resp_mins is not None and amb_resp_mins is not None:
+            response_time = min(police_resp_mins, amb_resp_mins)
+        elif police_resp_mins is not None:
+            response_time = police_resp_mins
+        elif amb_resp_mins is not None:
+            response_time = amb_resp_mins
+
+        # Executive acceptance time (desk)
+        call_accepted_time = getattr(desk_assignment, 'accept_time', None) if desk_assignment else None
+        # Overall "response" to accept (seconds)
+        response_accept_seconds = None
+        if call_accepted_time and getattr(call, 'start_time', None):
+            try:
+                response_accept_seconds = int((call_accepted_time - call.start_time).total_seconds())
+            except Exception:
+                response_accept_seconds = None
+
+        # Broadcast sent to
+        has_police = bool(police_bcasts)
+        has_amb = bool(amb_bcasts)
+        if has_police and has_amb:
+            broadcast_sent_to = 'BOTH'
+        elif has_police:
+            broadcast_sent_to = 'POLICE'
+        elif has_amb:
+            broadcast_sent_to = 'AMBULANCE'
+        else:
+            broadcast_sent_to = None
+
+        trig_lat = getattr(call, 'trigger_latitude', None)
+        trig_lon = getattr(call, 'trigger_longitude', None)
+        cls_lat = getattr(call, 'closure_latitude', None)
+        cls_lon = getattr(call, 'closure_longitude', None)
+
+        total_distance_km = None
+        if trig_lat is not None and trig_lon is not None and cls_lat is not None and cls_lon is not None:
+            total_distance_km = _haversine_km(trig_lat, trig_lon, cls_lat, cls_lon)
+            if total_distance_km is not None:
+                total_distance_km = round(float(total_distance_km), 3)
+
+        results.append({
+            'call_id': call.id,
+            'event_created_at': call.start_time.isoformat() if call.start_time else None,
+
+            'vehicle_reg_no': getattr(device_tag, 'vehicle_reg_no', None),
+            'vehicle_category': getattr(getattr(device_tag, 'category', None), 'category', None),
+            'device_imei': getattr(getattr(device_tag, 'device', None), 'imei', None),
+            'device_make': getattr(getattr(getattr(device_tag, 'device', None), 'model', None), 'vendor_id', None),
+
+            'trigger_time': call.trigger_time.isoformat() if getattr(call, 'trigger_time', None) else (call.start_time.isoformat() if call.start_time else None),
+            'trigger_latitude': float(trig_lat) if trig_lat is not None else None,
+            'trigger_longitude': float(trig_lon) if trig_lon is not None else None,
+            'nearest_police_station': nearest_police_station_name(trig_lat, trig_lon),
+
+            'auto_assigned_executive_name': _em_ex_display_name(getattr(desk_assignment, 'ex', None)) if desk_assignment else None,
+            'auto_assigned_time': getattr(desk_assignment, 'start_time', None).isoformat() if (desk_assignment and getattr(desk_assignment, 'start_time', None)) else None,
+
+            'team_lead_name': _em_ex_display_name(teamlead_ex),
+            'attended_by_name': _em_ex_display_name(attended_by),
+
+            'call_accepted_time': call_accepted_time.isoformat() if call_accepted_time else None,
+
+            'broadcast_initiated_time': broadcast_initiated_time.isoformat() if broadcast_initiated_time else None,
+            'broadcast_sent_to': broadcast_sent_to,
+            'police_broadcast_time': police_broadcast_time.isoformat() if police_broadcast_time else None,
+            'ambulance_broadcast_time': amb_broadcast_time.isoformat() if amb_broadcast_time else None,
+
+            'police_acceptance_time': police_acceptance_time.isoformat() if police_acceptance_time else None,
+            'ambulance_acceptance_time': amb_acceptance_time.isoformat() if amb_acceptance_time else None,
+            'police_officer_name_or_id': (
+                _em_ex_display_name(getattr(police_accept_bcast, 'acceted_by', None))
+                if police_accept_bcast else None
+            ),
+            'ambulance_officer_name_or_id': (
+                _em_ex_display_name(getattr(amb_accept_bcast, 'acceted_by', None))
+                if amb_accept_bcast else None
+            ),
+
+            'case_type': getattr(call, 'em_type', None),
+            'police_case_closure_time': police_case_closure_time.isoformat() if police_case_closure_time else None,
+            'ambulance_case_closure_time': amb_case_closure_time.isoformat() if amb_case_closure_time else None,
+
+            'closure_latitude': float(cls_lat) if cls_lat is not None else None,
+            'closure_longitude': float(cls_lon) if cls_lon is not None else None,
+            'total_distance_km': total_distance_km,
+            'total_call_duration': total_call_duration,
+            'response_time': response_time,
+            'police_response_time_mins': round(float(police_resp_mins), 3) if police_resp_mins is not None else None,
+            'ambulance_response_time_mins': round(float(amb_resp_mins), 3) if amb_resp_mins is not None else None,
+            'final_case_status': getattr(call, 'status', None),
+
+            # extra helpful metric (kept optional; can be ignored by client)
+            'desk_acceptance_time_seconds': response_accept_seconds,
+        })
+
+    return paginator.get_paginated_response(results)
 
 
 
@@ -12866,6 +13226,31 @@ def filter_Settings_State(request ):
 
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
+def filter_Settings_State_pub(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
+    try:
+        # Create a dictionary to hold the filter parameters
+        manufacturers = Settings_State.objects.all()
+
+ 
+        # Serialize the queryset
+        dealer_serializer = Settings_StateSerializer(manufacturers, many=True)
+        # Return the serialized data as JSON response
+        return Response(dealer_serializer.data)
+
+    except Exception as e:
+        return Response({'error': "Unable to process request."+str(e)}, status=400)
+
 
 
 

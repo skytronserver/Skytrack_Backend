@@ -121,6 +121,8 @@ urlpatterns = [
 
     path('Settings/create_settings_State/', create_Settings_State, name='create_settings_state'),
     path('Settings/filter_settings_State/', filter_Settings_State, name='filter_settings_state'),
+    path('pub/Settings/filter_settings_State_pub/', filter_Settings_State_pub, name='filter_settings_state_pub'),
+    
 
     path('Settings/create_settings_District/', create_Settings_District, name='create_settings_District'),
     path('Settings/filter_settings_District/', filter_Settings_District, name='filter_settings_District'), 
@@ -165,6 +167,7 @@ urlpatterns = [
     path('SOS/SOS_Admin_report2/', SOS_adminreport, name='SOS_adminreport'),
     path('SOS/SOS_TL_report/', SOS_TLreport, name='SOS_TLreport'),
     path('SOS/SOS_EX_report/', SOS_EXreport, name='SOS_EXreport'),
+    path('SOS/report/', SOS_detailed_report, name='SOS_detailed_report'),
     
     path('SOS/SOS_TL_report2/', SOS_TLreport2, name='SOS_TLreport'),
 
