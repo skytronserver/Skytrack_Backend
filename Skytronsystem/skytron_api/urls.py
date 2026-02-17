@@ -266,6 +266,7 @@ urlpatterns = [
     
     path('get_live_vehicle_no/',get_live_vehicle_no , name='get_live_vehicle_no'),#
       
+    path('pub/gps_track_data_api/',gps_track_data_api_pub, name='gps_track_data_api_pub'), 
     path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),  # live tracking api
     path('saveRoute/',saveRoute, name='saveRout'), 
     path('delRoute/',delRoute, name='delRout'), 

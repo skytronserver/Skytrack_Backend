@@ -1356,14 +1356,28 @@ def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,A
  
 
 def load_private_key():
-    private_key_path = '/app/keys/private_key.pem' #os.getenv('PRIVATE_KEY_PATH', '/var/www/html/skytron_backend/Skytronsystem/keys/private_key.pem')
-    with open(private_key_path, 'rb') as key_file:
-        private_key = RSA.import_key(key_file.read()) 
-    with open(private_key_path, 'rb') as key_file: 
-        print(key_file.read()) 
-    return private_key
+    import os
+    from pathlib import Path
+
+    # Prefer explicit configuration, then container path, then local repo keys.
+    env_path = os.getenv('PRIVATE_KEY_PATH')
+    repo_default = str(Path(__file__).resolve().parent.parent / 'keys' / 'private_key.pem')
+    candidates = [p for p in [env_path, '/app/keys/private_key.pem', repo_default] if p]
+
+    for private_key_path in candidates:
+        try:
+            with open(private_key_path, 'rb') as key_file:
+                return RSA.import_key(key_file.read())
+        except FileNotFoundError:
+            continue
+
+    # Don't crash module import (enables manage.py check / migrations in dev).
+    # Endpoints that require decrypting fields will fail gracefully when key is missing.
+    return None
 
 def decrypt_field(encrypted_field, private_key):
+    if not private_key:
+        return None
     cipher = PKCS1_OAEP.new(private_key)
     #if len(encrypted_field)<16:
     #    return encrypted_field
@@ -2200,6 +2214,279 @@ def gps_track_data_api(request ):
             response['geofence_message'] = geofence_message
         return JsonResponse(response)
     return JsonResponse({'error':  'Invalid request method. Only GET is allowed.'}, status=400)
+
+
+
+
+
+
+
+
+@csrf_exempt   
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def gps_track_data_api_pub(request ):  
+    
+    if request.method == 'GET':
+        imei = request.GET.get('imei', None)
+        regno = request.GET.get('regno', None)
+        # New filters
+        manufacturer_id = request.GET.get('manufacturer_id', None)
+        category_text = request.GET.get('category', None)
+        district_id = request.GET.get('district_id', None)
+        # New geofence filter params
+        route_id = request.GET.get('route_id', None)
+        poi_id = request.GET.get('poi_id', None)
+        polygon_param = request.GET.get('polygon', None)  # Expects JSON string: [[lat,lon],[lat,lon],...]
+
+        # Normalize geofence params: treat '', 'None', 'null', 'undefined' as absent
+        import json
+        def _norm(v):
+            if v is None:
+                return None
+            if isinstance(v, str) and v.strip().lower() in ('', 'none', 'null', 'undefined'):
+                return None
+            return v
+        route_id = _norm(route_id)
+        poi_id = _norm(poi_id)
+        polygon_param = _norm(polygon_param)
+        manufacturer_id = _norm(manufacturer_id)
+        category_text = _norm(category_text)
+        district_id = _norm(district_id)
+        # If polygon is a JSON string, treat empty/short polygons as absent
+        if isinstance(polygon_param, str):
+            try:
+                _poly_tmp = json.loads(polygon_param)
+                if isinstance(_poly_tmp, list) and len(_poly_tmp) < 3:
+                    polygon_param = None
+            except Exception:
+                # Invalid JSON polygon -> ignore
+                polygon_param = None
+        # Attempt to coerce IDs to int when present
+        try:
+            route_id = int(route_id) if route_id is not None else None
+        except Exception:
+            route_id = None
+        try:
+            poi_id = int(poi_id) if poi_id is not None else None
+        except Exception:
+            poi_id = None
+        try:
+            manufacturer_id = int(manufacturer_id) if manufacturer_id is not None else None
+        except Exception:
+            manufacturer_id = None
+        try:
+            district_id = int(district_id) if district_id is not None else None
+        except Exception:
+            district_id = None
+
+        # Public version: full registration number is compulsory
+        if not regno or str(regno).strip().lower() in ('', 'none', 'null', 'undefined'):
+            return JsonResponse({'error': 'regno (full vehicle registration number) is required.'}, status=400)
+        regno = str(regno).strip()
+
+        in_range = True
+        in_range_param = request.GET.get('in_range', None)
+        if in_range_param is not None:
+            in_range = str(in_range_param).lower() == 'true'
+
+        # Get base queryset
+        gps_queryset = GPSData.objects.exclude(device_tag=None).filter(gps_status=1)
+        # Public version: filter by regno (exact match)
+        gps_queryset = gps_queryset.filter(device_tag__vehicle_reg_no__iexact=regno)
+        # Filter by manufacturer id via DeviceTag -> DeviceStock -> Dealer -> Manufacturer
+        if manufacturer_id is not None:
+            gps_queryset = gps_queryset.filter(device_tag__device__dealer__manufacturer__id=manufacturer_id)
+        # Filter by vehicle category text (case-insensitive contains)
+        if category_text is not None:
+            gps_queryset = gps_queryset.filter(device_tag__category__category__icontains=category_text)
+        # Filter by district id on DeviceTag.district
+        if district_id is not None:
+            gps_queryset = gps_queryset.filter(device_tag__district__id=district_id)
+
+        # --- Geofence filter logic ---
+        polygon = None
+        geofence_center = None  # (lat, lon) center for POI radius filter
+        geofence_message = None
+        buffer_distance = 0.1  # 0.1 km = 100m
+        from shapely.geometry import Point, Polygon, LineString
+        import json
+        # Select active geofence with precedence: POI > Route > Polygon
+        geofence_count = sum([1 if x is not None else 0 for x in [route_id, poi_id, polygon_param]])
+        active_type = 'poi' if poi_id is not None else ('route' if route_id is not None else ('polygon' if polygon_param is not None else None))
+        if geofence_count > 1 and active_type:
+            geofence_message = f"Multiple geofence params provided; using {active_type}."
+        # Debug: show geofence selection
+        try:
+            print(f"DEBUG: geofence active_type={active_type}, poi_id={poi_id}, route_id={route_id}, polygon_present={(polygon_param is not None)}")
+        except Exception:
+            pass
+
+        if active_type == 'route':
+            try:
+                route = Route.objects.get(id=route_id)
+                points = []
+                if hasattr(route, 'routepoints'):
+                    if isinstance(route.routepoints, str):
+                        points = json.loads(route.routepoints)
+                    else:
+                        points = route.routepoints
+                coords = []
+                for pt in points:
+                    if isinstance(pt, dict):
+                        coords.append((float(pt['lon']), float(pt['lat'])))
+                    elif isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                        coords.append((float(pt[1]), float(pt[0])))
+                if coords:
+                    line = LineString(coords)
+                    polygon = line.buffer(buffer_distance)
+                else:
+                    geofence_message = "Route has no valid points. Geofence filter not applied."
+            except Exception as e:
+                geofence_message = f"Route geofence error: {e}. Geofence filter not applied."
+        elif active_type == 'poi':
+            # POI geofence: prefer polygon from POI.location when available or requested; otherwise fall back to 100m radius
+            try:
+                poi = pointofinterests.objects.get(id=poi_id)
+                poi_location = getattr(poi, 'location', None)
+                poi_as_polygon_param = request.GET.get('poi_as_polygon', None)
+                use_polygon = False
+                if poi_as_polygon_param is not None:
+                    use_polygon = str(poi_as_polygon_param).strip().lower() == 'true'
+
+                built_polygon = False
+                if poi_location and (use_polygon or (getattr(poi, 'lat', None) is None or getattr(poi, 'lon', None) is None)):
+                    try:
+                        loc_coords = json.loads(poi_location) if isinstance(poi_location, str) else poi_location
+                        poly_coords = []
+                        if isinstance(loc_coords, list):
+                            for item in loc_coords:
+                                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                                    # Expect [lat, lon]
+                                    lat_i = float(item[0])
+                                    lon_i = float(item[1])
+                                    poly_coords.append((lon_i, lat_i))
+                                elif isinstance(item, dict) and 'lat' in item and 'lon' in item:
+                                    poly_coords.append((float(item['lon']), float(item['lat'])))
+                        if len(poly_coords) >= 3:
+                            polygon = Polygon(poly_coords)
+                            built_polygon = True
+                            geofence_message = 'Using POI location polygon geofence.'
+                        else:
+                            geofence_message = 'POI location polygon invalid or too few points; falling back to radius.'
+                    except Exception as e:
+                        geofence_message = f'POI polygon parse error: {e}; falling back to radius.'
+
+                if not built_polygon:
+                    poi_lat = getattr(poi, 'lat', None)
+                    poi_lon = getattr(poi, 'lon', None)
+                    if poi_lat is not None and poi_lon is not None:
+                        geofence_center = (float(poi_lat), float(poi_lon))
+                    else:
+                        # Neither valid polygon nor lat/lon available -> return blank per request
+                        return JsonResponse({'data': [], 'geofence_message': 'POI has neither lat/lon nor valid polygon. Returning blank.'})
+            except Exception as e:
+                # POI lookup failed -> return blank
+                return JsonResponse({'data': [], 'geofence_message': f'POI lookup error: {e}. Returning blank.'})
+        elif active_type == 'polygon':
+            try:
+                coords = json.loads(polygon_param)
+                poly_coords = [(float(lon), float(lat)) for lat, lon in coords]
+                if poly_coords:
+                    polygon = Polygon(poly_coords)
+                else:
+                    geofence_message = "Custom polygon has no valid points. Geofence filter not applied."
+            except Exception as e:
+                geofence_message = f"Custom polygon geofence error: {e}. Geofence filter not applied."
+        # --- End geofence logic ---
+
+        # --- Helper utility for POI radius geofence ---
+        # Haversine distance in kilometers
+        def haversine_km(lat1, lon1, lat2, lon2):
+            R = 6371.0
+            dlat = radians(lat2 - lat1)
+            dlon = radians(lon2 - lon1)
+            a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+            return 2 * R * asin(sqrt(a))
+
+        data = []
+        from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
+        latest_entry = gps_queryset.order_by('-entry_time')
+        if imei and str(imei).strip().lower() not in ('', 'none', 'null', 'undefined'):
+            latest_entry = latest_entry.filter(device_tag__device__imei__icontains=str(imei).strip())
+        latest_entry = latest_entry.first()
+
+        if latest_entry:
+            # Geofence filter: check polygon containment OR POI radius
+            if polygon is not None:
+                lat = getattr(latest_entry, 'latitude', None)
+                lon = getattr(latest_entry, 'longitude', None)
+                if lat is not None and lon is not None:
+                    pt = Point(float(lon), float(lat))
+                    inside = polygon.contains(pt)
+                    if (in_range and not inside) or (not in_range and inside):
+                        latest_entry = None
+            elif geofence_center is not None:
+                lat = getattr(latest_entry, 'latitude', None)
+                lon = getattr(latest_entry, 'longitude', None)
+                if lat is not None and lon is not None:
+                    center_lat, center_lon = geofence_center
+                    d_km = haversine_km(float(lat), float(lon), center_lat, center_lon)
+                    inside = d_km <= 0.1  # within 100 meters
+                    if (in_range and not inside) or (not in_range and inside):
+                        latest_entry = None
+
+        if latest_entry:
+            serializer = GPSData_Serializer(latest_entry)
+            dd = serializer.data.copy()
+            if 'entry_time' not in dd and hasattr(latest_entry, 'entry_time'):
+                dd['entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
+            if latest_entry.device_tag:
+                dd['vehicle_registration_number'] = latest_entry.device_tag.vehicle_reg_no
+                dd['imei'] = latest_entry.device_tag.device.imei
+                device_tag_obj = latest_entry.device_tag
+                device_tag_data = DeviceTagSerializer(device_tag_obj).data
+                # Attach concise device/manufacturer summary for convenience
+                try:
+                    ds = device_tag_obj.device  # DeviceStock
+                    dealer_obj = getattr(ds, 'dealer', None)
+                    man_obj = getattr(dealer_obj, 'manufacturer', None) if dealer_obj else None
+                    device_summary = {
+                        'id': ds.id,
+                        'imei': ds.imei,
+                    }
+                    if dealer_obj:
+                        device_summary['dealer'] = {
+                            'id': dealer_obj.id,
+                            'company_name': getattr(dealer_obj, 'company_name', None),
+                        }
+                    if man_obj:
+                        device_summary['manufacturer'] = {
+                            'id': man_obj.id,
+                            'company_name': getattr(man_obj, 'company_name', None),
+                        }
+                    device_tag_data['device_info'] = device_summary
+                except Exception:
+                    pass
+                if device_tag_obj.vehicle_owner:
+                    owner_data = VehicleOwnerSerializer(device_tag_obj.vehicle_owner).data
+                    if 'users' not in owner_data:
+                        owner_data['users'] = UserSerializer(device_tag_obj.vehicle_owner.users.all(), many=True).data
+                    device_tag_data['vehicle_owner'] = owner_data
+                dd['device_tag_info'] = device_tag_data
+            else:
+                dd['vehicle_registration_number'] = ""
+                dd['imei'] = ""
+                dd['device_tag_info'] = None
+            data.append(dd)
+
+        data_list = list(data)
+        response = {'data': data_list}
+        if geofence_message:
+            response['geofence_message'] = geofence_message
+        return JsonResponse(response)
+    return JsonResponse({'error':  'Invalid request method. Only GET is allowed.'}, status=400)
+
 
 
 @api_view(['GET'])
@@ -10584,13 +10871,14 @@ def user_statistics(request):
     
     try:
         from django.db.models import Count, Q
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         
         # Calculate the time threshold for online users (last 15 minutes of activity)
         online_threshold = timezone.now() - timedelta(minutes=15)
         
-        # Total registered users from User table (active status)
-        total_registered_users = User.objects.filter(status='active').count()
+        # Total registered users from User table (active)
+        # Note: this project uses both `status` and `is_active`; prefer the stricter definition.
+        total_registered_users = User.objects.filter(status='active', is_active=True).count()
         
         # Total temporary users from TempUser table
         total_temporary_users = TempUser.objects.all().count()
@@ -10598,6 +10886,7 @@ def user_statistics(request):
         # Online registered users (User table with recent activity in last 15 minutes)
         online_registered_users = User.objects.filter(
             status='active',
+            is_active=True,
             last_activity__gte=online_threshold
         ).count()
         
@@ -10606,8 +10895,11 @@ def user_statistics(request):
             Q(online=True) | Q(last_activity__gte=online_threshold)
         ).count()
         
-        # Total number of logins (count all successful login sessions from Session table)
-        total_logins = Session.objects.filter(status='login').count()
+        # Total number of successful logins (sessions that reached an authenticated state)
+        # Session rows are created as `otpsent`, then updated to `login`, and later to `logout`.
+        # If we only count `login`, we undercount after users logout.
+        authenticated_session_statuses = ['login', 'logout', 'timeout']
+        total_logins = Session.objects.filter(status__in=authenticated_session_statuses).count()
         
         # Additional useful statistics
         # Currently logged in registered users (session status = login and recent activity)
@@ -10618,23 +10910,26 @@ def user_statistics(request):
         
         # Total registered users by role breakdown
         users_by_role = {}
-        roles = User.objects.filter(status='active').values('role').annotate(count=Count('role'))
+        roles = User.objects.filter(status='active', is_active=True).values('role').annotate(count=Count('role'))
         for role_data in roles:
             users_by_role[role_data['role']] = role_data['count']
         
         # Logged-in users by role breakdown (users with login=True)
         logged_in_users_by_role = {}
-        logged_in_roles = User.objects.filter(
-            status='active',
-            login=True
-        ).values('role').annotate(count=Count('role'))
+        # Logged-in users by role breakdown
+        # Prefer session-backed computation (authoritative) but keep the same output shape.
+        logged_in_roles = Session.objects.filter(
+            status='login'
+        ).select_related('user').values('user__role').annotate(count=Count('user__role'))
         for role_data in logged_in_roles:
-            logged_in_users_by_role[role_data['role']] = role_data['count']
+            if role_data['user__role']:
+                logged_in_users_by_role[role_data['user__role']] = role_data['count']
         
         # Online users by role breakdown (users with recent activity in last 15 minutes)
         online_users_by_role = {}
         online_roles = User.objects.filter(
             status='active',
+            is_active=True,
             last_activity__gte=online_threshold
         ).values('role').annotate(count=Count('role'))
         for role_data in online_roles:
@@ -10653,14 +10948,14 @@ def user_statistics(request):
         # Recent logins (last 24 hours)
         last_24_hours = timezone.now() - timedelta(hours=24)
         recent_logins_24h = Session.objects.filter(
-            status='login',
+            status__in=authenticated_session_statuses,
             loginTime__gte=last_24_hours
         ).count()
         
         # Recent logins (last 7 days)
         last_7_days = timezone.now() - timedelta(days=7)
         recent_logins_7d = Session.objects.filter(
-            status='login',
+            status__in=authenticated_session_statuses,
             loginTime__gte=last_7_days
         ).count()
         
@@ -18368,7 +18663,7 @@ def register_incident(request):
 def filter_incident(request):
     """Filter incidents by various parameters"""
     try:
-        queryset = IncidentRegister.objects.all()
+        queryset = IncidentRegister.objects.select_related('registered_by', 'updated_by').all()
         
         # Filter by vehicle_reg_no
         vehicle_reg_no = request.data.get('vehicle_reg_no')
@@ -18379,6 +18674,11 @@ def filter_incident(request):
         registered_by = request.data.get('registered_by')
         if registered_by:
             queryset = queryset.filter(registered_by_id=registered_by)
+
+        # Filter by registered_by mobile
+        registered_by_mobile = request.data.get('registered_by_mobile')
+        if registered_by_mobile:
+            queryset = queryset.filter(registered_by__mobile__icontains=registered_by_mobile)
         
         # Filter by registered_at (date range)
         registered_at_from = request.data.get('registered_at_from')
@@ -18431,6 +18731,71 @@ def filter_incident(request):
         page_obj = paginator.get_page(page)
         
         serializer = IncidentRegisterSerializer(page_obj, many=True)
+
+        # Enrich report rows with convenience fields:
+        # - registered_by_mobile: reporter mobile (if any)
+        # - nearest_ps: nearest Police Station (POI) computed from incident lat/lon
+        from math import radians, cos, sin, asin, sqrt
+
+        def haversine_km(lon1, lat1, lon2, lat2):
+            lon1, lat1, lon2, lat2 = map(float, [lon1, lat1, lon2, lat2])
+            lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+            dlon = lon2 - lon1
+            dlat = lat2 - lat1
+            a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+            c = 2 * asin(sqrt(a))
+            return 6371 * c
+
+        incident_by_id = {inc.id: inc for inc in page_obj}
+
+        police_stations = list(
+            pointofinterests.objects.filter(use_type='PoliceStation')
+            .exclude(lat__isnull=True)
+            .exclude(lon__isnull=True)
+            .exclude(status__in=['Deleted', 'Deleted2'])
+            .values('id', 'name', 'address', 'phone', 'lat', 'lon', 'area', 'city', 'state', 'pincode')
+        )
+
+        nearest_ps_by_incident_id = {}
+        if police_stations:
+            for inc in page_obj:
+                try:
+                    inc_lat = float(inc.latitude)
+                    inc_lon = float(inc.longitude)
+                except Exception:
+                    nearest_ps_by_incident_id[inc.id] = None
+                    continue
+
+                best = None
+                best_distance = None
+                for ps in police_stations:
+                    distance_km = haversine_km(inc_lon, inc_lat, ps['lon'], ps['lat'])
+                    if best_distance is None or distance_km < best_distance:
+                        best_distance = distance_km
+                        best = ps
+
+                if best is None:
+                    nearest_ps_by_incident_id[inc.id] = None
+                else:
+                    nearest_ps_by_incident_id[inc.id] = {
+                        'id': best['id'],
+                        'name': best['name'],
+                        'distance_km': round(float(best_distance), 3) if best_distance is not None else None,
+                        'address': best.get('address'),
+                        'phone': best.get('phone'),
+                        'latitude': best.get('lat'),
+                        'longitude': best.get('lon'),
+                        'area': best.get('area'),
+                        'city': best.get('city'),
+                        'state': best.get('state'),
+                        'pincode': best.get('pincode'),
+                    }
+
+        for row in serializer.data:
+            inc_id = row.get('id')
+            inc = incident_by_id.get(inc_id)
+            row['registered_by_mobile'] = inc.registered_by.mobile if (inc and inc.registered_by) else None
+            row['nearest_ps'] = nearest_ps_by_incident_id.get(inc_id)
         
         return Response({
             'status': 'success',

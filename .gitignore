@@ -91,3 +91,4 @@ olddb.dump
 mapLayers/
 north-eastern-zone-251218.osm.pbf
 tester_bundle/.venv/*
+Skytronsystem/skytron_api/__pycache__/admin.cpython-312.pyc
