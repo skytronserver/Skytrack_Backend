@@ -5092,6 +5092,8 @@ def create_manufacturer_pub(request ):
     try:
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber')
+        tac = request.data.get('tac')
+        device_model_details = request.data.get('device_model_details')
         createdby = request.user if hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False) else None
         if createdby is None:
             createdby = User.objects.filter(role='superadmin').order_by('id').first()
@@ -5110,6 +5112,7 @@ def create_manufacturer_pub(request ):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
+        file_affidavitNda = request.data.get('file_affidavitNda')
         esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
         print(esim_provider_ids)
 
@@ -5127,6 +5130,14 @@ def create_manufacturer_pub(request ):
                     transaction.savepoint_rollback(sid)
                     return Response({'error': "Invalid file." }, status=400)
 
+                # Optional file upload: only validate if provided
+                file_affidavitNda = None
+                if request.FILES.get('file_affidavitNda'):
+                    file_affidavitNda = save_file(request, 'file_affidavitNda', 'fileuploads/man')
+                    if not file_affidavitNda:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
                 manufacturer ,error= Manufacturer.objects.safe_create(
                     company_name=company_name,
                     gstnnumber=gstnnumber,
@@ -5138,6 +5149,9 @@ def create_manufacturer_pub(request ):
                     file_companRegCertificate=file_companRegCertificate,
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
+                    file_affidavitNda=file_affidavitNda,
+                    tac=tac,
+                    device_model_details=device_model_details,
                     state_id=state,
                     createdby=createdby,
                     status="Created",
@@ -5200,6 +5214,8 @@ def create_manufacturer(request ):
     try:
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber')
+        tac = request.data.get('tac')
+        device_model_details = request.data.get('device_model_details')
         createdby = request.user 
         date_joined = timezone.now()
         created = timezone.now() 
@@ -5211,6 +5227,7 @@ def create_manufacturer(request ):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
+        file_affidavitNda = request.data.get('file_affidavitNda')
         esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
         print(esim_provider_ids)
 
@@ -5228,6 +5245,14 @@ def create_manufacturer(request ):
                     transaction.savepoint_rollback(sid)
                     return Response({'error': "Invalid file." }, status=400)
 
+                # Optional file upload: only validate if provided
+                file_affidavitNda = None
+                if request.FILES.get('file_affidavitNda'):
+                    file_affidavitNda = save_file(request, 'file_affidavitNda', 'fileuploads/man')
+                    if not file_affidavitNda:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
                 manufacturer ,error= Manufacturer.objects.safe_create(
                     company_name=company_name,
                     gstnnumber=gstnnumber,
@@ -5239,6 +5264,9 @@ def create_manufacturer(request ):
                     file_companRegCertificate=file_companRegCertificate,
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
+                    file_affidavitNda=file_affidavitNda,
+                    tac=tac,
+                    device_model_details=device_model_details,
                     state_id=state,
                     createdby=createdby,
                     status="Created",
