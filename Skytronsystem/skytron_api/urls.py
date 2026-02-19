@@ -99,6 +99,7 @@ urlpatterns = [
 
     
     path('manufacturer/create_manufacturer/', create_manufacturer, name='create_manufacturer'),
+    path('pub/manufacturer/create_manufacturer/', create_manufacturer_pub, name='create_manufacturer_pub'),
     path('manufacturer/update_manufacturer/', update_manufacturer, name='update_manufacturer'),
     path('manufacturer/filter_manufacturers/', filter_manufacturers, name='filter_manufacturers'),
     path('manufacturer/delete_manufacturer/<int:manufacturer_id>/', delete_manufacturer, name='delete_manufacturer'),
@@ -106,6 +107,7 @@ urlpatterns = [
     path('dealer/update_dealer/', update_dealer, name='update_dealer'),
     path('dealer/filter_dealer/', filter_dealer, name='filter_dealer'),
     path('eSimProvider/create_eSimProvider/', create_eSimProvider, name='create_eSimProvider'),
+    path('pub/eSimProvider/create_eSimProvider/', create_eSimProvider_pub, name='create_eSimProvider_pub'),
     path('eSimProvider/update_eSimProvider/', update_eSimProvider, name='update_eSimProvider'),
     path('eSimProvider/filter_eSimProvider/', filter_eSimProvider, name='filter_eSimProvider'),
     path('VehicleOwner/create_VehicleOwner/', create_VehicleOwner, name='create_VehicleOwner'),

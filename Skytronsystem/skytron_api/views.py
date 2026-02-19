@@ -4324,6 +4324,105 @@ def update_eSimProvider(request ):
 
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])  
+@require_http_methods(['GET', 'POST'])
+def create_eSimProvider_pub(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
+      
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+    
+    try: 
+        company_name = request.data.get('company_name')
+        gstnnumber = request.data.get('gstnnumber') 
+        createdby = request.user if hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False) else None
+        if createdby is None:
+            createdby = User.objects.filter(role='superadmin').order_by('id').first()
+        if createdby is None:
+            return Response(
+                {'error': 'No default creator user found. Create a superadmin user first.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        date_joined = timezone.now()
+        created = timezone.now()   
+        gstno = request.data.get('gstno', '')  # Placeholder for gstno
+        idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        file_authLetter = request.data.get('file_authLetter')
+        file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_GSTCertificate = request.data.get('file_GSTCertificate')
+        file_idProof = request.data.get('file_idProof') 
+        state = request.data.get('stateId') 
+        user,error,new_password=create_user('esimprovider',request)
+        if user:  
+         
+            try:
+                try:
+                    file_authLetter=save_file(request,'file_authLetter','fileuploads/man') 
+                    file_companRegCertificate=save_file(request,'file_companRegCertificate','fileuploads/man')
+                    file_GSTCertificate=save_file(request,'file_GSTCertificate','fileuploads/man')
+                    file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                    if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof: 
+                           
+                        user.delete()
+                        if   not file_idProof: 
+                            return Response({'error': "Invalid id proof file." }, status=400)
+                        if  not file_GSTCertificate : 
+                            return Response({'error': "Invalid gst file." }, status=400)
+                        if  not file_companRegCertificate  : 
+                            return Response({'error': "Invalid CompReg file." }, status=400)
+                        if not file_authLetter  : 
+                            return Response({'error': "Invalid auth file." }, status=400)
+                        else: 
+                            return Response({'error': "Invalid file." }, status=400)
+                except Exception as e:
+                    user.delete()
+
+
+                    return Response({'error44': "Unable to process request."+str(e)}, status=400)
+
+
+                dealer ,error= eSimProvider.objects.safe_create(
+                    company_name=company_name,
+                    gstnnumber=gstnnumber,
+                    created=created,
+                    expirydate=expirydate,
+                    gstno=gstno,
+                    state_id=state,
+                    idProofno=idProofno,
+                    file_authLetter=file_authLetter,
+                    file_companRegCertificate=file_companRegCertificate,
+                    file_GSTCertificate=file_GSTCertificate,
+                    file_idProof=file_idProof,
+                    createdby=createdby,
+                    status="Created",
+                )
+                
+                if error:
+                    user.delete()  # Rollback user creation if dealer creation fails
+                    return error  # Return the Response object from safe_create
+
+            except Exception as e:
+                user.delete()
+
+
+                return Response({'error1': "Unable to process request."+str(e)}, status=400)
+            dealer.users.add(user)
+            #send_usercreation_otp(user,new_password,'EsimProvider ')
+             
+            return Response(eSimProviderSerializer(dealer).data)
+        else:
+            return Response({'error131': str(error)}, status=400)
+
+    except Exception as e:
+        return Response({'error2': "Unable to process request."+str(e)}, status=400)
+
+
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])  
 @require_http_methods(['GET', 'POST'])
@@ -4871,6 +4970,110 @@ def update_manufacturer(request ):
         return Response({'error': "Unable to process request."+str(e)}, status=400)
 
 
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@transaction.atomic
+@require_http_methods(['GET', 'POST'])
+def create_manufacturer_pub(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
+    
+    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+
+    try:
+        company_name = request.data.get('company_name')
+        gstnnumber = request.data.get('gstnnumber')
+        createdby = request.user if hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False) else None
+        if createdby is None:
+            createdby = User.objects.filter(role='superadmin').order_by('id').first()
+        if createdby is None:
+            return Response(
+                {'error': 'No default creator user found. Create a superadmin user first.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        date_joined = timezone.now()
+        created = timezone.now() 
+        state = request.data.get('state')
+        gstno = request.data.get('gstno', '')  # Placeholder for gstno
+        idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        file_authLetter = request.data.get('file_authLetter')
+        file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_GSTCertificate = request.data.get('file_GSTCertificate')
+        file_idProof = request.data.get('file_idProof')
+        esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
+        print(esim_provider_ids)
+
+        user, error, new_password = create_user('devicemanufacture', request)
+        if user:  
+            try:
+                # Create a savepoint for rollback if needed
+                sid = transaction.savepoint()
+                
+                file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man') 
+                file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
+                file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
+                file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
+                if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof:
+                    transaction.savepoint_rollback(sid)
+                    return Response({'error': "Invalid file." }, status=400)
+
+                manufacturer ,error= Manufacturer.objects.safe_create(
+                    company_name=company_name,
+                    gstnnumber=gstnnumber,
+                    created=created,
+                    expirydate=expirydate,
+                    gstno=gstno,
+                    idProofno=idProofno,
+                    file_authLetter=file_authLetter,
+                    file_companRegCertificate=file_companRegCertificate,
+                    file_GSTCertificate=file_GSTCertificate,
+                    file_idProof=file_idProof,
+                    state_id=state,
+                    createdby=createdby,
+                    status="Created",
+                )
+                if error:
+                    transaction.savepoint_rollback(sid)
+                    return error  # Return the Response object from safe_create
+
+                
+                # Fetch the EsimProvider instances and set the many-to-many relationship
+                esim_providers = eSimProvider.objects.filter(id__in=esim_provider_ids)
+                a=0
+
+                for esim_provider in esim_providers:
+                    print(esim_provider.state.id)
+                    if str(esim_provider.state.id)==str(state):
+                        manufacturer.esim_provider.set(esim_providers)
+                        a=a+1
+                    else:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "State missmatch with esim Provider"}, status=400)
+                if a==0:
+                    transaction.savepoint_rollback(sid)
+                    return Response({'error': "No valid esim Provider"}, status=400)
+                
+                transaction.savepoint_commit(sid)
+
+            except Exception as e:
+                transaction.savepoint_rollback(sid)
+                return Response({'error': "Unable to process request."+str(e)}, status=400)
+            
+            manufacturer.users.add(user) 
+            #send_usercreation_otp(user, new_password, 'Device Manufacture ')
+            return Response(ManufacturerSerializer(manufacturer).data)
+        else:
+            return Response(error, status=400)
+
+    except Exception as e:
+        return Response({'error': "Unable to process request."+str(e)}, status=400)
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
@@ -5043,7 +5246,13 @@ def create_user(role, req):
         mobile = req.data.get('mobile', '')
         name = req.data.get('name', '')
         dob = req.data.get('dob', '')
-        createdby = req.user
+        creator_id = None
+        if hasattr(req, 'user') and getattr(req.user, 'is_authenticated', False):
+            creator_id = getattr(req.user, 'id', None)
+        if not creator_id:
+            creator = User.objects.filter(role='superadmin').order_by('id').first()
+            creator_id = getattr(creator, 'id', None)
+        createdby_value = str(creator_id) if creator_id else 'public'
         date_joined = timezone.now()
         created = timezone.now()
         is_active = True
@@ -5059,7 +5268,7 @@ def create_user(role, req):
             mobile=mobile,
             role=role,
             dob=dob,
-            createdby=createdby.id,
+            createdby=createdby_value,
             date_joined=date_joined,
             created=created,
             is_active=is_active,
