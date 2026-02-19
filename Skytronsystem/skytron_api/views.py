@@ -1162,7 +1162,7 @@ import string
 import logging
 logger = logging.getLogger(__name__)
 
-HOST_STORAGE_PATH = '/host_storage'   
+HOST_STORAGE_PATH = os.environ.get('HOST_STORAGE_PATH', '/host_storage')
 e=""
 STATIC_OTP_CAP=False #True
 import os
@@ -1603,10 +1603,6 @@ def validate_inputs(datar):
         except ValidationError:
             errors['email'] = 'Invalid email format.'
 
-
-     
-        
- 
     # Validate (only alphabets and spaces)
     Keys=['name', "dto_rto",'city',"district_name" ,'country','company_name', "title","detail","feedback","em_msg","company_name","state_name"]
     for key in Keys:
@@ -1691,6 +1687,46 @@ def validate_inputs(datar):
 
 
     return errors
+
+
+def _parse_string_list(value):
+    """Parse a request value into a list of short strings.
+
+    Accepts:
+    - already-provided Python list/tuple
+    - JSON string like '["Airtel","Jio"]'
+    - comma-separated string like 'Airtel,Jio'
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, (list, tuple)):
+        items = list(value)
+    elif isinstance(value, str):
+        raw = value.strip()
+        if raw == "":
+            items = []
+        else:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    items = parsed
+                else:
+                    items = [parsed]
+            except Exception:
+                items = [p.strip() for p in raw.split(',')]
+    else:
+        items = [value]
+
+    cleaned = []
+    for item in items:
+        if item is None:
+            continue
+        s = str(item).strip()
+        if not s:
+            continue
+        cleaned.append(s)
+    return cleaned
 
 def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,ActivationDate,Status,Date):
     replacements = {
@@ -1934,7 +1970,10 @@ def save_file(request, tag, path):
     else:
         host_path = os.path.join(HOST_STORAGE_PATH, path.lstrip('./'))
     
-    os.makedirs(host_path, exist_ok=True)
+    try:
+        os.makedirs(host_path, exist_ok=True)
+    except PermissionError:
+        return None
     
     file_extension = valid_mime_types[mime_type]
     file_name = ''.join(secrets.choice('0123456789') for _ in range(40)) + "." + file_extension
@@ -2017,9 +2056,35 @@ folders = [
     # Add more folders as needed
 ]
 
-# Ensure directories exist
+# Ensure directories exist (do not crash at import time if host path isn't writable)
+_host_storage_init_ok = True
 for folder in folders:
-    os.makedirs(folder, exist_ok=True)
+    try:
+        os.makedirs(folder, exist_ok=True)
+    except PermissionError:
+        _host_storage_init_ok = False
+        break
+
+if not _host_storage_init_ok:
+    HOST_STORAGE_PATH = os.environ.get('HOST_STORAGE_FALLBACK_PATH', '/tmp/skytrack_storage')
+    folders = [
+        os.path.join(HOST_STORAGE_PATH, ''),
+        os.path.join(HOST_STORAGE_PATH, 'fileuploads/'),
+        os.path.join(HOST_STORAGE_PATH, 'fileuploads/tac_docs/'),
+        os.path.join(HOST_STORAGE_PATH, 'fileuploads/Receipt_files/'),
+        os.path.join(HOST_STORAGE_PATH, 'fileuploads/kyc_files/'),
+        os.path.join(HOST_STORAGE_PATH, 'fileuploads/cop_files/'),
+        os.path.join(HOST_STORAGE_PATH, 'fileuploads/file_bin/'),
+        os.path.join(HOST_STORAGE_PATH, 'fileuploads/man/'),
+        os.path.join(HOST_STORAGE_PATH, 'fileuploads/media/'),
+        os.path.join(HOST_STORAGE_PATH, 'fileuploads/notice/'),
+        os.path.join(HOST_STORAGE_PATH, 'fileuploads/driver/'),
+    ]
+    for folder in folders:
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except PermissionError:
+            pass
 
 
 @api_view(['POST'])
@@ -4250,6 +4315,10 @@ def update_eSimProvider(request ):
             return Response({'error': "Invalid eSimProvider id"}, status=400)
         if esimprovider.createdby != request.user:
             return Response({'error': "User can be edited by only the creator"}, status=400)
+
+        ep_user = esimprovider.users.last()
+        if not ep_user:
+            return Response({'error': "No user mapped to this eSimProvider"}, status=400)
         
         date_joined = timezone.now()
         created = timezone.now()
@@ -4262,6 +4331,17 @@ def update_eSimProvider(request ):
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
+
+        telecomProviders_present = False
+        telecom_raw = None
+        if hasattr(request.data, 'getlist') and ('telecomProviders[]' in request.data or 'telecomProviders' in request.data):
+            telecomProviders_present = True
+            telecom_raw = request.data.getlist('telecomProviders[]') or request.data.getlist('telecomProviders')
+        elif request.data.get('telecomProviders', None) is not None or request.data.get('telecom_providers', None) is not None:
+            telecomProviders_present = True
+            telecom_raw = request.data.get('telecomProviders', None)
+            if telecom_raw is None:
+                telecom_raw = request.data.get('telecom_providers', None)
 
         email = request.data.get('email')
         mobile = request.data.get('mobile')
@@ -4297,24 +4377,30 @@ def update_eSimProvider(request ):
             if not esimprovider.file_idProof: 
                     return Response({'error': "Invalid id proof file." }, status=400)
 
+        if telecomProviders_present:
+            telecomProviders = _parse_string_list(telecom_raw)
+            if telecomProviders is None:
+                telecomProviders = []
+            esimprovider.telecomProviders = telecomProviders
+
         if email:
-            esimprovider.user.email = email
+            ep_user.email = email
         if mobile:
-            esimprovider.user.mobile = mobile
+            ep_user.mobile = mobile
         if name:
-            esimprovider.user.name = name
+            ep_user.name = name
         if dob:
-            esimprovider.user.dob = dob
+            ep_user.dob = dob
 
         new_password = ''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
-        esimprovider.user.password = hashed_password
+        ep_user.password = hashed_password
         esimprovider.date_joined = date_joined
         esimprovider.created = created
         esimprovider.expirydate = expirydate
-        esimprovider.user.save()
+        ep_user.save()
         esimprovider.save()
-        send_usercreation_otp(esimprovider.user, new_password, 'EsimProvider')
+        send_usercreation_otp(ep_user, new_password, 'EsimProvider')
         return Response(eSimProviderSerializer(esimprovider).data)
 
 
@@ -4357,6 +4443,14 @@ def create_eSimProvider_pub(request ):
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof') 
         state = request.data.get('stateId') 
+        telecomProviders = None
+        if hasattr(request.data, 'getlist') and ('telecomProviders[]' in request.data or 'telecomProviders' in request.data):
+            telecomProviders = request.data.getlist('telecomProviders[]') or request.data.getlist('telecomProviders')
+        else:
+            telecomProviders = request.data.get('telecomProviders', None)
+            if telecomProviders is None:
+                telecomProviders = request.data.get('telecom_providers', None)
+        telecomProviders = _parse_string_list(telecomProviders) or []
         user,error,new_password=create_user('esimprovider',request)
         if user:  
          
@@ -4389,6 +4483,7 @@ def create_eSimProvider_pub(request ):
                 dealer ,error= eSimProvider.objects.safe_create(
                     company_name=company_name,
                     gstnnumber=gstnnumber,
+                    telecomProviders=telecomProviders,
                     created=created,
                     expirydate=expirydate,
                     gstno=gstno,
@@ -4454,6 +4549,14 @@ def create_eSimProvider(request ):
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof') 
         state = request.data.get('stateId') 
+        telecomProviders = None
+        if hasattr(request.data, 'getlist') and ('telecomProviders[]' in request.data or 'telecomProviders' in request.data):
+            telecomProviders = request.data.getlist('telecomProviders[]') or request.data.getlist('telecomProviders')
+        else:
+            telecomProviders = request.data.get('telecomProviders', None)
+            if telecomProviders is None:
+                telecomProviders = request.data.get('telecom_providers', None)
+        telecomProviders = _parse_string_list(telecomProviders) or []
         user,error,new_password=create_user('esimprovider',request)
         if user:  
          
@@ -4486,6 +4589,7 @@ def create_eSimProvider(request ):
                 dealer ,error= eSimProvider.objects.safe_create(
                     company_name=company_name,
                     gstnnumber=gstnnumber,
+                    telecomProviders=telecomProviders,
                     created=created,
                     expirydate=expirydate,
                     gstno=gstno,

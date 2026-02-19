@@ -159,14 +159,24 @@ WSGI_APPLICATION = 'Skytronsystem.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-# Print database environment variables for debugging
-print("=== DATABASE ENVIRONMENT VARIABLES ===")
-print(f"DB_NAME: {os.environ.get('DB_NAME', 'NOT SET')}")
-print(f"DB_USER: {os.environ.get('DB_USER', 'NOT SET')}")
-print(f"DB_PASSWORD: {os.environ.get('DB_PASSWORD', 'NOT SET')}")
-print(f"DB_HOST: {os.environ.get('DB_HOST', 'NOT SET')}")
-print(f"DB_PORT: {os.environ.get('DB_PORT', 'NOT SET')}")
-print("========================================")
+# Print database environment variables for debugging (disabled by default).
+# Enable with DJANGO_PRINT_DB_ENV=1
+if os.environ.get('DJANGO_PRINT_DB_ENV') == '1':
+    def _mask_env(name: str) -> str:
+        val = os.environ.get(name)
+        if not val:
+            return 'NOT SET'
+        if name in {'DB_PASSWORD'}:
+            return 'SET'
+        return val
+
+    print("=== DATABASE ENVIRONMENT VARIABLES ===")
+    print(f"DB_NAME: {_mask_env('DB_NAME')}")
+    print(f"DB_USER: {_mask_env('DB_USER')}")
+    print(f"DB_PASSWORD: {_mask_env('DB_PASSWORD')}")
+    print(f"DB_HOST: {_mask_env('DB_HOST')}")
+    print(f"DB_PORT: {_mask_env('DB_PORT')}")
+    print("========================================")
 
 DATABASES = {
     'default': {

@@ -511,6 +511,7 @@ class eSimProvider(models.Model):
     objects = SafeCreateManager()
     company_name = models.CharField(max_length=255, verbose_name="Company Name")
     gstnnumber = models.CharField(max_length=20, blank=True, null=True)
+    telecomProviders = models.JSONField(default=list, blank=True)
     users = models.ManyToManyField('User', related_name='eSimProvider_User')
     
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
