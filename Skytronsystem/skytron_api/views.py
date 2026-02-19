@@ -2225,14 +2225,25 @@ def gps_track_data_api(request ):
 
         imei = request.GET.get('imei', None)
         regno = request.GET.get('regno', None)
-        # New filters
+        # Filters
         manufacturer_id = request.GET.get('manufacturer_id', None)
-        category_text = request.GET.get('category', None)
+        make_text = request.GET.get('make', None)  # DeviceTag.vehicle_make (partial text)
+        category_param = request.GET.get('category', None)  # DeviceTag.category (id or text)
+
         district_id = request.GET.get('district_id', None)
-        # New geofence filter params
+        district_text = request.GET.get('district', None)  # Settings_District.district (partial text)
+
+        # Geofence filter params
         route_id = request.GET.get('route_id', None)
+        roads_param = request.GET.get('roads', None)  # legacy/alias for route_id
+
         poi_id = request.GET.get('poi_id', None)
+        poi_param = request.GET.get('poi', None)  # legacy/alias for poi_id
+
         polygon_param = request.GET.get('polygon', None)  # Expects JSON string: [[lat,lon],[lat,lon],...]
+
+        # Speed filter (live vehicle speed >= speed_limit)
+        speed_limit_param = request.GET.get('speed_limit', None)
 
         # Normalize geofence params: treat '', 'None', 'null', 'undefined' as absent
         import json
@@ -2242,12 +2253,21 @@ def gps_track_data_api(request ):
             if isinstance(v, str) and v.strip().lower() in ('', 'none', 'null', 'undefined'):
                 return None
             return v
+        # Apply legacy aliases when modern param not present
+        if route_id is None:
+            route_id = roads_param
+        if poi_id is None:
+            poi_id = poi_param
+
         route_id = _norm(route_id)
         poi_id = _norm(poi_id)
         polygon_param = _norm(polygon_param)
         manufacturer_id = _norm(manufacturer_id)
-        category_text = _norm(category_text)
+        make_text = _norm(make_text)
+        category_param = _norm(category_param)
         district_id = _norm(district_id)
+        district_text = _norm(district_text)
+        speed_limit_param = _norm(speed_limit_param)
         # If polygon is a JSON string, treat empty/short polygons as absent
         if isinstance(polygon_param, str):
             try:
@@ -2274,6 +2294,24 @@ def gps_track_data_api(request ):
             district_id = int(district_id) if district_id is not None else None
         except Exception:
             district_id = None
+
+        # Category can be id or text
+        category_id = None
+        category_text = None
+        if category_param is not None:
+            try:
+                if str(category_param).strip().isdigit():
+                    category_id = int(str(category_param).strip())
+                else:
+                    category_text = str(category_param).strip()
+            except Exception:
+                category_id = None
+                category_text = None
+
+        try:
+            speed_limit = int(speed_limit_param) if speed_limit_param is not None else None
+        except Exception:
+            speed_limit = None
         in_range = True
         in_range_param = request.GET.get('in_range', None)
         if in_range_param is not None:
@@ -2283,18 +2321,33 @@ def gps_track_data_api(request ):
 
         # Get base queryset
         gps_queryset = GPSData.objects.exclude(device_tag=None).filter(gps_status=1)
+
+        # Filter by imei if provided (partial match)
+        if imei and imei != "None":
+            gps_queryset = gps_queryset.filter(device_tag__device__imei__icontains=imei)
         # Filter by regno if provided (partial match)
         if regno and regno != "None":
             gps_queryset = gps_queryset.filter(device_tag__vehicle_reg_no__icontains=regno)
+        # Filter by vehicle make (partial match, case-insensitive)
+        if make_text is not None:
+            gps_queryset = gps_queryset.filter(device_tag__vehicle_make__icontains=str(make_text))
         # Filter by manufacturer id via DeviceTag -> DeviceStock -> Dealer -> Manufacturer
         if manufacturer_id is not None:
             gps_queryset = gps_queryset.filter(device_tag__device__dealer__manufacturer__id=manufacturer_id)
-        # Filter by vehicle category text (case-insensitive contains)
-        if category_text is not None:
+        # Filter by vehicle category (id or text)
+        if category_id is not None:
+            gps_queryset = gps_queryset.filter(device_tag__category_id=category_id)
+        elif category_text is not None:
             gps_queryset = gps_queryset.filter(device_tag__category__category__icontains=category_text)
-        # Filter by district id on DeviceTag.district
+        # Filter by district id / district name
         if district_id is not None:
             gps_queryset = gps_queryset.filter(device_tag__district__id=district_id)
+        if district_text is not None:
+            gps_queryset = gps_queryset.filter(device_tag__district__district__icontains=str(district_text))
+        # Filter by configured max speed for the vehicle category
+        if speed_limit is not None:
+            # Settings_VehicleCategory.maxSpeed is stored as text; allow leading zeros
+            gps_queryset = gps_queryset.filter(device_tag__category__maxSpeed__regex=rf'^0*{speed_limit}$')
 
         # Apply role-based filtering (unchanged)
         if request.user and request.user.is_authenticated:
@@ -2543,8 +2596,6 @@ def gps_track_data_api(request ):
         from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
         for x in distinct_registration_numbers:
             latest_entry = gps_queryset.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time')
-            if imei and imei != "None":
-                latest_entry = latest_entry.filter(device_tag__device__imei__icontains=imei).filter(gps_status=1).order_by('-entry_time')
             latest_entry = latest_entry.first()
             if latest_entry:
                 # Owner name substring filter
@@ -2655,14 +2706,25 @@ def gps_track_data_api_pub(request ):
     if request.method == 'GET':
         imei = request.GET.get('imei', None)
         regno = request.GET.get('regno', None)
-        # New filters
+        # Filters
         manufacturer_id = request.GET.get('manufacturer_id', None)
-        category_text = request.GET.get('category', None)
+        make_text = request.GET.get('make', None)  # DeviceTag.vehicle_make (partial text)
+        category_param = request.GET.get('category', None)  # DeviceTag.category (id or text)
+
         district_id = request.GET.get('district_id', None)
-        # New geofence filter params
+        district_text = request.GET.get('district', None)  # Settings_District.district (partial text)
+
+        # Geofence filter params
         route_id = request.GET.get('route_id', None)
+        roads_param = request.GET.get('roads', None)  # legacy/alias for route_id
+
         poi_id = request.GET.get('poi_id', None)
+        poi_param = request.GET.get('poi', None)  # legacy/alias for poi_id
+
         polygon_param = request.GET.get('polygon', None)  # Expects JSON string: [[lat,lon],[lat,lon],...]
+
+        # Speed filter (live vehicle speed >= speed_limit)
+        speed_limit_param = request.GET.get('speed_limit', None)
 
         # Normalize geofence params: treat '', 'None', 'null', 'undefined' as absent
         import json
@@ -2672,12 +2734,21 @@ def gps_track_data_api_pub(request ):
             if isinstance(v, str) and v.strip().lower() in ('', 'none', 'null', 'undefined'):
                 return None
             return v
+        # Apply legacy aliases when modern param not present
+        if route_id is None:
+            route_id = roads_param
+        if poi_id is None:
+            poi_id = poi_param
+
         route_id = _norm(route_id)
         poi_id = _norm(poi_id)
         polygon_param = _norm(polygon_param)
         manufacturer_id = _norm(manufacturer_id)
-        category_text = _norm(category_text)
+        make_text = _norm(make_text)
+        category_param = _norm(category_param)
         district_id = _norm(district_id)
+        district_text = _norm(district_text)
+        speed_limit_param = _norm(speed_limit_param)
         # If polygon is a JSON string, treat empty/short polygons as absent
         if isinstance(polygon_param, str):
             try:
@@ -2705,6 +2776,24 @@ def gps_track_data_api_pub(request ):
         except Exception:
             district_id = None
 
+        # Category can be id or text
+        category_id = None
+        category_text = None
+        if category_param is not None:
+            try:
+                if str(category_param).strip().isdigit():
+                    category_id = int(str(category_param).strip())
+                else:
+                    category_text = str(category_param).strip()
+            except Exception:
+                category_id = None
+                category_text = None
+
+        try:
+            speed_limit = int(speed_limit_param) if speed_limit_param is not None else None
+        except Exception:
+            speed_limit = None
+
         # Public version: full registration number is compulsory
         if not regno or str(regno).strip().lower() in ('', 'none', 'null', 'undefined'):
             return JsonResponse({'error': 'regno (full vehicle registration number) is required.'}, status=400)
@@ -2717,17 +2806,31 @@ def gps_track_data_api_pub(request ):
 
         # Get base queryset
         gps_queryset = GPSData.objects.exclude(device_tag=None).filter(gps_status=1)
+
+        # Filter by imei if provided (partial match)
+        if imei and imei != "None":
+            gps_queryset = gps_queryset.filter(device_tag__device__imei__icontains=imei)
         # Public version: filter by regno (exact match)
         gps_queryset = gps_queryset.filter(device_tag__vehicle_reg_no__iexact=regno)
+        # Filter by vehicle make (partial match, case-insensitive)
+        if make_text is not None:
+            gps_queryset = gps_queryset.filter(device_tag__vehicle_make__icontains=str(make_text))
         # Filter by manufacturer id via DeviceTag -> DeviceStock -> Dealer -> Manufacturer
         if manufacturer_id is not None:
             gps_queryset = gps_queryset.filter(device_tag__device__dealer__manufacturer__id=manufacturer_id)
-        # Filter by vehicle category text (case-insensitive contains)
-        if category_text is not None:
+        # Filter by vehicle category (id or text)
+        if category_id is not None:
+            gps_queryset = gps_queryset.filter(device_tag__category_id=category_id)
+        elif category_text is not None:
             gps_queryset = gps_queryset.filter(device_tag__category__category__icontains=category_text)
-        # Filter by district id on DeviceTag.district
+        # Filter by district id / district name
         if district_id is not None:
             gps_queryset = gps_queryset.filter(device_tag__district__id=district_id)
+        if district_text is not None:
+            gps_queryset = gps_queryset.filter(device_tag__district__district__icontains=str(district_text))
+        # Filter by configured max speed for the vehicle category
+        if speed_limit is not None:
+            gps_queryset = gps_queryset.filter(device_tag__category__maxSpeed__regex=rf'^0*{speed_limit}$')
 
         # --- Geofence filter logic ---
         polygon = None
