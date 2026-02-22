@@ -4758,8 +4758,17 @@ def filter_eSimProvider(request ):
         address = request.data.get('address', '')
         state_filter = request.data.get('state', '')
 
+        # Optional GET query param for this POST API:
+        # if `all_user=true`, don't restrict by user status (include inactive too).
+        all_user_raw = None
+        try:
+            all_user_raw = request.query_params.get('all_user')
+        except Exception:
+            all_user_raw = request.GET.get('all_user') if hasattr(request, 'GET') else None
+        all_user = str(all_user_raw).strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
         # Start with base query
-        manufacturers = eSimProvider.objects.filter(users__status='active')
+        manufacturers = eSimProvider.objects.all() if all_user else eSimProvider.objects.filter(users__status='active')
         
         # Apply filters based on input parameters
         if dealer_id:
@@ -4784,6 +4793,80 @@ def filter_eSimProvider(request ):
         if uo:  # If user is a state admin
             manufacturers = manufacturers.filter(state=uo.state)
 
+        # Get distinct results and include state information
+        manufacturers = manufacturers.select_related('state').distinct()
+
+        # Serialize the queryset
+        dealer_serializer = eSimProviderSerializer(manufacturers, many=True)
+
+        # Return the serialized data as JSON response
+        return Response(dealer_serializer.data)
+
+    except Exception as e:
+        
+        return Response({'error': "Unable to process request." + str(e)}, status=400)
+
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_http_methods(['GET', 'POST'])
+def filter_eSimProvider_pub(request ): 
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    
+    try:
+
+        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
+       
+        
+        # Get filter parameters from the request
+        dealer_id = request.data.get('eSimProvider_id', None)
+        email = request.data.get('email', '')
+        company_name = request.data.get('company_name', '')
+        name = request.data.get('name', '')
+        phone_no = request.data.get('phone_no', '')
+        address = request.data.get('address', '')
+        state_filter = request.data.get('state', '')
+
+        # Optional GET query param for this POST API:
+        # if `all_user=true`, don't restrict by user status (include inactive too).
+        all_user_raw = None
+        try:
+            all_user_raw = request.query_params.get('all_user')
+        except Exception:
+            all_user_raw = request.GET.get('all_user') if hasattr(request, 'GET') else None
+        all_user = str(all_user_raw).strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
+        # Start with base query
+        manufacturers = eSimProvider.objects.all() if all_user else eSimProvider.objects.filter(users__status='active')
+        
+        # Apply filters based on input parameters
+        if dealer_id:
+            manufacturers = manufacturers.filter(id=dealer_id)
+        
+        if email:
+            manufacturers = manufacturers.filter(users__email__icontains=email)
+            
+        if company_name:
+            manufacturers = manufacturers.filter(company_name__icontains=company_name)
+            
+        if name:
+            manufacturers = manufacturers.filter(users__name__icontains=name)
+            
+        if phone_no:
+            manufacturers = manufacturers.filter(users__mobile__icontains=phone_no)
+            
+        if state_filter:
+            manufacturers = manufacturers.filter(state__id=state_filter)
+
+     
         # Get distinct results and include state information
         manufacturers = manufacturers.select_related('state').distinct()
 
@@ -5430,6 +5513,15 @@ def filter_manufacturers(request ):
         phone_no = request.data.get('phone_no', '')
         address = request.data.get('address', '')
 
+        # Optional GET query param for this POST API:
+        # if `all_user=true`, don't restrict by user status (include inactive too).
+        all_user_raw = None
+        try:
+            all_user_raw = request.query_params.get('all_user')
+        except Exception:
+            all_user_raw = request.GET.get('all_user') if hasattr(request, 'GET') else None
+        all_user = str(all_user_raw).strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
         # Check user role and apply appropriate filtering
         user = request.user
         
@@ -5453,13 +5545,21 @@ def filter_manufacturers(request ):
                 users__mobile__icontains=phone_no, 
             ).distinct()
         else:
-            manufacturers = manufacturers.filter(
-                users__status='active',
-                users__email__icontains=email,
-                company_name__icontains=company_name,
-                users__name__icontains=name,
-                users__mobile__icontains=phone_no, 
-            ).distinct()
+            if all_user:
+                manufacturers = manufacturers.filter(
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no,
+                ).distinct()
+            else:
+                manufacturers = manufacturers.filter(
+                    users__status='active',
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no, 
+                ).distinct()
 
         # Serialize the queryset
         manufacturer_serializer = ManufacturerSerializer(manufacturers, many=True)
@@ -5614,8 +5714,8 @@ def resend_usercreation_otp(request):
 
     # If the user is already active, don't resend creation OTP.
     # (Creation OTP is intended only for pending/unverified onboarding.)
-    if str(getattr(target_user, "status", "")).lower() == "active" and bool(getattr(target_user, "is_active", False)):
-        return Response({"error": "User already active; creation OTP cannot be resent."}, status=status.HTTP_400_BAD_REQUEST)
+    #if str(getattr(target_user, "status", "")).lower() == "active" and bool(getattr(target_user, "is_active", False)):
+    #    return Response({"error": "User already active; creation OTP cannot be resent."}, status=status.HTTP_400_BAD_REQUEST)
 
     token = getattr(target_user, "password", None)
     if not token:
