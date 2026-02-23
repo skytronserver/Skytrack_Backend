@@ -506,6 +506,10 @@ class Manufacturer(models.Model):
             ('StateAdminVerified', 'StateAdminVerified'),
             ('UserExpired', 'UserExpired'), 
             ('Discontinued', 'Discontinued'),
+            ('Reject', 'Reject'),
+            ('Allow to login', 'Allow to login'),
+            ('Allow to add dealer', 'Allow to add dealer'),
+            ('Accept', 'Accept'),
         ] 
     
     status = models.CharField(max_length=20, choices=status_choices)
@@ -533,6 +537,10 @@ class eSimProvider(models.Model):
             ('StateAdminVerified', 'StateAdminVerified'),
             ('UserExpired', 'UserExpired'), 
             ('Discontinued', 'Discontinued'),
+            ('Reject', 'Reject'),
+            ('Allow to login', 'Allow to login'),
+            ('Allow to add dealer', 'Allow to add dealer'),
+            ('Accept', 'Accept'),
         ]
     status = models.CharField(max_length=20, choices=status_choices)
          

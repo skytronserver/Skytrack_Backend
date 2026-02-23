@@ -1728,6 +1728,23 @@ def _parse_string_list(value):
         cleaned.append(s)
     return cleaned
 
+
+ALLOWED_PARTNER_STATUSES = {
+    'Reject',
+    'Allow to login',
+    'Allow to add dealer',
+    'Accept',
+}
+
+
+def _normalize_partner_status(value):
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if normalized == 'Reject':
+        normalized = 'Reject'
+    return normalized
+
 def geneateCet(savepath,IMEI,Make,Model,Validity,RegNo,FitmentDate,TaggingDate,ActivationDate,Status,Date):
     replacements = {
         '{{IMEI}}':IMEI,
@@ -4309,12 +4326,15 @@ def update_manufacturer(request ):
         man=Manufacturer.objects.filter(id=id).last()
         if not man:
             return Response({'error': "Invalid manufacturer id"}, status=400)
-        if man.createdby == request.user :
-            return Response({'error': "User can be edited by only the creator"}, status=400)
+        m_user = man.users.last()
+        if not m_user:
+            return Response({'error': "No user mapped to this manufacturer"}, status=400)
+        is_creator = bool(getattr(man, 'createdby_id', None) == getattr(request.user, 'id', None))
+        is_superadmin = bool(get_user_object(request.user, 'superadmin'))
+        if not (is_creator or is_superadmin):
+            return Response({'error': "Only creator or superadmin can edit this manufacturer"}, status=400)
         
-        date_joined = timezone.now()
-        created = timezone.now() 
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        date_joined = timezone.localdate() 
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber')        
         state = request.data.get('state')
@@ -4330,6 +4350,7 @@ def update_manufacturer(request ):
         mobile = request.data.get('mobile' )
         name = request.data.get('name' )
         dob = request.data.get('dob' )
+        partner_status = _normalize_partner_status(request.data.get('status'))
         if company_name:
             man.company_name=company_name
         if gstnnumber :
@@ -4368,24 +4389,25 @@ def update_manufacturer(request ):
 
             
         if email:
-            man.user.email  =email
+            m_user.email  =email
         if mobile:
-            man.user.mobile=mobile
+            m_user.mobile=mobile
         if name:
-            man.user.name=name 
+            m_user.name=name 
         if dob:
-            man.user.dob
+            m_user.dob = dob
+        if partner_status is not None:
+            if partner_status not in ALLOWED_PARTNER_STATUSES:
+                return Response(
+                    {'error': 'Invalid status. Allowed values are: Reject, Allow to login, Allow to add dealer, Accept'},
+                    status=400
+                )
+            man.status = partner_status
         
-        new_password=''.join(secrets.choice('0123456789') for _ in range(30))
-        hashed_password = make_password(new_password)
-        man.user.password  = hashed_password
-        man.date_joined = date_joined
-        man.created = created
-        man.expirydate = expirydate
-        man.user.save()
-        man.save()
-        send_usercreation_otp(man.user, new_password, 'Device Manufacture ')
-        return Response(ManufacturerSerializer(man ).data)
+     
+        m_user.save()
+        man.save() 
+        return Response(ManufacturerSerializer(man).data)
       
 
     except Exception as e:
@@ -4423,8 +4445,8 @@ def update_eSimProvider(request ):
         if not ep_user:
             return Response({'error': "No user mapped to this eSimProvider"}, status=400)
         
-        date_joined = timezone.now()
-        created = timezone.now()
+        date_joined = timezone.localdate()
+        created = timezone.localdate()
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber')
@@ -4450,6 +4472,7 @@ def update_eSimProvider(request ):
         mobile = request.data.get('mobile')
         name = request.data.get('name')
         dob = request.data.get('dob')
+        partner_status = _normalize_partner_status(request.data.get('status'))
 
         if company_name:
             esimprovider.company_name = company_name
@@ -4494,6 +4517,13 @@ def update_eSimProvider(request ):
             ep_user.name = name
         if dob:
             ep_user.dob = dob
+        if partner_status is not None:
+            if partner_status not in ALLOWED_PARTNER_STATUSES:
+                return Response(
+                    {'error': 'Invalid status. Allowed values are: Reject, Allow to login, Allow to add dealer, Accept'},
+                    status=400
+                )
+            esimprovider.status = partner_status
 
         new_password = ''.join(secrets.choice('0123456789') for _ in range(30))
         hashed_password = make_password(new_password)
@@ -4536,11 +4566,19 @@ def create_eSimProvider_pub(request ):
                 {'error': 'No default creator user found. Create a superadmin user first.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        date_joined = timezone.now()
-        created = timezone.now()   
+        date_joined = timezone.localdate()
+        created = timezone.localdate()
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        partner_status = _normalize_partner_status(request.data.get('status'))
+        if partner_status is None:
+            partner_status = 'Created'
+        elif partner_status not in ALLOWED_PARTNER_STATUSES:
+            return Response(
+                {'error': 'Invalid status. Allowed values are: Reject, Allow to login, Allow to add dealer, Accept'},
+                status=400
+            )
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
@@ -4597,7 +4635,7 @@ def create_eSimProvider_pub(request ):
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
                     createdby=createdby,
-                    status="Created",
+                    status=partner_status,
                 )
                 
                 if error:
@@ -4642,11 +4680,19 @@ def create_eSimProvider(request ):
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber') 
         createdby = request.user 
-        date_joined = timezone.now()
-        created = timezone.now()   
+        date_joined = timezone.localdate()
+        created = timezone.localdate()
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        partner_status = _normalize_partner_status(request.data.get('status'))
+        if partner_status is None:
+            partner_status = 'Created'
+        elif partner_status not in ALLOWED_PARTNER_STATUSES:
+            return Response(
+                {'error': 'Invalid status. Allowed values are: Reject, Allow to login, Allow to add dealer, Accept'},
+                status=400
+            )
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
@@ -4703,7 +4749,7 @@ def create_eSimProvider(request ):
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
                     createdby=createdby,
-                    status="Created",
+                    status=partner_status,
                 )
                 
                 if error:
@@ -4907,8 +4953,8 @@ def update_dealer(request ):
         if dealer.createdby != request.user:
             return Response({'error': "User can be edited by only the creator"}, status=400)
         
-        date_joined = timezone.now()
-        created = timezone.now() 
+        date_joined = timezone.localdate()
+        created = timezone.localdate()
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber')        
@@ -5180,11 +5226,16 @@ def update_manufacturer(request ):
         man=Manufacturer.objects.filter(id=id).last()
         if not man:
             return Response({'error': "Invalid manufacturer id"}, status=400)
-        if man.createdby == request.user :
-            return Response({'error': "User can be edited by only the creator"}, status=400)
+        m_user = man.users.last()
+        if not m_user:
+            return Response({'error': "No user mapped to this manufacturer"}, status=400)
+        is_creator = bool(getattr(man, 'createdby_id', None) == getattr(request.user, 'id', None))
+        is_superadmin = bool(get_user_object(request.user, 'superadmin'))
+        if not (is_creator or is_superadmin):
+            return Response({'error': "Only creator or superadmin can edit this manufacturer"}, status=400)
         
-        date_joined = timezone.now()
-        created = timezone.now() 
+        date_joined = timezone.localdate()
+        created = timezone.localdate()
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber')        
@@ -5201,6 +5252,7 @@ def update_manufacturer(request ):
         mobile = request.data.get('mobile' )
         name = request.data.get('name' )
         dob = request.data.get('dob' )
+        partner_status = _normalize_partner_status(request.data.get('status'))
         if company_name:
             man.company_name=company_name
         if gstnnumber :
@@ -5236,23 +5288,26 @@ def update_manufacturer(request ):
 
             
         if email:
-            man.user.email  =email
+            m_user.email  =email
         if mobile:
-            man.user.mobile=mobile
+            m_user.mobile=mobile
         if name:
-            man.user.name=name 
+            m_user.name=name 
         if dob:
-            man.user.dob
+            m_user.dob = dob
+        if partner_status is not None:
+            if partner_status not in ALLOWED_PARTNER_STATUSES:
+                return Response(
+                    {'error': 'Invalid status. Allowed values are: Reject, Allow to login, Allow to add dealer, Accept'},
+                    status=400
+                )
+            man.status = partner_status
         
-        new_password=''.join(secrets.choice('0123456789') for _ in range(30))
-        hashed_password = make_password(new_password)
-        man.user.password  = hashed_password
-        man.date_joined = date_joined
+         
         man.created = created
         man.expirydate = expirydate
-        man.user.save()
-        man.save()
-        send_usercreation_otp(man.user, new_password, 'Device Manufacture ')
+        m_user.save()
+        man.save() 
         return Response(ManufacturerSerializer(man ).data)
       
 
@@ -5288,12 +5343,20 @@ def create_manufacturer_pub(request ):
                 {'error': 'No default creator user found. Create a superadmin user first.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        date_joined = timezone.now()
-        created = timezone.now() 
+        date_joined = timezone.localdate()
+        created = timezone.localdate()
         state = request.data.get('state')
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        partner_status = _normalize_partner_status(request.data.get('status'))
+        if partner_status is None:
+            partner_status = 'Created'
+        elif partner_status not in ALLOWED_PARTNER_STATUSES:
+            return Response(
+                {'error': 'Invalid status. Allowed values are: Reject, Allow to login, Allow to add dealer, Accept'},
+                status=400
+            )
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
@@ -5340,7 +5403,7 @@ def create_manufacturer_pub(request ):
                     device_model_details=device_model_details,
                     state_id=state,
                     createdby=createdby,
-                    status="Created",
+                    status=partner_status,
                 )
                 if error:
                     transaction.savepoint_rollback(sid)
@@ -5403,12 +5466,20 @@ def create_manufacturer(request ):
         tac = request.data.get('tac')
         device_model_details = request.data.get('device_model_details')
         createdby = request.user 
-        date_joined = timezone.now()
-        created = timezone.now() 
+        date_joined = timezone.localdate()
+        created = timezone.localdate()
         state = request.data.get('state')
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        partner_status = _normalize_partner_status(request.data.get('status'))
+        if partner_status is None:
+            partner_status = 'Created'
+        elif partner_status not in ALLOWED_PARTNER_STATUSES:
+            return Response(
+                {'error': 'Invalid status. Allowed values are: Reject, Allow to login, Allow to add dealer, Accept'},
+                status=400
+            )
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
@@ -5455,7 +5526,7 @@ def create_manufacturer(request ):
                     device_model_details=device_model_details,
                     state_id=state,
                     createdby=createdby,
-                    status="Created",
+                    status=partner_status,
                 )
                 if error:
                     transaction.savepoint_rollback(sid)
@@ -16468,7 +16539,26 @@ def delete_device_model(request, pk):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 def update_manufacturer(request, pk):
     manufacturer = Manufacturer.objects.get(pk=pk)
-    serializer = ManufacturerSerializer(manufacturer, data=request.data)
+    is_creator = bool(getattr(manufacturer, 'createdby_id', None) == getattr(request.user, 'id', None))
+    is_superadmin = bool(get_user_object(request.user, 'superadmin'))
+    if not (is_creator or is_superadmin):
+        return Response(
+            {'error': 'Only creator or superadmin can edit this manufacturer'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    partner_status = _normalize_partner_status(request.data.get('status'))
+    if partner_status is not None and partner_status not in ALLOWED_PARTNER_STATUSES:
+        return Response(
+            {'error': 'Invalid status. Allowed values are: Reject, Allow to login, Allow to add dealer, Accept'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    payload = request.data.copy()
+    if partner_status is not None:
+        payload['status'] = partner_status
+
+    serializer = ManufacturerSerializer(manufacturer, data=payload)
     if serializer.is_valid():
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
