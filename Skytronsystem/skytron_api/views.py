@@ -5792,11 +5792,13 @@ def resend_usercreation_otp(request):
     if not token:
         return Response({"error": "User activation token not available."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Avoid sending a hashed password/token as an activation link.
-    # If password reset was performed, the stored value may be hashed.
+    # If stored value is hashed/non-resendable, rotate a fresh onboarding token
+    # and persist it so resend can proceed.
     token_str = str(token)
     if token_str.startswith("pbkdf2_") or "$" in token_str:
-        return Response({"error": "User token is not resendable (looks hashed)."}, status=status.HTTP_400_BAD_REQUEST)
+        token_str = ''.join(secrets.choice('0123456789') for _ in range(30))
+        target_user.password = token_str
+        target_user.save(update_fields=["password"])
 
     account_type = _role_to_account_type(getattr(target_user, "role", ""))
     send_usercreation_otp(target_user, token_str, account_type)
