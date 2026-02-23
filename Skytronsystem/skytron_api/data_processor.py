@@ -17,7 +17,8 @@ from geopy.distance import geodesic
 
 from skytron_api.models import (
     GPSData, GPSDataLog, DeviceTag, DeviceStock, Route, AlertsLog,
-    EMGPSLocation, GPSemDataLog, User, BleKey
+    EMGPSLocation, GPSemDataLog, User, BleKey,
+    gpsdata_populate_location_and_consecutive_time,
 )
 
 # Timezone setup
@@ -704,6 +705,20 @@ def process_device_tracking_data(data_str, source="unknown"):
                             # Save GPS data
                             gps_record = GPSData.objects.create(**gps_data)
                             gps_record.save()
+
+                            # Explicitly run enrichment to avoid missed signal in long-running workers
+                            try:
+                                gpsdata_populate_location_and_consecutive_time(
+                                    sender=GPSData,
+                                    instance=gps_record,
+                                    created=True,
+                                )
+                                gps_record.refresh_from_db(fields=[
+                                    'state', 'district', 'city', 'road', 'road_type',
+                                    'time_in_same_state', 'time_in_same_district', 'time_in_same_city'
+                                ])
+                            except Exception as enrich_error:
+                                print(f"[{source}] GPS enrichment error: {enrich_error}", flush=True)
 
                             # Process alerts
                             process_alerts(gps_data, gps_record.id)

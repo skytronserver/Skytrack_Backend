@@ -2,6 +2,7 @@ import socket,re
 from django.core.management.base import BaseCommand
 from django.db import close_old_connections
 from skytron_api.models import GPSData, GPSDataLog ,DeviceTag, DeviceStock,Route,AlertsLog
+from skytron_api.models import gpsdata_populate_location_and_consecutive_time
 from geopy.distance import geodesic
 import json
 import threading
@@ -469,6 +470,18 @@ def handle_client(conn, client_address):
 
                                         g=GPSData.objects.create(**gps_data)
                                         g.save()
+                                           try:
+                                               gpsdata_populate_location_and_consecutive_time(
+                                                   sender=GPSData,
+                                                   instance=g,
+                                                   created=True,
+                                               )
+                                               g.refresh_from_db(fields=[
+                                                   'state', 'district', 'city', 'road', 'road_type',
+                                                   'time_in_same_state', 'time_in_same_district', 'time_in_same_city'
+                                               ])
+                                           except Exception as enrich_error:
+                                               print(f"GPS enrichment error: {enrich_error}", flush=True)
                                         process_alert(gps_data,g.id)
 
                                         print("########################",flush=True)

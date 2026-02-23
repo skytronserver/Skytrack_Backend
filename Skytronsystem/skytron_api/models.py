@@ -1560,10 +1560,232 @@ class GPSData(models.Model):
     #end_char = models.CharField(max_length=1) 
     device_tag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE,null=True, blank=True)
 
+    # Location / administrative area information (nullable)
+    state = models.CharField(max_length=100, null=True, blank=True, db_index=True)
+    district = models.CharField(max_length=100, null=True, blank=True, db_index=True)
+    city = models.CharField(max_length=100, null=True, blank=True, db_index=True)
+    road = models.CharField(max_length=255, null=True, blank=True)
+    road_type = models.CharField(max_length=32, null=True, blank=True)
+
+    # Consecutive time spent in the same administrative area (nullable)
+    time_in_same_state = models.DurationField(null=True, blank=True)
+    time_in_same_district = models.DurationField(null=True, blank=True)
+    time_in_same_city = models.DurationField(null=True, blank=True)
+
     class Meta:
         indexes = [
             models.Index(fields=['device_tag', '-entry_time', '-id'], name='gpsdata_tag_time_id_idx'),
         ]
+
+
+def _gps_norm_text(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return text.casefold()
+
+
+def _gps_classify_road_type(geo_payload, road_value, city_value):
+    """Return one of: National highway, city area, others."""
+    payload = geo_payload or {}
+    extratags = payload.get('extratags') or {}
+    namedetails = payload.get('namedetails') or {}
+
+    road_candidates = [
+        road_value,
+        payload.get('name'),
+        extratags.get('ref'),
+        namedetails.get('ref'),
+    ]
+    road_text = " ".join([str(x) for x in road_candidates if x]).upper()
+
+    highway_class = str(payload.get('class') or payload.get('category') or '').lower()
+    highway_type = str(payload.get('type') or '').lower()
+
+    if "NATIONAL HIGHWAY" in road_text or "NH" in road_text:
+        return "National highway"
+
+    if highway_class == 'highway' and highway_type in {
+        'motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link'
+    }:
+        return "National highway"
+
+    if city_value or highway_type in {
+        'residential', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link',
+        'unclassified', 'service', 'living_street', 'road'
+    }:
+        return "city area"
+
+    return "others"
+
+
+def _gps_reverse_geocode_from_api(lat, lon):
+    """Resolve state/district/city/road from map-geocoding.gromed.in reverse API."""
+    try:
+        import json
+        from urllib.parse import urlencode
+        from urllib.request import Request, urlopen
+    except Exception:
+        return {}
+
+    params = {
+        'format': 'jsonv2',
+        'lat': str(lat),
+        'lon': str(lon),
+        'zoom': '18',
+        'addressdetails': '1',
+        'extratags': '1',
+        'namedetails': '1',
+    }
+    api_url = f"https://map-geocoding.gromed.in/reverse?{urlencode(params)}"
+
+    try:
+        req = Request(api_url, headers={'User-Agent': 'SkytrackBackend/1.0'})
+        with urlopen(req, timeout=3.5) as resp:
+            payload = json.loads(resp.read().decode('utf-8', errors='ignore'))
+    except Exception:
+        return {}
+
+    address = payload.get('address') or {}
+
+    state_value = address.get('state')
+    district_value = address.get('state_district') or address.get('county')
+    city_value = (
+        address.get('city')
+        or address.get('town')
+        or address.get('village')
+        or address.get('suburb')
+    )
+    road_value = address.get('road') or payload.get('name')
+
+    road_type_value = _gps_classify_road_type(payload, road_value, city_value)
+
+    return {
+        'state': state_value,
+        'district': district_value,
+        'city': city_value,
+        'road': road_value,
+        'road_type': road_type_value,
+    }
+
+
+@receiver(post_save, sender=GPSData, dispatch_uid="gpsdata_populate_location_and_consecutive_time")
+def gpsdata_populate_location_and_consecutive_time(sender, instance, created, **kwargs):
+    """Populate state/district/city/road and consecutive time counters on insert.
+
+    Rules:
+    - Location fields are nullable.
+    - If current value matches the previous entry for the same device_tag,
+      the corresponding time_in_same_* is incremented by the delta between entry_time values.
+    - Otherwise the counter resets to 0 (or remains null if current value is null).
+    """
+    if not created:
+        return
+
+    if not getattr(instance, 'device_tag_id', None):
+        return
+
+    update_data = {}
+
+    # Populate from reverse geocoding API first (as requested).
+    try:
+        lat = float(instance.latitude)
+        lon = float(instance.longitude)
+        geo = _gps_reverse_geocode_from_api(lat, lon)
+        if not instance.state and geo.get('state'):
+            update_data['state'] = geo.get('state')
+        if not instance.district and geo.get('district'):
+            update_data['district'] = geo.get('district')
+        if not instance.city and geo.get('city'):
+            update_data['city'] = geo.get('city')
+        if not instance.road and geo.get('road'):
+            update_data['road'] = geo.get('road')
+        if not instance.road_type and geo.get('road_type'):
+            update_data['road_type'] = geo.get('road_type')
+    except Exception:
+        pass
+
+    # Fallback from device-tag registration hierarchy where possible.
+    try:
+        dt = instance.device_tag
+        if dt is not None:
+            if not update_data.get('state') and not instance.state:
+                st_obj = getattr(getattr(getattr(dt, 'district', None), 'state', None), 'state', None)
+                if st_obj:
+                    update_data['state'] = st_obj
+            if not update_data.get('district') and not instance.district:
+                dist_obj = getattr(getattr(dt, 'district', None), 'district', None)
+                if dist_obj:
+                    update_data['district'] = dist_obj
+    except Exception:
+        pass
+
+    # Fetch previous point for this device_tag.
+    prev = (
+        GPSData.objects.filter(device_tag_id=instance.device_tag_id)
+        .exclude(pk=instance.pk)
+        .order_by('-entry_time', '-id')
+        .first()
+    )
+
+    delta = timedelta(0)
+    if prev is not None:
+        try:
+            delta = instance.entry_time - prev.entry_time
+            if delta.total_seconds() < 0:
+                delta = timedelta(0)
+        except Exception:
+            delta = timedelta(0)
+
+    current_state = update_data.get('state', instance.state)
+    current_district = update_data.get('district', instance.district)
+    current_city = update_data.get('city', instance.city)
+
+    # If API lookup misses for this point, carry forward previous resolved location.
+    if prev is not None:
+        if not current_state and prev.state:
+            update_data['state'] = prev.state
+            current_state = prev.state
+        if not current_district and prev.district:
+            update_data['district'] = prev.district
+            current_district = prev.district
+        if not current_city and prev.city:
+            update_data['city'] = prev.city
+            current_city = prev.city
+        if not update_data.get('road', instance.road) and prev.road:
+            update_data['road'] = prev.road
+        if not update_data.get('road_type', instance.road_type) and prev.road_type:
+            update_data['road_type'] = prev.road_type
+
+    if current_state is None:
+        update_data['time_in_same_state'] = None
+    else:
+        if prev is not None and _gps_norm_text(prev.state) == _gps_norm_text(current_state):
+            update_data['time_in_same_state'] = (prev.time_in_same_state or timedelta(0)) + delta
+        else:
+            update_data['time_in_same_state'] = timedelta(0)
+
+    if current_district is None:
+        update_data['time_in_same_district'] = None
+    else:
+        if prev is not None and _gps_norm_text(prev.district) == _gps_norm_text(current_district):
+            update_data['time_in_same_district'] = (prev.time_in_same_district or timedelta(0)) + delta
+        else:
+            update_data['time_in_same_district'] = timedelta(0)
+
+    if current_city is None:
+        update_data['time_in_same_city'] = None
+    else:
+        if prev is not None and _gps_norm_text(prev.city) == _gps_norm_text(current_city):
+            update_data['time_in_same_city'] = (prev.time_in_same_city or timedelta(0)) + delta
+        else:
+            update_data['time_in_same_city'] = timedelta(0)
+
+    # Avoid recursion: update via queryset.
+    if update_data:
+        GPSData.objects.filter(pk=instance.pk).update(**update_data)
 
 class GPSDataLog(models.Model):
     objects = SafeCreateManager()
