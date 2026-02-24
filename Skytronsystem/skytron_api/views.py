@@ -4557,7 +4557,14 @@ def create_eSimProvider_pub(request ):
     
     try: 
         company_name = request.data.get('company_name')
+        company_address = request.data.get('company_address')
+        company_pin = request.data.get('company_pin')
+        company_email = request.data.get('company_email')
+        company_phoneno = request.data.get('company_phoneno')
+        company_registration_no = request.data.get('company_registration_no')
+        panno = request.data.get('panno')
         gstnnumber = request.data.get('gstnnumber') 
+        m2m_reg_certificate_no = request.data.get('m2m_reg_certificate_no')
         createdby = request.user if hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False) else None
         if createdby is None:
             createdby = User.objects.filter(role='superadmin').order_by('id').first()
@@ -4581,8 +4588,12 @@ def create_eSimProvider_pub(request ):
             )
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_company_registration_certificate = request.data.get('file_company_registration_certificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
-        file_idProof = request.data.get('file_idProof') 
+        file_idProof = request.data.get('file_idProof')
+        file_officialTechnicalOnboardingRequestLetter = request.data.get('file_officialTechnicalOnboardingRequestLetter')
+        file_selfCertifiedDotM2mRegistrationCertificate = request.data.get('file_selfCertifiedDotM2mRegistrationCertificate')
+        file_affidavitNda = request.data.get('file_affidavitNda')
         state = request.data.get('stateId') 
         telecomProviders = None
         if hasattr(request.data, 'getlist') and ('telecomProviders[]' in request.data or 'telecomProviders' in request.data):
@@ -4601,6 +4612,34 @@ def create_eSimProvider_pub(request ):
                     file_companRegCertificate=save_file(request,'file_companRegCertificate','fileuploads/man')
                     file_GSTCertificate=save_file(request,'file_GSTCertificate','fileuploads/man')
                     file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                    file_company_registration_certificate = None
+                    if request.FILES.get('file_company_registration_certificate'):
+                        file_company_registration_certificate = save_file(request, 'file_company_registration_certificate', 'fileuploads/man')
+                        if not file_company_registration_certificate:
+                            user.delete()
+                            return Response({'error': "Invalid company registration certificate file." }, status=400)
+
+                    file_officialTechnicalOnboardingRequestLetter = None
+                    if request.FILES.get('file_officialTechnicalOnboardingRequestLetter'):
+                        file_officialTechnicalOnboardingRequestLetter = save_file(request, 'file_officialTechnicalOnboardingRequestLetter', 'fileuploads/man')
+                        if not file_officialTechnicalOnboardingRequestLetter:
+                            user.delete()
+                            return Response({'error': "Invalid official technical onboarding request letter file." }, status=400)
+
+                    file_selfCertifiedDotM2mRegistrationCertificate = None
+                    if request.FILES.get('file_selfCertifiedDotM2mRegistrationCertificate'):
+                        file_selfCertifiedDotM2mRegistrationCertificate = save_file(request, 'file_selfCertifiedDotM2mRegistrationCertificate', 'fileuploads/man')
+                        if not file_selfCertifiedDotM2mRegistrationCertificate:
+                            user.delete()
+                            return Response({'error': "Invalid self-certified DoT M2M registration certificate file." }, status=400)
+
+                    file_affidavitNda = None
+                    if request.FILES.get('file_affidavitNda'):
+                        file_affidavitNda = save_file(request, 'file_affidavitNda', 'fileuploads/man')
+                        if not file_affidavitNda:
+                            user.delete()
+                            return Response({'error': "Invalid affidavit NDA file." }, status=400)
+
                     if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof: 
                            
                         user.delete()
@@ -4623,7 +4662,14 @@ def create_eSimProvider_pub(request ):
 
                 dealer ,error= eSimProvider.objects.safe_create(
                     company_name=company_name,
+                    company_address=company_address,
+                    company_pin=company_pin,
+                    company_email=company_email,
+                    company_phoneno=company_phoneno,
+                    company_registration_no=company_registration_no,
+                    panno=panno,
                     gstnnumber=gstnnumber,
+                    m2m_reg_certificate_no=m2m_reg_certificate_no,
                     telecomProviders=telecomProviders,
                     created=created,
                     expirydate=expirydate,
@@ -4632,8 +4678,12 @@ def create_eSimProvider_pub(request ):
                     idProofno=idProofno,
                     file_authLetter=file_authLetter,
                     file_companRegCertificate=file_companRegCertificate,
+                    file_company_registration_certificate=file_company_registration_certificate,
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
+                    file_officialTechnicalOnboardingRequestLetter=file_officialTechnicalOnboardingRequestLetter,
+                    file_selfCertifiedDotM2mRegistrationCertificate=file_selfCertifiedDotM2mRegistrationCertificate,
+                    file_affidavitNda=file_affidavitNda,
                     createdby=createdby,
                     status=partner_status,
                 )
@@ -4678,7 +4728,14 @@ def create_eSimProvider(request ):
     
     try: 
         company_name = request.data.get('company_name')
+        company_address = request.data.get('company_address')
+        company_pin = request.data.get('company_pin')
+        company_email = request.data.get('company_email')
+        company_phoneno = request.data.get('company_phoneno')
+        company_registration_no = request.data.get('company_registration_no')
+        panno = request.data.get('panno')
         gstnnumber = request.data.get('gstnnumber') 
+        m2m_reg_certificate_no = request.data.get('m2m_reg_certificate_no')
         createdby = request.user 
         date_joined = timezone.localdate()
         created = timezone.localdate()
@@ -4695,8 +4752,12 @@ def create_eSimProvider(request ):
             )
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_company_registration_certificate = request.data.get('file_company_registration_certificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
-        file_idProof = request.data.get('file_idProof') 
+        file_idProof = request.data.get('file_idProof')
+        file_officialTechnicalOnboardingRequestLetter = request.data.get('file_officialTechnicalOnboardingRequestLetter')
+        file_selfCertifiedDotM2mRegistrationCertificate = request.data.get('file_selfCertifiedDotM2mRegistrationCertificate')
+        file_affidavitNda = request.data.get('file_affidavitNda')
         state = request.data.get('stateId') 
         telecomProviders = None
         if hasattr(request.data, 'getlist') and ('telecomProviders[]' in request.data or 'telecomProviders' in request.data):
@@ -4715,6 +4776,34 @@ def create_eSimProvider(request ):
                     file_companRegCertificate=save_file(request,'file_companRegCertificate','fileuploads/man')
                     file_GSTCertificate=save_file(request,'file_GSTCertificate','fileuploads/man')
                     file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                    file_company_registration_certificate = None
+                    if request.FILES.get('file_company_registration_certificate'):
+                        file_company_registration_certificate = save_file(request, 'file_company_registration_certificate', 'fileuploads/man')
+                        if not file_company_registration_certificate:
+                            user.delete()
+                            return Response({'error': "Invalid company registration certificate file." }, status=400)
+
+                    file_officialTechnicalOnboardingRequestLetter = None
+                    if request.FILES.get('file_officialTechnicalOnboardingRequestLetter'):
+                        file_officialTechnicalOnboardingRequestLetter = save_file(request, 'file_officialTechnicalOnboardingRequestLetter', 'fileuploads/man')
+                        if not file_officialTechnicalOnboardingRequestLetter:
+                            user.delete()
+                            return Response({'error': "Invalid official technical onboarding request letter file." }, status=400)
+
+                    file_selfCertifiedDotM2mRegistrationCertificate = None
+                    if request.FILES.get('file_selfCertifiedDotM2mRegistrationCertificate'):
+                        file_selfCertifiedDotM2mRegistrationCertificate = save_file(request, 'file_selfCertifiedDotM2mRegistrationCertificate', 'fileuploads/man')
+                        if not file_selfCertifiedDotM2mRegistrationCertificate:
+                            user.delete()
+                            return Response({'error': "Invalid self-certified DoT M2M registration certificate file." }, status=400)
+
+                    file_affidavitNda = None
+                    if request.FILES.get('file_affidavitNda'):
+                        file_affidavitNda = save_file(request, 'file_affidavitNda', 'fileuploads/man')
+                        if not file_affidavitNda:
+                            user.delete()
+                            return Response({'error': "Invalid affidavit NDA file." }, status=400)
+
                     if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof: 
                            
                         user.delete()
@@ -4737,7 +4826,14 @@ def create_eSimProvider(request ):
 
                 dealer ,error= eSimProvider.objects.safe_create(
                     company_name=company_name,
+                    company_address=company_address,
+                    company_pin=company_pin,
+                    company_email=company_email,
+                    company_phoneno=company_phoneno,
+                    company_registration_no=company_registration_no,
+                    panno=panno,
                     gstnnumber=gstnnumber,
+                    m2m_reg_certificate_no=m2m_reg_certificate_no,
                     telecomProviders=telecomProviders,
                     created=created,
                     expirydate=expirydate,
@@ -4746,8 +4842,12 @@ def create_eSimProvider(request ):
                     idProofno=idProofno,
                     file_authLetter=file_authLetter,
                     file_companRegCertificate=file_companRegCertificate,
+                    file_company_registration_certificate=file_company_registration_certificate,
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
+                    file_officialTechnicalOnboardingRequestLetter=file_officialTechnicalOnboardingRequestLetter,
+                    file_selfCertifiedDotM2mRegistrationCertificate=file_selfCertifiedDotM2mRegistrationCertificate,
+                    file_affidavitNda=file_affidavitNda,
                     createdby=createdby,
                     status=partner_status,
                 )
@@ -5332,8 +5432,18 @@ def create_manufacturer_pub(request ):
 
     try:
         company_name = request.data.get('company_name')
+        company_address = request.data.get('company_address')
+        company_pin = request.data.get('company_pin')
+        company_email = request.data.get('company_email')
+        company_phoneno = request.data.get('company_phoneno')
+        company_registration_no = request.data.get('company_registration_no')
+        panno = request.data.get('panno')
+        manufacturer_type = request.data.get('manufacturer_type')
         gstnnumber = request.data.get('gstnnumber')
         tac = request.data.get('tac')
+        tac_validity = request.data.get('tac_validity')
+        cop_no = request.data.get('cop_no')
+        cop_validity = request.data.get('cop_validity')
         device_model_details = request.data.get('device_model_details')
         createdby = request.user if hasattr(request, 'user') and getattr(request.user, 'is_authenticated', False) else None
         if createdby is None:
@@ -5359,9 +5469,15 @@ def create_manufacturer_pub(request ):
             )
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_company_registration_certificate = request.data.get('file_company_registration_certificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
         file_affidavitNda = request.data.get('file_affidavitNda')
+        file_officialTechnicalOnboardingRequestLetter = request.data.get('file_officialTechnicalOnboardingRequestLetter')
+        file_vehicleTypeApprovalTacAnnexureCopy = request.data.get('file_vehicleTypeApprovalTacAnnexureCopy')
+        file_ais140DeviceTacCopy = request.data.get('file_ais140DeviceTacCopy')
+        file_factoryFitmentDeclaration = request.data.get('file_factoryFitmentDeclaration')
+        cop_file = request.data.get('cop_file')
         esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
         print(esim_provider_ids)
 
@@ -5387,8 +5503,56 @@ def create_manufacturer_pub(request ):
                         transaction.savepoint_rollback(sid)
                         return Response({'error': "Invalid file." }, status=400)
 
+                file_company_registration_certificate = None
+                if request.FILES.get('file_company_registration_certificate'):
+                    file_company_registration_certificate = save_file(request, 'file_company_registration_certificate', 'fileuploads/man')
+                    if not file_company_registration_certificate:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
+                file_officialTechnicalOnboardingRequestLetter = None
+                if request.FILES.get('file_officialTechnicalOnboardingRequestLetter'):
+                    file_officialTechnicalOnboardingRequestLetter = save_file(request, 'file_officialTechnicalOnboardingRequestLetter', 'fileuploads/man')
+                    if not file_officialTechnicalOnboardingRequestLetter:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
+                file_vehicleTypeApprovalTacAnnexureCopy = None
+                if request.FILES.get('file_vehicleTypeApprovalTacAnnexureCopy'):
+                    file_vehicleTypeApprovalTacAnnexureCopy = save_file(request, 'file_vehicleTypeApprovalTacAnnexureCopy', 'fileuploads/man')
+                    if not file_vehicleTypeApprovalTacAnnexureCopy:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
+                file_ais140DeviceTacCopy = None
+                if request.FILES.get('file_ais140DeviceTacCopy'):
+                    file_ais140DeviceTacCopy = save_file(request, 'file_ais140DeviceTacCopy', 'fileuploads/man')
+                    if not file_ais140DeviceTacCopy:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
+                file_factoryFitmentDeclaration = None
+                if request.FILES.get('file_factoryFitmentDeclaration'):
+                    file_factoryFitmentDeclaration = save_file(request, 'file_factoryFitmentDeclaration', 'fileuploads/man')
+                    if not file_factoryFitmentDeclaration:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
+                cop_file = None
+                if request.FILES.get('cop_file'):
+                    cop_file = save_file(request, 'cop_file', 'fileuploads/man')
+                    if not cop_file:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
                 manufacturer ,error= Manufacturer.objects.safe_create(
                     company_name=company_name,
+                    company_address=company_address,
+                    company_pin=company_pin,
+                    company_email=company_email,
+                    company_phoneno=company_phoneno,
+                    company_registration_no=company_registration_no,
+                    panno=panno,
                     gstnnumber=gstnnumber,
                     created=created,
                     expirydate=expirydate,
@@ -5396,10 +5560,20 @@ def create_manufacturer_pub(request ):
                     idProofno=idProofno,
                     file_authLetter=file_authLetter,
                     file_companRegCertificate=file_companRegCertificate,
+                    file_company_registration_certificate=file_company_registration_certificate,
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
                     file_affidavitNda=file_affidavitNda,
+                    file_officialTechnicalOnboardingRequestLetter=file_officialTechnicalOnboardingRequestLetter,
+                    file_vehicleTypeApprovalTacAnnexureCopy=file_vehicleTypeApprovalTacAnnexureCopy,
+                    file_ais140DeviceTacCopy=file_ais140DeviceTacCopy,
+                    file_factoryFitmentDeclaration=file_factoryFitmentDeclaration,
+                    cop_file=cop_file,
                     tac=tac,
+                    tac_validity=tac_validity,
+                    cop_no=cop_no,
+                    cop_validity=cop_validity,
+                    manufacturer_type=manufacturer_type,
                     device_model_details=device_model_details,
                     state_id=state,
                     createdby=createdby,
@@ -5462,8 +5636,18 @@ def create_manufacturer(request ):
     
     try:
         company_name = request.data.get('company_name')
+        company_address = request.data.get('company_address')
+        company_pin = request.data.get('company_pin')
+        company_email = request.data.get('company_email')
+        company_phoneno = request.data.get('company_phoneno')
+        company_registration_no = request.data.get('company_registration_no')
+        panno = request.data.get('panno')
+        manufacturer_type = request.data.get('manufacturer_type')
         gstnnumber = request.data.get('gstnnumber')
         tac = request.data.get('tac')
+        tac_validity = request.data.get('tac_validity')
+        cop_no = request.data.get('cop_no')
+        cop_validity = request.data.get('cop_validity')
         device_model_details = request.data.get('device_model_details')
         createdby = request.user 
         date_joined = timezone.localdate()
@@ -5482,9 +5666,15 @@ def create_manufacturer(request ):
             )
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
+        file_company_registration_certificate = request.data.get('file_company_registration_certificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
         file_idProof = request.data.get('file_idProof')
         file_affidavitNda = request.data.get('file_affidavitNda')
+        file_officialTechnicalOnboardingRequestLetter = request.data.get('file_officialTechnicalOnboardingRequestLetter')
+        file_vehicleTypeApprovalTacAnnexureCopy = request.data.get('file_vehicleTypeApprovalTacAnnexureCopy')
+        file_ais140DeviceTacCopy = request.data.get('file_ais140DeviceTacCopy')
+        file_factoryFitmentDeclaration = request.data.get('file_factoryFitmentDeclaration')
+        cop_file = request.data.get('cop_file')
         esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
         print(esim_provider_ids)
 
@@ -5510,8 +5700,56 @@ def create_manufacturer(request ):
                         transaction.savepoint_rollback(sid)
                         return Response({'error': "Invalid file." }, status=400)
 
+                file_company_registration_certificate = None
+                if request.FILES.get('file_company_registration_certificate'):
+                    file_company_registration_certificate = save_file(request, 'file_company_registration_certificate', 'fileuploads/man')
+                    if not file_company_registration_certificate:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
+                file_officialTechnicalOnboardingRequestLetter = None
+                if request.FILES.get('file_officialTechnicalOnboardingRequestLetter'):
+                    file_officialTechnicalOnboardingRequestLetter = save_file(request, 'file_officialTechnicalOnboardingRequestLetter', 'fileuploads/man')
+                    if not file_officialTechnicalOnboardingRequestLetter:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
+                file_vehicleTypeApprovalTacAnnexureCopy = None
+                if request.FILES.get('file_vehicleTypeApprovalTacAnnexureCopy'):
+                    file_vehicleTypeApprovalTacAnnexureCopy = save_file(request, 'file_vehicleTypeApprovalTacAnnexureCopy', 'fileuploads/man')
+                    if not file_vehicleTypeApprovalTacAnnexureCopy:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
+                file_ais140DeviceTacCopy = None
+                if request.FILES.get('file_ais140DeviceTacCopy'):
+                    file_ais140DeviceTacCopy = save_file(request, 'file_ais140DeviceTacCopy', 'fileuploads/man')
+                    if not file_ais140DeviceTacCopy:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
+                file_factoryFitmentDeclaration = None
+                if request.FILES.get('file_factoryFitmentDeclaration'):
+                    file_factoryFitmentDeclaration = save_file(request, 'file_factoryFitmentDeclaration', 'fileuploads/man')
+                    if not file_factoryFitmentDeclaration:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
+                cop_file = None
+                if request.FILES.get('cop_file'):
+                    cop_file = save_file(request, 'cop_file', 'fileuploads/man')
+                    if not cop_file:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': "Invalid file." }, status=400)
+
                 manufacturer ,error= Manufacturer.objects.safe_create(
                     company_name=company_name,
+                    company_address=company_address,
+                    company_pin=company_pin,
+                    company_email=company_email,
+                    company_phoneno=company_phoneno,
+                    company_registration_no=company_registration_no,
+                    panno=panno,
                     gstnnumber=gstnnumber,
                     created=created,
                     expirydate=expirydate,
@@ -5519,10 +5757,20 @@ def create_manufacturer(request ):
                     idProofno=idProofno,
                     file_authLetter=file_authLetter,
                     file_companRegCertificate=file_companRegCertificate,
+                    file_company_registration_certificate=file_company_registration_certificate,
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
                     file_affidavitNda=file_affidavitNda,
+                    file_officialTechnicalOnboardingRequestLetter=file_officialTechnicalOnboardingRequestLetter,
+                    file_vehicleTypeApprovalTacAnnexureCopy=file_vehicleTypeApprovalTacAnnexureCopy,
+                    file_ais140DeviceTacCopy=file_ais140DeviceTacCopy,
+                    file_factoryFitmentDeclaration=file_factoryFitmentDeclaration,
+                    cop_file=cop_file,
                     tac=tac,
+                    tac_validity=tac_validity,
+                    cop_no=cop_no,
+                    cop_validity=cop_validity,
+                    manufacturer_type=manufacturer_type,
                     device_model_details=device_model_details,
                     state_id=state,
                     createdby=createdby,
@@ -5652,6 +5900,8 @@ def create_user(role, req):
         mobile = req.data.get('mobile', '')
         name = req.data.get('name', '')
         dob = req.data.get('dob', '')
+        address = req.data.get('address', '')
+        address_pin = req.data.get('pin', '') or req.data.get('address_pin', '')
         creator_id = None
         if hasattr(req, 'user') and getattr(req.user, 'is_authenticated', False):
             creator_id = getattr(req.user, 'id', None)
@@ -5674,6 +5924,8 @@ def create_user(role, req):
             mobile=mobile,
             role=role,
             dob=dob,
+            address=address,
+            address_pin=address_pin,
             createdby=createdby_value,
             date_joined=date_joined,
             created=created,
