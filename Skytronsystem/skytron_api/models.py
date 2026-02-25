@@ -875,6 +875,61 @@ class DeviceModel(models.Model):
         ]
 
 
+class DeviceModelTechnicalOnboardingRequest(models.Model):
+    objects = SafeCreateManager()
+
+    STATUS_CHOICES = [
+        ('submitted', 'Submitted'),
+        ('ongoing_evaluation', 'Ongoing Evaluation'),
+        ('accepted', 'Accepted'),
+        ('rejected', 'Rejected'),
+    ]
+
+    manufacturer = models.ForeignKey('Manufacturer', on_delete=models.CASCADE, related_name='technical_onboarding_requests')
+    device_model = models.ForeignKey('DeviceModel', on_delete=models.CASCADE, related_name='technical_onboarding_requests')
+    request_datetime = models.DateTimeField(auto_now_add=True)
+
+    user_manual_pdf = models.CharField(max_length=255)
+    ot_command_list_pdf = models.CharField(max_length=255)
+
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='submitted', db_index=True)
+    compatibility_report_pdf = models.CharField(max_length=255, blank=True, null=True)
+    final_comment = models.TextField(blank=True, null=True)
+
+    evaluation_datetime = models.DateTimeField(blank=True, null=True)
+    decision_datetime = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['manufacturer', 'status']),
+            models.Index(fields=['device_model', 'status']),
+            models.Index(fields=['request_datetime']),
+        ]
+
+
+class DeviceModelTechnicalOnboardingDemoDevice(models.Model):
+    objects = SafeCreateManager()
+
+    onboarding_request = models.ForeignKey(
+        'DeviceModelTechnicalOnboardingRequest',
+        on_delete=models.CASCADE,
+        related_name='demo_devices'
+    )
+    device_serial_no = models.CharField(max_length=100)
+    imei = models.CharField(max_length=50)
+    ccid1 = models.CharField(max_length=50)
+    ccid2 = models.CharField(max_length=50)
+    msisdn1 = models.CharField(max_length=30)
+    msisdn2 = models.CharField(max_length=30)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['onboarding_request']),
+            models.Index(fields=['imei']),
+            models.Index(fields=['device_serial_no']),
+        ]
+
+
 class Settings_firmware(models.Model):
     objects = SafeCreateManager() 
     devicemodel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE)

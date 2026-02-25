@@ -335,6 +335,33 @@ urlpatterns = [
     path('devicemodel/COPManufacturerOtpVerify/', COPManufacturerOtpVerify, name='COPManufacturerOtpVerify'),
     path('devicemodel/devicemodelFilter/', filter_devicemodel, name='devicemodel-filter'),
     path('devicemodel/devicemodelDetails/', details_devicemodel, name='devicemodel-detail'),
+
+    # device model technical onboarding request
+    path(
+        'devicemodel/technical-onboarding/create/',
+        create_device_model_technical_onboarding_request,
+        name='create_device_model_technical_onboarding_request'
+    ),
+    path(
+        'devicemodel/technical-onboarding/superadmin/list/',
+        superadmin_list_device_model_technical_onboarding_requests,
+        name='superadmin_list_device_model_technical_onboarding_requests'
+    ),
+    path(
+        'devicemodel/technical-onboarding/superadmin/mark-ongoing/',
+        superadmin_mark_technical_onboarding_ongoing_evaluation,
+        name='superadmin_mark_technical_onboarding_ongoing_evaluation'
+    ),
+    path(
+        'devicemodel/technical-onboarding/superadmin/finalize/',
+        superadmin_finalize_technical_onboarding_request,
+        name='superadmin_finalize_technical_onboarding_request'
+    ),
+    path(
+        'devicemodel/technical-onboarding/manufacturer/list/',
+        manufacturer_list_own_device_model_technical_onboarding_requests,
+        name='manufacturer_list_own_device_model_technical_onboarding_requests'
+    ),
     
     #devicestock
     

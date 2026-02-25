@@ -914,3 +914,59 @@ class PointOfInterestSerializer(serializers.ModelSerializer):
     class Meta:
         model = pointofinterests
         fields = '__all__'
+
+
+class DeviceModelTechnicalOnboardingDemoDeviceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeviceModelTechnicalOnboardingDemoDevice
+        fields = [
+            'id',
+            'device_serial_no',
+            'imei',
+            'ccid1',
+            'ccid2',
+            'msisdn1',
+            'msisdn2',
+        ]
+
+
+class DeviceModelTechnicalOnboardingRequestCreateSerializer(serializers.ModelSerializer):
+    device_model_id = serializers.IntegerField(write_only=True)
+    demo_devices = DeviceModelTechnicalOnboardingDemoDeviceSerializer(many=True, write_only=True)
+
+    class Meta:
+        model = DeviceModelTechnicalOnboardingRequest
+        fields = [
+            'id',
+            'device_model_id',
+            'user_manual_pdf',
+            'ot_command_list_pdf',
+            'demo_devices',
+        ]
+        read_only_fields = ['id']
+
+    def validate_demo_devices(self, value):
+        if not value:
+            raise serializers.ValidationError('At least one demo device is required.')
+        return value
+
+
+class DeviceModelTechnicalOnboardingRequestDetailSerializer(serializers.ModelSerializer):
+    manufacturer = ManufacturerSerializer(read_only=True)
+    device_model = DeviceModelSerializer_disp(read_only=True)
+    demo_devices = DeviceModelTechnicalOnboardingDemoDeviceSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = DeviceModelTechnicalOnboardingRequest
+        fields = '__all__'
+
+
+class DeviceModelTechnicalOnboardingMarkEvaluationSerializer(serializers.Serializer):
+    onboarding_request_id = serializers.IntegerField()
+    evaluation_datetime = serializers.DateTimeField(required=False)
+
+
+class DeviceModelTechnicalOnboardingFinalizeSerializer(serializers.Serializer):
+    onboarding_request_id = serializers.IntegerField()
+    status = serializers.ChoiceField(choices=['accepted', 'rejected'])
+    final_comment = serializers.CharField(required=True)

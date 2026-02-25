@@ -14455,6 +14455,232 @@ def get_user_object(user,role):
         
 
     return ret
+
+
+def _is_pdf_upload(file_obj):
+    if not file_obj:
+        return False
+    name = getattr(file_obj, 'name', '') or ''
+    return str(name).lower().endswith('.pdf')
+
+
+def _parse_demo_devices_payload(raw_payload):
+    if raw_payload is None:
+        return None
+    if isinstance(raw_payload, list):
+        return raw_payload
+    if isinstance(raw_payload, str):
+        try:
+            parsed = json.loads(raw_payload)
+            return parsed if isinstance(parsed, list) else None
+        except Exception:
+            return None
+    return None
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+@require_http_methods(['GET', 'POST'])
+def create_device_model_technical_onboarding_request(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    manufacturer = get_user_object(request.user, 'devicemanufacture')
+    if not manufacturer:
+        return Response({'error': 'Request must be from devicemanufacture.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    device_model_id = request.data.get('device_model_id')
+    if not device_model_id:
+        return Response({'error': 'device_model_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    device_model = DeviceModel.objects.filter(id=device_model_id).last()
+    if not device_model:
+        return Response({'error': 'Invalid device_model_id.'}, status=status.HTTP_400_BAD_REQUEST)
+    if device_model.created_by_id != request.user.id:
+        return Response(
+            {'error': 'Technical onboarding request can be created only by the same manufacturer user who created this DeviceModel.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user_manual_file = request.FILES.get('user_manual_pdf')
+    ot_command_file = request.FILES.get('ot_command_list_pdf')
+    if not user_manual_file or not ot_command_file:
+        return Response({'error': 'Both user_manual_pdf and ot_command_list_pdf are required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not _is_pdf_upload(user_manual_file) or not _is_pdf_upload(ot_command_file):
+        return Response({'error': 'Only PDF files are allowed for user_manual_pdf and ot_command_list_pdf.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    demo_devices = _parse_demo_devices_payload(request.data.get('demo_devices'))
+    if demo_devices is None:
+        return Response({'error': 'demo_devices must be a valid JSON array.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user_manual_path = save_file(request, 'user_manual_pdf', 'fileuploads/technical_onboarding')
+    ot_command_path = save_file(request, 'ot_command_list_pdf', 'fileuploads/technical_onboarding')
+    if not user_manual_path or not ot_command_path:
+        return Response({'error': 'Invalid file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = DeviceModelTechnicalOnboardingRequestCreateSerializer(data={
+        'device_model_id': device_model.id,
+        'user_manual_pdf': user_manual_path,
+        'ot_command_list_pdf': ot_command_path,
+        'demo_devices': demo_devices,
+    })
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    onboarding_request = DeviceModelTechnicalOnboardingRequest.objects.create(
+        manufacturer=manufacturer,
+        device_model=device_model,
+        user_manual_pdf=serializer.validated_data['user_manual_pdf'],
+        ot_command_list_pdf=serializer.validated_data['ot_command_list_pdf'],
+        status='submitted',
+    )
+
+    for device_data in serializer.validated_data['demo_devices']:
+        DeviceModelTechnicalOnboardingDemoDevice.objects.create(
+            onboarding_request=onboarding_request,
+            **device_data
+        )
+
+    response_serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_request)
+    return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def superadmin_list_device_model_technical_onboarding_requests(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not get_user_object(request.user, 'superadmin'):
+        return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    onboarding_requests = DeviceModelTechnicalOnboardingRequest.objects.select_related(
+        'manufacturer__state',
+        'device_model__created_by'
+    ).prefetch_related(
+        'demo_devices',
+        'manufacturer__users',
+        'manufacturer__esim_provider',
+        'device_model__eSimProviders'
+    ).order_by('-request_datetime', '-id')
+
+    serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_requests, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+@require_http_methods(['GET', 'POST'])
+def superadmin_mark_technical_onboarding_ongoing_evaluation(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not get_user_object(request.user, 'superadmin'):
+        return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = DeviceModelTechnicalOnboardingMarkEvaluationSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    onboarding_request = DeviceModelTechnicalOnboardingRequest.objects.filter(
+        id=serializer.validated_data['onboarding_request_id']
+    ).last()
+    if not onboarding_request:
+        return Response({'error': 'Invalid onboarding_request_id.'}, status=status.HTTP_400_BAD_REQUEST)
+    if onboarding_request.status != 'submitted':
+        return Response({'error': 'Only submitted requests can be moved to ongoing evaluation.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    onboarding_request.status = 'ongoing_evaluation'
+    onboarding_request.evaluation_datetime = serializer.validated_data.get('evaluation_datetime', timezone.now())
+    onboarding_request.save(update_fields=['status', 'evaluation_datetime'])
+
+    response_serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_request)
+    return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+@require_http_methods(['GET', 'POST'])
+def superadmin_finalize_technical_onboarding_request(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not get_user_object(request.user, 'superadmin'):
+        return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = DeviceModelTechnicalOnboardingFinalizeSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    onboarding_request = DeviceModelTechnicalOnboardingRequest.objects.filter(
+        id=serializer.validated_data['onboarding_request_id']
+    ).last()
+    if not onboarding_request:
+        return Response({'error': 'Invalid onboarding_request_id.'}, status=status.HTTP_400_BAD_REQUEST)
+    if onboarding_request.status != 'ongoing_evaluation':
+        return Response({'error': 'Request must be in ongoing evaluation status before final decision.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    compatibility_report_file = request.FILES.get('compatibility_report_pdf')
+    if not compatibility_report_file:
+        return Response({'error': 'compatibility_report_pdf is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not _is_pdf_upload(compatibility_report_file):
+        return Response({'error': 'Only PDF file is allowed for compatibility_report_pdf.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    compatibility_report_path = save_file(request, 'compatibility_report_pdf', 'fileuploads/technical_onboarding')
+    if not compatibility_report_path:
+        return Response({'error': 'Invalid file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    onboarding_request.compatibility_report_pdf = compatibility_report_path
+    onboarding_request.final_comment = serializer.validated_data['final_comment']
+    onboarding_request.status = serializer.validated_data['status']
+    onboarding_request.decision_datetime = timezone.now()
+    onboarding_request.save(
+        update_fields=['compatibility_report_pdf', 'final_comment', 'status', 'decision_datetime']
+    )
+
+    response_serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_request)
+    return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def manufacturer_list_own_device_model_technical_onboarding_requests(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    manufacturer = get_user_object(request.user, 'devicemanufacture')
+    if not manufacturer:
+        return Response({'error': 'Request must be from devicemanufacture.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    onboarding_requests = DeviceModelTechnicalOnboardingRequest.objects.filter(
+        manufacturer=manufacturer
+    ).select_related(
+        'manufacturer__state',
+        'device_model__created_by'
+    ).prefetch_related(
+        'demo_devices',
+        'manufacturer__users',
+        'manufacturer__esim_provider',
+        'device_model__eSimProviders'
+    ).order_by('-request_datetime', '-id')
+
+    serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_requests, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
      
 
 @api_view(['POST'])
