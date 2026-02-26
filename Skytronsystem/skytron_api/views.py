@@ -12076,8 +12076,8 @@ def manufacturer_model_stock_statistics(request):
         # Calculate the time threshold for online devices (last 15 minutes)
         online_threshold = timezone.now() - timedelta(minutes=15)
         
-        # Get all manufacturers
-        manufacturers = Manufacturer.objects.all().select_related('createdby').prefetch_related('users')
+        # Get only final-approved manufacturers
+        manufacturers = Manufacturer.objects.filter(status='Accept').select_related('createdby').prefetch_related('users')
         
         manufacturer_list = []
         total_manufacturers = manufacturers.count()
@@ -20869,7 +20869,8 @@ def archive_gps_data_log(request):
     Archive GPSDataLog records up to a specific date (must be at least 2 years old).
     Saves data to JSON file and removes from database.
     """
-    try: 
+    try:
+        actor_email = getattr(request.user, 'email', None) or 'unknown'
         archive_date_str = request.data.get('archive_date')
         if not archive_date_str:
             return Response({'status': 'error', 'message': 'archive_date is required in format YYYY-MM-DD'}, 
@@ -20919,7 +20920,7 @@ def archive_gps_data_log(request):
                 'archive_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'date_range': {'from': date_from, 'to': date_to},
                 'records_count': record_count,
-                'archived_by': payload.get('email', 'unknown')
+                'archived_by': actor_email
             },
             'records': []
         }
@@ -20955,7 +20956,7 @@ def archive_gps_data_log(request):
             'records_deleted': deleted_count,
             'date_range': {'from': date_from, 'to': date_to},
             'file_size_mb': file_size_mb,
-            'archived_by': payload.get('email', 'unknown'),
+            'archived_by': actor_email,
             'archived_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }, status=status.HTTP_200_OK)
         
@@ -21013,7 +21014,8 @@ def restore_gps_data_log(request):
     """
     Restore GPSDataLog records from an archive JSON file.
     """
-    try: 
+    try:
+        actor_email = getattr(request.user, 'email', None) or 'unknown'
         
         archive_filename = request.data.get('archive_file')
         if not archive_filename:
@@ -21068,7 +21070,7 @@ def restore_gps_data_log(request):
             'records_after_restore': count_after,
             'records_restored': records_restored,
             'archive_metadata': archive_data.get('metadata', {}),
-            'restored_by': payload.get('email', 'unknown'),
+            'restored_by': actor_email,
             'restored_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }, status=status.HTTP_200_OK)
         
