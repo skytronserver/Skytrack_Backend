@@ -7781,22 +7781,36 @@ def  DEx_closeCase(request ):
         assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo).last()
         if not assignment:
             return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+        assignments =EMCallAssignment.objects.filter(call=assignment.call,status="pending").all()
+        try:
+            
+            final_command = "SETSOSDIS-1*"
+
+            payload = { 
+                'keys': final_command,
+                
+            }
+
+ 
+            send_general_mqtt_message(str(assignment.call.device.device.imei), payload)
+        
+        
+            #send_sos_mqtt_message(assignment.call.device.device.imei, 2)
+            
+        except:
+            return Response({"error":"MQTT COMMAND NOT SENT" }, status=status.HTTP_400_BAD_REQUEST) 
         ee=EMCallBroadcast.objects.filter(
             call = assignment.call,status="pending").all()
         for e in ee:
             e.status="canceled"
             e.save()
-        assignments =EMCallAssignment.objects.filter(call=assignment.call,status="pending").all()
+        
         for a in assignments:
             a.status="closed"
             a.save()
         assignment.call.status="closed"
         assignment.call.save()
-        try:
-            send_sos_mqtt_message(assignment.call.device.device.imei, 2)
-            
-        except:
-            pass
+        
         
 
         
