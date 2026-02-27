@@ -1,5 +1,5 @@
 
-import threading, os, ssl, json
+import threading, os, ssl, json, time
 import paho.mqtt.client as mqtt
 from rest_framework.pagination import PageNumberPagination
 from math import radians, sin, cos, sqrt, asin
@@ -7784,7 +7784,7 @@ def  DEx_closeCase(request ):
         assignments =EMCallAssignment.objects.filter(call=assignment.call,status="pending").all()
         try:
             
-            final_command = "SETSOSDIS-1*"
+            final_command = "@SETSOSDIS-1*"
 
             payload = { 
                 'keys': final_command,
@@ -7793,6 +7793,7 @@ def  DEx_closeCase(request ):
 
  
             send_general_mqtt_message(str(assignment.call.device.device.imei), payload)
+            time.sleep(5)
         
         
             #send_sos_mqtt_message(assignment.call.device.device.imei, 2)
