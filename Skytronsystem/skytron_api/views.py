@@ -15433,8 +15433,8 @@ def reset_password(request ):
         from .secure_token import generate_jwt_token
         jwt_token = generate_jwt_token(
             user_id=user.id,
-            mobile=user.mobile,
-            session_metadata={
+            user_mobile=user.mobile,
+            session_data={
                 "session_type": "password_reset",
                 "role": user.role
             }
@@ -15506,6 +15506,9 @@ def user_login(request ):
                 password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
             except:
                 return JsonResponse({'success': False, 'error': 'Invalid Password'}, status=status.HTTP_400_BAD_REQUEST)
+
+                    if not password:
+                        return JsonResponse({'success': False, 'error': 'Invalid Password'}, status=status.HTTP_400_BAD_REQUEST)
         
             captchaSuccess=False
             try:
