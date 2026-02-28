@@ -18,6 +18,49 @@ from django.shortcuts import render
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from django.views.decorators.http import require_http_methods
 
+import logging
+
+
+logger = logging.getLogger(__name__)
+
+try:
+    from django_redis.exceptions import ConnectionInterrupted  # type: ignore
+except Exception:  # pragma: no cover
+    ConnectionInterrupted = ()  # type: ignore
+
+try:
+    from redis.exceptions import ConnectionError as RedisConnectionError  # type: ignore
+except Exception:  # pragma: no cover
+    RedisConnectionError = ()  # type: ignore
+
+
+class SafeAnonRateThrottle(AnonRateThrottle):
+    """Like DRF's AnonRateThrottle, but doesn't 500 if cache backend is down."""
+
+    def allow_request(self, request, view):
+        try:
+            return super().allow_request(request, view)
+        except (ConnectionInterrupted, RedisConnectionError, OSError) as exc:
+            logger.warning('Throttle cache unavailable; allowing request', exc_info=exc)
+            return True
+
+
+class SafeUserRateThrottle(UserRateThrottle):
+    """Like DRF's UserRateThrottle, but doesn't 500 if cache backend is down."""
+
+    def allow_request(self, request, view):
+        try:
+            return super().allow_request(request, view)
+        except (ConnectionInterrupted, RedisConnectionError, OSError) as exc:
+            logger.warning('Throttle cache unavailable; allowing request', exc_info=exc)
+            return True
+
+
+# Override the imported throttle symbols so all @throttle_classes([...]) usages in this
+# module use the safe variants (without touching hundreds of decorators).
+AnonRateThrottle = SafeAnonRateThrottle
+UserRateThrottle = SafeUserRateThrottle
+
 
 from django.utils import timezone
 from datetime import timedelta
@@ -1960,8 +2003,16 @@ def save_file(request, tag, path):
     }
 
     # Use python-magic to detect the MIME type
-    mime = magic.Magic(mime=True)
-    mime_type = mime.from_buffer(uploaded_file.read(2048))  # Read the first 2 KB of the file
+    try:
+        mime = magic.Magic(mime=True)
+        mime_type = mime.from_buffer(uploaded_file.read(2048) or b'')  # Read the first 2 KB of the file
+    except Exception:
+        return None
+    finally:
+        try:
+            uploaded_file.seek(0)
+        except Exception:
+            pass
 
     if mime_type not in valid_mime_types:
         return None 
@@ -15507,8 +15558,8 @@ def user_login(request ):
             except:
                 return JsonResponse({'success': False, 'error': 'Invalid Password'}, status=status.HTTP_400_BAD_REQUEST)
 
-                    if not password:
-                        return JsonResponse({'success': False, 'error': 'Invalid Password'}, status=status.HTTP_400_BAD_REQUEST)
+            if not password:
+                return JsonResponse({'success': False, 'error': 'Invalid Password'}, status=status.HTTP_400_BAD_REQUEST)
         
             captchaSuccess=False
             try:
