@@ -5944,15 +5944,48 @@ def filter_manufacturers(request ):
 
 from django.db import IntegrityError
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email as django_validate_email
 
 def create_user(role, req):
     try:
-        email = req.data.get('email', '')
-        mobile = req.data.get('mobile', '')
-        name = req.data.get('name', '')
-        dob = req.data.get('dob', '')
+        email = (req.data.get('email', '') or '').strip()
+        mobile = (req.data.get('mobile', '') or '').strip()
+        name = (req.data.get('name', '') or '').strip()
+        dob = (req.data.get('dob', '') or '').strip()
         address = req.data.get('address', '')
         address_pin = req.data.get('pin', '') or req.data.get('address_pin', '')
+
+        field_errors = {}
+        if not name:
+            field_errors['name'] = 'name is required.'
+        if not email:
+            field_errors['email'] = 'email is required.'
+        else:
+            try:
+                django_validate_email(email)
+            except Exception:
+                field_errors['email'] = 'email must be a valid email address.'
+
+        if not mobile:
+            field_errors['mobile'] = 'mobile is required.'
+        else:
+            mobile_digits = ''.join(ch for ch in mobile if ch.isdigit())
+            if mobile_digits != mobile:
+                field_errors['mobile'] = 'mobile must contain digits only.'
+            elif len(mobile) < 10 or len(mobile) > 15:
+                field_errors['mobile'] = 'mobile must be between 10 and 15 digits.'
+
+        if not dob:
+            field_errors['dob'] = 'dob is required.'
+
+        if field_errors:
+            return [None, {'errors': field_errors}, None]
+
+        # Proactive uniqueness checks to avoid masking DB constraint details
+        if User.objects.filter(email__iexact=email).exists():
+            return [None, {'error': 'Email already exists.'}, None]
+        if User.objects.filter(mobile=mobile).exists():
+            return [None, {'error': 'Mobile already exists.'}, None]
         creator_id = None
         if hasattr(req, 'user') and getattr(req.user, 'is_authenticated', False):
             creator_id = getattr(req.user, 'id', None)
@@ -5994,12 +6027,12 @@ def create_user(role, req):
 
     except IntegrityError as e:
         # Handle database integrity errors (e.g., duplicate keys)
-        if 'email' in e:
+        msg = str(e).lower()
+        if 'email' in msg:
             return [None, {'error': "Email field is invalid or already exists."}, None]
-        elif 'mobile' in e:
+        if 'mobile' in msg:
             return [None, {'error': "Mobile field is invalid or already exists."}, None]
-        else:
-            return [None, {'error': "A database integrity error occurred."}, None]
+        return [None, {'error': "A database integrity error occurred."}, None]
 
     except ValidationError as e:
         # Handle validation errors
