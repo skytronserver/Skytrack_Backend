@@ -205,6 +205,8 @@ def process_em_data(data_str):
     """
     Process Emergency (EM) data from devices
     Supports new EPB format: $,EPB,EMR,860269065287047,NM,24102025051128,A,26.193007,N,91.752815,E,90.6,0.0,0.000,G,DL01AB1234,9401633421,*,04
+    Also supports optional extension before checksum:
+    ...,*,{SOS_PUB_AS01PT0010},5C
     Used by EM server and MQTT deviceEM topic
     """
     try:
@@ -240,6 +242,19 @@ def process_em_data(data_str):
                     
                     ist_datetime = gmt_timezone.localize(gmt_datetime).astimezone(ist_timezone)
                     #print(f"[MQTT] Parsed datetime: {ist_datetime}", flush=True)
+
+                    extention_value = None
+                    try:
+                        star_index = next(
+                            (idx for idx, token in enumerate(data_list) if (token or '').strip() == '*'),
+                            None,
+                        )
+                        if star_index is not None and star_index + 1 < len(data_list):
+                            maybe_extention = (data_list[star_index + 1] or '').strip()
+                            if maybe_extention.startswith('{') and maybe_extention.endswith('}'):
+                                extention_value = maybe_extention
+                    except Exception:
+                        extention_value = None
                     
                     # Create EM location data
                     em_data = {
@@ -340,6 +355,7 @@ def process_em_data(data_str):
                             provider=data_list[14],           # G
                             vehicle_reg_no= device_tag.vehicle_reg_no,  #  data_list[15],     # DL01AB1234
                             reply_mob_no=data_list[16] if len(data_list) > 16 else '9401633421', # phone
+                            extention=extention_value,
                             device_tag=device_tag             # DeviceTag or None
                         )
                         

@@ -1189,6 +1189,7 @@ class EMGPSLocation(models.Model): #imergency tracking data
     provider = models.CharField(max_length=50)
     vehicle_reg_no = models.CharField(max_length=20)
     reply_mob_no = models.CharField(max_length=15)    
+    extention = models.TextField(blank=True, null=True)
     device_tag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE,null=True, blank=True)
     class Meta:
         app_label = 'skytron_api'
@@ -1338,6 +1339,18 @@ def create_emergency_call(sender, instance, created, **kwargs):
 
         """
         st=instance.device_tag.device.dealer.manufacturer.state 
+
+        extention_value = (instance.extention or '').strip()
+        normalized_extention = extention_value[1:-1].strip() if extention_value.startswith('{') and extention_value.endswith('}') else extention_value
+        em_type = 'device'
+        if normalized_extention.startswith('SOS_PUB_'):
+            em_type = 'BLE_Public'
+        elif normalized_extention.startswith('SOS_USER_'):
+            em_type = 'BLE_Login'
+        elif normalized_extention.startswith('SOS_TM_IP_'):
+            em_type = 'BLE_TM_PW_Fail'
+        elif normalized_extention.startswith('SOS_TM_RV_'):
+            em_type = 'BLE_TM_Route'
                                                                   
         if not existing_emergency_call:
             # Create a new EmergencyCall entry
@@ -1348,6 +1361,8 @@ def create_emergency_call(sender, instance, created, **kwargs):
                 #start_time=timezone.now(),
                 team=team,
                 status='pending',  # Set the initial status as 'Pending'
+                em_type=em_type,
+                extention=extention_value or None,
                 #desk_executive_id='',
                 #field_executive_id='',
                 #final_comment='',
@@ -1985,6 +2000,7 @@ class EMCall(models.Model):
     status = models.CharField(max_length=30,choices=choices)
     closer_comment = models.TextField(blank=True, null=True)
     em_type=models.CharField(max_length=50,null=True, blank=True)
+    extention = models.TextField(blank=True, null=True)
     
     def __str__(self):
         return f"EMCall {self.id}"
