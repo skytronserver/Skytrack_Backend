@@ -106,9 +106,9 @@ def process_gps_data(data_str):
                     'nbr4_lac': groups[44][:10],      # 0000
                     'nbr4_signal_strength': groups[45][:10] if len(groups) > 45 else '0', # 0
                     'digital_input_status': groups[46][:10] if len(groups) > 46 else '1111', # 1111
-                    'digital_output_status': '00',  # Default, not explicitly in new format
-                    'frame_number': int(groups[47]) if len(groups) > 47 and groups[47].isdigit() else 0, # 10 (odometer reading)
-                    'odometer': float(groups[48]) if len(groups) > 48 and groups[48].replace('.', '').isdigit() else 0.0, # 000043
+                    'digital_output_status': groups[47][:3] if len(groups) > 47 else '00', # 1111 
+                    'frame_number': int(groups[48]) if len(groups) > 48 and groups[48].isdigit() else 0, # 10 (odometer reading)
+                    'odometer': float(groups[49]) if len(groups) > 49 and groups[49].replace('.', '').isdigit() else 0.0, # 000043
                 }
 
                 return gps_data
