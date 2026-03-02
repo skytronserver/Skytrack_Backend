@@ -1230,9 +1230,9 @@ import random
 from itertools import islice 
 from django.utils import timezone     
 from django.contrib.auth.hashers import check_password, make_password
-from django.core.mail import send_mail as sm
-def send_mail(subject, message, from_email, recipient_list, fail_silently=False, html_message=None):    
-    pass
+from django.core.mail import send_mail #as sm
+#def send_mail(subject, message, from_email, recipient_list, fail_silently=False, html_message=None):    
+#    pass
 import os 
 import magic
 import glob
