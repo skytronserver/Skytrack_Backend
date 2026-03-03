@@ -11258,11 +11258,11 @@ def COPAwaitingStateApproval(request ):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
      
-    role="stateadmin"
-    user=request.user
-    uo=get_user_object(user,role)
-    if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    state_admin_obj = get_user_object(user, "stateadmin")
+    super_admin_obj = get_user_object(user, "superadmin")
+    if not (state_admin_obj or super_admin_obj):
+        return Response({"error": "Request must be from stateadmin or superadmin."}, status=status.HTTP_400_BAD_REQUEST)
     
     #user_id = request.user.id
     device_models = DeviceCOP.objects.filter(status='Manufacturer_OTP_Verified')#created_by=user_id, 
@@ -11628,10 +11628,11 @@ def DeviceModelAwaitingStateApproval(request ):
 
      
     #user_id = request.user.id    
-    user=request.user 
-    sa=get_user_object(user,"stateadmin")
-    if not sa:
-        return Response({"error":"Request must be from stateadmin"}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    state_admin_obj = get_user_object(user, "stateadmin")
+    super_admin_obj = get_user_object(user, "superadmin")
+    if not (state_admin_obj or super_admin_obj):
+        return Response({"error": "Request must be from stateadmin or superadmin"}, status=status.HTTP_400_BAD_REQUEST)
       
 
     # Retrieve device models with status "Manufacturer_OTP_Verified"
@@ -18678,17 +18679,22 @@ def state_admin_approved_models_report(request):
     try:
         user = request.user
         
-        # Check if user is a state admin
-        if user.role != 'stateadmin':
+        # Check if user is a state admin or superadmin
+        if user.role not in ['stateadmin', 'superadmin']:
             return Response({
-                "error": "Access denied. This endpoint is only accessible by state admins."
+                "error": "Access denied. This endpoint is only accessible by state admins or superadmins."
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # Get state admin profile
-        state_admin = get_user_object(user, "stateadmin")
-        if not state_admin:
+        # Get requester profile based on role
+        state_admin = get_user_object(user, "stateadmin") if user.role == 'stateadmin' else None
+        super_admin = get_user_object(user, "superadmin") if user.role == 'superadmin' else None
+        if user.role == 'stateadmin' and not state_admin:
             return Response({
                 "error": "State admin profile not found"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        if user.role == 'superadmin' and not super_admin:
+            return Response({
+                "error": "Superadmin profile not found"
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # Base query for approved device models
@@ -18824,9 +18830,9 @@ def state_admin_approved_models_report(request):
             'models_without_esim_providers': total_models - models_with_esim,
             'test_agencies_breakdown': test_agencies,
             'state_admin_info': {
-                'id': state_admin.id,
-                'state': state_admin.state.state if state_admin.state else 'N/A',
-                'created_date': state_admin.created.strftime('%Y-%m-%d') if state_admin.created else 'N/A'
+                'id': state_admin.id if state_admin else None,
+                'state': state_admin.state.state if state_admin and state_admin.state else 'N/A',
+                'created_date': state_admin.created.strftime('%Y-%m-%d') if state_admin and state_admin.created else 'N/A'
             }
         }
         
@@ -18868,17 +18874,22 @@ def state_admin_approved_cops_report(request):
     try:
         user = request.user
         
-        # Check if user is a state admin
-        if user.role != 'stateadmin':
+        # Check if user is a state admin or superadmin
+        if user.role not in ['stateadmin', 'superadmin']:
             return Response({
-                "error": "Access denied. This endpoint is only accessible by state admins."
+                "error": "Access denied. This endpoint is only accessible by state admins or superadmins."
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # Get state admin profile
-        state_admin = get_user_object(user, "stateadmin")
-        if not state_admin:
+        # Get requester profile based on role
+        state_admin = get_user_object(user, "stateadmin") if user.role == 'stateadmin' else None
+        super_admin = get_user_object(user, "superadmin") if user.role == 'superadmin' else None
+        if user.role == 'stateadmin' and not state_admin:
             return Response({
                 "error": "State admin profile not found"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        if user.role == 'superadmin' and not super_admin:
+            return Response({
+                "error": "Superadmin profile not found"
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # Base query for approved COPs
@@ -19063,9 +19074,9 @@ def state_admin_approved_cops_report(request):
             'test_agencies_breakdown': test_agencies,
             'validity_years_breakdown': validity_years,
             'state_admin_info': {
-                'id': state_admin.id,
-                'state': state_admin.state.state if state_admin.state else 'N/A',
-                'created_date': state_admin.created.strftime('%Y-%m-%d') if state_admin.created else 'N/A'
+                'id': state_admin.id if state_admin else None,
+                'state': state_admin.state.state if state_admin and state_admin.state else 'N/A',
+                'created_date': state_admin.created.strftime('%Y-%m-%d') if state_admin and state_admin.created else 'N/A'
             }
         }
         
