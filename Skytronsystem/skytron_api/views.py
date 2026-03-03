@@ -1230,9 +1230,9 @@ import random
 from itertools import islice 
 from django.utils import timezone     
 from django.contrib.auth.hashers import check_password, make_password
-from django.core.mail import send_mail #as sm
-#def send_mail(subject, message, from_email, recipient_list, fail_silently=False, html_message=None):    
-#    pass
+from django.core.mail import send_mail as sm
+def send_mail(subject, message, from_email, recipient_list, fail_silently=False, html_message=None):    
+    pass
 import os 
 import magic
 import glob
@@ -2133,6 +2133,13 @@ for folder in folders:
         _host_storage_init_ok = False
         break
 
+# Backward-compatible local relative folders used by legacy code paths on some VMs.
+for legacy_local_folder in ['fileuploads/cop_files', 'fileuploads/copfiles']:
+    try:
+        os.makedirs(legacy_local_folder, exist_ok=True)
+    except PermissionError:
+        pass
+
 if not _host_storage_init_ok:
     HOST_STORAGE_PATH = os.environ.get('HOST_STORAGE_FALLBACK_PATH', '/tmp/skytrack_storage')
     folders = [
@@ -2151,6 +2158,11 @@ if not _host_storage_init_ok:
     for folder in folders:
         try:
             os.makedirs(folder, exist_ok=True)
+        except PermissionError:
+            pass
+    for legacy_local_folder in ['fileuploads/cop_files', 'fileuploads/copfiles']:
+        try:
+            os.makedirs(legacy_local_folder, exist_ok=True)
         except PermissionError:
             pass
 
@@ -9086,8 +9098,11 @@ def CancelTagDevice2Vehicle(request ):
         current_datetime = timezone.now()
         uploaded_file = request.FILES.get('rcFile')
         if uploaded_file:
-            file_path = 'fileuploads/cop_files/' + str(device_id) + '_' + uploaded_file.name
-            with open(file_path, 'wb') as file:
+            safe_file_name = os.path.basename(uploaded_file.name)
+            relative_file_path = f"fileuploads/cop_files/{device_id}_{safe_file_name}"
+            absolute_file_path = os.path.join(HOST_STORAGE_PATH, relative_file_path)
+            os.makedirs(os.path.dirname(absolute_file_path), exist_ok=True)
+            with open(absolute_file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
             
@@ -9100,7 +9115,7 @@ def CancelTagDevice2Vehicle(request ):
             vehicle_make=request.data['vehicle_make'],
             vehicle_model=request.data['vehicle_model'],
             category=request.data['category'],
-            rc_file=file_path,
+            rc_file=relative_file_path,
             status='Dealer_OTP_Sent',
             tagged_by=user,
             tagged=current_datetime,
@@ -9163,8 +9178,11 @@ def TagDevice2Vehicle(request ):
         current_datetime = timezone.now()
         uploaded_file = request.FILES.get('rcFile')
         if uploaded_file:
-            file_path = 'fileuploads/cop_files/' + str(device_id) + '_' + uploaded_file.name
-            with open(file_path, 'wb') as file:
+            safe_file_name = os.path.basename(uploaded_file.name)
+            relative_file_path = f"fileuploads/cop_files/{device_id}_{safe_file_name}"
+            absolute_file_path = os.path.join(HOST_STORAGE_PATH, relative_file_path)
+            os.makedirs(os.path.dirname(absolute_file_path), exist_ok=True)
+            with open(absolute_file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
             # Resolve district (accept id as str/int)
@@ -9209,7 +9227,7 @@ def TagDevice2Vehicle(request ):
             vehicle_model=request.data['vehicle_model'],
             category_id=category_obj.id, 
             district_id=district.id,
-            rc_file=file_path,
+            rc_file=relative_file_path,
             receipt_file_or='',
             receipt_file_ul='',
             status='Dealer_OTP_Sent',
@@ -9456,7 +9474,9 @@ def download_receiptPDF(request ):
             device_tag = DeviceTag.objects.filter(device=tag_id).last()
             if not device_tag:
                 return HttpResponse("Device tag not found.", status=404) 
-            file_path = f"fileuploads/cop_files/"+str(device_tag.id)+".pdf"
+            relative_file_path = f"fileuploads/cop_files/{device_tag.id}.pdf"
+            file_path = os.path.join(HOST_STORAGE_PATH, relative_file_path)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
             try:
                 geneateCet(file_path,device_tag.device.imei,device_tag.device.model.model_name,device_tag.device.model.model_name,formatted_date ,device_tag.vehicle_reg_no,formatted_date ,formatted_date ,formatted_date ,device_tag.status,formatted_date )
                 with open(file_path,'rb') as file:
@@ -11223,13 +11243,16 @@ def COPCreate(request ):
         uploaded_file = request.FILES.get('cop_file')
         if uploaded_file:
             # Save the file to a specific location
-            file_path = 'fileuploads/cop_files/' + str(device_cop_instance.id) + '_' + uploaded_file.name
-            with open(file_path, 'wb') as file:
+            safe_file_name = os.path.basename(uploaded_file.name)
+            relative_file_path = f"fileuploads/cop_files/{device_cop_instance.id}_{safe_file_name}"
+            absolute_file_path = os.path.join(HOST_STORAGE_PATH, relative_file_path)
+            os.makedirs(os.path.dirname(absolute_file_path), exist_ok=True)
+            with open(absolute_file_path, 'wb') as file:
                 for chunk in uploaded_file.chunks():
                     file.write(chunk)
             
             # Update the cop_file field in the DeviceCOP instance
-            device_cop_instance.cop_file = file_path
+            device_cop_instance.cop_file = relative_file_path
             device_cop_instance.save()
                     
             text="Dear User, Your OTP to validate COP creation/update in SkyTron portal is {}. Please DO NOT disclose it to anyone. -SkyTron".format(otp)
