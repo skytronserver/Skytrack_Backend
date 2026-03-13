@@ -4596,7 +4596,7 @@ def update_eSimProvider(request ):
         esimprovider.expirydate = expirydate
         ep_user.save()
         esimprovider.save()
-        send_usercreation_otp(ep_user, new_password, 'EsimProvider')
+        #send_usercreation_otp(ep_user, new_password, 'EsimProvider')
         return Response(eSimProviderSerializer(esimprovider).data)
 
 
@@ -9264,6 +9264,72 @@ def TagDevice2Vehicle(request ):
     else:
         return JsonResponse({  'message': 'Device not avaialble for Tagging'}, status=201)
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def update_temp_tag_registration(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = request.user
+    role = "dealer"
+    man = get_user_object(user, role)
+    if not man:
+        return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
+
+    device_tag_id = request.data.get('device_tag_id') or request.data.get('tag_id')
+    new_registration_no = (request.data.get('new_registration_no') or '').strip().upper()
+    uploaded_file = (
+        request.FILES.get('rcFile')
+        or request.FILES.get('pdf')
+        or request.FILES.get('registration_certificate_pdf')
+    )
+
+    if not device_tag_id:
+        return Response({'error': 'device_tag_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+    if not new_registration_no:
+        return Response({'error': 'new_registration_no is required'}, status=status.HTTP_400_BAD_REQUEST)
+    if not uploaded_file:
+        return Response({'error': 'RC PDF file is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        device_tag = DeviceTag.objects.filter(id=int(str(device_tag_id))).last()
+    except (TypeError, ValueError):
+        return Response({'error': 'Invalid device_tag_id'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not device_tag:
+        return Response({'error': 'DeviceTag not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if device_tag.tagged_by_id != user.id:
+        return Response({'error': 'Only creator of this tag can update registration details'}, status=status.HTTP_403_FORBIDDEN)
+
+    current_reg_no = (device_tag.vehicle_reg_no or '').strip().upper()
+    tmp_index = current_reg_no.find('TMP')
+    if tmp_index < 4:
+        return Response({'error': 'Registration update is allowed only when temporary marker TMP appears after the 4th character'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if DeviceTag.objects.filter(vehicle_reg_no=new_registration_no).exclude(id=device_tag.id).exists():
+        return Response({'error': 'new_registration_no already exists'}, status=status.HTTP_400_BAD_REQUEST)
+
+    safe_file_name = os.path.basename(uploaded_file.name)
+    relative_file_path = f"fileuploads/cop_files/tag_{device_tag.id}_{safe_file_name}"
+    absolute_file_path = os.path.join(HOST_STORAGE_PATH, relative_file_path)
+    os.makedirs(os.path.dirname(absolute_file_path), exist_ok=True)
+
+    with open(absolute_file_path, 'wb') as file:
+        for chunk in uploaded_file.chunks():
+            file.write(chunk)
+
+    device_tag.vehicle_reg_no = new_registration_no
+    device_tag.rc_file = relative_file_path
+    device_tag.save()
+
+    serializer = DeviceTagSerializer(device_tag)
+    return Response({'data': serializer.data, 'message': 'Temporary registration updated successfully.'}, status=status.HTTP_200_OK)
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
@@ -10953,6 +11019,29 @@ def deviceStockFilter(request ):
         for ds in ds_with_providers:
             esim_provider_map[ds.id] = eSimProviderSerializer(ds.esim_provider.all(), many=True).data
 
+    # Fetch latest device tag info for each device in this page
+    device_tag_map = {}
+    if device_ids:
+        tag_rows = DeviceTag.objects.filter(device_id__in=device_ids).values(
+            'id', 'device_id', 'vehicle_reg_no', 'engine_no', 'chassis_no',
+            'vehicle_make', 'vehicle_model', 'status', 'tagged', 'vehicle_owner_id', 'tagged_by_id'
+        ).order_by('device_id', '-id')
+        for tag in tag_rows:
+            if tag['device_id'] not in device_tag_map:
+                device_tag_map[tag['device_id']] = {
+                    'id': tag['id'],
+                    'device_id': tag['device_id'],
+                    'vehicle_reg_no': tag['vehicle_reg_no'],
+                    'engine_no': tag['engine_no'],
+                    'chassis_no': tag['chassis_no'],
+                    'vehicle_make': tag['vehicle_make'],
+                    'vehicle_model': tag['vehicle_model'],
+                    'status': tag['status'],
+                    'tagged': tag['tagged'],
+                    'vehicle_owner_id': tag['vehicle_owner_id'],
+                    'tagged_by_id': tag['tagged_by_id'],
+                }
+
     # If is_tagged_filter was not applied, get is_tagged status for all items in one query
     if is_tagged_filter is None and device_ids:
         tagged_device_ids = set(
@@ -11028,6 +11117,7 @@ def deviceStockFilter(request ):
                 'name': item['created_by__name'],
                 'email': item['created_by__email'],
             } if item['created_by__id'] else None,
+            'device_tag_info': device_tag_map.get(device_id),
             # Add all COPs for this device model, latest first
             'cops': device_model_cop_map.get(model_id, []),
         }
@@ -21100,6 +21190,562 @@ def archive_gps_data_log(request):
         logger.error(f"Error in archive_gps_data_log: {str(e)}")
         return Response({'status': 'error', 'message': f'An error occurred: {str(e)}'}, 
                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+IMEI_PATTERN = re.compile(r'(?<!\d)(\d{15})(?!\d)')
+
+
+def _parse_imei_list_from_request(request):
+        raw_imeis = request.data.get('imeis') if request.method == 'POST' else request.GET.get('imeis', '')
+
+        if isinstance(raw_imeis, list):
+                candidates = raw_imeis
+        elif isinstance(raw_imeis, str):
+                candidates = re.split(r'[\s,]+', raw_imeis.strip()) if raw_imeis.strip() else []
+        else:
+                candidates = []
+
+        normalized = []
+        invalid = []
+        seen = set()
+        for item in candidates:
+                val = str(item).strip()
+                if not val:
+                        continue
+                if not re.fullmatch(r'\d{15}', val):
+                        invalid.append(val)
+                        continue
+                if val not in seen:
+                        normalized.append(val)
+                        seen.add(val)
+        return normalized, invalid
+
+
+def _is_tracking_packet(raw_data):
+        return ',PVT,' in raw_data
+
+
+def _is_health_packet(raw_data):
+        return ',HLM,' in raw_data
+
+
+def _is_login_packet(raw_data):
+        return raw_data.strip().startswith('$AS')
+
+
+def _extract_tracking_lat_lon(raw_data):
+        try:
+                parts = [p.strip() for p in raw_data.split(',')]
+                pvt_idx = parts.index('PVT')
+                lat_token = parts[pvt_idx + 11]
+                lon_token = parts[pvt_idx + 13]
+
+                lat_match = re.search(r'-?\d+(?:\.\d+)?', lat_token or '')
+                lon_match = re.search(r'-?\d+(?:\.\d+)?', lon_token or '')
+                if not lat_match or not lon_match:
+                        return None, None
+
+                lat = float(lat_match.group(0))
+                lon = float(lon_match.group(0))
+                return lat, lon
+        except Exception:
+                return None, None
+
+
+def _is_valid_lat_lon(lat, lon):
+        if lat is None or lon is None:
+                return False
+        if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+                return False
+        return not (abs(lat) < 1e-9 and abs(lon) < 1e-9)
+
+
+def _format_age_seconds(seconds):
+        sec = int(max(0, seconds))
+        days, rem = divmod(sec, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, seconds = divmod(rem, 60)
+
+        if days:
+                return f"{days}d {hours}h {minutes}m {seconds}s"
+        if hours:
+                return f"{hours}h {minutes}m {seconds}s"
+        if minutes:
+                return f"{minutes}m {seconds}s"
+        return f"{seconds}s"
+
+
+def _packet_snapshot(log_obj, now):
+        if not log_obj:
+                return None
+        delta_sec = max((now - log_obj.timestamp).total_seconds(), 0)
+        return {
+                'timestamp': log_obj.timestamp.isoformat(),
+                'age_seconds': round(delta_sec, 2),
+                'age_human': _format_age_seconds(delta_sec),
+                'raw_data': log_obj.raw_data,
+        }
+
+
+def _average_gap_seconds(timestamps):
+    if len(timestamps) < 2:
+        return None
+
+    ordered = sorted(timestamps)
+    diffs = []
+    for i in range(1, len(ordered)):
+        gap = (ordered[i] - ordered[i - 1]).total_seconds()
+        if gap >= 0:
+            diffs.append(gap)
+
+    if not diffs:
+        return None
+    return round(sum(diffs) / len(diffs), 2)
+
+
+def _extract_target_imei(raw_data, imei_set):
+    if not raw_data:
+        return None
+    for match in IMEI_PATTERN.finditer(raw_data):
+        found = match.group(1)
+        if found in imei_set:
+            return found
+    return None
+
+
+def _window_counts_and_avg_gaps(timestamps, now, windows):
+    from bisect import bisect_left
+
+    ordered = sorted(timestamps)
+    n = len(ordered)
+
+    counts = {}
+    avg_gaps = {}
+    if n == 0:
+        for label, _ in windows:
+            counts[label] = 0
+            avg_gaps[label] = None
+        return counts, avg_gaps
+
+    # gaps[i] = ordered[i] - ordered[i-1] in seconds (gaps[0] is 0)
+    gaps = [0.0] * n
+    for i in range(1, n):
+        gaps[i] = max((ordered[i] - ordered[i - 1]).total_seconds(), 0)
+
+    # Prefix sum for O(1) gap-range summation
+    prefix = [0.0] * n
+    run = 0.0
+    for i, g in enumerate(gaps):
+        run += g
+        prefix[i] = run
+
+    def _sum_gaps(start_idx, end_idx):
+        if end_idx < start_idx:
+            return 0.0
+        return prefix[end_idx] - (prefix[start_idx - 1] if start_idx > 0 else 0.0)
+
+    for label, minutes in windows:
+        cutoff = now - timedelta(minutes=minutes)
+        k = bisect_left(ordered, cutoff)
+        count = n - k
+        counts[label] = count
+
+        if count < 2:
+            avg_gaps[label] = None
+        else:
+            # For ordered[k:] we need gaps between consecutive elements => gaps[k+1..n-1]
+            total_gap = _sum_gaps(k + 1, n - 1)
+            avg_gaps[label] = round(total_gap / (count - 1), 2)
+
+    return counts, avg_gaps
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
+def gps_packet_health_summary(request):
+        """
+        Multi-IMEI packet monitor API based on GPSDataLog.raw_data parsing.
+        Accepts imeis as comma/newline separated string or list.
+        """
+        errors = validate_inputs(request)
+        if errors:
+                return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        imeis, invalid_imeis = _parse_imei_list_from_request(request)
+        if not imeis:
+                return Response({
+                        'status': 'error',
+                        'message': 'Provide at least one valid 15-digit IMEI in "imeis".'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        now = timezone.now()
+
+        raw_lookback = request.data.get('lookback_days') if request.method == 'POST' else request.GET.get('lookback_days', '3')
+        try:
+            lookback_days = int(raw_lookback)
+        except (TypeError, ValueError):
+            return Response({'status': 'error', 'message': 'lookback_days must be an integer'}, status=status.HTTP_400_BAD_REQUEST)
+        if lookback_days < 1 or lookback_days > 30:
+            return Response({'status': 'error', 'message': 'lookback_days must be between 1 and 30'}, status=status.HTTP_400_BAD_REQUEST)
+        latest_cutoff = now - timedelta(days=lookback_days)
+        windows = [
+                ('5m', 5),
+                ('10m', 10),
+                ('30m', 30),
+                ('60m', 60),
+                ('150m', 150),
+                ('1d', 1440),
+        ]
+        max_window_minutes = max(m for _, m in windows)
+        max_cutoff = now - timedelta(minutes=max_window_minutes)
+
+        imei_set = set(imeis)
+
+        # Build a single OR query for all requested IMEIs to avoid repeated full table scans.
+        imei_q = Q()
+        for imei in imeis:
+            imei_q |= Q(raw_data__contains=imei)
+
+        # Collect latest packet snapshots for each IMEI in a single newest-first scan.
+        latest_by_imei = {
+            imei: {
+                'tracking': None,
+                'tracking_valid_latlon': None,
+                'login': None,
+                'health': None,
+            }
+            for imei in imeis
+        }
+
+        remaining_slots = len(imeis) * 4
+        if remaining_slots:
+            for row in (
+                GPSDataLog.objects
+                .filter(imei_q, timestamp__gte=latest_cutoff)
+                .only('timestamp', 'raw_data')
+                .order_by('-timestamp')
+                .iterator(chunk_size=2000)
+            ):
+                raw = row.raw_data or ''
+                imei = _extract_target_imei(raw, imei_set)
+                if not imei:
+                    continue
+
+                slots = latest_by_imei[imei]
+
+                if _is_tracking_packet(raw):
+                    if slots['tracking'] is None:
+                        slots['tracking'] = row
+                        remaining_slots -= 1
+                    if slots['tracking_valid_latlon'] is None:
+                        lat, lon = _extract_tracking_lat_lon(raw)
+                        if _is_valid_lat_lon(lat, lon):
+                            slots['tracking_valid_latlon'] = row
+                            remaining_slots -= 1
+                elif _is_health_packet(raw):
+                    if slots['health'] is None:
+                        slots['health'] = row
+                        remaining_slots -= 1
+                elif _is_login_packet(raw):
+                    if slots['login'] is None:
+                        slots['login'] = row
+                        remaining_slots -= 1
+
+                if remaining_slots <= 0:
+                    break
+
+        # One recent-window scan for all IMEIs to compute counts and average gaps.
+        packet_ts = {
+            imei: {
+                'tracking': [],
+                'tracking_valid_latlon': [],
+                'health': [],
+                'login': [],
+            }
+            for imei in imeis
+        }
+
+        for row in (
+            GPSDataLog.objects
+            .filter(imei_q, timestamp__gte=max_cutoff)
+            .only('timestamp', 'raw_data')
+            .order_by('-timestamp')
+            .iterator(chunk_size=3000)
+        ):
+            raw = row.raw_data or ''
+            ts = row.timestamp
+            imei = _extract_target_imei(raw, imei_set)
+            if not imei:
+                continue
+
+            if _is_tracking_packet(raw):
+                packet_ts[imei]['tracking'].append(ts)
+                lat, lon = _extract_tracking_lat_lon(raw)
+                if _is_valid_lat_lon(lat, lon):
+                    packet_ts[imei]['tracking_valid_latlon'].append(ts)
+            elif _is_health_packet(raw):
+                packet_ts[imei]['health'].append(ts)
+            elif _is_login_packet(raw):
+                packet_ts[imei]['login'].append(ts)
+
+        results = []
+        for imei in imeis:
+            tracking_counts, tracking_avg_gap = _window_counts_and_avg_gaps(packet_ts[imei]['tracking'], now, windows)
+            valid_tracking_counts, valid_tracking_avg_gap = _window_counts_and_avg_gaps(packet_ts[imei]['tracking_valid_latlon'], now, windows)
+            health_counts, _ = _window_counts_and_avg_gaps(packet_ts[imei]['health'], now, windows)
+            login_counts, _ = _window_counts_and_avg_gaps(packet_ts[imei]['login'], now, windows)
+
+            latest = latest_by_imei[imei]
+            results.append({
+                'imei': imei,
+                'last_packets': {
+                    'tracking': _packet_snapshot(latest['tracking'], now),
+                    'tracking_valid_latlon': _packet_snapshot(latest['tracking_valid_latlon'], now),
+                    'login': _packet_snapshot(latest['login'], now),
+                    'health': _packet_snapshot(latest['health'], now),
+                },
+                'counts': {
+                    'tracking': tracking_counts,
+                    'tracking_valid_latlon': valid_tracking_counts,
+                    'health': health_counts,
+                    'login': login_counts,
+                },
+                'average_gap_seconds': {
+                    'tracking': tracking_avg_gap,
+                    'tracking_valid_latlon': valid_tracking_avg_gap,
+                }
+            })
+
+        return Response({
+                'status': 'success',
+                'generated_at': now.isoformat(),
+            'lookback_days_applied': lookback_days,
+                'windows': [w[0] for w in windows],
+                'invalid_imeis': invalid_imeis,
+                'results': results,
+        }, status=status.HTTP_200_OK)
+
+
+@require_http_methods(['GET'])
+def gps_packet_dashboard(request):
+        html = """
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IMEI Packet Dashboard</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap');
+        :root {
+            --bg1: #eff6ff;
+            --bg2: #f8fafc;
+            --ink: #0f172a;
+            --subtle: #475569;
+            --brand: #0ea5a4;
+            --brand-2: #0f766e;
+            --card: #ffffff;
+            --line: #cbd5e1;
+            --ok: #166534;
+            --warn: #b45309;
+            --err: #b91c1c;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Space Grotesk', sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at 0% 0%, #dbeafe 0%, transparent 35%),
+                radial-gradient(circle at 100% 0%, #ccfbf1 0%, transparent 35%),
+                linear-gradient(135deg, var(--bg1), var(--bg2));
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .wrap {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: color-mix(in srgb, var(--card) 90%, #ffffff00);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 18px;
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+            backdrop-filter: blur(2px);
+        }
+        h1 {
+            margin: 0 0 10px;
+            font-size: clamp(1.2rem, 2.5vw, 1.8rem);
+            letter-spacing: 0.02em;
+        }
+        .hint { color: var(--subtle); margin-bottom: 14px; }
+        .controls { display: grid; gap: 10px; grid-template-columns: 1fr auto auto; }
+        textarea {
+            width: 100%;
+            min-height: 90px;
+            resize: vertical;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.9rem;
+        }
+        button {
+            border: 0;
+            border-radius: 10px;
+            padding: 0 14px;
+            font-weight: 700;
+            cursor: pointer;
+            min-height: 42px;
+        }
+        #runBtn { background: var(--brand); color: #fff; }
+        #runBtn:hover { background: var(--brand-2); }
+        #stopBtn { background: #334155; color: #fff; }
+        .meta { margin-top: 12px; font-size: 0.92rem; color: var(--subtle); }
+        .status { margin-top: 10px; font-weight: 500; }
+        .status.ok { color: var(--ok); }
+        .status.warn { color: var(--warn); }
+        .status.err { color: var(--err); }
+        .table-wrap { margin-top: 16px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+        table { border-collapse: collapse; width: max(100%, 1200px); background: #fff; }
+        th, td { border-bottom: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; vertical-align: top; font-size: 0.86rem; }
+        th { background: #f1f5f9; position: sticky; top: 0; z-index: 2; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .small { color: var(--subtle); font-size: 0.78rem; }
+        @media (max-width: 900px) {
+            .controls { grid-template-columns: 1fr; }
+            button { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <h1>IMEI Packet Monitoring Dashboard</h1>
+        <div class="hint">Enter multiple IMEIs separated by comma, space, or new line. Refresh cycle: 15 seconds.</div>
+
+        <div class="controls">
+            <textarea id="imeis" placeholder="866192070567043\n123456789012345"></textarea>
+            <button id="runBtn">Start / Refresh</button>
+            <button id="stopBtn">Stop Auto</button>
+        </div>
+
+        <div class="meta" id="meta">API: <span class="mono" id="apiPath"></span></div>
+        <div id="status" class="status">Waiting for input.</div>
+
+        <div class="table-wrap">
+            <table id="resultTable">
+                <thead>
+                    <tr>
+                        <th>IMEI</th>
+                        <th>Last Tracking</th>
+                        <th>Last Tracking Valid LatLon</th>
+                        <th>Last Login</th>
+                        <th>Last Health</th>
+                        <th>Tracking Counts</th>
+                        <th>Valid Tracking Counts</th>
+                        <th>Health Counts</th>
+                        <th>Login Counts</th>
+                        <th>Avg Gap Tracking (sec)</th>
+                        <th>Avg Gap Valid Tracking (sec)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api/gps-packet-health-summary/';
+        const REFRESH_MS = 15000;
+        const statusEl = document.getElementById('status');
+        const tbody = document.querySelector('#resultTable tbody');
+        const imeisEl = document.getElementById('imeis');
+        const apiPathEl = document.getElementById('apiPath');
+        apiPathEl.textContent = API_URL;
+
+        let timerId = null;
+
+        function setStatus(msg, type) {
+            statusEl.textContent = msg;
+            statusEl.className = 'status ' + (type || '');
+        }
+
+        function fmtLast(packet) {
+            if (!packet) return 'N/A';
+            return `<div>${packet.timestamp}</div><div class="small">${packet.age_human} ago</div>`;
+        }
+
+        function fmtMap(obj) {
+            if (!obj) return 'N/A';
+            const order = ['5m', '10m', '30m', '60m', '150m', '1d'];
+            return order.map((k) => `${k}:${obj[k] ?? 'NA'}`).join(' | ');
+        }
+
+        function renderRows(results) {
+            tbody.innerHTML = '';
+            results.forEach((row) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="mono">${row.imei}</td>
+                    <td>${fmtLast(row.last_packets?.tracking)}</td>
+                    <td>${fmtLast(row.last_packets?.tracking_valid_latlon)}</td>
+                    <td>${fmtLast(row.last_packets?.login)}</td>
+                    <td>${fmtLast(row.last_packets?.health)}</td>
+                    <td class="mono">${fmtMap(row.counts?.tracking)}</td>
+                    <td class="mono">${fmtMap(row.counts?.tracking_valid_latlon)}</td>
+                    <td class="mono">${fmtMap(row.counts?.health)}</td>
+                    <td class="mono">${fmtMap(row.counts?.login)}</td>
+                    <td class="mono">${fmtMap(row.average_gap_seconds?.tracking)}</td>
+                    <td class="mono">${fmtMap(row.average_gap_seconds?.tracking_valid_latlon)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function fetchData() {
+            const imeis = imeisEl.value.trim();
+            if (!imeis) {
+                setStatus('Enter one or more IMEIs first.', 'warn');
+                return;
+            }
+            setStatus('Loading...', '');
+
+            const q = new URLSearchParams({ imeis });
+            try {
+                const res = await fetch(API_URL + '?' + q.toString(), { method: 'GET' });
+                const data = await res.json();
+                if (!res.ok || data.status !== 'success') {
+                    const msg = data.message || data.error || 'Request failed';
+                    setStatus(msg, 'err');
+                    return;
+                }
+
+                renderRows(data.results || []);
+                const bad = (data.invalid_imeis || []).length;
+                const now = new Date().toLocaleString();
+                setStatus(`Updated ${now}. Rows: ${(data.results || []).length}. Invalid IMEIs: ${bad}.`, bad ? 'warn' : 'ok');
+            } catch (err) {
+                setStatus('Network/API error: ' + (err?.message || String(err)), 'err');
+            }
+        }
+
+        function startAuto() {
+            fetchData();
+            if (timerId) clearInterval(timerId);
+            timerId = setInterval(fetchData, REFRESH_MS);
+        }
+
+        document.getElementById('runBtn').addEventListener('click', startAuto);
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            if (timerId) clearInterval(timerId);
+            timerId = null;
+            setStatus('Auto refresh stopped.', 'warn');
+        });
+    </script>
+</body>
+</html>
+        """
+        return HttpResponse(html)
 
 
 @require_http_methods(['GET', 'POST'])

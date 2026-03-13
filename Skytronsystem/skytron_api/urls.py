@@ -255,6 +255,8 @@ urlpatterns = [
     
     path('gps-data-log-table/', gps_data_log_table, name='gps_data_log_table'),
     path('gps-em-data-log-table/', gps_em_data_log_table, name='gps_em_data_log_table'),
+    path('gps-packet-health-summary/', gps_packet_health_summary, name='gps_packet_health_summary'),
+    path('gps-packet-dashboard/', gps_packet_dashboard, name='gps_packet_dashboard'),
     
 
   
@@ -389,6 +391,7 @@ urlpatterns = [
     
     #Devicetag
     path('tag/TagDevice2Vehicle/', TagDevice2Vehicle, name='TagDevice2Vehicle'),
+    path('tag/update-temp-registration/', update_temp_tag_registration, name='update_temp_tag_registration'),
     path('tag/cancelTagDevice2Vehicle/', deleteTagDevice2Vehicle, name='cancelTagDevice2Vehicle'),
     path('validate_ble/', validate_ble, name='validate_ble'),
     
