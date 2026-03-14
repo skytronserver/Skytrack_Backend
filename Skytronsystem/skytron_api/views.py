@@ -21360,6 +21360,42 @@ def _window_counts_and_avg_gaps(timestamps, now, windows):
     return counts, avg_gaps
 
 
+def _window_gap_incidents_over_threshold(timestamps, now, windows, threshold_seconds=10.0):
+    from bisect import bisect_left
+
+    ordered = sorted(timestamps)
+    n = len(ordered)
+
+    incident_counts = {}
+    incident_avg_gap = {}
+    for label, minutes in windows:
+        if n < 2:
+            incident_counts[label] = 0
+            incident_avg_gap[label] = None
+            continue
+
+        cutoff = now - timedelta(minutes=minutes)
+        k = bisect_left(ordered, cutoff)
+        if n - k < 2:
+            incident_counts[label] = 0
+            incident_avg_gap[label] = None
+            continue
+
+        selected_gaps = []
+        for i in range(k + 1, n):
+            gap = (ordered[i] - ordered[i - 1]).total_seconds()
+            if gap > threshold_seconds:
+                selected_gaps.append(gap)
+
+        incident_counts[label] = len(selected_gaps)
+        if selected_gaps:
+            incident_avg_gap[label] = round(sum(selected_gaps) / len(selected_gaps), 2)
+        else:
+            incident_avg_gap[label] = None
+
+    return incident_counts, incident_avg_gap
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
 @throttle_classes([AnonRateThrottle])
@@ -21396,6 +21432,12 @@ def gps_packet_health_summary(request):
                 ('60m', 60),
                 ('150m', 150),
                 ('1d', 1440),
+        ]
+        incident_windows = [
+            ('5m', 5),
+            ('10m', 10),
+            ('30m', 30),
+            ('60m', 60),
         ]
         max_window_minutes = max(m for _, m in windows)
         max_cutoff = now - timedelta(minutes=max_window_minutes)
@@ -21495,6 +21537,12 @@ def gps_packet_health_summary(request):
             valid_tracking_counts, valid_tracking_avg_gap = _window_counts_and_avg_gaps(packet_ts[imei]['tracking_valid_latlon'], now, windows)
             health_counts, _ = _window_counts_and_avg_gaps(packet_ts[imei]['health'], now, windows)
             login_counts, _ = _window_counts_and_avg_gaps(packet_ts[imei]['login'], now, windows)
+            tracking_over_10_count, tracking_over_10_avg = _window_gap_incidents_over_threshold(
+                packet_ts[imei]['tracking'], now, incident_windows, threshold_seconds=10.0
+            )
+            valid_tracking_over_10_count, valid_tracking_over_10_avg = _window_gap_incidents_over_threshold(
+                packet_ts[imei]['tracking_valid_latlon'], now, incident_windows, threshold_seconds=10.0
+            )
 
             latest = latest_by_imei[imei]
             results.append({
@@ -21514,6 +21562,16 @@ def gps_packet_health_summary(request):
                 'average_gap_seconds': {
                     'tracking': tracking_avg_gap,
                     'tracking_valid_latlon': valid_tracking_avg_gap,
+                },
+                'gap_over_10s_incidents': {
+                    'tracking': {
+                        'counts': tracking_over_10_count,
+                        'average_gap_seconds': tracking_over_10_avg,
+                    },
+                    'tracking_valid_latlon': {
+                        'counts': valid_tracking_over_10_count,
+                        'average_gap_seconds': valid_tracking_over_10_avg,
+                    },
                 }
             })
 
@@ -21647,6 +21705,8 @@ def gps_packet_dashboard(request):
                         <th>Login Counts</th>
                         <th>Avg Gap Tracking (sec)</th>
                         <th>Avg Gap Valid Tracking (sec)</th>
+                        <th>Tracking Gap &gt;10s Incidents</th>
+                        <th>Valid Tracking Gap &gt;10s Incidents</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -21681,6 +21741,14 @@ def gps_packet_dashboard(request):
             return order.map((k) => `${k}:${obj[k] ?? 'NA'}`).join(' | ');
         }
 
+        function fmtIncident(obj) {
+            if (!obj) return 'N/A';
+            const order = ['5m', '10m', '30m', '60m'];
+            const c = obj.counts || {};
+            const a = obj.average_gap_seconds || {};
+            return order.map((k) => `${k}:${c[k] ?? 'NA'}/${a[k] ?? 'NA'}`).join(' | ');
+        }
+
         function renderRows(results) {
             tbody.innerHTML = '';
             results.forEach((row) => {
@@ -21697,6 +21765,8 @@ def gps_packet_dashboard(request):
                     <td class="mono">${fmtMap(row.counts?.login)}</td>
                     <td class="mono">${fmtMap(row.average_gap_seconds?.tracking)}</td>
                     <td class="mono">${fmtMap(row.average_gap_seconds?.tracking_valid_latlon)}</td>
+                    <td class="mono">${fmtIncident(row.gap_over_10s_incidents?.tracking)}</td>
+                    <td class="mono">${fmtIncident(row.gap_over_10s_incidents?.tracking_valid_latlon)}</td>
                 `;
                 tbody.appendChild(tr);
             });
