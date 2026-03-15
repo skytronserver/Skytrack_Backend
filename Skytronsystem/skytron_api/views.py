@@ -12701,11 +12701,19 @@ def homepage(request ):
         speed_alerts_month = AlertsLog.objects.filter(type='OverSpeed', status="in", timestamp__gte=current_month_start).count()
         speed_alerts_today = AlertsLog.objects.filter(type='OverSpeed', status="in", timestamp__date=current_date).count()
 
+        emergency_alerts = AlertsLog.objects.filter(type__icontains='Emergency', status="in").count()
+        emergency_alerts_month = AlertsLog.objects.filter(type__icontains='Emergency', status="in", timestamp__gte=current_month_start).count()
+        emergency_alerts_today = AlertsLog.objects.filter(type__icontains='Emergency', status="in", timestamp__date=current_date).count()
+
         # Device online/offline (15-min window, consistent with other dashboard code)
         tagged_statuses = ['Device_Active', 'Owner_Final_OTP_Verified','Live_Location_Confirmed', 'SOS_Confirmed', 'RegNo_Configuration_Confirmed']
         tagged_devices_qs = DeviceTag.objects.filter(status__in=tagged_statuses)
         tagged_device_ids = tagged_devices_qs.values_list('id', flat=True)
         total_tagged_devices = tagged_devices_qs.count()
+
+        total_devices = DeviceStock.objects.count()
+        total_untagged_devices = max(0, total_devices - total_tagged_devices)
+        total_fitments = total_tagged_devices + total_untagged_devices
 
         online_threshold = timezone.now() - timedelta(minutes=15)
         total_online_devices = GPSData.objects.filter(
@@ -12713,6 +12721,21 @@ def homepage(request ):
             entry_time__gte=online_threshold
         ).values('device_tag_id').distinct().count()
         total_offline_devices = max(0, total_tagged_devices - total_online_devices)
+
+        # Active user counters (role-based + SOS teamlead/desk-executive breakdowns)
+        active_users_qs = User.objects.filter(status='active', is_active=True)
+        active_stateadmin_users = active_users_qs.filter(role='stateadmin').count()
+        active_esimprovider_users = active_users_qs.filter(role='esimprovider').count()
+        active_manufacturer_users = active_users_qs.filter(role='devicemanufacture').count()
+        active_sosadmin_users = active_users_qs.filter(role='sosadmin').count()
+        active_sos_teamlead_users = active_users_qs.filter(role='teamleader').count()
+        active_sosexecutive_users = active_users_qs.filter(role='sosexecutive').count()
+
+        active_sos_deskexecutive_users = EM_ex.objects.filter(
+            user_type='desk_ex',
+            users__status='active',
+            users__is_active=True
+        ).values('users').distinct().count()
 
         if True:
             count_dict = {
@@ -12735,9 +12758,14 @@ def homepage(request ):
             'SpeedAlerts': speed_alerts,
             'SpeedAlerts_month': speed_alerts_month,
             'SpeedAlerts_today': speed_alerts_today,
+            'EmergencyAlerts': emergency_alerts,
+            'EmergencyAlerts_month': emergency_alerts_month,
+            'EmergencyAlerts_today': emergency_alerts_today,
 
             'TotalDevice': DeviceStock.objects.count(),
             'TotalTaggedDevice': total_tagged_devices,
+            'TotalUntaggedDevice': total_untagged_devices,
+            'TotalFitments': total_fitments,
             'TotalOnlineDevice': total_online_devices,
             'TotalOfflineDevice': total_offline_devices,
             'TotalDeviceModel': DeviceModel.objects.count(),
@@ -12754,6 +12782,14 @@ def homepage(request ):
             'Total_district': Settings_District.objects.all().count(),
             'Active_district': Settings_District.objects.filter(status='active').count(),
             'Discontinued_district': Settings_District.objects.filter(status='discontinued').count(),
+
+            'ActiveUsers_stateadmin': active_stateadmin_users,
+            'ActiveUsers_esimprovider': active_esimprovider_users,
+            'ActiveUsers_manufacturer': active_manufacturer_users,
+            'ActiveUsers_sosadmin': active_sosadmin_users,
+            'ActiveUsers_sosexecutive': active_sosexecutive_users,
+            'ActiveUsers_sos_teamlead': active_sos_teamlead_users,
+            'ActiveUsers_sos_deskexecutive': active_sos_deskexecutive_users,
 
         }
         # Return the serialized data as JSON response
@@ -13714,6 +13750,7 @@ def homepage_Dealer(request ):
             
             count_dict = {
                 'Total_Fitment_done': total_fitments,
+                'TotalTaggedDevice': tagged_devices.count(),
                 'Fitment_month': fitments_month,
                 'Fitment_today': fitments_today,
                 
@@ -14183,6 +14220,77 @@ def homepage_stateAdmin(request ):
             # Get districts in this state
             districts_in_state = Settings_District.objects.filter(state=state_filter)
 
+            # Tagged/online/offline and fitment metrics (same semantics as global homepage)
+            tagged_statuses = [
+                'Device_Active',
+                'Owner_Final_OTP_Verified',
+                'Live_Location_Confirmed',
+                'SOS_Confirmed',
+                'RegNo_Configuration_Confirmed'
+            ]
+            tagged_devices_qs = device_tags_in_state.filter(status__in=tagged_statuses)
+            tagged_device_ids = tagged_devices_qs.values_list('id', flat=True)
+            total_tagged_devices = tagged_devices_qs.count()
+
+            online_threshold = timezone.now() - timedelta(minutes=15)
+            total_online_devices = GPSData.objects.filter(
+                device_tag_id__in=tagged_device_ids,
+                entry_time__gte=online_threshold
+            ).values('device_tag_id').distinct().count()
+            total_offline_devices = max(0, total_tagged_devices - total_online_devices)
+
+            total_devices = device_stock_in_state.count()
+            total_untagged_devices = max(0, total_devices - total_tagged_devices)
+            total_fitments = total_tagged_devices + total_untagged_devices
+
+            # Active user counters in this state
+            active_stateadmin_users = User.objects.filter(
+                role='stateadmin', status='active', is_active=True, stateadmin_User__state=state_filter
+            ).distinct().count()
+            active_esimprovider_users = User.objects.filter(
+                role='esimprovider', status='active', is_active=True, eSimProvider_User__state=state_filter
+            ).distinct().count()
+            active_manufacturer_users = User.objects.filter(
+                role='devicemanufacture', status='active', is_active=True, manufacturers_user__state=state_filter
+            ).distinct().count()
+            active_sosadmin_users = User.objects.filter(
+                role='sosadmin', status='active', is_active=True, EM_admin__state=state_filter
+            ).distinct().count()
+            active_sosexecutive_users = User.objects.filter(
+                role='sosexecutive', status='active', is_active=True, SOS_ex_user__state=state_filter
+            ).distinct().count()
+            active_sos_teamlead_users = EM_ex.objects.filter(
+                state=state_filter,
+                user_type='teamlead',
+                users__status='active',
+                users__is_active=True
+            ).values('users').distinct().count()
+            active_sos_deskexecutive_users = EM_ex.objects.filter(
+                state=state_filter,
+                user_type='desk_ex',
+                users__status='active',
+                users__is_active=True
+            ).values('users').distinct().count()
+
+            # Sudden-turn alerts from AlertsLog (HarshTurn)
+            sudden_turn_total = AlertsLog.objects.filter(
+                deviceTag__device__dealer__manufacturer__state=state_filter,
+                type='HarshTurn',
+                status='in'
+            ).count()
+            sudden_turn_month = AlertsLog.objects.filter(
+                deviceTag__device__dealer__manufacturer__state=state_filter,
+                type='HarshTurn',
+                status='in',
+                timestamp__gte=current_month_start
+            ).count()
+            sudden_turn_today = AlertsLog.objects.filter(
+                deviceTag__device__dealer__manufacturer__state=state_filter,
+                type='HarshTurn',
+                status='in',
+                timestamp__date=today
+            ).count()
+
             count_dict = {
                 # User counts filtered by state
                 'Total_Dealer_available': dealers_in_state.count(),
@@ -14196,6 +14304,12 @@ def homepage_stateAdmin(request ):
                 ).count(),
                 'Online_Devices': active_devices.count(),
                 'Offline_Devices': device_tags_in_state.filter(status='Device_Not_Active').count(),
+
+                'TotalTaggedDevice': total_tagged_devices,
+                'TotalOnlineDevice': total_online_devices,
+                'TotalOfflineDevice': total_offline_devices,
+                'TotalUntaggedDevice': total_untagged_devices,
+                'TotalFitments': total_fitments,
 
                 'Total_Device_Activated': active_devices.count(),
                 'Active_Device_Today': device_tags_in_state.filter(
@@ -14242,6 +14356,10 @@ def homepage_stateAdmin(request ):
                     message_type='EMR',
                     date=today
                 ).count(),
+
+                'Total_sudden_turn_Alert': sudden_turn_total,
+                'This_month_sudden_turn_Alert': sudden_turn_month,
+                'Today_sudden_turn_Alert': sudden_turn_today,
                 
                 # Harsh brake alerts (using acceleration data if available)
                 # Harsh brake alerts not available in EMGPSLocation schema; returning 0
@@ -14266,6 +14384,14 @@ def homepage_stateAdmin(request ):
                 'Total_district': districts_in_state.count(),
                 'Active_district': districts_in_state.filter(status='active').count(),
                 'Discontinued_district': districts_in_state.filter(status='discontinued').count(),
+
+                'ActiveUsers_stateadmin': active_stateadmin_users,
+                'ActiveUsers_esimprovider': active_esimprovider_users,
+                'ActiveUsers_manufacturer': active_manufacturer_users,
+                'ActiveUsers_sosadmin': active_sosadmin_users,
+                'ActiveUsers_sosexecutive': active_sosexecutive_users,
+                'ActiveUsers_sos_teamlead': active_sos_teamlead_users,
+                'ActiveUsers_sos_deskexecutive': active_sos_deskexecutive_users,
              
             }
             # Return the serialized data as JSON response
