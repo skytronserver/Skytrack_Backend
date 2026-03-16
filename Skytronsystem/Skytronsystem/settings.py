@@ -248,7 +248,7 @@ CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
                         'http://dev-api.skytron.in',
                         'https://dev.skytron.in',
                         'http://dev.skytron.in',
-                        'https://dev.skytron.in',
+                        'https://dev.skytron.in','http://10.192.136.184:2000','http://10.192.136.179:2000','http://10.192.136.175:2000','http://10.192.136.164:2000',
                         # Add your frontend domain(s) here
                         "https://dev.skytrack.tech",
                         # "https://yourfrontenddomain.com",
