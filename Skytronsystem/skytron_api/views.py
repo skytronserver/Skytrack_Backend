@@ -3992,8 +3992,8 @@ def create_VehicleOwner(request ):
     try: 
         company_name = request.data.get('company_name') 
         createdby = request.user 
-        date_joined = timezone.now()
-        created = timezone.now()  
+        date_joined = timezone.localdate()
+        created = timezone.localdate()  
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         file_idProof = request.data.get('file_idProof') 
@@ -5219,8 +5219,8 @@ def create_dealer(request ):
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber') 
         createdby = request.user 
-        date_joined = timezone.now()
-        created = timezone.now()   
+        date_joined = timezone.localdate()
+        created = timezone.localdate()   
          
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
@@ -6177,8 +6177,8 @@ def create_StateAdmin(request ):
         state= request.data.get('state','')  
         
         createdby = request.user 
-        date_joined = timezone.now()
-        created = timezone.now()  
+        date_joined = timezone.localdate()
+        created = timezone.localdate()  
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         file_idProof = request.data.get('file_idProof')
         file_authorisation_letter = request.data.get('file_authorisation_letter')
@@ -6257,8 +6257,8 @@ def update_StateAdmin(request ):
         if stateadmin.createdby != request.user:
             return Response({'error': "User can be edited by only the creator"}, status=400)
         
-        date_joined = timezone.now()
-        created = timezone.now()
+        date_joined = timezone.localdate()
+        created = timezone.localdate()
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         email = request.data.get('email')
         idProofno = request.data.get('idProofno')
@@ -6408,8 +6408,8 @@ def create_DTO_RTO(request ):
     
     try: 
         createdby = request.user 
-        date_joined = timezone.now()
-        created = timezone.now()  
+        date_joined = timezone.localdate()
+        created = timezone.localdate()  
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         state= request.data.get('state', '')
@@ -6497,8 +6497,8 @@ def update_DTO_RTO(request ):
         if dtorto.createdby != request.user:
             return Response({'error': "User can be edited by only the creator"}, status=400)
         
-        date_joined = timezone.now()
-        created = timezone.now()
+        date_joined = timezone.localdate()
+        created = timezone.localdate()
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         idProofno = request.data.get('idProofno')
         state = request.data.get('state', '1')
@@ -6693,8 +6693,8 @@ def create_SOS_user(request ):
     
     try: 
         createdby = request.user 
-        date_joined = timezone.now()
-        created = timezone.now()   
+        date_joined = timezone.localdate()
+        created = timezone.localdate()   
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         state= request.data.get('state', '') 
@@ -6860,8 +6860,8 @@ def create_SOS_admin(request ):
     
     try: 
         createdby = request.user 
-        date_joined = timezone.now()
-        created = timezone.now()  
+        date_joined = timezone.localdate()
+        created = timezone.localdate()  
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
         expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
         state= request.data.get('state', '') 
@@ -22410,3 +22410,1113 @@ def list_logged_in_users(request):
 
 
 
+# ============================================================================
+# CENTRAL DASHBOARD APIs FOR VEHICLE MONITORING
+# ============================================================================
+
+@csrf_exempt
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def vehicle_monitoring_dashboard(request):
+    """
+    Central Dashboard API for vehicle monitoring with following data:
+    
+    Query Parameters (filters):
+    - state_id: Filter by state ID (optional)
+    - district_id: Filter by district ID (optional)
+    - vehicle_category_id: Filter by vehicle category ID (optional)
+    
+    Response includes:
+    1. Total active device tags
+    2. Offline device tags (no data since last 15 min in gpsdata)
+    3. Online device tags (data within last 15 min in gpsdata)
+    4. Total emergency alerts today in alert logs
+    5. Total other alerts (non-emergency) in alert logs
+    """
+    try:
+        from django.utils import timezone
+        from datetime import timedelta
+        from django.db.models import Q, Count, Max
+        
+        # Get filter parameters
+        state_id = request.GET.get('state_id')
+        district_id = request.GET.get('district_id')
+        vehicle_category_id = request.GET.get('vehicle_category_id')
+        
+        # Base queryset: include all tagged devices except explicitly removed/untagged.
+        # This ensures unfiltered dashboard requests return complete data.
+        device_tags_qs = DeviceTag.objects.exclude(
+            status='TagDeleted'
+        ).exclude(
+            status='Device_Untagged'
+        )
+        
+        # Apply filters if provided
+        if state_id:
+            try:
+                state_id = int(state_id)
+                device_tags_qs = device_tags_qs.filter(
+                    district__state_id=state_id
+                )
+            except (ValueError, TypeError):
+                return Response({
+                    'error': 'Invalid state_id parameter'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if district_id:
+            try:
+                district_id = int(district_id)
+                device_tags_qs = device_tags_qs.filter(
+                    district_id=district_id
+                )
+            except (ValueError, TypeError):
+                return Response({
+                    'error': 'Invalid district_id parameter'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if vehicle_category_id:
+            try:
+                vehicle_category_id = int(vehicle_category_id)
+                device_tags_qs = device_tags_qs.filter(
+                    category_id=vehicle_category_id
+                )
+            except (ValueError, TypeError):
+                return Response({
+                    'error': 'Invalid vehicle_category_id parameter'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Total active device tags
+        total_active_device_tags = device_tags_qs.count()
+        
+        # Calculate online/offline status based on GPS data timestamp
+        now = timezone.now()
+        fifteen_mins_ago = now - timedelta(minutes=15)
+        
+        device_tag_ids = list(device_tags_qs.values_list('id', flat=True))
+        
+        # Get latest GPS entry for each device
+        latest_gps_subquery = GPSData.objects.filter(
+            device_tag_id=OuterRef('id')
+        ).order_by('-entry_time').values('entry_time')[:1]
+        
+        device_stats = device_tags_qs.annotate(
+            latest_gps_time=Subquery(latest_gps_subquery)
+        ).values('id', 'latest_gps_time')
+        
+        online_count = 0
+        offline_count = 0
+        
+        for device in device_stats:
+            if device['latest_gps_time']:
+                if device['latest_gps_time'] >= fifteen_mins_ago:
+                    online_count += 1
+                else:
+                    offline_count += 1
+            else:
+                offline_count += 1
+        
+        # Get today's date at midnight
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        
+        # Get alerts for filtered devices
+        today_alerts = AlertsLog.objects.filter(
+            deviceTag__in=device_tag_ids,
+            timestamp__gte=today_start,
+            timestamp__lt=today_end
+        )
+        
+        # Emergency alert types
+        emergency_types = [
+            'Em', 'EmPublicApp', 'EmRegisteredApp', 
+            'EmMonitorTripSOS', 'EmMonitorTripInvalidPw', 
+            'EmMonitorTripBLEDisconnect', 'EmMonitorTripDeviated',
+            'Incident'
+        ]
+        
+        emergency_alerts_count = today_alerts.filter(
+            type__in=emergency_types
+        ).count()
+        
+        other_alerts_count = today_alerts.exclude(
+            type__in=emergency_types
+        ).count()
+        
+        # Prepare response
+        response_data = {
+            'filters_applied': {
+                'state_id': state_id,
+                'district_id': district_id,
+                'vehicle_category_id': vehicle_category_id
+            },
+            'dashboard_metrics': {
+                'total_active_device_tags': total_active_device_tags,
+                'online_device_tags': online_count,
+                'offline_device_tags': offline_count,
+                'total_emergency_alerts_today': emergency_alerts_count,
+                'total_other_alerts_today': other_alerts_count
+            },
+            'timestamp': timezone.now().isoformat()
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in vehicle_monitoring_dashboard: {str(e)}")
+        return Response({
+            'error': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@csrf_exempt
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
+@require_http_methods(['GET'])
+def get_dashboard_filter_options(request):
+    """
+    Get dashboard filter options.
+
+    District/City/Locality options are derived from GPSData only,
+    using latest GPS entry per unique device_tag.
+
+    Query Params:
+    - state_name (optional)
+    - district_name (optional)
+    - city_name (optional)
+    - vehicle_category_id (optional)
+    """
+    try:
+        from django.db.models import Subquery, OuterRef
+
+        state_name = (request.GET.get('state_name') or '').strip()
+        district_name = (request.GET.get('district_name') or '').strip()
+        city_name = (request.GET.get('city_name') or '').strip()
+        vehicle_category_id = (request.GET.get('vehicle_category_id') or '').strip()
+
+        # Device scope used for geo options.
+        device_tags_qs = DeviceTag.objects.exclude(status='TagDeleted').exclude(status='Device_Untagged')
+        if vehicle_category_id:
+            try:
+                device_tags_qs = device_tags_qs.filter(category_id=int(vehicle_category_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid vehicle_category_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Latest GPS snapshot per device tag.
+        latest_gps_id_sq = GPSData.objects.filter(
+            device_tag_id=OuterRef('id')
+        ).order_by('-entry_time', '-id').values('id')[:1]
+
+        device_tags_with_latest = device_tags_qs.annotate(
+            latest_gps_id=Subquery(latest_gps_id_sq)
+        ).exclude(latest_gps_id__isnull=True)
+
+        latest_gps_qs = GPSData.objects.filter(
+            id__in=Subquery(device_tags_with_latest.values('latest_gps_id'))
+        )
+
+        # Optional state filter from GPSData text field.
+        if state_name:
+            latest_gps_qs = latest_gps_qs.filter(state__iexact=state_name)
+
+        states_list = [
+            {'name': row['state']}
+            for row in latest_gps_qs.exclude(state__isnull=True).exclude(state='').values('state').distinct().order_by('state')
+        ]
+
+        districts_list = [
+            {
+                'district_name': row['district'],
+                'total_vehicle_count': row['total_vehicle_count'],
+            }
+            for row in (
+                latest_gps_qs
+                .exclude(district__isnull=True).exclude(district='')
+                .values('district')
+                .annotate(total_vehicle_count=Count('device_tag_id'))
+                .order_by('district')
+            )
+        ]
+
+        cities_list = []
+        if district_name:
+            cities_list = [
+                {
+                    'city_name': row['city'],
+                    'total_vehicle_count': row['total_vehicle_count'],
+                }
+                for row in (
+                    latest_gps_qs
+                    .filter(district__iexact=district_name)
+                    .exclude(city__isnull=True).exclude(city='')
+                    .values('city')
+                    .annotate(total_vehicle_count=Count('device_tag_id'))
+                    .order_by('city')
+                )
+            ]
+
+        localities_list = []
+        if district_name and city_name:
+            localities_list = [
+                {
+                    'locality_name': row['road'],
+                    'total_vehicle_count': row['total_vehicle_count'],
+                }
+                for row in (
+                    latest_gps_qs
+                    .filter(district__iexact=district_name, city__iexact=city_name)
+                    .exclude(road__isnull=True).exclude(road='')
+                    .values('road')
+                    .annotate(total_vehicle_count=Count('device_tag_id'))
+                    .order_by('road')
+                )
+            ]
+
+        # Keep vehicle categories from master settings.
+        categories = Settings_VehicleCategory.objects.all().values(
+            'id', 'category', 'maxSpeed', 'warnSpeed'
+        ).order_by('category')
+
+        categories_list = [
+            {
+                'id': category['id'],
+                'name': category['category'],
+                'max_speed': category['maxSpeed'],
+                'warn_speed': category['warnSpeed']
+            }
+            for category in categories
+        ]
+
+        response_data = {
+            'filters_applied': {
+                'state_name': state_name or None,
+                'district_name': district_name or None,
+                'city_name': city_name or None,
+                'vehicle_category_id': int(vehicle_category_id) if vehicle_category_id.isdigit() else None,
+            },
+            'source': 'gpsdata_latest_per_device_tag',
+            'states': states_list,
+            'districts': districts_list,
+            'cities': cities_list,
+            'localities': localities_list,
+            'vehicle_categories': categories_list,
+            'timestamp': timezone.now().isoformat()
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in get_dashboard_filter_options: {str(e)}")
+        return Response({
+            'error': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@csrf_exempt
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def get_areawise_device_tag_count(request):
+    """
+    Three-level drilldown API for area-wise device/vehicle counts.
+
+    Level is determined by which parameters are supplied:
+
+    Level 1 — District list (no params):
+        Params  : state_id (optional), vehicle_category_id (optional)
+        Response: flat list — [{district_name, latitude, longitude, total_vehicle_count}, …]
+
+    Level 2 — City/town list inside a district:
+        Params  : district_name
+        Response: {district_name, total_locations, locations:[{location_type, city_village_name, lat, lon, total_vehicle_count}]}
+
+    Level 3 — Locality list inside a city:
+        Params  : district_name + city_name
+        Response: {district_name, city_name, city_center_lat, city_center_lon, total_localities,
+                   localities:[{locality_type, locality_name, lat, lon, total_vehicle_count}]}
+
+    Level 4 — Device list inside a locality:
+        Params  : district_name + city_name + locality_name
+        Response: {district_name, city_name, locality_name, locality_center_lat, locality_center_lon,
+                   total_devices, devices:[{device_id, vehicle_reg_no, vehicle_type, status,
+                   lat, lon, last_seen, speed_kmph}]}
+
+    Optional global filters (all levels): state_id, vehicle_category_id
+    """
+    try:
+        from datetime import timedelta
+        from django.db.models import Count, Avg, Subquery, OuterRef
+
+        district_name = (request.data.get('district_name') or request.GET.get('district_name', '')).strip()
+        city_name = (request.data.get('city_name') or request.GET.get('city_name', '')).strip()
+        locality_name = (request.data.get('locality_name') or request.GET.get('locality_name', '')).strip()
+        state_id = request.data.get('state_id') or request.GET.get('state_id')
+        vehicle_category_id = request.data.get('vehicle_category_id') or request.GET.get('vehicle_category_id')
+
+        # Base tagged devices; geo results must be derived from latest GPS of these devices.
+        device_tags_qs = DeviceTag.objects.exclude(status='TagDeleted').exclude(status='Device_Untagged')
+
+        if state_id:
+            try:
+                device_tags_qs = device_tags_qs.filter(district__state_id=int(state_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid state_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if vehicle_category_id:
+            try:
+                device_tags_qs = device_tags_qs.filter(category_id=int(vehicle_category_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid vehicle_category_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+
+        latest_gps_id_sq = GPSData.objects.filter(
+            device_tag_id=OuterRef('id')
+        ).order_by('-entry_time', '-id').values('id')[:1]
+
+        device_tags_with_latest = device_tags_qs.annotate(
+            latest_gps_id=Subquery(latest_gps_id_sq)
+        ).exclude(latest_gps_id__isnull=True)
+
+        latest_gps_qs = GPSData.objects.filter(
+            id__in=Subquery(device_tags_with_latest.values('latest_gps_id'))
+        )
+
+        # Level 4: district + city + locality => devices in locality (from latest GPS only)
+        if district_name and city_name and locality_name:
+            threshold = timezone.now() - timedelta(minutes=15)
+            locality_latest_qs = latest_gps_qs.filter(
+                district__iexact=district_name,
+                city__iexact=city_name,
+                road__iexact=locality_name,
+            ).select_related('device_tag__category').order_by('-entry_time', '-id')
+
+            locality_avg = locality_latest_qs.aggregate(
+                avg_lat=Avg('latitude'),
+                avg_lon=Avg('longitude')
+            )
+
+            devices = []
+            for gps in locality_latest_qs:
+                dt = gps.device_tag
+                if gps.entry_time >= threshold:
+                    gps_status = 'idle' if (gps.speed or 0) == 0 else 'online'
+                else:
+                    gps_status = 'offline'
+
+                devices.append({
+                    'device_id': dt.id if dt else None,
+                    'vehicle_reg_no': dt.vehicle_reg_no if dt else None,
+                    'vehicle_type': dt.category.category if dt and dt.category else None,
+                    'status': gps_status,
+                    'lat': gps.latitude,
+                    'lon': gps.longitude,
+                    'last_seen': gps.entry_time.isoformat() if gps.entry_time else None,
+                    'speed_kmph': gps.speed,
+                })
+
+            return Response({
+                'district_name': district_name,
+                'city_name': city_name,
+                'locality_name': locality_name,
+                'locality_center_lat': round(locality_avg['avg_lat'], 6) if locality_avg['avg_lat'] else None,
+                'locality_center_lon': round(locality_avg['avg_lon'], 6) if locality_avg['avg_lon'] else None,
+                'total_devices': len(devices),
+                'devices': devices,
+            }, status=status.HTTP_200_OK)
+
+        # Level 3: district + city => localities in city (from latest GPS only)
+        if district_name and city_name:
+            city_latest_qs = latest_gps_qs.filter(
+                district__iexact=district_name,
+                city__iexact=city_name,
+                road__isnull=False,
+            ).exclude(road='')
+
+            city_avg = latest_gps_qs.filter(
+                district__iexact=district_name,
+                city__iexact=city_name,
+            ).aggregate(avg_lat=Avg('latitude'), avg_lon=Avg('longitude'))
+
+            locality_rows = (
+                city_latest_qs
+                .values('road')
+                .annotate(
+                    total_vehicle_count=Count('device_tag_id'),
+                    lat=Avg('latitude'),
+                    lon=Avg('longitude'),
+                )
+                .order_by('-total_vehicle_count')
+            )
+
+            localities = [
+                {
+                    'locality_type': 'road',
+                    'locality_name': row['road'],
+                    'lat': round(row['lat'], 6) if row['lat'] else None,
+                    'lon': round(row['lon'], 6) if row['lon'] else None,
+                    'total_vehicle_count': row['total_vehicle_count'],
+                }
+                for row in locality_rows
+            ]
+
+            return Response({
+                'district_name': district_name,
+                'city_name': city_name,
+                'city_center_lat': round(city_avg['avg_lat'], 6) if city_avg['avg_lat'] else None,
+                'city_center_lon': round(city_avg['avg_lon'], 6) if city_avg['avg_lon'] else None,
+                'total_localities': len(localities),
+                'localities': localities,
+            }, status=status.HTTP_200_OK)
+
+        # Level 2: district => cities in district (from latest GPS only)
+        if district_name:
+            district_latest_qs = latest_gps_qs.filter(
+                district__iexact=district_name,
+                city__isnull=False,
+            ).exclude(city='')
+
+            city_rows = (
+                district_latest_qs
+                .values('city')
+                .annotate(
+                    total_vehicle_count=Count('device_tag_id'),
+                    lat=Avg('latitude'),
+                    lon=Avg('longitude'),
+                )
+                .order_by('-total_vehicle_count')
+            )
+
+            locations = [
+                {
+                    'location_type': 'town',
+                    'city_village_name': row['city'],
+                    'lat': round(row['lat'], 6) if row['lat'] else None,
+                    'lon': round(row['lon'], 6) if row['lon'] else None,
+                    'total_vehicle_count': row['total_vehicle_count'],
+                }
+                for row in city_rows
+            ]
+
+            return Response({
+                'district_name': district_name,
+                'total_locations': len(locations),
+                'locations': locations,
+            }, status=status.HTTP_200_OK)
+
+        # Level 1: districts (from latest GPS only)
+        district_rows = (
+            latest_gps_qs
+            .filter(district__isnull=False)
+            .exclude(district='')
+            .values('district')
+            .annotate(
+                total_vehicle_count=Count('device_tag_id'),
+                latitude=Avg('latitude'),
+                longitude=Avg('longitude'),
+            )
+            .order_by('district')
+        )
+
+        result = [
+            {
+                'district_name': row['district'],
+                'latitude': round(row['latitude'], 6) if row['latitude'] else None,
+                'longitude': round(row['longitude'], 6) if row['longitude'] else None,
+                'total_vehicle_count': row['total_vehicle_count'],
+            }
+            for row in district_rows
+        ]
+
+        return Response(result, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Error in get_areawise_device_tag_count: {str(e)}")
+        return Response({
+            'error': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@csrf_exempt
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def get_latest_vehicle_locations(request):
+    """
+    Get the latest GPS location of all vehicles matching filters.
+
+    Supports both ID-based and name-based geographic filters.
+
+    Parameters (GET or POST body):
+    - state_id             : filter by state FK ID (optional)
+    - district_id          : filter by district FK ID (optional)
+    - vehicle_category_id  : filter by category FK ID (optional)
+    - district_name        : filter by district name text (optional)
+    - city_name            : filter by GPS city text (optional, requires district_name)
+    - locality_name        : filter by GPS road/locality text (optional, requires city_name)
+    - limit                : max devices to return (default 100, max 1000)
+
+    Response fields per device:
+    device_id, vehicle_reg_no, vehicle_type, vehicle_make, vehicle_model,
+    status (online/idle/offline), lat, lon, last_seen, speed_kmph,
+    heading, city, district, state, satellites, ignition_status, imei
+    """
+    try:
+        from django.db.models import Subquery, OuterRef
+        from datetime import timedelta
+
+        # ── read all params (support both GET and POST body) ──────────────
+        def _p(key, default=''):
+            v = request.data.get(key) or request.GET.get(key, default)
+            return str(v).strip() if v is not None else default
+
+        state_id = _p('state_id')
+        district_id = _p('district_id')
+        vehicle_category_id = _p('vehicle_category_id')
+        district_name = _p('district_name')
+        city_name = _p('city_name')
+        locality_name = _p('locality_name')
+
+        try:
+            limit = int(_p('limit', '100'))
+            limit = max(1, min(limit, 1000))
+        except ValueError:
+            limit = 100
+
+        # Base tagged devices
+        device_tags_qs = DeviceTag.objects.exclude(status='TagDeleted').exclude(status='Device_Untagged')
+
+        if state_id:
+            try:
+                device_tags_qs = device_tags_qs.filter(district__state_id=int(state_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid state_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if district_id:
+            try:
+                device_tags_qs = device_tags_qs.filter(district_id=int(district_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid district_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if vehicle_category_id:
+            try:
+                device_tags_qs = device_tags_qs.filter(category_id=int(vehicle_category_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid vehicle_category_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Latest GPS snapshot per device tag
+        latest_gps = GPSData.objects.filter(
+            device_tag_id=OuterRef('id')
+        ).order_by('-entry_time', '-id')
+
+        device_tags_annotated = (
+            device_tags_qs
+            .select_related('category', 'device')
+            .annotate(
+                last_lat=Subquery(latest_gps.values('latitude')[:1]),
+                last_lon=Subquery(latest_gps.values('longitude')[:1]),
+                last_seen=Subquery(latest_gps.values('entry_time')[:1]),
+                last_speed=Subquery(latest_gps.values('speed')[:1]),
+                last_heading=Subquery(latest_gps.values('heading')[:1]),
+                last_city=Subquery(latest_gps.values('city')[:1]),
+                last_district=Subquery(latest_gps.values('district')[:1]),
+                last_state=Subquery(latest_gps.values('state')[:1]),
+                last_road=Subquery(latest_gps.values('road')[:1]),
+                last_satellites=Subquery(latest_gps.values('satellites')[:1]),
+                last_ignition=Subquery(latest_gps.values('ignition_status')[:1]),
+            )
+            .exclude(last_seen__isnull=True)
+        )
+
+        # Name-based filters must apply on latest GPS only.
+        if district_name:
+            device_tags_annotated = device_tags_annotated.filter(last_district__iexact=district_name)
+        if city_name:
+            device_tags_annotated = device_tags_annotated.filter(last_city__iexact=city_name)
+        if locality_name:
+            device_tags_annotated = device_tags_annotated.filter(last_road__iexact=locality_name)
+
+        device_tags_annotated = device_tags_annotated[:limit]
+
+        now = timezone.now()
+        threshold = now - timedelta(minutes=15)
+
+        devices = []
+        for dt in device_tags_annotated:
+            if dt.last_seen is None:
+                continue
+
+            if dt.last_seen >= threshold:
+                dev_status = 'idle' if (dt.last_speed or 0) == 0 else 'online'
+            else:
+                dev_status = 'offline'
+
+            devices.append({
+                'device_id': dt.id,
+                'vehicle_reg_no': dt.vehicle_reg_no,
+                'vehicle_type': dt.category.category if dt.category else None,
+                'vehicle_make': dt.vehicle_make,
+                'vehicle_model': dt.vehicle_model,
+                'imei': dt.device.imei if dt.device else None,
+                'status': dev_status,
+                'lat': dt.last_lat,
+                'lon': dt.last_lon,
+                'last_seen': dt.last_seen.isoformat() if dt.last_seen else None,
+                'speed_kmph': dt.last_speed,
+                'heading': dt.last_heading,
+                'city': dt.last_city,
+                'district': dt.last_district,
+                'state': dt.last_state,
+                'satellites': dt.last_satellites,
+                'ignition_status': dt.last_ignition,
+            })
+
+        response_data = {
+            'filters_applied': {
+                'state_id': state_id or None,
+                'district_id': district_id or None,
+                'vehicle_category_id': vehicle_category_id or None,
+                'district_name': district_name or None,
+                'city_name': city_name or None,
+                'locality_name': locality_name or None,
+            },
+            'total_vehicles': len(devices),
+            'vehicle_locations': devices,
+            'timestamp': now.isoformat(),
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Error in get_latest_vehicle_locations: {str(e)}")
+        return Response({
+            'error': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@csrf_exempt
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def erss_dashboard_summary(request):
+    """
+    ERSS overview metrics:
+    - total tagged devices, online devices, offline devices
+    - active emergency calls
+    - total police/ambulance executives
+    - police/ambulance executives with latest location update within last 5 mins
+    """
+    try:
+        from datetime import timedelta
+        from django.db.models import OuterRef, Subquery
+        from .models import EMCall, EM_ex, EMUserLocation
+
+        def _p(key, default=''):
+            v = request.data.get(key) or request.GET.get(key, default)
+            return str(v).strip() if v is not None else default
+
+        state_id = _p('state_id')
+        district_id = _p('district_id')
+        vehicle_category_id = _p('vehicle_category_id')
+
+        device_tags_qs = DeviceTag.objects.exclude(status='TagDeleted').exclude(status='Device_Untagged')
+
+        if state_id:
+            try:
+                device_tags_qs = device_tags_qs.filter(district__state_id=int(state_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid state_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if district_id:
+            try:
+                device_tags_qs = device_tags_qs.filter(district_id=int(district_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid district_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if vehicle_category_id:
+            try:
+                device_tags_qs = device_tags_qs.filter(category_id=int(vehicle_category_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid vehicle_category_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+
+        latest_gps = GPSData.objects.filter(device_tag_id=OuterRef('id')).order_by('-entry_time', '-id')
+        tagged_with_latest = device_tags_qs.annotate(
+            last_seen=Subquery(latest_gps.values('entry_time')[:1]),
+            last_speed=Subquery(latest_gps.values('speed')[:1]),
+        )
+
+        now = timezone.now()
+        gps_online_threshold = now - timedelta(minutes=15)
+        exec_online_threshold = now - timedelta(minutes=5)
+
+        total_tagged_devices = device_tags_qs.count()
+        online_devices = tagged_with_latest.filter(last_seen__gte=gps_online_threshold).count()
+        offline_devices = total_tagged_devices - online_devices
+
+        active_call_statuses = ['pending', 'desk_ex_assigned', 'broadcast_pending', 'field_ex_aproaching', 'field_ex_arrived']
+        em_calls_qs = EMCall.objects.filter(status__in=active_call_statuses)
+        if state_id:
+            em_calls_qs = em_calls_qs.filter(team__state_id=int(state_id))
+        if district_id:
+            em_calls_qs = em_calls_qs.filter(device__district_id=int(district_id))
+        active_emergency_calls = em_calls_qs.count()
+
+        police_types = ['police_ex', 'PCR']
+        ambulance_types = ['ambulance_ex', 'ACR']
+        exec_types = police_types + ambulance_types
+
+        exec_qs = EM_ex.objects.filter(user_type__in=exec_types)
+        if state_id:
+            exec_qs = exec_qs.filter(state_id=int(state_id))
+        if district_id:
+            district_obj = Settings_District.objects.filter(id=int(district_id)).first()
+            if district_obj:
+                exec_qs = exec_qs.filter(district__iexact=district_obj.district)
+
+        total_police_executives = exec_qs.filter(user_type__in=police_types).count()
+        total_ambulance_executives = exec_qs.filter(user_type__in=ambulance_types).count()
+
+        latest_exec_locations = (
+            EMUserLocation.objects
+            .filter(field_ex__in=exec_qs)
+            .values('field_ex_id')
+            .annotate(last_time=Max('time'))
+            .filter(last_time__gte=exec_online_threshold)
+        )
+        recent_exec_ids = set(row['field_ex_id'] for row in latest_exec_locations)
+
+        police_recent = exec_qs.filter(id__in=recent_exec_ids, user_type__in=police_types).count()
+        ambulance_recent = exec_qs.filter(id__in=recent_exec_ids, user_type__in=ambulance_types).count()
+
+        return Response({
+            'filters_applied': {
+                'state_id': state_id or None,
+                'district_id': district_id or None,
+                'vehicle_category_id': vehicle_category_id or None,
+            },
+            'erss_dashboard_metrics': {
+                'total_tagged_device_count': total_tagged_devices,
+                'online_device_count': online_devices,
+                'offline_device_count': offline_devices,
+                'active_emergency_calls_count': active_emergency_calls,
+                'total_police_sos_executive_count': total_police_executives,
+                'total_ambulance_sos_executive_count': total_ambulance_executives,
+                'total_police_and_ambulance_sos_executive_count': total_police_executives + total_ambulance_executives,
+                'police_executive_with_latest_location_within_5_min_count': police_recent,
+                'ambulance_executive_with_latest_location_within_5_min_count': ambulance_recent,
+                'total_executive_with_latest_location_within_5_min_count': police_recent + ambulance_recent,
+            },
+            'timestamp': now.isoformat(),
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Error in erss_dashboard_summary: {str(e)}")
+        return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@csrf_exempt
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def sos_analysis_dashboard(request):
+    """
+    SOS analysis for last 1 year with month-wise, hour-wise and district-wise counts:
+    - total_calls_count
+    - total_police_broadcasts
+    - total_ambulance_broadcasts
+    - total_police_accepted
+    - total_ambulance_accepted
+    - total_fake_call_close
+    - total_unattended_calls
+    """
+    try:
+        from datetime import timedelta
+        from django.db.models import Count, Exists, OuterRef
+        from django.db.models.functions import TruncMonth, ExtractHour
+        from .models import EMCall, EMCallAssignment, EMCallBroadcast
+
+        def _p(key, default=''):
+            v = request.data.get(key) or request.GET.get(key, default)
+            return str(v).strip() if v is not None else default
+
+        state_id = _p('state_id')
+        district_id = _p('district_id')
+
+        now = timezone.now()
+        start_dt = now - timedelta(days=365)
+
+        call_qs = EMCall.objects.filter(start_time__gte=start_dt)
+        if state_id:
+            try:
+                call_qs = call_qs.filter(team__state_id=int(state_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid state_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+        if district_id:
+            try:
+                call_qs = call_qs.filter(device__district_id=int(district_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid district_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+
+        accepted_assignment_exists = EMCallAssignment.objects.filter(
+            call_id=OuterRef('pk'),
+            status='accepted'
+        )
+
+        unattended_statuses = ['pending', 'desk_ex_assigned', 'broadcast_pending']
+        call_qs = call_qs.annotate(has_accepted_assignment=Exists(accepted_assignment_exists))
+
+        fake_statuses = ['closed_false_alert', 'closed_false_allert']
+
+        monthly = []
+        month_rows = (
+            call_qs
+            .annotate(period=TruncMonth('start_time'))
+            .values('period')
+            .annotate(
+                total_calls_count=Count('id'),
+                total_fake_call_close=Count('id', filter=Q(status__in=fake_statuses)),
+                total_unattended_calls=Count('id', filter=Q(status__in=unattended_statuses, has_accepted_assignment=False)),
+            )
+            .order_by('period')
+        )
+
+        for row in month_rows:
+            period_start = row['period']
+            period_end = (period_start + timedelta(days=32)).replace(day=1)
+            period_call_ids = call_qs.filter(start_time__gte=period_start, start_time__lt=period_end).values_list('id', flat=True)
+
+            police_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr']).count()
+            ambulance_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr']).count()
+            police_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr'], status='accepted').count()
+            ambulance_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr'], status='accepted').count()
+
+            monthly.append({
+                'month': period_start.strftime('%Y-%m'),
+                'total_calls_count': row['total_calls_count'],
+                'total_police_broadcast_count': police_broadcasts,
+                'total_ambulance_broadcast_count': ambulance_broadcasts,
+                'total_police_accepted_count': police_accepted,
+                'total_ambulance_accepted_count': ambulance_accepted,
+                'total_fake_call_close': row['total_fake_call_close'],
+                'total_unattended_calls': row['total_unattended_calls'],
+            })
+
+        hourly = []
+        hour_rows = (
+            call_qs
+            .annotate(hour_of_day=ExtractHour('start_time'))
+            .values('hour_of_day')
+            .annotate(
+                total_calls_count=Count('id'),
+                total_fake_call_close=Count('id', filter=Q(status__in=fake_statuses)),
+                total_unattended_calls=Count('id', filter=Q(status__in=unattended_statuses, has_accepted_assignment=False)),
+            )
+            .order_by('hour_of_day')
+        )
+
+        for row in hour_rows:
+            h = row['hour_of_day']
+            period_call_ids = call_qs.annotate(hh=ExtractHour('start_time')).filter(hh=h).values_list('id', flat=True)
+            police_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr']).count()
+            ambulance_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr']).count()
+            police_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr'], status='accepted').count()
+            ambulance_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr'], status='accepted').count()
+
+            hourly.append({
+                'hour_of_day': h,
+                'total_calls_count': row['total_calls_count'],
+                'total_police_broadcast_count': police_broadcasts,
+                'total_ambulance_broadcast_count': ambulance_broadcasts,
+                'total_police_accepted_count': police_accepted,
+                'total_ambulance_accepted_count': ambulance_accepted,
+                'total_fake_call_close': row['total_fake_call_close'],
+                'total_unattended_calls': row['total_unattended_calls'],
+            })
+
+        district_rows = (
+            call_qs
+            .values('device__district__district')
+            .annotate(
+                total_calls_count=Count('id'),
+                total_fake_call_close=Count('id', filter=Q(status__in=fake_statuses)),
+                total_unattended_calls=Count('id', filter=Q(status__in=unattended_statuses, has_accepted_assignment=False)),
+            )
+            .order_by('device__district__district')
+        )
+
+        district_wise = []
+        for row in district_rows:
+            district_name = row['device__district__district']
+            period_call_ids = call_qs.filter(device__district__district=district_name).values_list('id', flat=True)
+            police_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr']).count()
+            ambulance_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr']).count()
+            police_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr'], status='accepted').count()
+            ambulance_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr'], status='accepted').count()
+
+            district_wise.append({
+                'district_name': district_name,
+                'total_calls_count': row['total_calls_count'],
+                'total_police_broadcast_count': police_broadcasts,
+                'total_ambulance_broadcast_count': ambulance_broadcasts,
+                'total_police_accepted_count': police_accepted,
+                'total_ambulance_accepted_count': ambulance_accepted,
+                'total_fake_call_close': row['total_fake_call_close'],
+                'total_unattended_calls': row['total_unattended_calls'],
+            })
+
+        overall_call_ids = call_qs.values_list('id', flat=True)
+        response_data = {
+            'time_window': {
+                'from': start_dt.isoformat(),
+                'to': now.isoformat(),
+                'label': 'last_1_year',
+            },
+            'overall_metrics': {
+                'total_calls_count': call_qs.count(),
+                'total_police_broadcast_count': EMCallBroadcast.objects.filter(call_id__in=overall_call_ids, type__in=['police_ex', 'pcr']).count(),
+                'total_ambulance_broadcast_count': EMCallBroadcast.objects.filter(call_id__in=overall_call_ids, type__in=['ambulance_ex', 'acr']).count(),
+                'total_police_accepted_count': EMCallBroadcast.objects.filter(call_id__in=overall_call_ids, type__in=['police_ex', 'pcr'], status='accepted').count(),
+                'total_ambulance_accepted_count': EMCallBroadcast.objects.filter(call_id__in=overall_call_ids, type__in=['ambulance_ex', 'acr'], status='accepted').count(),
+                'total_fake_call_close': call_qs.filter(status__in=fake_statuses).count(),
+                'total_unattended_calls': call_qs.filter(status__in=unattended_statuses, has_accepted_assignment=False).count(),
+            },
+            'month_wise_metrics': monthly,
+            'hour_of_day_wise_metrics': hourly,
+            'district_wise_metrics': district_wise,
+            'filters_applied': {
+                'state_id': state_id or None,
+                'district_id': district_id or None,
+            }
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Error in sos_analysis_dashboard: {str(e)}")
+        return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@csrf_exempt
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def sos_monitoring_dashboard(request):
+    """
+    SOS monitoring dashboard KPIs:
+    - total emergency calls today
+    - total live calls now
+    - total unattended calls now
+    - total closed calls today
+    - average time to accept by desk executive
+    - average time to accept broadcast by police
+    - average time to accept broadcast by ambulance
+    - calls accepted by team lead total and % of total calls
+    """
+    try:
+        from datetime import timedelta
+        from django.db.models import Avg, DurationField, ExpressionWrapper, F, Exists, OuterRef
+        from .models import EMCall, EMCallAssignment, EMCallBroadcast
+
+        def _p(key, default=''):
+            v = request.data.get(key) or request.GET.get(key, default)
+            return str(v).strip() if v is not None else default
+
+        state_id = _p('state_id')
+        district_id = _p('district_id')
+
+        now = timezone.now()
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        calls_today = EMCall.objects.filter(start_time__gte=day_start, start_time__lte=now)
+        if state_id:
+            try:
+                calls_today = calls_today.filter(team__state_id=int(state_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid state_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+        if district_id:
+            try:
+                calls_today = calls_today.filter(device__district_id=int(district_id))
+            except (ValueError, TypeError):
+                return Response({'error': 'Invalid district_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+
+        live_statuses = ['pending', 'desk_ex_assigned', 'broadcast_pending', 'field_ex_aproaching', 'field_ex_arrived']
+        closed_statuses = ['closed', 'closed_false_alert', 'closed_false_allert']
+
+        total_emergency_calls_today = calls_today.count()
+        total_live_calls_now = calls_today.filter(status__in=live_statuses).count()
+        total_closed_calls_today = calls_today.filter(status__in=closed_statuses).count()
+
+        accepted_assignment_exists = EMCallAssignment.objects.filter(call_id=OuterRef('pk'), status='accepted')
+        unattended_statuses = ['pending', 'desk_ex_assigned', 'broadcast_pending']
+        total_unattended_calls_now = (
+            calls_today
+            .filter(status__in=unattended_statuses)
+            .annotate(has_accepted=Exists(accepted_assignment_exists))
+            .filter(has_accepted=False)
+            .count()
+        )
+
+        desk_avg = (
+            EMCallAssignment.objects
+            .filter(call__in=calls_today, type='desk_ex')
+            .exclude(accept_time__isnull=True)
+            .annotate(diff=ExpressionWrapper(F('accept_time') - F('start_time'), output_field=DurationField()))
+            .aggregate(avg=Avg('diff'))
+        )['avg']
+
+        police_broadcast_avg = (
+            EMCallBroadcast.objects
+            .filter(call__in=calls_today, type__in=['police_ex', 'pcr'])
+            .exclude(accept_at__isnull=True)
+            .annotate(diff=ExpressionWrapper(F('accept_at') - F('created_at'), output_field=DurationField()))
+            .aggregate(avg=Avg('diff'))
+        )['avg']
+
+        ambulance_broadcast_avg = (
+            EMCallBroadcast.objects
+            .filter(call__in=calls_today, type__in=['ambulance_ex', 'acr'])
+            .exclude(accept_at__isnull=True)
+            .annotate(diff=ExpressionWrapper(F('accept_at') - F('created_at'), output_field=DurationField()))
+            .aggregate(avg=Avg('diff'))
+        )['avg']
+
+        teamlead_accepted_calls = (
+            EMCallAssignment.objects
+            .filter(call__in=calls_today, type='teamlead')
+            .exclude(accept_time__isnull=True)
+            .values('call_id')
+            .distinct()
+            .count()
+        )
+
+        teamlead_accept_percentage = 0
+        if total_emergency_calls_today > 0:
+            teamlead_accept_percentage = round((teamlead_accepted_calls / total_emergency_calls_today) * 100, 2)
+
+        return Response({
+            'filters_applied': {
+                'state_id': state_id or None,
+                'district_id': district_id or None,
+            },
+            'sos_monitoring_metrics': {
+                'total_emergency_calls_today': total_emergency_calls_today,
+                'total_live_calls_now': total_live_calls_now,
+                'total_unattended_calls_now': total_unattended_calls_now,
+                'total_closed_calls_today': total_closed_calls_today,
+                'average_time_to_accept_by_desk_executive_seconds': desk_avg.total_seconds() if desk_avg else None,
+                'average_time_to_accept_broadcast_by_police_seconds': police_broadcast_avg.total_seconds() if police_broadcast_avg else None,
+                'average_time_to_accept_broadcast_by_ambulance_seconds': ambulance_broadcast_avg.total_seconds() if ambulance_broadcast_avg else None,
+                'calls_accepted_by_team_lead_total': teamlead_accepted_calls,
+                'calls_accepted_by_team_lead_percent_of_total_calls': teamlead_accept_percentage,
+            },
+            'timestamp': now.isoformat(),
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Error in sos_monitoring_dashboard: {str(e)}")
+        return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

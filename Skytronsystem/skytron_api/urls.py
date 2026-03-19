@@ -502,6 +502,15 @@ urlpatterns = [
     path('login-settings/get/', get_login_settings, name='get_login_settings'),
 
     path('update_vehicle_owner_expiry/', update_vehicle_owner_expiry, name='update_vehicle_owner_expiry'),
+    
+    # Central Dashboard APIs for Vehicle Monitoring
+    path('dashboard/vehicle-monitoring/', vehicle_monitoring_dashboard, name='vehicle_monitoring_dashboard'),
+    path('dashboard/filter-options/', get_dashboard_filter_options, name='get_dashboard_filter_options'),
+    path('dashboard/areawise-device-count/', get_areawise_device_tag_count, name='get_areawise_device_tag_count'),
+    path('dashboard/vehicle-locations/', get_latest_vehicle_locations, name='get_latest_vehicle_locations'),
+    path('dashboard/erss-summary/', erss_dashboard_summary, name='erss_dashboard_summary'),
+    path('dashboard/sos-analysis/', sos_analysis_dashboard, name='sos_analysis_dashboard'),
+    path('dashboard/sos-monitoring/', sos_monitoring_dashboard, name='sos_monitoring_dashboard'),
 ]  
 
 

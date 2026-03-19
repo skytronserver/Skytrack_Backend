@@ -1,126 +1,155 @@
 #!/usr/bin/env python3
 """
-MQTT User Management for Skytrack Backend
-Creates or updates MQTT users with police-level access (open-all role)
-
-Usage:
-    from .mqtt_user_creator import create_mqtt_user
-    success = create_mqtt_user("username123", "password456")
-
-Command Line:
-    python3 mqtt_user_creator.py username password
+MQTT User Management for Skytrack Backend.
+Creates or updates MQTT users with open-all role using mosquitto_ctrl.
 """
-import subprocess
-import time
 
-def create_mqtt_user(username, password): 
-    # MQTT broker configuration - using environment variables for deployment flexibility
-    import os
-    CA_FILE = "/app/keys/ca.crt"  #"/home/azureuser/Skytrack_Backend/Skytronsystem/keys/ca.crt" # # Updated certificate path
-    #HOST = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")  # Default fallback
-    HOST = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")  # Default fallback
-    PORT = os.getenv("MQTT_BROKER_PORT", "8883")
-    ADMIN_USER = os.getenv("MQTT_ADMIN_USER", "admin")
-    ADMIN_PASS = os.getenv("MQTT_ADMIN_PASS", "adminpass")
-    
-    try:
-        # Check if mosquitto_pub is available
-        check_cmd = ["which", "mosquitto_pub"]
-        check_result = subprocess.run(check_cmd, capture_output=True, text=True)
-        if check_result.returncode != 0:
-            print("ERROR: mosquitto_pub not found in PATH")
-            return False
-            
-        # Check if CA file exists
-        import os
-        if not os.path.exists(CA_FILE):
-            print(f"ERROR: CA file not found at {CA_FILE}")
-            return False
-        
-        print(f"Creating MQTT user: {username}")
-        
-        # Step 1: Create client (will create new or do nothing if exists)
-        cmd1 = [
-            "mosquitto_pub", "--cafile", CA_FILE, "-h", HOST, "-p", PORT,
-            "-u", ADMIN_USER, "-P", ADMIN_PASS,
-            "-t", "$CONTROL/dynamic-security/v1",
-            "-m", f'{{"commands":[{{"command":"createClient","username":"{username}"}}]}}',
-            "--insecure"
-        ]
-        result1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=10)
-        print(f"Step 1 (createClient) - Return code: {result1.returncode}")
-        if result1.stderr:
-            print(f"Step 1 stderr: {result1.stderr}")
-        time.sleep(0.5)
-        
-        # Step 2: Set password (creates user if not exists, updates if exists)
-        cmd2 = [
-            "mosquitto_pub", "--cafile", CA_FILE, "-h", HOST, "-p", PORT,
-            "-u", ADMIN_USER, "-P", ADMIN_PASS,
-            "-t", "$CONTROL/dynamic-security/v1",
-            "-m", f'{{"commands":[{{"command":"setClientPassword","username":"{username}","password":"{password}"}}]}}',
-            "--insecure"
-        ]
-        result2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=10)
-        print(f"Step 2 (setClientPassword) - Return code: {result2.returncode}")
-        if result2.stderr:
-            print(f"Step 2 stderr: {result2.stderr}")
-        if result2.returncode != 0:
-            print("Failed to set password")
-            return False
-        time.sleep(0.5)
-        
-        # Step 3: Add police-level access (open-all role)
-        cmd3 = [
-            "mosquitto_pub", "--cafile", CA_FILE, "-h", HOST, "-p", PORT,
-            "-u", ADMIN_USER, "-P", ADMIN_PASS,
-            "-t", "$CONTROL/dynamic-security/v1",
-            "-m", f'{{"commands":[{{"command":"addClientRole","username":"{username}","rolename":"open-all"}}]}}',
-            "--insecure"
-        ]
-        result3 = subprocess.run(cmd3, capture_output=True, text=True, timeout=10)
-        print(f"Step 3 (addClientRole) - Return code: {result3.returncode}")
-        if result3.stderr:
-            print(f"Step 3 stderr: {result3.stderr}")
-        time.sleep(0.5)
-        
-        # Step 4: Test connection to verify user works
-        test_cmd = [
-            "mosquitto_pub", "--cafile", CA_FILE, "-h", HOST, "-p", PORT,
-            "-u", username, "-P", password,
-            "-t", f"test/{username}", "-m", f"Test from {username}",
-            "--insecure"
-        ]
-        test_result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=10)
-        print(f"Step 4 (test connection) - Return code: {test_result.returncode}")
-        if test_result.stderr:
-            print(f"Step 4 stderr: {test_result.stderr}")
-        
-        success = test_result.returncode == 0
-        print(f"MQTT user creation {'successful' if success else 'failed'} for {username}")
-        return success
-        
-    except Exception as e:
-        print(f"Exception in create_mqtt_user: {e}")
+import os
+import shutil
+import subprocess
+import sys
+from typing import List
+
+
+def _run(cmd: List[str], check: bool = True) -> subprocess.CompletedProcess:
+    """Run a command and print full diagnostics."""
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    print(f"CMD: {' '.join(cmd)}")
+    print(f"RET: {result.returncode}")
+    if result.stdout:
+        print(f"STDOUT: {result.stdout.strip()}")
+    if result.stderr:
+        print(f"STDERR: {result.stderr.strip()}")
+    if check and result.returncode != 0:
+        raise RuntimeError(f"Command failed: {' '.join(cmd)}")
+    return result
+
+
+def _tool_exists(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+def _safe_run_dynsec(base_cmd: List[str], args: List[str], ignore_errors: List[str] = None) -> bool:
+    """Run a dynsec command and optionally ignore known benign errors."""
+    ignore_errors = ignore_errors or []
+    result = _run(base_cmd + args, check=False)
+    if result.returncode == 0:
+        return True
+
+    stderr = (result.stderr or "").lower()
+    for err in ignore_errors:
+        if err.lower() in stderr:
+            return True
+    return False
+
+
+def create_mqtt_user(username: str, password: str) -> bool:
+    ca_file = os.getenv("MQTT_CA_FILE", "/home/azureuser/Skytrack_Backend/Skytronsystem/keys/ca.crt")
+    host = os.getenv("MQTT_BROKER_HOST", "103.195.217.127")
+    port = os.getenv("MQTT_BROKER_PORT", "8883")
+    admin_user = os.getenv("MQTT_ADMIN_USER", "admin")
+    admin_pass = os.getenv("MQTT_ADMIN_PASS", "adminpass")
+
+    username = (username or "").strip()
+    password = (password or "").strip()
+
+    if not username:
+        print("ERROR: username is empty. Provide arg1 or export MQTT_USERNAME.")
+        return False
+    if not password:
+        print("ERROR: password is empty. Provide arg2 or export MQTT_PASSWORD.")
         return False
 
+    if not _tool_exists("mosquitto_ctrl"):
+        print("ERROR: mosquitto_ctrl not found in PATH")
+        return False
+    if not _tool_exists("mosquitto_pub"):
+        print("ERROR: mosquitto_pub not found in PATH")
+        return False
+    if not os.path.exists(ca_file):
+        print(f"ERROR: CA file not found at {ca_file}")
+        return False
+
+    print("=== MQTT TARGET ===")
+    print(f"HOST={host}")
+    print(f"PORT={port}")
+    print(f"CA_FILE={ca_file}")
+    print(f"ADMIN_USER={admin_user}")
+    print(f"USERNAME={username}")
+
+    base_ctrl = [
+        "mosquitto_ctrl", "--cafile", ca_file,
+        "-h", host, "-p", port,
+        "-u", admin_user, "-P", admin_pass,
+        "dynsec",
+    ]
+
+    try:
+        # Ensure role exists
+        _safe_run_dynsec(
+            base_ctrl,
+            ["createRole", "open-all"],
+            ignore_errors=["already", "exists"],
+        )
+
+        # Ensure broad ACLs exist on role
+        acl_specs = [
+            ["addRoleACL", "open-all", "publishClientSend", "#", "allow"],
+            ["addRoleACL", "open-all", "publishClientReceive", "#", "allow"],
+            ["addRoleACL", "open-all", "subscribePattern", "#", "allow"],
+            ["addRoleACL", "open-all", "unsubscribePattern", "#", "allow"],
+        ]
+        for spec in acl_specs:
+            _safe_run_dynsec(base_ctrl, spec, ignore_errors=["already", "exists"]) 
+
+        # Create client if missing, then set password always
+        _safe_run_dynsec(
+            base_ctrl,
+            ["createClient", username, "-p", password],
+            ignore_errors=["already", "exists"],
+        )
+        _run(base_ctrl + ["setClientPassword", username, password], check=True)
+
+        # Attach role and enable user
+        _safe_run_dynsec(base_ctrl, ["addClientRole", username, "open-all"], ignore_errors=["already", "exists"])
+        _safe_run_dynsec(base_ctrl, ["enableClient", username], ignore_errors=["already", "enabled"])
+
+        # Show client details for debug
+        _run(base_ctrl + ["getClient", username], check=False)
+
+        # Final auth test as the created user
+        test_cmd = [
+            "mosquitto_pub", "-d",
+            "--cafile", ca_file,
+            "-h", host, "-p", port,
+            "-u", username, "-P", password,
+            "-t", f"test/{username}",
+            "-m", f"user-create-check:{username}",
+            "-q", "1",
+        ]
+        test = _run(test_cmd, check=False)
+        if test.returncode == 0:
+            print(f"SUCCESS: User '{username}' can authenticate and publish.")
+            return True
+
+        print("ERROR: User creation commands ran, but login test failed.")
+        print("This usually means broker is using go-auth/JWT mode, not dynsec for user auth.")
+        return False
+
+    except Exception as exc:
+        print(f"ERROR: Exception in create_mqtt_user: {exc}")
+        return False
+
+
 if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) == 3:
-        username = sys.argv[1]
-        password = sys.argv[2]
-        
-        print(f"Creating/updating MQTT user: {username}")
-        success = create_mqtt_user(username, password)
-        
-        if success:
-            print(f"✓ User '{username}' created/updated successfully and can connect!")
-        else:
-            print(f"✗ Failed to create/update user '{username}'")
-        
-        sys.exit(0 if success else 1)
-    else:
-        print("Usage: python3 mqtt_user_creator.py <username> <password>")
-        print("Or import: from .mqtt_user_creator import create_mqtt_user")
-        sys.exit(1)
+    arg_user = sys.argv[1] if len(sys.argv) > 1 else os.getenv("MQTT_USERNAME", "")
+    arg_pass = sys.argv[2] if len(sys.argv) > 2 else os.getenv("MQTT_PASSWORD", "")
+
+    print(f"Creating/updating MQTT user: '{arg_user}'")
+    success = create_mqtt_user(arg_user, arg_pass)
+    if success:
+        print(f"OK: User '{arg_user}' created/updated successfully.")
+        sys.exit(0)
+
+    print(f"FAIL: Could not create/update user '{arg_user}'.")
+    sys.exit(1)
