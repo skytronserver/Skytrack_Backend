@@ -746,6 +746,99 @@ def vehicle_status_metrics(request):
     })
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_device_onboarding_dashboard(request):
+    """
+    Public dashboard API for device onboarding and inventory metrics.
+
+    Includes:
+    - Total manufacturers with at least one accepted technical onboarding.
+    - Total eSIM (M2M) providers.
+    - Total device models with accepted technical onboarding.
+    - Total device stock.
+    - Total tagged devices (currently tagged, excluding untagged/deleted tags).
+    - Total online devices (GPS seen in last 15 minutes).
+    - Total offline devices.
+    - Manufacturer list with at least one accepted technical onboarding request.
+    """
+    from .models import (
+        DeviceModelTechnicalOnboardingRequest,
+        eSimProvider,
+        DeviceStock,
+        DeviceTag,
+        GPSData,
+        Manufacturer,
+    )
+
+    onboarding_done_qs = DeviceModelTechnicalOnboardingRequest.objects.filter(status='accepted')
+
+    manufacturer_ids_with_done_onboarding = onboarding_done_qs.values_list(
+        'manufacturer_id',
+        flat=True
+    ).distinct()
+
+    total_manufacturers_with_onboarding_done = manufacturer_ids_with_done_onboarding.count()
+    total_esim_m2m_provider = eSimProvider.objects.count()
+    total_device_models_with_onboarding_done = onboarding_done_qs.values_list(
+        'device_model_id',
+        flat=True
+    ).distinct().count()
+    total_device_stock = DeviceStock.objects.count()
+
+    tagged_device_base_qs = DeviceTag.objects.exclude(status__in=['Device_Untagged', 'TagDeleted'])
+    total_tagged_device = tagged_device_base_qs.count()
+
+    now = timezone.now()
+    window_start = now - timedelta(minutes=15)
+    total_online_device = (
+        GPSData.objects
+        .filter(entry_time__gte=window_start)
+        .exclude(device_tag__isnull=True)
+        .exclude(device_tag__status__in=['Device_Untagged', 'TagDeleted'])
+        .values_list('device_tag_id', flat=True)
+        .distinct()
+        .count()
+    )
+    total_offline_device = max(0, total_tagged_device - total_online_device)
+
+    manufacturers = (
+        Manufacturer.objects
+        .filter(id__in=manufacturer_ids_with_done_onboarding)
+        .prefetch_related('users')
+        .order_by('company_name', 'id')
+    )
+
+    manufacturer_list = []
+    for manufacturer in manufacturers:
+        primary_user = manufacturer.users.order_by('id').first()
+        manufacturer_list.append({
+            'manufacturer_id': manufacturer.id,
+            'company_name': manufacturer.company_name,
+            'company_address': manufacturer.company_address,
+            'company_gstn': manufacturer.gstnnumber,
+            'company_contact_no': manufacturer.company_phoneno,
+            'company_email_id': manufacturer.company_email,
+            'user_name': getattr(primary_user, 'name', None),
+            'user_contact_no': getattr(primary_user, 'mobile', None),
+            'user_email_id': getattr(primary_user, 'email', None),
+        })
+
+    return Response({
+        'totals': {
+            'total_manufacturers_with_onboarding_done': total_manufacturers_with_onboarding_done,
+            'total_esim_m2m_provider': total_esim_m2m_provider,
+            'total_device_models_with_onboarding_done': total_device_models_with_onboarding_done,
+            'total_device_stock': total_device_stock,
+            'total_tagged_device': total_tagged_device,
+            'total_online_device': total_online_device,
+            'total_offline_device': total_offline_device,
+            'online_window_minutes': 15,
+        },
+        'manufacturers': manufacturer_list,
+    })
+
+
 
 
 

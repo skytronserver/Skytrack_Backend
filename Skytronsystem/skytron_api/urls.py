@@ -42,6 +42,9 @@ urlpatterns = [
     # Vehicle status metrics (unauthenticated)
     path('vehicle_status_metrics/', vehicle_status_metrics, name='vehicle_status_metrics'),
 
+    # Public onboarding + device inventory dashboard metrics
+    path('public/device_onboarding_dashboard/', public_device_onboarding_dashboard, name='public_device_onboarding_dashboard'),
+
     path('set_login_settings/', set_login_settings, name='set_login_settings'),
     path('get_login_settings/', get_login_settings, name='get_login_settings'),
     path('get_settings/', get_settings, name='settings'),
