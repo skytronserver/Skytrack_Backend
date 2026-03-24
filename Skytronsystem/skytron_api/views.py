@@ -12798,6 +12798,19 @@ def homepage(request ):
         emergency_alerts_month = AlertsLog.objects.filter(type__icontains='Emergency', status="in", timestamp__gte=current_month_start).count()
         emergency_alerts_today = AlertsLog.objects.filter(type__icontains='Emergency', status="in", timestamp__date=current_date).count()
 
+        # Temperature alerts (BoxTemp + EmTemp)
+        temperature_alerts = AlertsLog.objects.filter(type__in=['BoxTemp', 'EmTemp'], status="in").count()
+        temperature_alerts_month = AlertsLog.objects.filter(
+            type__in=['BoxTemp', 'EmTemp'],
+            status="in",
+            timestamp__gte=current_month_start
+        ).count()
+        temperature_alerts_today = AlertsLog.objects.filter(
+            type__in=['BoxTemp', 'EmTemp'],
+            status="in",
+            timestamp__date=current_date
+        ).count()
+
         # Device online/offline (15-min window, consistent with other dashboard code)
         tagged_statuses = ['Device_Active', 'Owner_Final_OTP_Verified','Live_Location_Confirmed', 'SOS_Confirmed', 'RegNo_Configuration_Confirmed']
         tagged_devices_qs = DeviceTag.objects.filter(status__in=tagged_statuses)
@@ -12805,8 +12818,8 @@ def homepage(request ):
         total_tagged_devices = tagged_devices_qs.count()
 
         total_devices = DeviceStock.objects.count()
-        total_untagged_devices = max(0, total_devices - total_tagged_devices)
-        total_fitments = total_tagged_devices + total_untagged_devices
+        total_untagged_devices = DeviceTag.objects.filter(status__in=['TagDeleted','Device_Untagged']).count()
+        
 
         online_threshold = timezone.now() - timedelta(minutes=15)
         total_online_devices = GPSData.objects.filter(
@@ -12854,11 +12867,14 @@ def homepage(request ):
             'EmergencyAlerts': emergency_alerts,
             'EmergencyAlerts_month': emergency_alerts_month,
             'EmergencyAlerts_today': emergency_alerts_today,
+            'TemperatureAlerts': temperature_alerts,
+            'TemperatureAlerts_month': temperature_alerts_month,
+            'TemperatureAlerts_today': temperature_alerts_today,
 
             'TotalDevice': DeviceStock.objects.count(),
             'TotalTaggedDevice': total_tagged_devices,
             'TotalUntaggedDevice': total_untagged_devices,
-            'TotalFitments': total_fitments,
+            'TotalFitments': total_tagged_devices,
             'TotalOnlineDevice': total_online_devices,
             'TotalOfflineDevice': total_offline_devices,
             'TotalDeviceModel': DeviceModel.objects.count(),
@@ -13112,6 +13128,7 @@ def homepage_Manufacturer(request ):
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             week_ago = now - timedelta(days=7)
+            current_date = now.date()
             
             # Get manufacturer profile user
             manufacturer_user = profile.users.last()
@@ -13120,6 +13137,9 @@ def homepage_Manufacturer(request ):
             mod = DeviceModel.objects.filter(created_by=manufacturer_user)
             dealers = Dealer.objects.filter(manufacturer=profile)
             stock = DeviceStock.objects.filter(created_by=manufacturer_user)
+            associated_vehicle_owners = VehicleOwner.objects.filter(
+                devicetag__device__created_by=manufacturer_user
+            ).distinct()
             
             # Calculate activations (devices that are actually activated/tagged)
             total_activations = DeviceTag.objects.filter(
@@ -13158,6 +13178,7 @@ def homepage_Manufacturer(request ):
             activated_devices = manufacturer_devices.filter(status="Device_Active")
             
             online_devices = 0
+            online_today = 0
             offline_today = 0
             offline_7day = 0
             offline_30day = 0
@@ -13169,6 +13190,8 @@ def homepage_Manufacturer(request ):
                     # Check if device is online (data received within last 30 minutes)
                     if latest_gps.entry_time >= now - timedelta(minutes=30):
                         online_devices += 1
+                    if latest_gps.entry_time >= today_start:
+                        online_today += 1
                     
                     # Check offline periods
                     if latest_gps.entry_time < today_start:
@@ -13203,15 +13226,50 @@ def homepage_Manufacturer(request ):
                 'Total_Faulty': total_faulty,
                 
                 'Total_esim_activation_request': esim_activation_requests,
+                'Total_esim_activated': stock.filter(
+                    stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
+                ).count(),
                 'Total_1year_renewal_request': one_year_renewals,
                 'Total_2year_renewal_request': two_year_renewals,
+                'Total_esim_expired': stock.filter(esim_validity__lte=now).count(),
                 
                 'Total_Online_Device': online_devices,
+                'Total_Online_Device_today': online_today,
                 'Total_Offline_Device_today': offline_today,
                 'Total_Offline_Device_7day': offline_7day,
                 'Total_Offline_Device_30day': offline_30day,
                 
-                'Total_expired_device': expired_devices
+                'Total_expired_device': expired_devices,
+
+                # Requested additional user statistics
+                'User_Total_Dealer': dealers.count(),
+                'User_Inactive_Dealer': dealers.filter(status__in=['UserExpired', 'Discontinued']).count(),
+                'User_Total_Unique_Vehicle_Owners': associated_vehicle_owners.count(),
+                'User_Expired_Vehicle_Owners': associated_vehicle_owners.filter(expirydate__lt=current_date).count(),
+
+                # Requested additional device statistics
+                'Device_Total_Stock': stock.count(),
+                'Device_Assigned_To_Dealer': stock.filter(dealer__isnull=False).count(),
+                'Device_Tagged': manufacturer_devices.count(),
+                'Device_Online_Today': online_today,
+                'Device_Offline_Since_7_Days': offline_7day,
+                'Device_Offline_Since_30_Days': offline_30day,
+
+                # Requested additional eSIM statistics
+                'ESim_Attached_M2M_Service_Provider': profile.esim_provider.count(),
+                'ESim_Activation_Request_Sent': esim_activation_requests,
+                'ESim_Activated': stock.filter(
+                    stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
+                ).count(),
+                'ESim_1_Year_Expiry': stock.filter(
+                    esim_validity__gt=now,
+                    esim_validity__lte=now + timedelta(days=365)
+                ).count(),
+                'ESim_2_Year_Expiry': stock.filter(
+                    esim_validity__gt=now + timedelta(days=365),
+                    esim_validity__lte=now + timedelta(days=730)
+                ).count(),
+                'ESim_Already_Expired': stock.filter(esim_validity__lte=now).count()
             }
             # Return the serialized data as JSON response
             return Response(count_dict)
@@ -13811,6 +13869,9 @@ def homepage_Dealer(request ):
             # Calculate online/offline device statistics
             # Get devices that are tagged (fitted) by this dealer
             tagged_devices = DeviceTag.objects.filter(device__dealer=profile)
+            dealer_vehicle_owners = VehicleOwner.objects.filter(
+                devicetag__device__dealer=profile
+            ).distinct()
             
             # Online devices (with GPS data in last 30 minutes)
             online_now = 0
@@ -13855,11 +13916,41 @@ def homepage_Dealer(request ):
                 'Total_esim_activation_request': esim_activation_requests,
                 'Total_1_year_renewal_request': one_year_renewals,
                 'Total_2_year_renewal_request': two_year_renewals,
+                'Total_esim_activated': dealer_devices.filter(
+                    stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
+                ).count(),
+                'Total_esim_expired': dealer_devices.filter(esim_validity__lte=now).count(),
                 
                 'Total_Online_now': online_now,
                 'Total_Online_today': online_today,
                 'Total_Offline_7_days': offline_7days,
-                'Total_Offline_30_days': offline_30days
+                'Total_Offline_30_days': offline_30days,
+
+                # Requested additional vehicle owner counters
+                'Unique_Vehicle_Owners_Associated': dealer_vehicle_owners.count(),
+                'Unique_Vehicle_Owners_Associated_This_Month': VehicleOwner.objects.filter(
+                    devicetag__device__dealer=profile,
+                    devicetag__tagged__gte=month_start
+                ).distinct().count(),
+                'Unique_Vehicle_Owners_Associated_Today': VehicleOwner.objects.filter(
+                    devicetag__device__dealer=profile,
+                    devicetag__tagged__gte=today_start
+                ).distinct().count(),
+
+                # Requested additional eSIM counters
+                'ESim_Activation_Request_Sent': esim_activation_requests,
+                'ESim_Activated': dealer_devices.filter(
+                    stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
+                ).count(),
+                'ESim_1_Year_Expiry': dealer_devices.filter(
+                    esim_validity__gt=now,
+                    esim_validity__lte=now + timedelta(days=365)
+                ).count(),
+                'ESim_2_Year_Expiry': dealer_devices.filter(
+                    esim_validity__gt=now + timedelta(days=365),
+                    esim_validity__lte=now + timedelta(days=730)
+                ).count(),
+                'ESim_Already_Expired': dealer_devices.filter(esim_validity__lte=now).count()
             }
             # Return the serialized data as JSON response
             return Response(count_dict)
@@ -13893,6 +13984,20 @@ def SOS_adminreport2(request ):
 
 
         if True:
+            from datetime import timedelta
+            from django.utils import timezone
+
+            now = timezone.now()
+            today = now.date()
+            online_threshold = now - timedelta(minutes=30)
+
+            teamlead_qs = EM_ex.objects.filter(user_type='teamlead')
+            desk_ex_qs = EM_ex.objects.filter(user_type='desk_ex')
+            police_ex_qs = EM_ex.objects.filter(user_type='police_ex')
+            ambulance_ex_qs = EM_ex.objects.filter(user_type='ambulance_ex')
+
+            broadcast_qs = EMCallBroadcast.objects.all()
+
             count_dict = {
  
                 'Total_Teams':EMTeams.objects.filter(status="Active").count(),
@@ -13925,6 +14030,43 @@ def SOS_adminreport2(request ):
                 'Total_Rejected_Assignemnt_today':EMCallAssignment.objects.filter(status="rejected").count(),
 
                 'Average_time_to_Accept':EMCallAssignment.objects.filter(status="accepted").count(),
+
+                # Requested SOS users counters
+                'SOS_Team_Leads': teamlead_qs.count(),
+                'SOS_Online_Team_Leads': teamlead_qs.filter(
+                    users__status='active',
+                    users__is_active=True,
+                    users__login=True,
+                    users__last_activity__gte=online_threshold
+                ).values('users').distinct().count(),
+                'SOS_Desk_Executives': desk_ex_qs.count(),
+                'SOS_Online_Desk_Executives': desk_ex_qs.filter(
+                    users__status='active',
+                    users__is_active=True,
+                    users__login=True,
+                    users__last_activity__gte=online_threshold
+                ).values('users').distinct().count(),
+                'SOS_Police_Executives': police_ex_qs.count(),
+                'SOS_Online_Police_Executives': police_ex_qs.filter(
+                    users__status='active',
+                    users__is_active=True,
+                    users__login=True,
+                    users__last_activity__gte=online_threshold
+                ).values('users').distinct().count(),
+                'SOS_Ambulance_Executives': ambulance_ex_qs.count(),
+                'SOS_Online_Ambulance_Executives': ambulance_ex_qs.filter(
+                    users__status='active',
+                    users__is_active=True,
+                    users__login=True,
+                    users__last_activity__gte=online_threshold
+                ).values('users').distinct().count(),
+
+                # Requested broadcast statistics
+                'Broadcast_Total': broadcast_qs.count(),
+                'Broadcast_Total_Closed': broadcast_qs.exclude(status='pending').count(),
+                'Broadcast_Total_Today': broadcast_qs.filter(created_at__date=today).count(),
+                'Broadcast_Total_Closed_Today': broadcast_qs.exclude(status='pending').filter(created_at__date=today).count(),
+                'Broadcast_Currently_Pending': broadcast_qs.filter(status='pending').count(),
 
 
              
@@ -14299,7 +14441,7 @@ def homepage_stateAdmin(request ):
             
             # Get device tags in this state
             device_tags_in_state = DeviceTag.objects.filter(
-                device__dealer__manufacturer__state=state_filter
+                district__state=state_filter
             )
             
             # Get active devices in this state
@@ -14333,7 +14475,7 @@ def homepage_stateAdmin(request ):
             total_offline_devices = max(0, total_tagged_devices - total_online_devices)
 
             total_devices = device_stock_in_state.count()
-            total_untagged_devices = max(0, total_devices - total_tagged_devices)
+            total_untagged_devices = device_tags_in_state.filter(status__in=['TagDeleted','Device_Untagged']).count()
             total_fitments = total_tagged_devices + total_untagged_devices
 
             # Active user counters in this state
@@ -14388,6 +14530,7 @@ def homepage_stateAdmin(request ):
                 # User counts filtered by state
                 'Total_Dealer_available': dealers_in_state.count(),
                 'Total_Manufacture_available': manufacturers_in_state.count(),
+                'Total_M2M_Service_Provider_available': eSimProvider.objects.filter(state=state_filter).count(),
                 'Total_DTO_available': dtos_in_state.count(),
                 'Total_Vehicle_Owner_available': vehicle_owners_in_state.count(),
 
@@ -14402,7 +14545,7 @@ def homepage_stateAdmin(request ):
                 'TotalOnlineDevice': total_online_devices,
                 'TotalOfflineDevice': total_offline_devices,
                 'TotalUntaggedDevice': total_untagged_devices,
-                'TotalFitments': total_fitments,
+                'TotalFitments': total_tagged_devices,
 
                 'Total_Device_Activated': active_devices.count(),
                 'Active_Device_Today': device_tags_in_state.filter(
@@ -18920,6 +19063,7 @@ def homepage_esimProvider(request):
             
             # eSIM activation request statistics
             esim_activation_requests = esimActivationRequest.objects.filter(eSim_provider=profile)
+            manufacturers_with_provider = Manufacturer.objects.filter(esim_provider=profile).distinct().count()
             
             # Count different statuses of eSIM activation requests
             esim_pending = esim_activation_requests.filter(status="pending").count()
@@ -18944,6 +19088,10 @@ def homepage_esimProvider(request):
             esim_activation_confirmed = device_stocks.filter(
                 stock_status='ESIM_Active_Confirmed'
             ).count()
+
+            esim_activated_total = device_stocks.filter(
+                stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
+            ).count()
             
             esim_activation_rejected = device_stocks.filter(
                 stock_status='ESIM_Active_Rejected'
@@ -18959,6 +19107,16 @@ def homepage_esimProvider(request):
                 esim_validity__gt=now,
                 esim_validity__lte=now + timedelta(days=30)
             ).count()
+
+            esim_1_year_expiry = device_stocks.filter(
+                esim_validity__gt=now,
+                esim_validity__lte=now + timedelta(days=365)
+            ).count()
+
+            esim_2_year_expiry = device_stocks.filter(
+                esim_validity__gt=now + timedelta(days=365),
+                esim_validity__lte=now + timedelta(days=730)
+            ).count()
             
             count_dict = {
                 'Total_Devices_With_ESim': total_devices,
@@ -18970,6 +19128,12 @@ def homepage_esimProvider(request):
                 'ESim_Activation_Req_Sent': esim_activation_req_sent,
                 'ESim_Activation_Confirmed': esim_activation_confirmed,
                 'ESim_Activation_Rejected': esim_activation_rejected,
+                'Manufacturers_With_This_ESimProvider': manufacturers_with_provider,
+                'ESim_Activation_Request_Received': esim_activation_requests.count(),
+                'ESim_Activated': esim_activated_total,
+                'ESim_1_Year_Expiry': esim_1_year_expiry,
+                'ESim_2_Year_Expiry': esim_2_year_expiry,
+                'ESim_Already_Expired': esim_expired,
                 'ESim_Expiring_Soon_30_Days': esim_expiring_soon,
                 'Today_Activation_Requests': today_requests,
                 'This_Week_Activation_Requests': this_week_requests,
