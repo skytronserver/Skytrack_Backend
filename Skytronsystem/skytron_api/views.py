@@ -13119,7 +13119,7 @@ def homepage_Manufacturer(request ):
         filters = {}
         # Add ID filter if provided
         if profile:
-            from django.db.models import Sum, Q, Count, Avg
+            from django.db.models import Sum, Q, Count, Avg, ExpressionWrapper, DurationField, F
             from datetime import datetime, timedelta
             from django.utils import timezone
             
@@ -13156,21 +13156,29 @@ def homepage_Manufacturer(request ):
                 device__stock_status__in=['Device_Defective']
             ).count()
             
-            # Calculate eSIM statistics
-            esim_activation_requests = stock.filter(
-                esim_status='ESIM_Active_Req_Sent'
+            # Calculate eSIM statistics from esimActivationRequest model
+            esim_act_requests = esimActivationRequest.objects.filter(device__created_by=manufacturer_user)
+            esim_pending = esim_act_requests.filter(status="pending").count()
+            esim_validated = esim_act_requests.filter(status="valid").count()
+            esim_invalid = esim_act_requests.filter(status="invalid").count()
+            # 1yr / 2yr expiry based on plan duration (valid_upto - valid_from)
+            _plan_dur = ExpressionWrapper(F('valid_upto') - F('valid_from'), output_field=DurationField())
+            esim_1yr_expiry = esim_act_requests.filter(status="valid").annotate(
+                plan_duration=_plan_dur
+            ).filter(
+                plan_duration__gte=timedelta(days=330),
+                plan_duration__lt=timedelta(days=545)
             ).count()
-            
-            # Calculate renewal requests based on eSIM validity dates
-            one_year_renewals = stock.filter(
-                esim_validity__lte=now + timedelta(days=365),
-                esim_validity__gt=now + timedelta(days=180)
+            esim_2yr_expiry = esim_act_requests.filter(status="valid").annotate(
+                plan_duration=_plan_dur
+            ).filter(
+                plan_duration__gte=timedelta(days=545),
+                plan_duration__lte=timedelta(days=800)
             ).count()
-            
-            two_year_renewals = stock.filter(
-                esim_validity__lte=now + timedelta(days=730),
-                esim_validity__gt=now + timedelta(days=365)
-            ).count()
+            esim_already_expired = esim_act_requests.filter(valid_upto__lte=now).count()
+            # map to backward-compatible variable names used in count_dict
+            one_year_renewals = esim_1yr_expiry
+            two_year_renewals = esim_2yr_expiry
             
             # Calculate device connectivity statistics
             # Get all devices manufactured by this manufacturer
@@ -13225,13 +13233,11 @@ def homepage_Manufacturer(request ):
                 'Total_Return': total_returns,
                 'Total_Faulty': total_faulty,
                 
-                'Total_esim_activation_request': esim_activation_requests,
-                'Total_esim_activated': stock.filter(
-                    stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
-                ).count(),
+                'Total_esim_activation_request': esim_act_requests.count(),
+                'Total_esim_activated': esim_validated,
                 'Total_1year_renewal_request': one_year_renewals,
                 'Total_2year_renewal_request': two_year_renewals,
-                'Total_esim_expired': stock.filter(esim_validity__lte=now).count(),
+                'Total_esim_expired': esim_already_expired,
                 
                 'Total_Online_Device': online_devices,
                 'Total_Online_Device_today': online_today,
@@ -13257,19 +13263,11 @@ def homepage_Manufacturer(request ):
 
                 # Requested additional eSIM statistics
                 'ESim_Attached_M2M_Service_Provider': profile.esim_provider.count(),
-                'ESim_Activation_Request_Sent': esim_activation_requests,
-                'ESim_Activated': stock.filter(
-                    stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
-                ).count(),
-                'ESim_1_Year_Expiry': stock.filter(
-                    esim_validity__gt=now,
-                    esim_validity__lte=now + timedelta(days=365)
-                ).count(),
-                'ESim_2_Year_Expiry': stock.filter(
-                    esim_validity__gt=now + timedelta(days=365),
-                    esim_validity__lte=now + timedelta(days=730)
-                ).count(),
-                'ESim_Already_Expired': stock.filter(esim_validity__lte=now).count()
+                'ESim_Activation_Request_Sent': esim_act_requests.count(),
+                'ESim_Activated': esim_validated,
+                'ESim_1_Year_Expiry': esim_1yr_expiry,
+                'ESim_2_Year_Expiry': esim_2yr_expiry,
+                'ESim_Already_Expired': esim_already_expired
             }
             # Return the serialized data as JSON response
             return Response(count_dict)
@@ -13850,21 +13848,30 @@ def homepage_Dealer(request ):
                 devicetag__isnull=False  # Exclude devices that are already tagged
             ).count()
             
-            # Calculate eSIM activation requests
-            esim_activation_requests = dealer_devices.filter(
-                esim_status='ESIM_Active_Req_Sent'
+            # Calculate eSIM activation requests from esimActivationRequest model
+            esim_act_requests = esimActivationRequest.objects.filter(ceated_by=profile)
+            esim_pending = esim_act_requests.filter(status="pending").count()
+            esim_validated = esim_act_requests.filter(status="valid").count()
+            esim_invalid = esim_act_requests.filter(status="invalid").count()
+            # 1yr / 2yr expiry based on plan duration (valid_upto - valid_from)
+            from django.db.models import ExpressionWrapper, DurationField, F
+            _plan_dur = ExpressionWrapper(F('valid_upto') - F('valid_from'), output_field=DurationField())
+            esim_1yr_expiry = esim_act_requests.filter(status="valid").annotate(
+                plan_duration=_plan_dur
+            ).filter(
+                plan_duration__gte=timedelta(days=330),
+                plan_duration__lt=timedelta(days=545)
             ).count()
-            
-            # Calculate renewal requests (based on eSIM validity - these are approximations)
-            one_year_renewals = dealer_devices.filter(
-                esim_validity__lte=now + timedelta(days=365),
-                esim_validity__gt=now + timedelta(days=180)
+            esim_2yr_expiry = esim_act_requests.filter(status="valid").annotate(
+                plan_duration=_plan_dur
+            ).filter(
+                plan_duration__gte=timedelta(days=545),
+                plan_duration__lte=timedelta(days=800)
             ).count()
-            
-            two_year_renewals = dealer_devices.filter(
-                esim_validity__lte=now + timedelta(days=730),
-                esim_validity__gt=now + timedelta(days=365)
-            ).count()
+            esim_already_expired = esim_act_requests.filter(valid_upto__lte=now).count()
+            # map to backward-compatible variable names
+            one_year_renewals = esim_1yr_expiry
+            two_year_renewals = esim_2yr_expiry
             
             # Calculate online/offline device statistics
             # Get devices that are tagged (fitted) by this dealer
@@ -13913,13 +13920,14 @@ def homepage_Dealer(request ):
                 'Current_Device_stock': current_stock,
                 'Current_Device_faulty': current_faulty,
                 'Available_Free_Device': available_free,
-                'Total_esim_activation_request': esim_activation_requests,
+                'Total_esim_activation_request': esim_act_requests.count(),
                 'Total_1_year_renewal_request': one_year_renewals,
                 'Total_2_year_renewal_request': two_year_renewals,
-                'Total_esim_activated': dealer_devices.filter(
+                'Total_esim_activated': esim_validated,
+                'Total_esim_activated_stock': dealer_devices.filter(
                     stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
                 ).count(),
-                'Total_esim_expired': dealer_devices.filter(esim_validity__lte=now).count(),
+                'Total_esim_expired': esim_already_expired,
                 
                 'Total_Online_now': online_now,
                 'Total_Online_today': online_today,
@@ -13938,19 +13946,11 @@ def homepage_Dealer(request ):
                 ).distinct().count(),
 
                 # Requested additional eSIM counters
-                'ESim_Activation_Request_Sent': esim_activation_requests,
-                'ESim_Activated': dealer_devices.filter(
-                    stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
-                ).count(),
-                'ESim_1_Year_Expiry': dealer_devices.filter(
-                    esim_validity__gt=now,
-                    esim_validity__lte=now + timedelta(days=365)
-                ).count(),
-                'ESim_2_Year_Expiry': dealer_devices.filter(
-                    esim_validity__gt=now + timedelta(days=365),
-                    esim_validity__lte=now + timedelta(days=730)
-                ).count(),
-                'ESim_Already_Expired': dealer_devices.filter(esim_validity__lte=now).count()
+                'ESim_Activation_Request_Sent': esim_act_requests.count(),
+                'ESim_Activated': esim_validated,
+                'ESim_1_Year_Expiry': esim_1yr_expiry,
+                'ESim_2_Year_Expiry': esim_2yr_expiry,
+                'ESim_Already_Expired': esim_already_expired
             }
             # Return the serialized data as JSON response
             return Response(count_dict)
@@ -17369,7 +17369,30 @@ def get_list(request ):
      
     users = User.objects.all()
     serializer = UserSerializer(users, many=True)
-    return Response(serializer.data ,status=status.HTTP_200_OK)
+
+    role_model_map = {
+        "devicemanufacture": Manufacturer,
+        "stateadmin": StateAdmin,
+        "dtorto": dto_rto,
+        "dealer": Dealer,
+        "owner": VehicleOwner,
+        "esimprovider": eSimProvider,
+        "sosadmin": EM_admin,
+        "sosexecutive": EM_ex,
+    }
+
+    result = []
+    for u, u_data in zip(users, serializer.data):
+        u_dict = dict(u_data)
+        model_cls = role_model_map.get(u.role)
+        if model_cls:
+            role_obj = model_cls.objects.filter(users=u).last()
+            u_dict['expirydate'] = str(role_obj.expirydate) if role_obj and role_obj.expirydate else None
+        else:
+            u_dict['expirydate'] = None
+        result.append(u_dict)
+
+    return Response(result, status=status.HTTP_200_OK)
 '''
 @csrf_exempt
 @api_view(['GET'])
@@ -19070,32 +19093,10 @@ def homepage_esimProvider(request):
             esim_validated = esim_activation_requests.filter(status="valid").count()
             esim_invalid = esim_activation_requests.filter(status="invalid").count()
             
-            # Count eSIM validity status based on device stock
-            esim_active = device_stocks.filter(
-                esim_validity__gt=now,  # Valid eSIMs (not expired)
-                stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
-            ).count()
+            # eSIM statistics from esimActivationRequest model
+            esim_activated_total = esim_activation_requests.filter(status="valid").count()
             
-            esim_expired = device_stocks.filter(
-                esim_validity__lte=now  # Expired eSIMs
-            ).count()
-            
-            # Additional statistics
-            esim_activation_req_sent = device_stocks.filter(
-                stock_status='ESIM_Active_Req_Sent'
-            ).count()
-            
-            esim_activation_confirmed = device_stocks.filter(
-                stock_status='ESIM_Active_Confirmed'
-            ).count()
-
-            esim_activated_total = device_stocks.filter(
-                stock_status__in=['ESIM_Active_Confirmed', 'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured']
-            ).count()
-            
-            esim_activation_rejected = device_stocks.filter(
-                stock_status='ESIM_Active_Rejected'
-            ).count()
+            esim_activation_rejected = esim_activation_requests.filter(status="invalid").count()
             
             # Time-based statistics
             today_requests = esim_activation_requests.filter(created_at__gte=today_start).count()
@@ -19103,30 +19104,40 @@ def homepage_esimProvider(request):
             this_week_requests = esim_activation_requests.filter(created_at__gte=week_ago).count()
             
             # Expiring soon (within 30 days)
-            esim_expiring_soon = device_stocks.filter(
-                esim_validity__gt=now,
-                esim_validity__lte=now + timedelta(days=30)
+            esim_expiring_soon = esim_activation_requests.filter(
+                status="valid",
+                valid_upto__gt=now,
+                valid_upto__lte=now + timedelta(days=30)
             ).count()
 
-            esim_1_year_expiry = device_stocks.filter(
-                esim_validity__gt=now,
-                esim_validity__lte=now + timedelta(days=365)
+            # 1yr / 2yr expiry based on plan duration (valid_upto - valid_from)
+            from django.db.models import ExpressionWrapper, DurationField, F
+            _plan_dur = ExpressionWrapper(F('valid_upto') - F('valid_from'), output_field=DurationField())
+            esim_1_year_expiry = esim_activation_requests.filter(status="valid").annotate(
+                plan_duration=_plan_dur
+            ).filter(
+                plan_duration__gte=timedelta(days=330),
+                plan_duration__lt=timedelta(days=545)
             ).count()
 
-            esim_2_year_expiry = device_stocks.filter(
-                esim_validity__gt=now + timedelta(days=365),
-                esim_validity__lte=now + timedelta(days=730)
+            esim_2_year_expiry = esim_activation_requests.filter(status="valid").annotate(
+                plan_duration=_plan_dur
+            ).filter(
+                plan_duration__gte=timedelta(days=545),
+                plan_duration__lte=timedelta(days=800)
             ).count()
+
+            esim_expired = esim_activation_requests.filter(valid_upto__lte=now).count()
             
             count_dict = {
                 'Total_Devices_With_ESim': total_devices,
                 'ESim_Validated': esim_validated,
                 'ESim_Expired': esim_expired,
-                'ESim_Active': esim_active,
+                'ESim_Active': esim_activated_total,
                 'ESim_Pending': esim_pending,
                 'ESim_Invalid': esim_invalid,
-                'ESim_Activation_Req_Sent': esim_activation_req_sent,
-                'ESim_Activation_Confirmed': esim_activation_confirmed,
+                'ESim_Activation_Req_Sent': esim_activation_requests.filter(status="pending").count(),
+                'ESim_Activation_Confirmed': esim_activated_total,
                 'ESim_Activation_Rejected': esim_activation_rejected,
                 'Manufacturers_With_This_ESimProvider': manufacturers_with_provider,
                 'ESim_Activation_Request_Received': esim_activation_requests.count(),
