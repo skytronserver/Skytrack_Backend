@@ -690,24 +690,49 @@ class DeviceTagSerializer2(SanitizingModelSerializer):
                 return s
             return f"{s[0:2]}:{s[2:4]}:{s[4:6]}"
 
-        gps_vals = list(
-            GPSData.objects
-            .filter(device_tag=obj.id, gps_status='1')
-            .order_by('-id')[:10]
-            .values(
-                'id',
-                'date',
-                'time',
-                'latitude',
-                'latitude_dir',
-                'longitude',
-                'longitude_dir',
-                'altitude',
-                'speed',
-                'network_operator',
-                'device_tag_id',
-            )
-        )
+        # Fast path: use prefetched GPSData model instances if provided by the view.
+        prefetched_models = getattr(obj, '_prefetched_gps', None)
+        if prefetched_models is not None:
+            gps_vals = [
+                {
+                    'id': g.id,
+                    'date': g.date,
+                    'time': g.time,
+                    'latitude': g.latitude,
+                    'latitude_dir': g.latitude_dir,
+                    'longitude': g.longitude,
+                    'longitude_dir': g.longitude_dir,
+                    'altitude': g.altitude,
+                    'speed': g.speed,
+                    'network_operator': g.network_operator,
+                    'device_tag_id': g.device_tag_id,
+                }
+                for g in prefetched_models[:10]
+            ]
+        else:
+            # Secondary fast path: allow views to attach precomputed `.values()` dicts.
+            prefetched_vals = getattr(obj, '_prefetched_gps_vals', None)
+            if prefetched_vals is not None:
+                gps_vals = prefetched_vals[:10]
+            else:
+                gps_vals = list(
+                    GPSData.objects
+                    .filter(device_tag=obj.id, gps_status='1')
+                    .order_by('-id')[:10]
+                    .values(
+                        'id',
+                        'date',
+                        'time',
+                        'latitude',
+                        'latitude_dir',
+                        'longitude',
+                        'longitude_dir',
+                        'altitude',
+                        'speed',
+                        'network_operator',
+                        'device_tag_id',
+                    )
+                )
 
         device_imei = None
         try:

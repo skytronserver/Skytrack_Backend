@@ -3966,23 +3966,23 @@ def get_live_vehicle_no(request ):
     
     try:
         if request.method == 'POST':
-            # Fetch distinct vehicle registration numbers
-            # If the requester is a vehicle owner, restrict to their devices only
+            # Fetch distinct vehicle registration numbers with a single DB query.
+            # If the requester is a vehicle owner, restrict to their devices only.
             owner = get_user_object(request.user, "owner")
 
-            vehicles_qs = GPSData.objects.select_related('device_tag')
+            gps_qs = GPSData.objects.all()
             if owner:
-                vehicles_qs = vehicles_qs.filter(device_tag__vehicle_owner=owner)
+                gps_qs = gps_qs.filter(device_tag__vehicle_owner=owner)
 
-            vehicles = vehicles_qs.distinct('device_tag')
-
-            if not vehicles:
-                return Response([])
-            print(vehicles)
-            vehicle_list=[]
-            for vehicle in vehicles:
-                if vehicle.device_tag:
-                        vehicle_list = vehicle_list +[vehicle.device_tag.vehicle_reg_no]
+            vehicle_list = list(
+                gps_qs
+                .exclude(device_tag__isnull=True)
+                .exclude(device_tag__vehicle_reg_no__isnull=True)
+                .exclude(device_tag__vehicle_reg_no='')
+                .order_by('device_tag__vehicle_reg_no')
+                .values_list('device_tag__vehicle_reg_no', flat=True)
+                .distinct()
+            )
             return Response(vehicle_list)
         else:
             return Response({'error': "POST request only"}, status=400)
@@ -9893,8 +9893,14 @@ def Tag_ownerlist(request ):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == 'POST': 
-        # Get base queryset
-        devices = DeviceTag.objects.filter(status="Owner_Final_OTP_Verified")
+        # Get base queryset. This endpoint is frequently used and can involve many rows;
+        # ensure we pull related objects in bulk to avoid N+1 queries in serializers.
+        devices = (
+            DeviceTag.objects
+            .filter(status="Owner_Final_OTP_Verified")
+            .select_related('device', 'vehicle_owner', 'district', 'district__state', 'category')
+            .prefetch_related('drivers')
+        )
         
         # Apply role-based filtering
         if request.user:
@@ -9981,7 +9987,57 @@ def Tag_ownerlist(request ):
         esim_status = request.POST.get('esim_status') 
         if esim_status:
             devices = devices.filter(device__esim_status=esim_status)
+
+        # Prevent very large responses that can trigger upstream/proxy timeouts.
+        # Supports optional pagination via POST form fields: `limit` and `offset`.
+        DEFAULT_LIMIT = 500
+        MAX_LIMIT = 2000
+        try:
+            limit_raw = request.POST.get('limit')
+            offset_raw = request.POST.get('offset')
+            limit = int(limit_raw) if limit_raw is not None else DEFAULT_LIMIT
+            offset = int(offset_raw) if offset_raw is not None else 0
+        except Exception:
+            limit = DEFAULT_LIMIT
+            offset = 0
+
+        if limit < 1:
+            limit = DEFAULT_LIMIT
+        if limit > MAX_LIMIT:
+            limit = MAX_LIMIT
+        if offset < 0:
+            offset = 0
+
+        devices = devices.order_by('-id')[offset:offset + limit]
     
+        # Prefetch recent GPS points per device tag for DeviceTagSerializer2.deviceloc.
+        # NOTE: Prefetch querysets must return model instances (not `.values()` dicts).
+        try:
+            from django.db.models import Prefetch
+            gps_qs = (
+                GPSData.objects
+                .filter(gps_status='1')
+                .only(
+                    'id',
+                    'date',
+                    'time',
+                    'latitude',
+                    'latitude_dir',
+                    'longitude',
+                    'longitude_dir',
+                    'altitude',
+                    'speed',
+                    'network_operator',
+                    'device_tag_id',
+                )
+                .order_by('-id')
+            )
+            # Default reverse name for FK is `<model>_set` unless `related_name` is set.
+            devices = devices.prefetch_related(Prefetch('gpsdata_set', queryset=gps_qs, to_attr='_prefetched_gps'))
+        except Exception:
+            # If the reverse relation name differs or Prefetch fails, serializer will fallback to per-row query.
+            pass
+
         serializer = DeviceTagSerializer2(devices, many=True)
         return Response(serializer.data)
     return Response({"error":"Something went wrong."}, status=status.HTTP_400_BAD_REQUEST)
