@@ -12850,9 +12850,28 @@ def homepage(request ):
         speed_alerts_month = AlertsLog.objects.filter(type='OverSpeed', status="in", timestamp__gte=current_month_start).count()
         speed_alerts_today = AlertsLog.objects.filter(type='OverSpeed', status="in", timestamp__date=current_date).count()
 
-        emergency_alerts = AlertsLog.objects.filter(type__icontains='Emergency', status="in").count()
-        emergency_alerts_month = AlertsLog.objects.filter(type__icontains='Emergency', status="in", timestamp__gte=current_month_start).count()
-        emergency_alerts_today = AlertsLog.objects.filter(type__icontains='Emergency', status="in", timestamp__date=current_date).count()
+        # Emergency alerts (AlertsLog `type` choices use 'Em' and related variants; exclude 'EmTemp')
+        emergency_types = [
+            'Em',
+            'EmPublicApp',
+            'EmRegisteredApp',
+            'EmMonitorTripSOS',
+            'EmMonitorTripInvalidPw',
+            'EmMonitorTripBLEDisconnect',
+            'EmMonitorTripDeviated',
+            'Incident',
+        ]
+        emergency_alerts = AlertsLog.objects.filter(type__in=emergency_types, status="in").count()
+        emergency_alerts_month = AlertsLog.objects.filter(
+            type__in=emergency_types,
+            status="in",
+            timestamp__gte=current_month_start
+        ).count()
+        emergency_alerts_today = AlertsLog.objects.filter(
+            type__in=emergency_types,
+            status="in",
+            timestamp__date=current_date
+        ).count()
 
         # Temperature alerts (BoxTemp + EmTemp)
         temperature_alerts = AlertsLog.objects.filter(type__in=['BoxTemp', 'EmTemp'], status="in").count()
@@ -12867,14 +12886,15 @@ def homepage(request ):
             timestamp__date=current_date
         ).count()
 
-        # Device online/offline (15-min window, consistent with other dashboard code)
-        tagged_statuses = ['Device_Active', 'Owner_Final_OTP_Verified','Live_Location_Confirmed', 'SOS_Confirmed', 'RegNo_Configuration_Confirmed']
-        tagged_devices_qs = DeviceTag.objects.filter(status__in=tagged_statuses)
+        # Device online/offline (15-min window)
+        # TotalDevice = total tagged devices (i.e., any tag-device except untagged/deleted)
+        untagged_statuses = ['TagDeleted', 'Device_Untagged']
+        tagged_devices_qs = DeviceTag.objects.exclude(status__in=untagged_statuses)
         tagged_device_ids = tagged_devices_qs.values_list('id', flat=True)
         total_tagged_devices = tagged_devices_qs.count()
 
-        total_devices = DeviceStock.objects.count()
-        total_untagged_devices = DeviceTag.objects.filter(status__in=['TagDeleted','Device_Untagged']).count()
+        total_device_stock = DeviceStock.objects.count()
+        total_untagged_devices = DeviceTag.objects.filter(status__in=untagged_statuses).count()
         
 
         online_threshold = timezone.now() - timedelta(minutes=15)
@@ -12892,6 +12912,8 @@ def homepage(request ):
         active_sosadmin_users = active_users_qs.filter(role='sosadmin').count()
         active_sos_teamlead_users = active_users_qs.filter(role='teamleader').count()
         active_sosexecutive_users = active_users_qs.filter(role='sosexecutive').count()
+
+        total_stateadmin_users = User.objects.filter(role='stateadmin').count()
 
         active_sos_deskexecutive_users = EM_ex.objects.filter(
             user_type='desk_ex',
@@ -12927,14 +12949,14 @@ def homepage(request ):
             'TemperatureAlerts_month': temperature_alerts_month,
             'TemperatureAlerts_today': temperature_alerts_today,
 
-            'TotalDevice': DeviceStock.objects.count(),
+            'TotalDevice': total_tagged_devices,
             'TotalTaggedDevice': total_tagged_devices,
             'TotalUntaggedDevice': total_untagged_devices,
             'TotalFitments': total_tagged_devices,
             'TotalOnlineDevice': total_online_devices,
             'TotalOfflineDevice': total_offline_devices,
             'TotalDeviceModel': DeviceModel.objects.count(),
-            'Total_device_stock': DeviceStock.objects.count(),
+            'Total_device_stock': total_device_stock,
             'unassigned_device_stock': DeviceStock.objects.filter(stock_status='NotAssigned').count(),
             'Waiting_device_stock': DeviceStock.objects.filter(stock_status='Available_for_fitting').count(),
             'Fitted_device_stock': DeviceStock.objects.filter(stock_status='Fitted').count(),
@@ -12949,6 +12971,7 @@ def homepage(request ):
             'Discontinued_district': Settings_District.objects.filter(status='discontinued').count(),
 
             'ActiveUsers_stateadmin': active_stateadmin_users,
+            'TotalUsers_stateadmin': total_stateadmin_users,
             'ActiveUsers_esimprovider': active_esimprovider_users,
             'ActiveUsers_manufacturer': active_manufacturer_users,
             'ActiveUsers_sosadmin': active_sosadmin_users,
@@ -13248,7 +13271,7 @@ def homepage_Manufacturer(request ):
             offline_30day = 0
             expired_devices = 0
             
-            for device in activated_devices:
+            for device in manufacturer_devices:
                 latest_gps = GPSData.objects.filter(device_tag=device).order_by('-entry_time').first()
                 if latest_gps:
                     # Check if device is online (data received within last 30 minutes)
@@ -13362,6 +13385,7 @@ def homepage_DTO(request ):
         # Add ID filter if provided
         if profile:
             from django.db.models import Sum, Q, Count, Avg
+            from django.db.models import OuterRef, Subquery
             from datetime import datetime, timedelta
             from django.utils import timezone
             
@@ -13372,45 +13396,24 @@ def homepage_DTO(request ):
             week_ago = now - timedelta(days=7)
             
             # Get all devices in DTO's jurisdiction (state/district)
-            # For DTO, we filter by devices in their state and optionally district
-            jurisdiction_filter = Q()
-            
-            # Filter by state
-            if hasattr(profile, 'state') and profile.state:
-                # Get all device tags in this state using the DeviceTag's district field
-                devices_in_state = DeviceTag.objects.filter(
-                    district__state=profile.state
+            # For DTO, we filter by devices in their state and optionally district.
+            # NOTE: dto_rto.district is stored as a string and in production is typically a district_code (e.g. 'AS01').
+            devices_in_state = DeviceTag.objects.all()
+
+            # Filter by state (via DeviceTag.district FK -> Settings_District.state)
+            if getattr(profile, 'state', None):
+                devices_in_state = devices_in_state.filter(district__state=profile.state)
+
+            # If DTO has specific district, support either district code or district name
+            district_value = (getattr(profile, 'district', None) or '').strip()
+            if district_value:
+                devices_in_state = devices_in_state.filter(
+                    Q(district__district_code=district_value) | Q(district__district=district_value)
                 )
-                
-                # If DTO has specific district, filter further
-                if hasattr(profile, 'district') and profile.district:
-                    devices_in_state = devices_in_state.filter(
-                        district__district=profile.district
-                    )
-            else:
-                # Fallback: get all devices (for testing)
-                devices_in_state = DeviceTag.objects.all()
-                
-                if hasattr(profile, 'state') and profile.state:
-                    # Get all device tags in this state using DeviceTag's district field
-                    devices_in_state = DeviceTag.objects.filter(
-                        district__state=profile.state
-                    )
-                    
-                    # If DTO has specific district, filter further
-                    if hasattr(profile, 'district') and profile.district:
-                        devices_in_state = devices_in_state.filter(
-                            district__district=profile.district
-                        )
-                else:
-                    # Fallback: get all devices (for testing)
-                    devices_in_state = DeviceTag.objects.all()
 
             
             # Calculate device and vehicle statistics
-            total_devices_activated = devices_in_state.filter(
-                status="Device_Active"
-            ).count()
+            total_devices_activated = devices_in_state.count()
             
             total_vehicles = devices_in_state.count()
             
@@ -13422,7 +13425,7 @@ def homepage_DTO(request ):
             
             activated_devices = devices_in_state.filter(status="Device_Active")
             
-            for device in activated_devices:
+            for device in devices_in_state:
                 latest_gps = GPSData.objects.filter(device_tag=device).order_by('-entry_time').first()
                 if latest_gps:
                     # Check if device is online (data received within last 30 minutes)
@@ -13560,31 +13563,24 @@ def homepage_VehicleOwner(request ):
             month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             week_ago = now - timedelta(days=7)
             
-            # Calculate vehicle movement status based on latest GPS data
-            moving_count = 0
-            stopped_count = 0
-            idle_count = 0
-            online_count = 0
-            
-            for device in activated_devices:
-                # Get latest GPS data for this device
-                latest_gps = GPSData.objects.filter(device_tag=device).order_by('-entry_time').first()
-                if latest_gps:
-                    # Check if device is online (data received within last 30 minutes)
-                    if latest_gps.entry_time >= now - timedelta(minutes=30):
-                        online_count += 1
-                        
-                        # Determine movement status
-                        if latest_gps.speed > 5:  # Moving if speed > 5 km/h
-                            moving_count += 1
-                        elif latest_gps.ignition_status == "1":  # Idle if ignition on but not moving
-                            idle_count += 1
-                        else:  # Stopped if ignition off
-                            stopped_count += 1
-                    else:
-                        stopped_count += 1  # Consider offline devices as stopped
-                else:
-                    stopped_count += 1  # No GPS data means stopped
+            # Vehicle stats based on latest GPS per tag (as per API spec)
+            total_vehicles = owned_devices.count()
+            latest_gps_qs = GPSData.objects.filter(device_tag_id=OuterRef('pk')).order_by('-entry_time', '-id')
+            owned_devices_with_latest = owned_devices.annotate(
+                latest_speed=Subquery(latest_gps_qs.values('speed')[:1]),
+                latest_ignition_status=Subquery(latest_gps_qs.values('ignition_status')[:1]),
+            )
+
+            ignition_on_count = owned_devices_with_latest.filter(latest_ignition_status='1').count()
+            moving_count = owned_devices_with_latest.filter(latest_speed__gt=1).count()
+            idle_count = max(0, total_vehicles - moving_count)
+            stopped_count = idle_count
+
+            # Keep existing "online" semantics for this endpoint (last 30 minutes)
+            online_count = GPSData.objects.filter(
+                device_tag__in=activated_devices,
+                entry_time__gte=now - timedelta(minutes=30)
+            ).values('device_tag').distinct().count()
             
             # Calculate offline devices for different periods
             offline_today = activated_devices.count() - GPSData.objects.filter(
@@ -13670,7 +13666,9 @@ def homepage_VehicleOwner(request ):
                 alert_list.append(alert_data)
             
             count_dict = {
-                'Total_Vehicles': owned_devices.count(),
+                'Total_Vehicles': total_vehicles,
+                'Total_IgON_Vehicles': ignition_on_count,
+                'Total_IgOFF_Vehicles': max(0, total_vehicles - ignition_on_count),
                 'Total_Device_Activated': activated_devices.count(),
                 'Total_Moving_Vehicles': moving_count,
                 'Total_Stopped_Vehicles': stopped_count,
@@ -13874,35 +13872,31 @@ def homepage_Dealer(request ):
             
             # Get all device stock assigned to this dealer
             dealer_devices = DeviceStock.objects.filter(dealer=profile)
+
+            # Tagged devices for this dealer (tag-device count)
+            untagged_statuses = ['TagDeleted', 'Device_Untagged']
+            tagged_devices_qs = DeviceTag.objects.filter(device__dealer=profile).exclude(status__in=untagged_statuses)
+            tagged_device_ids = tagged_devices_qs.values_list('id', flat=True)
+            total_tagged_devices = tagged_devices_qs.count()
             
             # Calculate fitment statistics
-            total_fitments = DeviceTag.objects.filter(
-                device__dealer=profile,
-                status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed']
-            ).count()
+            total_fitments = total_tagged_devices
             
-            fitments_month = DeviceTag.objects.filter(
-                device__dealer=profile,
-                tagged__gte=month_start,
-                status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed']
-            ).count()
+            fitments_month = tagged_devices_qs.filter(tagged__gte=month_start).count()
             
-            fitments_today = DeviceTag.objects.filter(
-                device__dealer=profile,
-                tagged__gte=today_start,
-                status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed']
-            ).count()
+            fitments_today = tagged_devices_qs.filter(tagged__gte=today_start).count()
             
             # Calculate device stock statistics
             total_assigned = dealer_devices.count()
             total_returned = dealer_devices.filter(stock_status='Returned_to_manufacturer').count()
-            current_stock = dealer_devices.filter(stock_status='Available_for_fitting').count()
             current_faulty = dealer_devices.filter(stock_status='Device_Defective').count()
-            available_free = dealer_devices.filter(
-                stock_status='Available_for_fitting'
-            ).exclude(
-                devicetag__isnull=False  # Exclude devices that are already tagged
+
+            # Current device stock = assigned but not tagged
+            current_stock = dealer_devices.filter(devicetag__isnull=True).exclude(
+                stock_status__in=['Returned_to_manufacturer', 'Device_Defective']
             ).count()
+            # Available free devices = current stock (per spec)
+            available_free = current_stock
             
             # Calculate eSIM activation requests from esimActivationRequest model
             esim_act_requests = esimActivationRequest.objects.filter(ceated_by=profile)
@@ -13930,44 +13924,39 @@ def homepage_Dealer(request ):
             two_year_renewals = esim_2yr_expiry
             
             # Calculate online/offline device statistics
-            # Get devices that are tagged (fitted) by this dealer
-            tagged_devices = DeviceTag.objects.filter(device__dealer=profile)
             dealer_vehicle_owners = VehicleOwner.objects.filter(
                 devicetag__device__dealer=profile
             ).distinct()
-            
-            # Online devices (with GPS data in last 30 minutes)
-            online_now = 0
-            online_today = 0
-            offline_7days = 0
-            offline_30days = 0
-            
-            for device in tagged_devices:
-                latest_gps = GPSData.objects.filter(device_tag=device).order_by('-entry_time').first()
-                if latest_gps:
-                    # Check if online now (last 30 minutes)
-                    if latest_gps.entry_time >= now - timedelta(minutes=30):
-                        online_now += 1
-                    
-                    # Check if online today
-                    if latest_gps.entry_time >= today_start:
-                        online_today += 1
-                    
-                    # Check if offline for 7 days
-                    if latest_gps.entry_time < now - timedelta(days=7):
-                        offline_7days += 1
-                    
-                    # Check if offline for 30 days
-                    if latest_gps.entry_time < now - timedelta(days=30):
-                        offline_30days += 1
-                else:
-                    # No GPS data means offline
-                    offline_7days += 1
-                    offline_30days += 1
+
+            # Online = unique tags with GPS data in last 15 minutes
+            online_threshold = now - timedelta(minutes=15)
+            online_now = GPSData.objects.filter(
+                device_tag_id__in=tagged_device_ids,
+                entry_time__gte=online_threshold
+            ).values('device_tag_id').distinct().count()
+
+            # Online today = unique tags with GPS data since start of day
+            online_today = GPSData.objects.filter(
+                device_tag_id__in=tagged_device_ids,
+                entry_time__gte=today_start
+            ).values('device_tag_id').distinct().count()
+
+            # Offline N days = tagged devices with no GPS data in last N days
+            gps_seen_7days = GPSData.objects.filter(
+                device_tag_id__in=tagged_device_ids,
+                entry_time__gte=now - timedelta(days=7)
+            ).values('device_tag_id').distinct().count()
+            gps_seen_30days = GPSData.objects.filter(
+                device_tag_id__in=tagged_device_ids,
+                entry_time__gte=now - timedelta(days=30)
+            ).values('device_tag_id').distinct().count()
+
+            offline_7days = max(0, total_tagged_devices - gps_seen_7days)
+            offline_30days = max(0, total_tagged_devices - gps_seen_30days)
             
             count_dict = {
                 'Total_Fitment_done': total_fitments,
-                'TotalTaggedDevice': tagged_devices.count(),
+                'TotalTaggedDevice': total_tagged_devices,
                 'Fitment_month': fitments_month,
                 'Fitment_today': fitments_today,
                 
@@ -14045,6 +14034,9 @@ def SOS_adminreport2(request ):
 
             now = timezone.now()
             today = now.date()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            week_start = today_start - timedelta(days=today_start.weekday())
+            month_start = today_start.replace(day=1)
             online_threshold = now - timedelta(minutes=30)
 
             teamlead_qs = EM_ex.objects.filter(user_type='teamlead')
@@ -14054,6 +14046,12 @@ def SOS_adminreport2(request ):
 
             broadcast_qs = EMCallBroadcast.objects.all()
 
+            calls_qs = EMCall.objects.all()
+            closed_calls_qs = calls_qs.filter(status="closed")
+            fake_calls_qs = calls_qs.filter(status="closed_false_alert")
+            rejected_assignments_qs = EMCallAssignment.objects.filter(status="rejected")
+            accepted_assignments_qs = EMCallAssignment.objects.filter(status="accepted")
+
             count_dict = {
  
                 'Total_Teams':EMTeams.objects.filter(status="Active").count(),
@@ -14061,31 +14059,31 @@ def SOS_adminreport2(request ):
                 'Live_Teams':EMTeams.objects.filter( status="Active").count(),
                 'Live_DeskExecutives':EM_ex.objects.filter(user_type='desk_ex' ).count(),
 
-                'Total_Incoming_Calls':EMCall.objects.count(),
-                'Total_Incoming_Calls_thismonth':EMCall.objects.count(),
-                'Total_Incoming_Calls_thisweek':EMCall.objects.count(),
-                'Total_Incoming_Calls_today':EMCall.objects.count(),
+                'Total_Incoming_Calls': calls_qs.count(),
+                'Total_Incoming_Calls_thismonth': calls_qs.filter(start_time__gte=month_start).count(),
+                'Total_Incoming_Calls_thisweek': calls_qs.filter(start_time__gte=week_start).count(),
+                'Total_Incoming_Calls_today': calls_qs.filter(start_time__gte=today_start).count(),
 
-                'Total_Closed_Calls':EMCall.objects.filter(status="closed").count(),
-                'Total_Closed_Calls_thismonth':EMCall.objects.filter(status="closed").count(),
-                'Total_Closed_Calls_thisweek':EMCall.objects.filter(status="closed" ).count(),
-                'Total_Closed_Calls_today':EMCall.objects.filter(status="closed").count(),
+                'Total_Closed_Calls': closed_calls_qs.count(),
+                'Total_Closed_Calls_thismonth': closed_calls_qs.filter(end_time__gte=month_start).count(),
+                'Total_Closed_Calls_thisweek': closed_calls_qs.filter(end_time__gte=week_start).count(),
+                'Total_Closed_Calls_today': closed_calls_qs.filter(end_time__gte=today_start).count(),
 
-                'Total_Fake_Calls':EMCall.objects.filter(status="closed_false_allert").count(),
-                'Total_Fake_Calls_thismonth':EMCall.objects.filter(status="closed_false_allert" ).count(),
-                'Total_Fake_Calls_thisweek':EMCall.objects.filter(status="closed_false_allert" ).count(),
-                'Total_Fake_Calls_today':EMCall.objects.filter(status="closed_false_allert").count(),
+                'Total_Fake_Calls': fake_calls_qs.count(),
+                'Total_Fake_Calls_thismonth': fake_calls_qs.filter(end_time__gte=month_start).count(),
+                'Total_Fake_Calls_thisweek': fake_calls_qs.filter(end_time__gte=week_start).count(),
+                'Total_Fake_Calls_today': fake_calls_qs.filter(end_time__gte=today_start).count(),
 
 
                 'Total_Active_Calls':EMCall.objects.filter( status__in=["desk_ex_assigned","broadcast_pending", "field_ex_aproaching" , "field_ex_arrived"]).count(),  
                 'Total_Pending_Calls':EMCall.objects.filter(status="pending" ).count(),
 
-                'Total_Rejected_Assignemnt':EMCallAssignment.objects.filter(status="rejected").count(),
-                'Total_Rejected_Assignemnt_thismonth':EMCallAssignment.objects.filter(status="rejected").count(),
-                'Total_Rejected_Assignemnt_thisweek':EMCallAssignment.objects.filter(status="rejected").count(),
-                'Total_Rejected_Assignemnt_today':EMCallAssignment.objects.filter(status="rejected").count(),
+                'Total_Rejected_Assignemnt': rejected_assignments_qs.count(),
+                'Total_Rejected_Assignemnt_thismonth': rejected_assignments_qs.filter(reject_time__gte=month_start).count(),
+                'Total_Rejected_Assignemnt_thisweek': rejected_assignments_qs.filter(reject_time__gte=week_start).count(),
+                'Total_Rejected_Assignemnt_today': rejected_assignments_qs.filter(reject_time__gte=today_start).count(),
 
-                'Average_time_to_Accept':EMCallAssignment.objects.filter(status="accepted").count(),
+                'Average_time_to_Accept': accepted_assignments_qs.count(),
 
                 # Requested SOS users counters
                 'SOS_Team_Leads': teamlead_qs.count(),
@@ -14165,6 +14163,21 @@ def SOS_adminreport(request ):
 
 
         if profile:
+            from datetime import timedelta
+            from django.utils import timezone
+
+            now = timezone.now()
+            today = now.date()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            week_start = today_start - timedelta(days=today_start.weekday())
+            month_start = today_start.replace(day=1)
+
+            calls_qs = EMCall.objects.filter(team__state=profile.state)
+            closed_calls_qs = calls_qs.filter(status="closed")
+            fake_calls_qs = calls_qs.filter(status="closed_false_alert")
+            rejected_assignments_qs = EMCallAssignment.objects.filter(status="rejected", admin=profile)
+            accepted_assignments_qs = EMCallAssignment.objects.filter(status="accepted", admin=profile)
+
             count_dict = {
  
                 'Total_Teams':EMTeams.objects.filter(state=profile.state,status="Active").count(),
@@ -14172,32 +14185,32 @@ def SOS_adminreport(request ):
                 'Live_Teams':EMTeams.objects.filter(state=profile.state,status="Active").count(),
                 'Live_DeskExecutives':EM_ex.objects.filter(user_type='desk_ex',state=profile.state).count(),
 
-                'Total_Incoming_Calls':EMCall.objects.filter(team__state=profile.state).count(),
-                'Total_Incoming_Calls_thismonth':EMCall.objects.filter(team__state=profile.state).count(),
-                'Total_Incoming_Calls_thisweek':EMCall.objects.filter(team__state=profile.state).count(),
-                'Total_Incoming_Calls_today':EMCall.objects.filter(team__state=profile.state).count(),
+                'Total_Incoming_Calls': calls_qs.count(),
+                'Total_Incoming_Calls_thismonth': calls_qs.filter(start_time__gte=month_start).count(),
+                'Total_Incoming_Calls_thisweek': calls_qs.filter(start_time__gte=week_start).count(),
+                'Total_Incoming_Calls_today': calls_qs.filter(start_time__gte=today_start).count(),
 
-                'Total_Closed_Calls':EMCall.objects.filter(status="closed",team__state=profile.state).count(),
-                'Total_Closed_Calls_thismonth':EMCall.objects.filter(status="closed",team__state=profile.state).count(),
-                'Total_Closed_Calls_thisweek':EMCall.objects.filter(status="closed",team__state=profile.state).count(),
-                'Total_Closed_Calls_today':EMCall.objects.filter(status="closed",team__state=profile.state).count(),
+                'Total_Closed_Calls': closed_calls_qs.count(),
+                'Total_Closed_Calls_thismonth': closed_calls_qs.filter(end_time__gte=month_start).count(),
+                'Total_Closed_Calls_thisweek': closed_calls_qs.filter(end_time__gte=week_start).count(),
+                'Total_Closed_Calls_today': closed_calls_qs.filter(end_time__gte=today_start).count(),
 
-                'Total_Fake_Calls':EMCall.objects.filter(status="closed_false_allert",team__state=profile.state).count(),
-                'Total_Fake_Calls_thismonth':EMCall.objects.filter(status="closed_false_allert",team__state=profile.state).count(),
-                'Total_Fake_Calls_thisweek':EMCall.objects.filter(status="closed_false_allert",team__state=profile.state).count(),
-                'Total_Fake_Calls_today':EMCall.objects.filter(status="closed_false_allert",team__state=profile.state).count(),
+                'Total_Fake_Calls': fake_calls_qs.count(),
+                'Total_Fake_Calls_thismonth': fake_calls_qs.filter(end_time__gte=month_start).count(),
+                'Total_Fake_Calls_thisweek': fake_calls_qs.filter(end_time__gte=week_start).count(),
+                'Total_Fake_Calls_today': fake_calls_qs.filter(end_time__gte=today_start).count(),
 
 
                 'Total_Active_Calls':EMCall.objects.filter(team__state=profile.state,status__in=["desk_ex_assigned","broadcast_pending", "field_ex_aproaching" , "field_ex_arrived"]).count(),  
                 'Total_Pending_Calls':EMCall.objects.filter(status="pending",team__state=profile.state).count(),
 
-                'Total_Rejected_Assignemnt':EMCallAssignment.objects.filter(status="rejected",admin=profile).count(),
-                'Total_Rejected_Assignemnt_thismonth':EMCallAssignment.objects.filter(status="rejected",admin=profile).count(),
-                'Total_Rejected_Assignemnt_thisweek':EMCallAssignment.objects.filter(status="rejected",admin=profile).count(),
-                'Total_Rejected_Assignemnt_today':EMCallAssignment.objects.filter(status="rejected",admin=profile).count(),
+                'Total_Rejected_Assignemnt': rejected_assignments_qs.count(),
+                'Total_Rejected_Assignemnt_thismonth': rejected_assignments_qs.filter(reject_time__gte=month_start).count(),
+                'Total_Rejected_Assignemnt_thisweek': rejected_assignments_qs.filter(reject_time__gte=week_start).count(),
+                'Total_Rejected_Assignemnt_today': rejected_assignments_qs.filter(reject_time__gte=today_start).count(),
 
 
-                'Average_time_to_Accept':EMCallAssignment.objects.filter(status="accepted",admin=profile).count(),
+                'Average_time_to_Accept': accepted_assignments_qs.count(),
 
 
              
@@ -14511,15 +14524,10 @@ def homepage_stateAdmin(request ):
             # Get districts in this state
             districts_in_state = Settings_District.objects.filter(state=state_filter)
 
-            # Tagged/online/offline and fitment metrics (same semantics as global homepage)
-            tagged_statuses = [
-                'Device_Active',
-                'Owner_Final_OTP_Verified',
-                'Live_Location_Confirmed',
-                'SOS_Confirmed',
-                'RegNo_Configuration_Confirmed'
-            ]
-            tagged_devices_qs = device_tags_in_state.filter(status__in=tagged_statuses)
+            # Tagged/online/offline and fitment metrics
+            # Tagged devices = anything except untagged/deleted
+            untagged_statuses = ['TagDeleted', 'Device_Untagged']
+            tagged_devices_qs = device_tags_in_state.exclude(status__in=untagged_statuses)
             tagged_device_ids = tagged_devices_qs.values_list('id', flat=True)
             total_tagged_devices = tagged_devices_qs.count()
 
@@ -14530,8 +14538,19 @@ def homepage_stateAdmin(request ):
             ).values('device_tag_id').distinct().count()
             total_offline_devices = max(0, total_tagged_devices - total_online_devices)
 
+            gps_seen_7days = GPSData.objects.filter(
+                device_tag_id__in=tagged_device_ids,
+                entry_time__gte=now - timedelta(days=7)
+            ).values('device_tag_id').distinct().count()
+            gps_seen_30days = GPSData.objects.filter(
+                device_tag_id__in=tagged_device_ids,
+                entry_time__gte=now - timedelta(days=30)
+            ).values('device_tag_id').distinct().count()
+            offline_since_7_days = max(0, total_tagged_devices - gps_seen_7days)
+            offline_since_30_days = max(0, total_tagged_devices - gps_seen_30days)
+
             total_devices = device_stock_in_state.count()
-            total_untagged_devices = device_tags_in_state.filter(status__in=['TagDeleted','Device_Untagged']).count()
+            total_untagged_devices = device_tags_in_state.filter(status__in=untagged_statuses).count()
             total_fitments = total_tagged_devices + total_untagged_devices
 
             # Active user counters in this state
@@ -14582,6 +14601,17 @@ def homepage_stateAdmin(request ):
                 timestamp__date=today
             ).count()
 
+            emergency_types = [
+                'Em',
+                'EmPublicApp',
+                'EmRegisteredApp',
+                'EmMonitorTripSOS',
+                'EmMonitorTripInvalidPw',
+                'EmMonitorTripBLEDisconnect',
+                'EmMonitorTripDeviated',
+                'Incident',
+            ]
+
             count_dict = {
                 # User counts filtered by state
                 'Total_Dealer_available': dealers_in_state.count(),
@@ -14591,15 +14621,15 @@ def homepage_stateAdmin(request ):
                 'Total_Vehicle_Owner_available': vehicle_owners_in_state.count(),
 
                 # Device counts filtered by state
-                'Total_Fit_Device': device_tags_in_state.filter(
-                    status__in=['Device_Active', 'Fitted', 'Owner_OTP_Verified']
-                ).count(),
-                'Online_Devices': active_devices.count(),
-                'Offline_Devices': device_tags_in_state.filter(status='Device_Not_Active').count(),
+                'Total_Fit_Device': total_tagged_devices,
+                'Online_Devices': total_online_devices,
+                'Offline_Devices': total_offline_devices,
 
                 'TotalTaggedDevice': total_tagged_devices,
                 'TotalOnlineDevice': total_online_devices,
                 'TotalOfflineDevice': total_offline_devices,
+                'Offline_since_7_days': offline_since_7_days,
+                'Offline_since_30_days': offline_since_30_days,
                 'TotalUntaggedDevice': total_untagged_devices,
                 'TotalFitments': total_tagged_devices,
 
@@ -14617,47 +14647,66 @@ def homepage_stateAdmin(request ):
                     tagged__gte=thirty_days_ago
                 ).count(),
                 
-                # Alert counts (using EMGPSLocation for real data)
-                'Total_overspeeding_Alert': EMGPSLocation.objects.filter(
-                    device_tag__device__dealer__manufacturer__state=state_filter,
-                    speed__gt=80  # Assuming 80+ is overspeeding
+                # Alert counts (from AlertsLog)
+                'Total_overspeeding_Alert': AlertsLog.objects.filter(
+                    deviceTag__device__dealer__manufacturer__state=state_filter,
+                    type='OverSpeed',
+                    status='in'
                 ).count(),
-                'Monthly_overspeeding_Alert': EMGPSLocation.objects.filter(
-                    device_tag__device__dealer__manufacturer__state=state_filter,
-                    speed__gt=80,
-                    date__gte=current_month_start_date
+                'Monthly_overspeeding_Alert': AlertsLog.objects.filter(
+                    deviceTag__device__dealer__manufacturer__state=state_filter,
+                    type='OverSpeed',
+                    status='in',
+                    timestamp__gte=current_month_start
                 ).count(),
-                'Today_overspeeding_Alert': EMGPSLocation.objects.filter(
-                    device_tag__device__dealer__manufacturer__state=state_filter,
-                    speed__gt=80,
-                    date=today
+                'Today_overspeeding_Alert': AlertsLog.objects.filter(
+                    deviceTag__device__dealer__manufacturer__state=state_filter,
+                    type='OverSpeed',
+                    status='in',
+                    timestamp__date=today
                 ).count(),
                 
-                # Emergency alerts (SOS button pressed)
-                'Total_emergency_Alert': EMGPSLocation.objects.filter(
-                    device_tag__device__dealer__manufacturer__state=state_filter,
-                    message_type='EMR'  # EMR indicates emergency
+                # Emergency alerts
+                'Total_emergency_Alert': AlertsLog.objects.filter(
+                    deviceTag__device__dealer__manufacturer__state=state_filter,
+                    type__in=emergency_types,
+                    status='in'
                 ).count(),
-                'This_month_emergency_Alert': EMGPSLocation.objects.filter(
-                    device_tag__device__dealer__manufacturer__state=state_filter,
-                    message_type='EMR',
-                    date__gte=current_month_start_date
+                'This_month_emergency_Alert': AlertsLog.objects.filter(
+                    deviceTag__device__dealer__manufacturer__state=state_filter,
+                    type__in=emergency_types,
+                    status='in',
+                    timestamp__gte=current_month_start
                 ).count(),
-                'Today_emergency_Alert': EMGPSLocation.objects.filter(
-                    device_tag__device__dealer__manufacturer__state=state_filter,
-                    message_type='EMR',
-                    date=today
+                'Today_emergency_Alert': AlertsLog.objects.filter(
+                    deviceTag__device__dealer__manufacturer__state=state_filter,
+                    type__in=emergency_types,
+                    status='in',
+                    timestamp__date=today
                 ).count(),
 
                 'Total_sudden_turn_Alert': sudden_turn_total,
                 'This_month_sudden_turn_Alert': sudden_turn_month,
                 'Today_sudden_turn_Alert': sudden_turn_today,
                 
-                # Harsh brake alerts (using acceleration data if available)
-                # Harsh brake alerts not available in EMGPSLocation schema; returning 0
-                'Total_harsh_brake_Alert': 0,
-                'This_month_harsh_brake_Alert': 0,
-                'Today_harsh_brake_Alert': 0,
+                # Harsh brake alerts
+                'Total_harsh_brake_Alert': AlertsLog.objects.filter(
+                    deviceTag__device__dealer__manufacturer__state=state_filter,
+                    type='HarshBreak',
+                    status='in'
+                ).count(),
+                'This_month_harsh_brake_Alert': AlertsLog.objects.filter(
+                    deviceTag__device__dealer__manufacturer__state=state_filter,
+                    type='HarshBreak',
+                    status='in',
+                    timestamp__gte=current_month_start
+                ).count(),
+                'Today_harsh_brake_Alert': AlertsLog.objects.filter(
+                    deviceTag__device__dealer__manufacturer__state=state_filter,
+                    type='HarshBreak',
+                    status='in',
+                    timestamp__date=today
+                ).count(),
 
                 # Device stock counts filtered by state
                 'Total_device_stock': device_stock_in_state.count(),
@@ -19192,7 +19241,7 @@ def homepage_esimProvider(request):
                 'ESim_Active': esim_activated_total,
                 'ESim_Pending': esim_pending,
                 'ESim_Invalid': esim_invalid,
-                'ESim_Activation_Req_Sent': esim_activation_requests.filter(status="pending").count(),
+                'ESim_Activation_Req_Sent': esim_activation_requests.count(),
                 'ESim_Activation_Confirmed': esim_activated_total,
                 'ESim_Activation_Rejected': esim_activation_rejected,
                 'Manufacturers_With_This_ESimProvider': manufacturers_with_provider,
