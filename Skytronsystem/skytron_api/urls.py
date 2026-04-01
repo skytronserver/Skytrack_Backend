@@ -511,6 +511,13 @@ urlpatterns = [
     path('dashboard/filter-options/', get_dashboard_filter_options, name='get_dashboard_filter_options'),
     path('dashboard/areawise-device-count/', get_areawise_device_tag_count, name='get_areawise_device_tag_count'),
     path('dashboard/vehicle-locations/', get_latest_vehicle_locations, name='get_latest_vehicle_locations'),
+    
+    path('dashboard_SOS/areawise-device-count/', get_areawise_device_tag_count, name='get_areawise_device_tag_count'),
+    path('dashboard_SOS/vehicle-locations/', get_latest_vehicle_locations, name='get_latest_vehicle_locations'),
+    
+    path('dashboard_ERSS/areawise-device-count/', get_areawise_device_tag_count, name='get_areawise_device_tag_count'),
+    path('dashboard_ERSS/vehicle-locations/', get_latest_vehicle_locations, name='get_latest_vehicle_locations'),
+    
     path('dashboard/erss-summary/', erss_dashboard_summary, name='erss_dashboard_summary'),
     path('dashboard/sos-analysis/', sos_analysis_dashboard, name='sos_analysis_dashboard'),
     path('dashboard/sos-monitoring/', sos_monitoring_dashboard, name='sos_monitoring_dashboard'),

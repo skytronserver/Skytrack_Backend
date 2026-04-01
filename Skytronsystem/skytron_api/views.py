@@ -2491,6 +2491,9 @@ def gps_track_data_api(request ):
             in_range = str(in_range_param).lower() == 'true'
         # New owner name substring filter
         owner_name_substr = request.GET.get('owner', None)
+        # New road/city substring filter (applies to latest entry per device_tag)
+        poi_t = _norm(request.GET.get('poi_t', None))
+        poi_t_cf = str(poi_t).casefold() if poi_t is not None else None
 
         # Get base queryset
         gps_queryset = GPSData.objects.exclude(device_tag=None).filter(gps_status=1)
@@ -2771,6 +2774,14 @@ def gps_track_data_api(request ):
             latest_entry = gps_queryset.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time')
             latest_entry = latest_entry.first()
             if latest_entry:
+                # Filter by poi_t in latest GPSData.road or GPSData.city (case-insensitive substring)
+                if poi_t_cf:
+                    road_value = getattr(latest_entry, 'road', None)
+                    city_value = getattr(latest_entry, 'city', None)
+                    road_cf = str(road_value).casefold() if road_value is not None else ''
+                    city_cf = str(city_value).casefold() if city_value is not None else ''
+                    if poi_t_cf not in road_cf and poi_t_cf not in city_cf:
+                        continue
                 # Owner name substring filter
                 if owner_name_substr:
                     owner_obj = getattr(getattr(latest_entry.device_tag, 'vehicle_owner', None), 'users', None)
@@ -2977,6 +2988,10 @@ def gps_track_data_api_pub(request ):
         if in_range_param is not None:
             in_range = str(in_range_param).lower() == 'true'
 
+        # New road/city substring filter (applies to the latest entry selected)
+        poi_t = _norm(request.GET.get('poi_t', None))
+        poi_t_cf = str(poi_t).casefold() if poi_t is not None else None
+
         # Get base queryset
         gps_queryset = GPSData.objects.exclude(device_tag=None).filter(gps_status=1)
 
@@ -3136,6 +3151,14 @@ def gps_track_data_api_pub(request ):
                     inside = d_km <= 0.1  # within 100 meters
                     if (in_range and not inside) or (not in_range and inside):
                         latest_entry = None
+
+        if latest_entry and poi_t_cf:
+            road_value = getattr(latest_entry, 'road', None)
+            city_value = getattr(latest_entry, 'city', None)
+            road_cf = str(road_value).casefold() if road_value is not None else ''
+            city_cf = str(city_value).casefold() if city_value is not None else ''
+            if poi_t_cf not in road_cf and poi_t_cf not in city_cf:
+                latest_entry = None
 
         if latest_entry:
             serializer = GPSData_Serializer(latest_entry)
@@ -10008,34 +10031,55 @@ def Tag_ownerlist(request ):
         if offset < 0:
             offset = 0
 
-        devices = devices.order_by('-id')[offset:offset + limit]
-    
-        # Prefetch recent GPS points per device tag for DeviceTagSerializer2.deviceloc.
-        # NOTE: Prefetch querysets must return model instances (not `.values()` dicts).
+        devices = list(devices.order_by('-id')[offset:offset + limit])
+
+        # Attach latest 10 GPS points per device tag in a single bounded query.
+        # This avoids:
+        # - N+1 queries inside DeviceTagSerializer2.get_deviceloc
+        # - unbounded prefetch that can pull millions of GPS rows
         try:
-            from django.db.models import Prefetch
-            gps_qs = (
-                GPSData.objects
-                .filter(gps_status='1')
-                .only(
-                    'id',
-                    'date',
-                    'time',
-                    'latitude',
-                    'latitude_dir',
-                    'longitude',
-                    'longitude_dir',
-                    'altitude',
-                    'speed',
-                    'network_operator',
-                    'device_tag_id',
+            from django.db.models import F, Window
+            from django.db.models.functions import RowNumber
+
+            device_tag_ids = [d.id for d in devices]
+            if device_tag_ids:
+                gps_rows = list(
+                    GPSData.objects
+                    .filter(device_tag_id__in=device_tag_ids, gps_status='1')
+                    .annotate(
+                        _rn=Window(
+                            expression=RowNumber(),
+                            partition_by=[F('device_tag_id')],
+                            order_by=[F('entry_time').desc(), F('id').desc()],
+                        )
+                    )
+                    .filter(_rn__lte=10)
+                    .values(
+                        'id',
+                        'date',
+                        'time',
+                        'latitude',
+                        'latitude_dir',
+                        'longitude',
+                        'longitude_dir',
+                        'altitude',
+                        'speed',
+                        'network_operator',
+                        'device_tag_id',
+                    )
                 )
-                .order_by('-id')
-            )
-            # Default reverse name for FK is `<model>_set` unless `related_name` is set.
-            devices = devices.prefetch_related(Prefetch('gpsdata_set', queryset=gps_qs, to_attr='_prefetched_gps'))
+
+                gps_by_tag_id = {}
+                for row in gps_rows:
+                    tag_id = row.get('device_tag_id')
+                    if tag_id is None:
+                        continue
+                    gps_by_tag_id.setdefault(tag_id, []).append(row)
+
+                for d in devices:
+                    setattr(d, '_prefetched_gps_vals', gps_by_tag_id.get(d.id, []))
         except Exception:
-            # If the reverse relation name differs or Prefetch fails, serializer will fallback to per-row query.
+            # If window functions aren't supported by the DB backend, serializer will fallback to per-row queries.
             pass
 
         serializer = DeviceTagSerializer2(devices, many=True)
