@@ -2533,7 +2533,24 @@ def gps_track_data_api(request ):
                 return JsonResponse({'error': 'User role not found.'}, status=400)
             if user_role == 'superadmin':
                 pass
-            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive', 'dtorto','dealer']:
+            elif user_role == 'dtorto':
+                dto_rtos = dto_rto.objects.filter(users=request.user)
+                if not dto_rtos.exists():
+                    gps_queryset = GPSData.objects.none()
+                    return JsonResponse({'error': 'No DTO/RTO record found for this user.'}, status=400)
+                # Filter by district names stored in the dto_rto records
+                user_district_names = [dr.district for dr in dto_rtos if dr.district]
+                if user_district_names:
+                    gps_queryset = gps_queryset.filter(device_tag__district__district__in=user_district_names)
+                else:
+                    # Fall back to state-level filter if no district is set
+                    user_states = [dr.state.id for dr in dto_rtos]
+                    if user_states:
+                        gps_queryset = gps_queryset.filter(device_tag__district__state__id__in=user_states)
+                    else:
+                        gps_queryset = GPSData.objects.none()
+                        return JsonResponse({'error': 'No district or state found for this DTO/RTO user.'}, status=400)
+            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive', 'dealer']:
                 user_states = []
                 if user_role == 'stateadmin':
                     state_admins = StateAdmin.objects.filter(users=request.user)
@@ -2544,17 +2561,17 @@ def gps_track_data_api(request ):
                 elif user_role == 'sosexecutive':
                     em_exs = EM_ex.objects.filter(users=request.user)
                     user_states = [ee.state.id for ee in em_exs]
-                elif user_role == 'dtorto':
-                    dto_rtos = dto_rto.objects.filter(users=request.user)
-                    user_states = [dr.state.id for dr in dto_rtos]
-                elif user_role == 'dealer':
-                    dlrs = Dealer.objects.filter(users=request.user)
-                    user_states = [dr.manufacturer.state.id for dr in dlrs]
                 if user_states:
                     gps_queryset = gps_queryset.filter(device_tag__district__state__id__in=user_states)
                 else:
                     gps_queryset = GPSData.objects.none()
                     return JsonResponse({'error':  'No user states found.'}, status=400)
+            elif user_role == 'dealer':
+                dlrs = Dealer.objects.filter(users=request.user)
+                if not dlrs.exists():
+                    gps_queryset = GPSData.objects.none()
+                    return JsonResponse({'error': 'No dealer record found for this user.'}, status=400)
+                gps_queryset = gps_queryset.filter(device_tag__device__dealer__in=dlrs)
             elif user_role == 'owner':
                 vehicle_owners = VehicleOwner.objects.filter(users=request.user)#, status='UserVerified')
                 if vehicle_owners.exists():
@@ -10454,9 +10471,9 @@ def GetVahanAPIInfo(request):
     # Accept multiple valid statuses for VAHAN API info retrieval
     device_tag = DeviceTag.objects.filter(
         device_id=device_tag_id, 
-        tagged_by=user, 
-        status__in=['Owner_OTP_Verified', 'TempActiveSent', 'TempIncomingLoc', 'TempActive', 'Owner_Final_OTP_Sent', 'Owner_Final_OTP_Verified', 'Device_Active']
-    ).last()
+        tagged_by=user
+    ).last() 
+    # status__in=['Owner_OTP_Verified', 'TempActiveSent', 'TempIncomingLoc', 'TempActive', 'Owner_Final_OTP_Sent', 'Owner_Final_OTP_Verified', 'Device_Active']
     
     if device_tag:
         url = "https://staging.parivahan.gov.in/vltdmakerws/dataportws?wsdl"
@@ -11055,7 +11072,15 @@ def StockAssignToDealer(request ):
     assigned_at = timezone.now()
     stock_status = "Available_for_fitting"
     dealer_id = data.get('dealer_id') or data.get('dealer')
-    device_ids = ast.literal_eval(str(data.get('device')))
+    raw_device = data.get('device')
+    if not raw_device:
+        return JsonResponse({'error': "'device' field is required and must not be empty."}, status=400)
+    try:
+        device_ids = ast.literal_eval(str(raw_device))
+    except (ValueError, SyntaxError) as e:
+        return JsonResponse({'error': "Invalid 'device' field format: " + str(e)}, status=400)
+    if not isinstance(device_ids, (list, tuple)) or len(device_ids) == 0:
+        return JsonResponse({'error': "'device' must be a non-empty list of device IDs."}, status=400)
     dealer = Dealer.objects.filter(id=dealer_id).last()#,manufacturer=man
     if not dealer:
         return JsonResponse({'error':"invalid dealer" }, status=400)
@@ -11085,8 +11110,8 @@ def StockAssignToDealer(request ):
         except Exception as e:
              
             return JsonResponse({'error': "Unable to process request."+str(e)}, status=400)
-        if success_count==0:
-            return JsonResponse({'error': "No device assigned. All provided devices are invalid." }, status=400)
+    if success_count==0:
+        return JsonResponse({'error': "No device assigned. All provided devices are invalid." }, status=400)
     if len(error)==0:
         return JsonResponse({'data': stock_assignments , 'message': 'Stock assigned successfully.'}, status=201)
     else:
@@ -11393,19 +11418,28 @@ def deviceStockCreateBulk(request ):
         except:
             continue
             
+        def clean_int_field(val):
+            """Convert float-like values (e.g. 33243.0) to integer strings."""
+            if val is None or val == '':
+                return ''
+            try:
+                return str(int(float(str(val))))
+            except (ValueError, TypeError):
+                return str(val)
+
         # Extract data from the row
         data = {
             'model': model_id,
             'device_esn': row.get('device_esn', ''),
-            'iccid': row.get('iccid', ''),
-            'iccid2': row.get('iccid2', ''),
-            'imei': row.get('imei', ''),
+            'iccid': clean_int_field(row.get('iccid', '')),
+            'iccid2': clean_int_field(row.get('iccid2', '')),
+            'imei': clean_int_field(row.get('imei', '')),
             'telecom_provider1': row.get('telecom_provider1', ''),
             'telecom_provider2': row.get('telecom_provider2', ''),
-            'msisdn1': row.get('msisdn1', ''),
-            'msisdn2': row.get('msisdn2', ''),
-            'imsi1': row.get('imsi1', ''),
-            'imsi2': row.get('imsi2', ''),
+            'msisdn1': clean_int_field(row.get('msisdn1', '')),
+            'msisdn2': clean_int_field(row.get('msisdn2', '')),
+            'imsi1': clean_int_field(row.get('imsi1', '')),
+            'imsi2': clean_int_field(row.get('imsi2', '')),
             'esim_validity': row.get('esim_validity', ''), 
             'stock_status': "NotAssigned",
             'esim_status':"NotAssigned",
@@ -11457,14 +11491,24 @@ def deviceStockCreate(request ):
     data['created_by'] = request.user.id
     data['stock_status'] =  "NotAssigned"
     data['esim_status'] =  "NotAssigned"
+
+    def clean_int_field(val):
+        if val is None or val == '':
+            return ''
+        try:
+            return str(int(float(str(val))))
+        except (ValueError, TypeError):
+            return str(val)
+
     try:
-        a=int(data['imei'])
-        #a=int(data['imsi1'])
-        #if data['imsi2']:
-        #    a=int(data['imsi1'])
+        data['imei'] = clean_int_field(data['imei'])
+        int(data['imei'])  # validate it's numeric
     except:
         return JsonResponse({"status":"Error, Invalid imei  "}, status=400)
 
+    for field in ['iccid', 'iccid2', 'msisdn1', 'msisdn2', 'imsi1', 'imsi2']:
+        if field in data:
+            data[field] = clean_int_field(data[field])
 
     serializer = DeviceStockSerializer(data=data)
     serializer.is_valid(raise_exception=True)
