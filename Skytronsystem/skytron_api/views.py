@@ -11054,7 +11054,7 @@ def StockAssignToDealer(request ):
     assigned_by_id = request.user.id
     assigned_at = timezone.now()
     stock_status = "Available_for_fitting"
-    dealer_id =  data.get('dealer') 
+    dealer_id = data.get('dealer_id') or data.get('dealer')
     device_ids = ast.literal_eval(str(data.get('device')))
     dealer = Dealer.objects.filter(id=dealer_id).last()#,manufacturer=man
     if not dealer:
