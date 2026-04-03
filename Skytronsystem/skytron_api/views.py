@@ -23983,7 +23983,7 @@ def sos_analysis_dashboard(request):
         )
         overall_sla = round((today_accepted_count / total_today * 100), 2) if total_today > 0 else 0.0
 
-        topDistrict_metrics = {'name': 'Unknown', 'total': 0, 'sla': 0.0, 'policeAccepted': 0}
+        topDistrict_metrics = [{'name': 'Unknown', 'total': 0, 'sla': 0.0, 'policeAccepted': 0}]
         if district_wise_metrics:
             top = district_wise_metrics[0]
             top_name = top['district_name']
@@ -24000,12 +24000,12 @@ def sos_analysis_dashboard(request):
                 .count()
             )
             top_sla = round((top_accepted / top_total * 100), 2) if top_total > 0 else 0.0
-            topDistrict_metrics = {
+            topDistrict_metrics = [{
                 'name': top_name,
                 'total': top_total,
                 'sla': top_sla,
                 'policeAccepted': top_police_accepted,
-            }
+            }]
 
         # ==================== 8. districtsTrend_metrics (monthly last 1 year, pivot) ====================
         dist_month_rows = (
@@ -24039,6 +24039,42 @@ def sos_analysis_dashboard(request):
             top_ps_row[name] = cnt
         TopPoliceStations_metrics = [top_ps_row]
 
+        # ==================== 12. timeOfDayHeatmap_wise_metrics (last 7 days) ====================
+        seven_days_ago = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+        heatmap_qs = (
+            EMCall.objects
+            .filter(start_time__gte=seven_days_ago)
+        )
+        if state_id:
+            heatmap_qs = heatmap_qs.filter(team__state_id=int(state_id))
+        if district_id:
+            heatmap_qs = heatmap_qs.filter(device__district_id=int(district_id))
+
+        from django.db.models.functions import TruncDate
+        heatmap_rows = (
+            heatmap_qs
+            .annotate(day_date=TruncDate('start_time'), hour=ExtractHour('start_time'))
+            .values('day_date', 'hour')
+            .annotate(cnt=Count('id'))
+            .order_by('day_date', 'hour')
+        )
+        heatmap_day_map = {}
+        for r in heatmap_rows:
+            d_key = r['day_date'].strftime('%d/%m/%Y') if r['day_date'] else 'Unknown'
+            if d_key not in heatmap_day_map:
+                heatmap_day_map[d_key] = [0] * 24
+            if r['hour'] is not None and 0 <= r['hour'] <= 23:
+                heatmap_day_map[d_key][r['hour']] = r['cnt']
+        # Ensure all 7 days are present (fill missing days with zeros)
+        timeOfDayHeatmap_wise_metrics = []
+        for i in range(7):
+            day_dt = (seven_days_ago + timedelta(days=i))
+            d_key = day_dt.strftime('%d/%m/%Y')
+            timeOfDayHeatmap_wise_metrics.append({
+                'day': d_key,
+                'values': heatmap_day_map.get(d_key, [0] * 24),
+            })
+
         # ==================== 10. fetchPanicBreakdown_metrics ====================
         fetchPanicBreakdown_metrics = {
             'sital_alert': type_map.get('device', 0),
@@ -24069,6 +24105,7 @@ def sos_analysis_dashboard(request):
             'TopPoliceStations_metrics': TopPoliceStations_metrics,
             'fetchPanicBreakdown_metrics': fetchPanicBreakdown_metrics,
             'fetchAmbulanceBreakdown_metrics': fetchAmbulanceBreakdown_metrics,
+            'timeOfDayHeatmap_wise_metrics': timeOfDayHeatmap_wise_metrics,
             'filters_applied': {
                 'state_id': state_id or None,
                 'district_id': district_id or None,
