@@ -9307,6 +9307,12 @@ def TagDevice2Vehicle(request ):
 
     if stock_assignment:
         stock_assignment=stock_assignment 
+        # Clean up any stale/failed DeviceTag records for this device before creating a new one
+        stale_tags = DeviceTag.objects.filter(device_id=stock_assignment.id).exclude(
+            status__in=['Device_Active', 'Device_Untagged', 'TagDeleted']
+        )
+        if stale_tags.exists():
+            stale_tags.update(status='untaged_after_failed_taging', device=None)
         user_id = request.user.id  # Assuming the user is authenticated
         current_datetime = timezone.now()
         uploaded_file = request.FILES.get('rcFile')
@@ -9372,8 +9378,8 @@ def TagDevice2Vehicle(request ):
             if error:   # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
 
-            stock_assignment.stock_status= 'Fitted'
-            stock_assignment.save()
+            #stock_assignment.stock_status= 'Fitted'
+            #stock_assignment.save()
 
 
   
@@ -10236,6 +10242,42 @@ def TagSendOwnerOtpFinal(request ):
     return Response({"message": "Owner OTP sent successfully."}, status=200)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def TagResendOwnerOtpFinal(request):
+    user = request.user
+    role = "dealer"
+    man = get_user_object(user, role)
+    if not man:
+        return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
+
+    device_model_id = request.data.get('device_id')
+    device_model = DeviceTag.objects.filter(device__id=device_model_id, status='Owner_Final_OTP_Sent').last()
+    if not device_model:
+        return JsonResponse({'error': "Device not found or not in Owner_Final_OTP_Sent status"}, status=400)
+
+    if STATIC_OTP_CAP:
+        device_model.otp = str(685472)
+    else:
+        device_model.otp = str(secrets.randbelow(1000000)).zfill(6)
+    device_model.otp_time = timezone.now()
+    device_model.save()
+
+    owner_user = device_model.vehicle_owner.users.last()
+    text = "Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_model.otp)
+    tpid = "1007937055979875563"
+    send_SMS(owner_user.mobile, text, tpid)
+    send_mail(
+        'Login OTP',
+        text,
+        'noreply@skytron.in',
+        [owner_user.email],
+        fail_silently=False,
+    )
+    return Response({"message": "Owner Final OTP resent successfully."}, status=200)
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -10690,6 +10732,10 @@ def TagVerifyOwnerOtpFinal(request ):
     if device_tag:
         if otp == device_tag.otp or otp=='685472':  
             device_tag.status = 'Owner_Final_OTP_Verified'
+            
+            device_tag.device.stock_status = 'Fitted'
+            device_tag.device.save()
+
             device_tag.save()
             #add_sms_queue("ACTV,123456,+9194016334212",device_tag.device.msisdn1)
             #add_sms_queue("CONF,"+device_tag.vehicle_reg_no+",216.10.244.243,6000,216.10.244.243,5001,216.10.244.243,5001,+919401633421,+919401633421",device_tag.device.msisdn1)
@@ -10754,6 +10800,81 @@ def TagVerifyDealerOtp(request  ):
             return JsonResponse({'error': "Device not found"}, status=400)
     except Exception as e:
             return Response({"message": "Unable to process request."+str(e)}, status=200)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def TagResendDealerOtp(request):
+    user = request.user
+    role = "dealer"
+    man = get_user_object(user, role)
+    if not man:
+        return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
+
+    device_model_id = request.data.get('device_id')
+    device_tag = DeviceTag.objects.filter(device__id=device_model_id, status='Dealer_OTP_Sent').last()
+    if not device_tag:
+        return JsonResponse({'error': "Device not found or not in Dealer_OTP_Sent status"}, status=400)
+
+    if STATIC_OTP_CAP:
+        device_tag.otp = str(685472)
+    else:
+        device_tag.otp = str(secrets.randbelow(1000000)).zfill(6)
+    device_tag.otp_time = timezone.now()
+    device_tag.save()
+
+    text = "Dear VLTD Dealer/ Manufacturer,We have received request for tagging and activation of following device and vehicle-Vehicle Reg No: {}Device IMEI No: {}To confirm, please enter the OTP {}.- SkyTron".format(
+        device_tag.vehicle_reg_no, device_tag.device.imei, device_tag.otp)
+    tpid = "1007201930295888818"
+    send_SMS(user.mobile, text, tpid)
+    send_mail(
+        'Login OTP',
+        text,
+        'noreply@skytron.in',
+        [user.email],
+        fail_silently=False,
+    )
+    return Response({"message": "Dealer OTP resent successfully."}, status=200)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def TagResendOwnerOtp(request):
+    user = request.user
+    role = "dealer"
+    man = get_user_object(user, role)
+    if not man:
+        return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
+
+    device_model_id = request.data.get('device_id')
+    device_tag = DeviceTag.objects.filter(device__id=device_model_id, status='Owner_OTP_Sent').last()
+    if not device_tag:
+        return JsonResponse({'error': "Device not found or not in Owner_OTP_Sent status"}, status=400)
+
+    if STATIC_OTP_CAP:
+        device_tag.otp = str(685472)
+    else:
+        device_tag.otp = str(secrets.randbelow(1000000)).zfill(6)
+    device_tag.otp_time = timezone.now()
+    device_tag.save()
+
+    owner_user = device_tag.vehicle_owner.users.last()
+    text = "Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_tag.otp)
+    tpid = "1007937055979875563"
+    send_SMS(owner_user.mobile, text, tpid)
+    send_mail(
+        'Login OTP',
+        text,
+        'noreply@skytron.in',
+        [owner_user.email],
+        fail_silently=False,
+    )
+    return Response({"message": "Owner OTP resent successfully."}, status=200)
+
 
 #not in use for now 
 @api_view(['POST'])
@@ -23685,20 +23806,24 @@ def erss_dashboard_summary(request):
 @require_http_methods(['GET', 'POST'])
 def sos_analysis_dashboard(request):
     """
-    SOS analysis for last 1 year with month-wise, hour-wise and district-wise counts:
-    - total_calls_count
-    - total_police_broadcasts
-    - total_ambulance_broadcasts
-    - total_police_accepted
-    - total_ambulance_accepted
-    - total_fake_call_close
-    - total_unattended_calls
+    SOS analysis dashboard providing:
+    - month_wise_metrics (last 1 year)
+    - hour_of_day_wise_metrics (last 24 hours)
+    - district_wise_metrics (today)
+    - policestation_wise_metrics (today)
+    - fetchsosByType_wise_metrics
+    - topDistrict_metrics (today)
+    - overallSLA (today)
+    - districtsTrend_metrics (monthly last 1 year pivot)
+    - TopPoliceStations_metrics (today pivot)
+    - fetchPanicBreakdown_metrics
+    - fetchAmbulanceBreakdown_metrics
     """
     try:
         from datetime import timedelta
-        from django.db.models import Count, Exists, OuterRef
+        from django.db.models import Count, Exists, OuterRef, Subquery
         from django.db.models.functions import TruncMonth, ExtractHour
-        from .models import EMCall, EMCallAssignment, EMCallBroadcast
+        from .models import EMCall, EMCallAssignment, EMCallBroadcast, GPSData, pointofinterests
 
         def _p(key, default=''):
             v = request.data.get(key) or request.GET.get(key, default)
@@ -23708,153 +23833,247 @@ def sos_analysis_dashboard(request):
         district_id = _p('district_id')
 
         now = timezone.now()
-        start_dt = now - timedelta(days=365)
+        one_year_ago = now - timedelta(days=365)
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        last_24h = now - timedelta(hours=24)
 
-        call_qs = EMCall.objects.filter(start_time__gte=start_dt)
+        fake_statuses = ['closed_false_alert', 'closed_false_allert']
+
+        # Base querysets
+        call_qs_year = EMCall.objects.filter(start_time__gte=one_year_ago)
+        call_qs_today = EMCall.objects.filter(start_time__gte=day_start)
+
         if state_id:
             try:
-                call_qs = call_qs.filter(team__state_id=int(state_id))
+                call_qs_year = call_qs_year.filter(team__state_id=int(state_id))
+                call_qs_today = call_qs_today.filter(team__state_id=int(state_id))
             except (ValueError, TypeError):
                 return Response({'error': 'Invalid state_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
         if district_id:
             try:
-                call_qs = call_qs.filter(device__district_id=int(district_id))
+                call_qs_year = call_qs_year.filter(device__district_id=int(district_id))
+                call_qs_today = call_qs_today.filter(device__district_id=int(district_id))
             except (ValueError, TypeError):
                 return Response({'error': 'Invalid district_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
 
-        accepted_assignment_exists = EMCallAssignment.objects.filter(
-            call_id=OuterRef('pk'),
-            status='accepted'
-        )
+        accepted_exists = EMCallAssignment.objects.filter(call_id=OuterRef('pk'), status='accepted')
 
-        unattended_statuses = ['pending', 'desk_ex_assigned', 'broadcast_pending']
-        call_qs = call_qs.annotate(has_accepted_assignment=Exists(accepted_assignment_exists))
-
-        fake_statuses = ['closed_false_alert', 'closed_false_allert']
-
-        monthly = []
+        # ==================== 1. month_wise_metrics (last 1 year) ====================
         month_rows = (
-            call_qs
+            call_qs_year
             .annotate(period=TruncMonth('start_time'))
             .values('period')
             .annotate(
                 total_calls_count=Count('id'),
+                genuine=Count('id', filter=~Q(status__in=fake_statuses)),
+                panic=Count('id', filter=Q(em_type='device')),
+                other=Count('id', filter=~Q(em_type='device') & ~Q(status__in=fake_statuses)),
                 total_fake_call_close=Count('id', filter=Q(status__in=fake_statuses)),
-                total_unattended_calls=Count('id', filter=Q(status__in=unattended_statuses, has_accepted_assignment=False)),
             )
             .order_by('period')
         )
 
+        monthly = []
         for row in month_rows:
             period_start = row['period']
             period_end = (period_start + timedelta(days=32)).replace(day=1)
-            period_call_ids = call_qs.filter(start_time__gte=period_start, start_time__lt=period_end).values_list('id', flat=True)
-
-            police_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr']).count()
-            ambulance_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr']).count()
-            police_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr'], status='accepted').count()
-            ambulance_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr'], status='accepted').count()
-
+            period_call_ids = call_qs_year.filter(
+                start_time__gte=period_start, start_time__lt=period_end
+            ).values_list('id', flat=True)
+            police_accepted = EMCallBroadcast.objects.filter(
+                call_id__in=period_call_ids, type__in=['police_ex', 'pcr'], status='accepted'
+            ).count()
+            ambulance_accepted = EMCallBroadcast.objects.filter(
+                call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr'], status='accepted'
+            ).count()
             monthly.append({
                 'month': period_start.strftime('%Y-%m'),
                 'total_calls_count': row['total_calls_count'],
-                'total_police_broadcast_count': police_broadcasts,
-                'total_ambulance_broadcast_count': ambulance_broadcasts,
+                'genuine': row['genuine'],
+                'panic': row['panic'],
                 'total_police_accepted_count': police_accepted,
                 'total_ambulance_accepted_count': ambulance_accepted,
+                'other': row['other'],
                 'total_fake_call_close': row['total_fake_call_close'],
-                'total_unattended_calls': row['total_unattended_calls'],
             })
 
-        hourly = []
-        hour_rows = (
-            call_qs
+        # ==================== 2. hour_of_day_wise_metrics (last 24 hours) ====================
+        hour_of_day_wise_metrics = list(
+            call_qs_year.filter(start_time__gte=last_24h)
             .annotate(hour_of_day=ExtractHour('start_time'))
             .values('hour_of_day')
-            .annotate(
-                total_calls_count=Count('id'),
-                total_fake_call_close=Count('id', filter=Q(status__in=fake_statuses)),
-                total_unattended_calls=Count('id', filter=Q(status__in=unattended_statuses, has_accepted_assignment=False)),
-            )
+            .annotate(total_calls_count=Count('id'))
             .order_by('hour_of_day')
+            .values('hour_of_day', 'total_calls_count')
         )
 
-        for row in hour_rows:
-            h = row['hour_of_day']
-            period_call_ids = call_qs.annotate(hh=ExtractHour('start_time')).filter(hh=h).values_list('id', flat=True)
-            police_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr']).count()
-            ambulance_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr']).count()
-            police_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr'], status='accepted').count()
-            ambulance_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr'], status='accepted').count()
-
-            hourly.append({
-                'hour_of_day': h,
-                'total_calls_count': row['total_calls_count'],
-                'total_police_broadcast_count': police_broadcasts,
-                'total_ambulance_broadcast_count': ambulance_broadcasts,
-                'total_police_accepted_count': police_accepted,
-                'total_ambulance_accepted_count': ambulance_accepted,
-                'total_fake_call_close': row['total_fake_call_close'],
-                'total_unattended_calls': row['total_unattended_calls'],
-            })
-
-        district_rows = (
-            call_qs
+        # ==================== 3. district_wise_metrics (today) ====================
+        dist_rows = (
+            call_qs_today
             .values('device__district__district')
-            .annotate(
-                total_calls_count=Count('id'),
-                total_fake_call_close=Count('id', filter=Q(status__in=fake_statuses)),
-                total_unattended_calls=Count('id', filter=Q(status__in=unattended_statuses, has_accepted_assignment=False)),
-            )
-            .order_by('device__district__district')
+            .annotate(total_calls_count=Count('id'))
+            .order_by('-total_calls_count')
         )
+        district_wise_metrics = [
+            {
+                'district_name': r['device__district__district'] or 'Unknown',
+                'total_calls_count': r['total_calls_count'],
+            }
+            for r in dist_rows
+        ]
 
-        district_wise = []
-        for row in district_rows:
-            district_name = row['device__district__district']
-            period_call_ids = call_qs.filter(device__district__district=district_name).values_list('id', flat=True)
-            police_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr']).count()
-            ambulance_broadcasts = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr']).count()
-            police_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['police_ex', 'pcr'], status='accepted').count()
-            ambulance_accepted = EMCallBroadcast.objects.filter(call_id__in=period_call_ids, type__in=['ambulance_ex', 'acr'], status='accepted').count()
+        # ==================== 4. policestation_wise_metrics (today) ====================
+        police_stations_poi = list(
+            pointofinterests.objects.filter(use_type='PoliceStation')
+            .exclude(lat__isnull=True).exclude(lon__isnull=True)
+            .exclude(status__in=['Deleted', 'Deleted2'])
+            .values('name', 'lat', 'lon')
+        )
+        trigger_gps_sub = (
+            GPSData.objects
+            .filter(device_tag=OuterRef('device_id'), entry_time__gte=OuterRef('start_time'))
+            .order_by('entry_time')
+        )
+        today_calls_with_gps = call_qs_today.annotate(
+            trig_lat=Subquery(trigger_gps_sub.values('latitude')[:1]),
+            trig_lon=Subquery(trigger_gps_sub.values('longitude')[:1]),
+        ).values('trig_lat', 'trig_lon')
 
-            district_wise.append({
-                'district_name': district_name,
-                'total_calls_count': row['total_calls_count'],
-                'total_police_broadcast_count': police_broadcasts,
-                'total_ambulance_broadcast_count': ambulance_broadcasts,
-                'total_police_accepted_count': police_accepted,
-                'total_ambulance_accepted_count': ambulance_accepted,
-                'total_fake_call_close': row['total_fake_call_close'],
-                'total_unattended_calls': row['total_unattended_calls'],
-            })
+        ps_counts = {}
+        for call in today_calls_with_gps:
+            trig_lat = call.get('trig_lat')
+            trig_lon = call.get('trig_lon')
+            ps_name = 'Unknown'
+            if trig_lat is not None and trig_lon is not None and police_stations_poi:
+                best_dist = None
+                for ps in police_stations_poi:
+                    d = _haversine_km(float(trig_lat), float(trig_lon), float(ps['lat']), float(ps['lon']))
+                    if d is not None and (best_dist is None or d < best_dist):
+                        best_dist = d
+                        ps_name = ps['name']
+            ps_counts[ps_name] = ps_counts.get(ps_name, 0) + 1
 
-        overall_call_ids = call_qs.values_list('id', flat=True)
-        response_data = {
-            'time_window': {
-                'from': start_dt.isoformat(),
-                'to': now.isoformat(),
-                'label': 'last_1_year',
-            },
-            'overall_metrics': {
-                'total_calls_count': call_qs.count(),
-                'total_police_broadcast_count': EMCallBroadcast.objects.filter(call_id__in=overall_call_ids, type__in=['police_ex', 'pcr']).count(),
-                'total_ambulance_broadcast_count': EMCallBroadcast.objects.filter(call_id__in=overall_call_ids, type__in=['ambulance_ex', 'acr']).count(),
-                'total_police_accepted_count': EMCallBroadcast.objects.filter(call_id__in=overall_call_ids, type__in=['police_ex', 'pcr'], status='accepted').count(),
-                'total_ambulance_accepted_count': EMCallBroadcast.objects.filter(call_id__in=overall_call_ids, type__in=['ambulance_ex', 'acr'], status='accepted').count(),
-                'total_fake_call_close': call_qs.filter(status__in=fake_statuses).count(),
-                'total_unattended_calls': call_qs.filter(status__in=unattended_statuses, has_accepted_assignment=False).count(),
-            },
+        policestation_wise_metrics = [
+            {'policestation_name': k, 'total_calls_count': v}
+            for k, v in sorted(ps_counts.items(), key=lambda x: -x[1])
+        ]
+
+        # ==================== 5. fetchsosByType_wise_metrics (last 1 year) ====================
+        type_map = {
+            r['em_type']: r['cnt']
+            for r in call_qs_year.values('em_type').annotate(cnt=Count('id'))
+        }
+        fetchsosByType_wise_metrics = {
+            'panic_alert': type_map.get('device', 0),
+            'medical_emergency': type_map.get('BLE_Login', 0) + type_map.get('BLE_Public', 0),
+            'accident': type_map.get('BLE_TM_Route', 0),
+            'others': type_map.get('BLE_TM_PW_Fail', 0) + sum(
+                v for k, v in type_map.items()
+                if k not in ('device', 'BLE_Login', 'BLE_Public', 'BLE_TM_Route', 'BLE_TM_PW_Fail')
+            ),
+        }
+
+        # ==================== 6 & 7. topDistrict_metrics & overallSLA (today) ====================
+        total_today = call_qs_today.count()
+        today_accepted_count = (
+            call_qs_today
+            .annotate(has_accepted=Exists(accepted_exists))
+            .filter(has_accepted=True)
+            .count()
+        )
+        overall_sla = round((today_accepted_count / total_today * 100), 2) if total_today > 0 else 0.0
+
+        topDistrict_metrics = {'name': 'Unknown', 'total': 0, 'sla': 0.0, 'policeAccepted': 0}
+        if district_wise_metrics:
+            top = district_wise_metrics[0]
+            top_name = top['district_name']
+            top_total = top['total_calls_count']
+            top_dist_calls = call_qs_today.filter(device__district__district=top_name)
+            top_dist_call_ids = top_dist_calls.values_list('id', flat=True)
+            top_police_accepted = EMCallBroadcast.objects.filter(
+                call_id__in=top_dist_call_ids, type__in=['police_ex', 'pcr'], status='accepted'
+            ).count()
+            top_accepted = (
+                top_dist_calls
+                .annotate(has_accepted=Exists(accepted_exists))
+                .filter(has_accepted=True)
+                .count()
+            )
+            top_sla = round((top_accepted / top_total * 100), 2) if top_total > 0 else 0.0
+            topDistrict_metrics = {
+                'name': top_name,
+                'total': top_total,
+                'sla': top_sla,
+                'policeAccepted': top_police_accepted,
+            }
+
+        # ==================== 8. districtsTrend_metrics (monthly last 1 year, pivot) ====================
+        dist_month_rows = (
+            call_qs_year
+            .annotate(period=TruncMonth('start_time'))
+            .values('period', 'device__district__district')
+            .annotate(cnt=Count('id'))
+            .order_by('period')
+        )
+        districts_all = set()
+        months_pivot = {}
+        for r in dist_month_rows:
+            m_label = r['period'].strftime('%b %Y') if r['period'] else 'Unknown'
+            d_name = r['device__district__district'] or 'Unknown'
+            districts_all.add(d_name)
+            if m_label not in months_pivot:
+                months_pivot[m_label] = {}
+            months_pivot[m_label][d_name] = months_pivot[m_label].get(d_name, 0) + r['cnt']
+
+        districtsTrend_metrics = []
+        for m_label, d_counts in months_pivot.items():
+            row = {'t': m_label}
+            for d in districts_all:
+                row[d] = d_counts.get(d, 0)
+            districtsTrend_metrics.append(row)
+
+        # ==================== 9. TopPoliceStations_metrics (today, pivot) ====================
+        top_stations = sorted(ps_counts.items(), key=lambda x: -x[1])[:10]
+        top_ps_row = {'month': 'Today'}
+        for name, cnt in top_stations:
+            top_ps_row[name] = cnt
+        TopPoliceStations_metrics = [top_ps_row]
+
+        # ==================== 10. fetchPanicBreakdown_metrics ====================
+        fetchPanicBreakdown_metrics = {
+            'sital_alert': type_map.get('device', 0),
+            'medical': type_map.get('BLE_Login', 0),
+            'fire_alarm': type_map.get('BLE_Public', 0),
+        }
+
+        # ==================== 11. fetchAmbulanceBreakdown_metrics ====================
+        year_call_ids = call_qs_year.values_list('id', flat=True)
+        fetchAmbulanceBreakdown_metrics = {
+            'threat_perception': EMCallBroadcast.objects.filter(
+                call_id__in=year_call_ids, type='acr', status='accepted'
+            ).count(),
+            'Others': EMCallBroadcast.objects.filter(
+                call_id__in=year_call_ids, type='ambulance_ex', status='accepted'
+            ).count(),
+        }
+
+        return Response({
             'month_wise_metrics': monthly,
-            'hour_of_day_wise_metrics': hourly,
-            'district_wise_metrics': district_wise,
+            'hour_of_day_wise_metrics': hour_of_day_wise_metrics,
+            'district_wise_metrics': district_wise_metrics,
+            'policestation_wise_metrics': policestation_wise_metrics,
+            'fetchsosByType_wise_metrics': fetchsosByType_wise_metrics,
+            'topDistrict_metrics': topDistrict_metrics,
+            'overallSLA': {'OverallSLA_Value': overall_sla},
+            'districtsTrend_metrics': districtsTrend_metrics,
+            'TopPoliceStations_metrics': TopPoliceStations_metrics,
+            'fetchPanicBreakdown_metrics': fetchPanicBreakdown_metrics,
+            'fetchAmbulanceBreakdown_metrics': fetchAmbulanceBreakdown_metrics,
             'filters_applied': {
                 'state_id': state_id or None,
                 'district_id': district_id or None,
-            }
-        }
-
-        return Response(response_data, status=status.HTTP_200_OK)
+            },
+        }, status=status.HTTP_200_OK)
 
     except Exception as e:
         logger.error(f"Error in sos_analysis_dashboard: {str(e)}")
@@ -23868,19 +24087,17 @@ def sos_analysis_dashboard(request):
 @require_http_methods(['GET', 'POST'])
 def sos_monitoring_dashboard(request):
     """
-    SOS monitoring dashboard KPIs:
-    - total emergency calls today
-    - total live calls now
-    - total unattended calls now
-    - total closed calls today
-    - average time to accept by desk executive
-    - average time to accept broadcast by police
-    - average time to accept broadcast by ambulance
-    - calls accepted by team lead total and % of total calls
+    SOS monitoring dashboard KPIs for today:
+    - total_emergency_calls_today, total_closed_calls_today, total_live_calls_now, total_unattended_calls_now
+    - avgPolice_OnScene, avg_Exec_accept
+    - escalation_Rate
+    - total_triggered_calls, total_assigned_calls, total_exec_accepted_calls,
+      total_broadcasted_calls, total_on_scene_calls, total_closed_calls
+    - police_Accepted, amb_Accepted
     """
     try:
         from datetime import timedelta
-        from django.db.models import Avg, DurationField, ExpressionWrapper, F, Exists, OuterRef
+        from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Exists, OuterRef
         from .models import EMCall, EMCallAssignment, EMCallBroadcast
 
         def _p(key, default=''):
@@ -23907,13 +24124,13 @@ def sos_monitoring_dashboard(request):
 
         live_statuses = ['pending', 'desk_ex_assigned', 'broadcast_pending', 'field_ex_aproaching', 'field_ex_arrived']
         closed_statuses = ['closed', 'closed_false_alert', 'closed_false_allert']
-
-        total_emergency_calls_today = calls_today.count()
-        total_live_calls_now = calls_today.filter(status__in=live_statuses).count()
-        total_closed_calls_today = calls_today.filter(status__in=closed_statuses).count()
+        unattended_statuses = ['pending', 'desk_ex_assigned', 'broadcast_pending']
 
         accepted_assignment_exists = EMCallAssignment.objects.filter(call_id=OuterRef('pk'), status='accepted')
-        unattended_statuses = ['pending', 'desk_ex_assigned', 'broadcast_pending']
+
+        total_triggered_calls = calls_today.count()
+        total_live_calls_now = calls_today.filter(status__in=live_statuses).count()
+        total_closed_calls = calls_today.filter(status__in=closed_statuses).count()
         total_unattended_calls_now = (
             calls_today
             .filter(status__in=unattended_statuses)
@@ -23922,6 +24139,54 @@ def sos_monitoring_dashboard(request):
             .count()
         )
 
+        # Calls that have at least one assignment
+        total_assigned_calls = (
+            calls_today
+            .filter(EMCall_id__isnull=False)
+            .distinct()
+            .count()
+        )
+
+        # Calls where desk exec accepted
+        total_exec_accepted_calls = (
+            EMCallAssignment.objects
+            .filter(call__in=calls_today, type='desk_ex', status='accepted')
+            .values('call_id')
+            .distinct()
+            .count()
+        )
+
+        # Calls that have at least one broadcast
+        total_broadcasted_calls = (
+            calls_today
+            .filter(EMCallb_id__isnull=False)
+            .distinct()
+            .count()
+        )
+
+        # Calls where field executive arrived on scene
+        total_on_scene_calls = calls_today.filter(status='field_ex_arrived').count()
+
+        # Police and ambulance accepted broadcasts today
+        today_call_ids = calls_today.values_list('id', flat=True)
+        police_Accepted = EMCallBroadcast.objects.filter(
+            call_id__in=today_call_ids, type__in=['police_ex', 'pcr'], status='accepted'
+        ).count()
+        amb_Accepted = EMCallBroadcast.objects.filter(
+            call_id__in=today_call_ids, type__in=['ambulance_ex', 'acr'], status='accepted'
+        ).count()
+
+        # Average time for police to be on scene (arrived_time - accept_time)
+        police_on_scene_avg = (
+            EMCallAssignment.objects
+            .filter(call__in=calls_today, type__in=['police_ex', 'pcr'])
+            .exclude(accept_time__isnull=True)
+            .exclude(arrived_time__isnull=True)
+            .annotate(diff=ExpressionWrapper(F('arrived_time') - F('accept_time'), output_field=DurationField()))
+            .aggregate(avg=Avg('diff'))
+        )['avg']
+
+        # Average time for desk exec to accept (accept_time - call start_time via assignment start_time)
         desk_avg = (
             EMCallAssignment.objects
             .filter(call__in=calls_today, type='desk_ex')
@@ -23930,50 +24195,36 @@ def sos_monitoring_dashboard(request):
             .aggregate(avg=Avg('diff'))
         )['avg']
 
-        police_broadcast_avg = (
-            EMCallBroadcast.objects
-            .filter(call__in=calls_today, type__in=['police_ex', 'pcr'])
-            .exclude(accept_at__isnull=True)
-            .annotate(diff=ExpressionWrapper(F('accept_at') - F('created_at'), output_field=DurationField()))
-            .aggregate(avg=Avg('diff'))
-        )['avg']
-
-        ambulance_broadcast_avg = (
-            EMCallBroadcast.objects
-            .filter(call__in=calls_today, type__in=['ambulance_ex', 'acr'])
-            .exclude(accept_at__isnull=True)
-            .annotate(diff=ExpressionWrapper(F('accept_at') - F('created_at'), output_field=DurationField()))
-            .aggregate(avg=Avg('diff'))
-        )['avg']
-
-        teamlead_accepted_calls = (
+        # Escalation rate: calls that needed more than one desk exec assignment
+        escalated_calls = (
             EMCallAssignment.objects
-            .filter(call__in=calls_today, type='teamlead')
-            .exclude(accept_time__isnull=True)
+            .filter(call__in=calls_today, type='desk_ex')
             .values('call_id')
-            .distinct()
+            .annotate(cnt=Count('id'))
+            .filter(cnt__gt=1)
             .count()
         )
-
-        teamlead_accept_percentage = 0
-        if total_emergency_calls_today > 0:
-            teamlead_accept_percentage = round((teamlead_accepted_calls / total_emergency_calls_today) * 100, 2)
+        escalation_rate = round((escalated_calls / total_triggered_calls * 100), 2) if total_triggered_calls > 0 else 0.0
 
         return Response({
+            'total_emergency_calls_today': total_triggered_calls,
+            'total_closed_calls_today': total_closed_calls,
+            'total_live_calls_now': total_live_calls_now,
+            'total_unattended_calls_now': total_unattended_calls_now,
+            'avgPolice_OnScene': police_on_scene_avg.total_seconds() if police_on_scene_avg else None,
+            'avg_Exec_accept': desk_avg.total_seconds() if desk_avg else None,
+            'escalation_Rate': escalation_rate,
+            'total_triggered_calls': total_triggered_calls,
+            'total_assigned_calls': total_assigned_calls,
+            'total_exec_accepted_calls': total_exec_accepted_calls,
+            'total_broadcasted_calls': total_broadcasted_calls,
+            'total_on_scene_calls': total_on_scene_calls,
+            'total_closed_calls': total_closed_calls,
+            'police_Accepted': police_Accepted,
+            'amb_Accepted': amb_Accepted,
             'filters_applied': {
                 'state_id': state_id or None,
                 'district_id': district_id or None,
-            },
-            'sos_monitoring_metrics': {
-                'total_emergency_calls_today': total_emergency_calls_today,
-                'total_live_calls_now': total_live_calls_now,
-                'total_unattended_calls_now': total_unattended_calls_now,
-                'total_closed_calls_today': total_closed_calls_today,
-                'average_time_to_accept_by_desk_executive_seconds': desk_avg.total_seconds() if desk_avg else None,
-                'average_time_to_accept_broadcast_by_police_seconds': police_broadcast_avg.total_seconds() if police_broadcast_avg else None,
-                'average_time_to_accept_broadcast_by_ambulance_seconds': ambulance_broadcast_avg.total_seconds() if ambulance_broadcast_avg else None,
-                'calls_accepted_by_team_lead_total': teamlead_accepted_calls,
-                'calls_accepted_by_team_lead_percent_of_total_calls': teamlead_accept_percentage,
             },
             'timestamp': now.isoformat(),
         }, status=status.HTTP_200_OK)

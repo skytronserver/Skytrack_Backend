@@ -412,6 +412,7 @@ urlpatterns = [
     
     path('tag/TagAwaitingOwnerApprovalFinal/', TagAwaitingOwnerApprovalFinal, name='TagAwaitingOwnerApprovalFinal'),
     path('tag/TagSendOwnerOtpFinal/',  TagSendOwnerOtpFinal, name='TagSendOwnerOtpFinal'),
+    path('tag/TagResendOwnerOtpFinal/', TagResendOwnerOtpFinal, name='TagResendOwnerOtpFinal'),
     path('tag/TagVerifyOwnerOtpFinal/', TagVerifyOwnerOtpFinal, name='TagVerifyOwnerOtpFinal'),
 
 
@@ -419,6 +420,8 @@ urlpatterns = [
 
 
     path('tag/TagVerifyDealerOtp/', TagVerifyDealerOtp, name='TagVerifyDealerOtp'),
+    path('tag/TagResendDealerOtp/', TagResendDealerOtp, name='TagResendDealerOtp'),
+    path('tag/TagResendOwnerOtp/', TagResendOwnerOtp, name='TagResendOwnerOtp'),
     #path('tag/TagVerifyDTOOtp/', TagVerifyDTOOtp, name='TagVerifyDTOOtp'),
     path('tag/download_receiptPDF/', download_receiptPDF, name='download_receiptPDF'),
     path('tag/upload_receiptPDF/', upload_receiptPDF, name='upload_receiptPDF'),

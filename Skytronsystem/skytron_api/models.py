@@ -1109,9 +1109,10 @@ class DeviceTag(models.Model):
         ('Device_Not_Active', 'Device Not Active'),
         ('Device_Untagged', 'Device Untagged'),
         ('TagDeleted', 'TagDeleted'),
+        ('untaged_after_failed_taging', 'Untagged After Failed Tagging'),
     ]
 
-    device = models.ForeignKey(DeviceStock, on_delete=models.CASCADE)
+    device = models.ForeignKey(DeviceStock, on_delete=models.SET_NULL, null=True, blank=True)
     vehicle_owner = models.ForeignKey(VehicleOwner, on_delete=models.CASCADE)
    
     vehicle_reg_no = models.CharField(max_length= 55,unique=True)

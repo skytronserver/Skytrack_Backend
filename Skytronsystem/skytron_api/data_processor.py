@@ -331,7 +331,7 @@ def process_em_data(data_str):
                         
                         device_tag = None
                         if device:
-                            device_tag = DeviceTag.objects.filter(device=device).last()
+                            device_tag = DeviceTag.objects.filter(device=device,status = 'Owner_Final_OTP_Verified').last()
                             #print(f"Device tag found: {device_tag}", flush=True)
                         else:
                             #print(f"No device found for IMEI: {imei}", flush=True)
@@ -707,7 +707,7 @@ def process_device_tracking_data(data_str, source="unknown"):
             device = DeviceStock.objects.filter(imei__contains=str(imei_val)).last()
             if not device:
                 return match.group(0)
-            device_tag = DeviceTag.objects.filter(device=device).last()
+            device_tag = DeviceTag.objects.filter(device=device,status = 'Owner_Final_OTP_Verified').last()
             reg_no = (getattr(device_tag, "vehicle_reg_no", None) or "").strip() if device_tag else ""
             if not reg_no:
                 return match.group(0)
@@ -743,7 +743,7 @@ def process_device_tracking_data(data_str, source="unknown"):
                     print(f"#{imei}# -> Device: {device}", flush=True)
 
                     if device:
-                        device_tag = DeviceTag.objects.filter(device=device).last()
+                        device_tag = DeviceTag.objects.filter(device=device,status = 'Owner_Final_OTP_Verified').last() 
 
                         if device_tag:
                             reg_no = (getattr(device_tag, "vehicle_reg_no", None) or "").strip()
@@ -825,7 +825,7 @@ def process_emergency_data(data_str, source="unknown"):
                     imei = fields[3]
                     device = DeviceStock.objects.filter(imei__contains=str(imei)).last()
                     if device:
-                        device_tag = DeviceTag.objects.filter(device=device).last()
+                        device_tag = DeviceTag.objects.filter(device=device,status = 'Owner_Final_OTP_Verified').last()
                         reg_no = (getattr(device_tag, "vehicle_reg_no", None) or "").strip() if device_tag else ""
                         if reg_no:
                             data_str_for_log = data_str.replace("DL01AB1234", reg_no)
