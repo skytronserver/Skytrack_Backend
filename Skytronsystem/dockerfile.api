@@ -35,6 +35,13 @@ RUN mkdir -p /etc/mosquitto/certs
 # Copy certificate files - they are required for the MQTT client
 COPY keys/ca.crt /app/keys/ca.crt
 
+# Install Python dependencies BEFORE copying application code.
+# This way Docker caches this layer and skips pip install on code-only changes.
+# pip install only re-runs when requirements.txt itself changes.
+COPY requirements.txt /app/requirements.txt
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
+
 # Copy your Django project files into the container (including cert.pem & key.pem if needed)
 # This includes:
 # - skytron_api/mqtt_validate_views.py: MQTT JWT authentication endpoint
@@ -59,14 +66,6 @@ RUN chmod 644 /app/Skytronsystem/keys/jwt_public_key.pem
 # Then copy root CA: cp ../mqtt_certificates/root_ca/root_ca.crt ./root_ca.crt
 COPY root_ca.crt /app/Skytronsystem/root_ca.crt
 RUN chmod 644 /app/Skytronsystem/root_ca.crt
-
-
-# Copy requirements file
-COPY requirements.txt /app/requirements.txt
-
-# Install Python dependencies
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
 
 
 # Ensure certificates are available in both locations for compatibility

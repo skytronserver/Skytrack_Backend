@@ -24007,6 +24007,10 @@ def sos_analysis_dashboard(request):
                 'policeAccepted': top_police_accepted,
             }]
 
+
+
+
+
         # ==================== 8. districtsTrend_metrics (monthly last 1 year, pivot) ====================
         dist_month_rows = (
             call_qs_year

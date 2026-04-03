@@ -21,15 +21,15 @@ COPY keys/ca.crt /app/keys/ca.crt
 #COPY Skytronsystem/keys/private_key.pem /app/keys/private_key.pem
 #COPY Skytronsystem/keys/public_key.pem /app/keys/public_key.pem
 
-# Copy your Django project files into the container
-COPY . /app
-
-# Copy requirements file
+# Install Python dependencies BEFORE copying application code.
+# This way Docker caches this layer and skips pip install on code-only changes.
+# pip install only re-runs when requirements.txt itself changes.
 COPY requirements.txt /app/requirements.txt
-
-# Install Python dependencies
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
+
+# Copy your Django project files into the container
+COPY . /app
 # (Optional) If you need to collect static files, uncomment the line below:
 #RUN python manage.py collectstatic --noinput
 
