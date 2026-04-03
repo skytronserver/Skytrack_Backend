@@ -2575,7 +2575,7 @@ def gps_track_data_api(request ):
             elif user_role == 'owner':
                 vehicle_owners = VehicleOwner.objects.filter(users=request.user)#, status='UserVerified')
                 if vehicle_owners.exists():
-                    owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners)
+                    owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners,status = 'Owner_Final_OTP_Verified')
                     gps_queryset = gps_queryset.filter(device_tag__in=owned_device_tags)
                 else:
                     gps_queryset = GPSData.objects.none()
@@ -3262,7 +3262,7 @@ def global_counts_summary(request):
 
         # VLT status - global
         total_vlt = DeviceTag.objects.count()
-        active_vlt = DeviceTag.objects.filter(status='Device_Active').count()
+        active_vlt = DeviceTag.objects.filter(status='Owner_Final_OTP_Verified').count()
         inactive_vlt = DeviceTag.objects.filter(status='Device_Not_Active').count()
         maintenance_vlt = DeviceStock.objects.filter(stock_status='Device_Defective').count()
 
@@ -3347,7 +3347,7 @@ def gps_history_map_data(request ):
             return JsonResponse({'error': "User role not found"}, status=403)
 
         # Check if user has access to this registration number
-        device_tag = DeviceTag.objects.filter(vehicle_reg_no=vehicle_registration_number).first()
+        device_tag = DeviceTag.objects.filter(vehicle_reg_no=vehicle_registration_number,status = 'Owner_Final_OTP_Verified').first()
         if not device_tag:
             return JsonResponse({'error': "Vehicle registration number not found in system"}, status=404)
 
@@ -3369,7 +3369,7 @@ def gps_history_map_data(request ):
         elif user_role == 'owner':
             vehicle_owners = VehicleOwner.objects.filter(users=request.user)#, status='UserVerified')
             if vehicle_owners.exists():
-                owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners)
+                owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners,status = 'Owner_Final_OTP_Verified')
                 if device_tag in owned_device_tags:
                     has_access = True
 
@@ -3661,9 +3661,9 @@ def saveRoute(request ):
                     return JsonResponse({"error": "Device not found"}, status=405)
             tag=None
             if man :
-                tag=DeviceTag.objects.filter(  device_id=device,   vehicle_owner =man)
+                tag=DeviceTag.objects.filter(  device_id=device,   vehicle_owner =man, status='Owner_Final_OTP_Verified')
             elif sa or sa2  :
-                tag=DeviceTag.objects.filter( device_id=device)
+                tag=DeviceTag.objects.filter( device_id=device, status='Owner_Final_OTP_Verified')
             if not tag:
                     return JsonResponse({"error": "Unauthorised owner "}, status=405)
 
@@ -3755,20 +3755,22 @@ def getRoute(request ):
             if not device:
                     return JsonResponse({"error": "Device not found"}, status=405)
             if man:
-                tag=DeviceTag.objects.filter(   device_id=device,   vehicle_owner =man)
+                tag=DeviceTag.objects.filter(   device_id=device,   vehicle_owner =man, status='Owner_Final_OTP_Verified')
             elif sa:
-                tag=DeviceTag.objects.filter(   device_id=device )
+                tag=DeviceTag.objects.filter(   device_id=device, status='Owner_Final_OTP_Verified')
             elif state_admin_obj:
                 # State admin can access devices in their state
                 tag=DeviceTag.objects.filter(
                     device_id=device,
-                    district__state=state_admin_obj.state
+                    district__state=state_admin_obj.state,
+                    status='Owner_Final_OTP_Verified'
                 )
             elif dto_obj:
                 # DTO can access devices in their state
                 tag=DeviceTag.objects.filter(
                     device_id=device,
-                    district__state=dto_obj.state
+                    district__state=dto_obj.state,
+                    status='Owner_Final_OTP_Verified'
                 )
             if not tag:
                     return JsonResponse({"error": "Unauthorised Access "}, status=405) 
@@ -3819,15 +3821,15 @@ def getRoutelist(request ):
         
 #1     Registration of new user-
 #tpid ="1007135935525313027"
-#text="Dear User,To confirm your registration in SkyTron platform, please click at the following link and validate the registration request-{#var#}The link will expire in 5 minutes.-SkyTron"
+#text="Dear user, to confirm your registration in SkyTron platform, please click at the following link and validate the registration request-{#var#}The link will expire in 24 hours.-SkyTron"
 
 #2   not working   Tagging of device and vehicle- owner confirmation:
 #tpid ="1007941652638984780"
-#text="Dear Vehicle Owner,To confirm Tagging of your vehicle with your tracking device in SkyTron platform, please click at the following link and validate the tagging request-{#var#}The link will expire in 5 minutes.-SkyTron"
+#text="Dear Vehicle Owner, to confirm Tagging of your vehicle with your tracking device in SkyTron platform, please click at the following link and validate the tagging request-{#var#}The link will expire in 24 hours.-SkyTron"
 
 #3      Set/Re-set new password-
 #tpid ="1007927199705544392"
-#text="Dear User,To activate your new password in SkyTron portal, please enter the OTP {#var#} valid for 5 minutes.Please do NOT share with anyone.-SkyTron"
+#text="Dear user, to activate your new password in SkyTron portal, please enter the OTP {#var#} valid for 5 minutes.Please do NOT share with anyone.-SkyTron"
 
 #4. Dealer/Manufacturer confirmation of Tagging-
 #tpid ="1007201930295888818"
@@ -3836,15 +3838,15 @@ def getRoutelist(request ):
 
 #5. Owner verification link sent during tagging and activation-
 #tpid ="1007671504419591069"
-#text="Dear Vehicle Owner,To confirm tagging and activation of your VLTD with your vehicle in SkyTron platform, kindly click on the following link and validate: {#var#}Link will expire in 5 minutes. Please do NOT share.-SkyTron"
+#text="Dear Vehicle Owner, to confirm tagging and activation of your VLTD with your vehicle in SkyTron platform, kindly click on the following link and validate: {#var#}Link will expire in 5 minutes. Please do NOT share.-SkyTron"
 
 #6. Owner OTP- after tagging / activation is successful-
 #tpid ="1007937055979875563"
-#text="Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {#var#} will expire in 5 minutes. Please do NOT share.-SkyTron"
+#text="Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {#var#} will expire in 5 minutes. Please do NOT share.-SkyTron"
 
 #7. New User create OTP- (OTP at the time of creating a new user)-
 #tpid ="1007274756418421381"
-#text="Dear User,To validate creation of a new user login in SkyTron platform, please enter the OTP {#var#}.Valid for 5 minutes. Please do not share.-SkyTron"
+#text="Dear user, to validate creation of a new user login in SkyTron platform, please enter the OTP {#var#}.Valid for 5 minutes. Please do not share.-SkyTron"
 
 
 def send_SMS(no,text,tpid):
@@ -3875,7 +3877,7 @@ def send_SMS(no,text,tpid):
 
 
 def sms_send(no,text,tpid):
-    #text = "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+    #text = "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
     import os
     url = os.getenv("SMS_URL", "http://tra.bulksmshyderabad.co.in/websms/sendsms.aspx")
     params = {
@@ -6195,7 +6197,7 @@ def send_usercreation_otp(user,new_password,type):
     try:
         tpid ="1007515117119518623"  
         
-        text='Dear User, To confirm your registration in SkyTron platform, please click at the following link and validate the registration request- '+DEPLOY_URL+'/new/'+str(new_password)+'. The link will expire in 5 minutes. -SkyTron'
+        text='Dear user, to confirm your registration in SkyTron platform, please click at the following link and validate the registration request- '+DEPLOY_URL+'/new/'+str(new_password)+'. The link will expire in 24 hours. -SkyTron'
         send_SMS(user.mobile,text,tpid) 
         """
         send_mail(
@@ -9383,7 +9385,7 @@ def TagDevice2Vehicle(request ):
 
 
   
-            text="Dear VLTD Dealer/ Manufacturer,We have received request for tagging and activation of following device and vehicle-Vehicle Reg No: {}Device IMEI No: {}To confirm, please enter the OTP {}.- SkyTron".format(device_tag.vehicle_reg_no,device_tag.device.imei,device_tag.otp)
+            text="Dear VLTD Dealer/Manufacturer, We have received request for tagging and activation of following device and vehicle-Vehicle Reg No: {}, Device IMEI No: {}. To confirm, please enter the OTP {}.- SkyTron".format(device_tag.vehicle_reg_no,device_tag.device.imei,device_tag.otp)
             tpid="1007201930295888818"
             send_SMS( user.mobile,text,tpid) 
             send_mail(
@@ -9765,7 +9767,7 @@ def driver_remove(request ):
             return JsonResponse({'error': 'device_id is required'}, status=400)
         if not driver_id:
             return JsonResponse({'error': 'driver_id is required'}, status=400)
-        device_tag = DeviceTag.objects.filter(device_id=tag_id).last()
+        device_tag = DeviceTag.objects.filter(device_id=tag_id,status = 'Owner_Final_OTP_Verified').last()
         if not device_tag:
             return JsonResponse({'error': 'DeviceTag with the given device_id does not exist'}, status=404)
         driver = Driver.objects.filter(id=driver_id).last()
@@ -9811,7 +9813,7 @@ def driver_add(request ):
 
         if not tag_id:
             return JsonResponse({'error': 'device_id is required'}, status=400)
-        device_tag = DeviceTag.objects.filter(device_id=tag_id).last()
+        device_tag = DeviceTag.objects.filter(device_id=tag_id,status = 'Owner_Final_OTP_Verified').last()
         if not device_tag:
             return JsonResponse({'error': 'DeviceTag with the given device_id does not exist'}, status=404)
         driver,error= Driver.objects.safe_create( name =  name,
@@ -10187,7 +10189,7 @@ def TagSendOwnerOtp(request ):
     user=device_model.vehicle_owner.users.last()
 
  
-    text="Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_model.otp)
+    text="Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 24 hours. Please do NOT share.-SkyTron".format(device_model.otp)
     tpid="1007937055979875563"
     send_SMS( user.mobile,text,tpid) 
     send_mail(
@@ -10229,7 +10231,7 @@ def TagSendOwnerOtpFinal(request ):
     user=device_model.vehicle_owner.users.last()
 
  
-    text="Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_model.otp)
+    text="Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 24 hours. Please do NOT share.-SkyTron".format(device_model.otp)
     tpid="1007937055979875563"
     send_SMS( user.mobile,text,tpid) 
     send_mail(
@@ -10266,7 +10268,7 @@ def TagResendOwnerOtpFinal(request):
     device_model.save()
 
     owner_user = device_model.vehicle_owner.users.last()
-    text = "Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_model.otp)
+    text = "Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 24 hours. Please do NOT share.-SkyTron".format(device_model.otp)
     tpid = "1007937055979875563"
     send_SMS(owner_user.mobile, text, tpid)
     send_mail(
@@ -10825,7 +10827,7 @@ def TagResendDealerOtp(request):
     device_tag.otp_time = timezone.now()
     device_tag.save()
 
-    text = "Dear VLTD Dealer/ Manufacturer,We have received request for tagging and activation of following device and vehicle-Vehicle Reg No: {}Device IMEI No: {}To confirm, please enter the OTP {}.- SkyTron".format(
+    text = "Dear VLTD Dealer/ Manufacturer, we have received request for tagging and activation of following device and vehicle-Vehicle Reg No:{}, Device IMEI No:{}. To confirm, please enter the OTP {}.- SkyTron".format(
         device_tag.vehicle_reg_no, device_tag.device.imei, device_tag.otp)
     tpid = "1007201930295888818"
     send_SMS(user.mobile, text, tpid)
@@ -10863,7 +10865,7 @@ def TagResendOwnerOtp(request):
     device_tag.save()
 
     owner_user = device_tag.vehicle_owner.users.last()
-    text = "Dear Vehicle Owner,To confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 5 minutes. Please do NOT share.-SkyTron".format(device_tag.otp)
+    text = "Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 24 hours. Please do NOT share.-SkyTron".format(device_tag.otp)
     tpid = "1007937055979875563"
     send_SMS(owner_user.mobile, text, tpid)
     send_mail(
@@ -11703,12 +11705,12 @@ def COPCreate(request ):
             device_cop_instance.cop_file = relative_file_path
             device_cop_instance.save()
                     
-            text="Dear User, Your OTP to validate COP creation/update in SkyTron portal is {}. Please DO NOT disclose it to anyone. -SkyTron".format(otp)
+            text="Dear user, your OTP to validate COP creation/update in SkyTron portal is {}. Please DO NOT disclose it to anyone. -SkyTron".format(otp)
             tpid="1007967997984175182"
             send_SMS(user.mobile,text,tpid) 
             """send_mail(
                 'Login OTP',
-                "Dear User, Your OTP to validate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                "Dear user, Your OTP to validate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
@@ -11769,7 +11771,7 @@ def COPSendStateAdminOtp(request ):
     
     device_model.status = 'StateAdminOTPSend'
     device_model.save()
-    text="Dear User, Your OTP to validate COP creation/update in SkyTron portal is {}. Please DO NOT disclose it to anyone. -SkyTron".format(device_model.otp)
+    text="Dear user, your OTP to validate COP creation/update in SkyTron portal is {}. Please DO NOT disclose it to anyone. -SkyTron".format(device_model.otp)
     tpid="1007967997984175182"
     send_SMS(user.mobile,text,tpid) 
     send_mail(
@@ -12148,7 +12150,7 @@ def DeviceSendStateAdminOtp(request ):
     device_model.otp = otp
     device_model.status = 'StateAdminOTPSend'
     device_model.save()
-    text="Dear User, Confirmation OTP for VLTD Model Creation at SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+    text="Dear user, confirmation OTP for VLTD Model Creation at SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
     tpid="1007338577423920274"
     send_SMS(user.mobile,text,tpid) 
     send_mail(
@@ -12676,13 +12678,13 @@ def manufacturer_model_stock_statistics(request):
                 # Get total device tags from these stocks
                 total_device_tags = DeviceTag.objects.filter(
                     device_id__in=device_stock_ids,
-                    status__in=['Device_Active', 'Live_Location_Confirmed', 'SOS_Confirmed', 'RegNo_Configuration_Confirmed']
+                    status='Owner_Final_OTP_Verified'
                 ).count()
                 
                 # Get device tag IDs for this model
                 device_tag_ids = DeviceTag.objects.filter(
                     device_id__in=device_stock_ids,
-                    status__in=['Device_Active', 'Live_Location_Confirmed', 'SOS_Confirmed', 'RegNo_Configuration_Confirmed']
+                    status='Owner_Final_OTP_Verified'
                 ).values_list('id', flat=True)
                 
                 # Count online devices (devices with GPS data in last 15 minutes)
@@ -12893,14 +12895,12 @@ def vehicle_alert_statistics(request):
         # ===== VEHICLE STATISTICS =====
         # Total tagged vehicles (active device tags)
         total_tagged_vehicles = DeviceTag.objects.filter(
-            status__in=['Device_Active', 'Live_Location_Confirmed', 'SOS_Confirmed', 
-                       'RegNo_Configuration_Confirmed', 'Owner_OTP_Verified', 'TempActive']
+            status='Owner_Final_OTP_Verified'
         ).count()
         
         # Get all IMEIs from active device tags
         active_device_imeis = DeviceTag.objects.filter(
-            status__in=['Device_Active', 'Live_Location_Confirmed', 'SOS_Confirmed', 
-                       'RegNo_Configuration_Confirmed', 'Owner_OTP_Verified', 'TempActive']
+            status='Owner_Final_OTP_Verified'
         ).select_related('device').values_list('device__imei', flat=True)
         
         # Online vehicles (vehicles with GPS data in last 15 minutes)
@@ -13432,7 +13432,7 @@ def homepage_Manufacturer(request ):
             # Calculate activations (devices that are actually activated/tagged)
             total_activations = DeviceTag.objects.filter(
                 device__created_by=manufacturer_user,
-                status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed']
+                status='Owner_Final_OTP_Verified'
             ).count()
             
             total_returns = DeviceTag.objects.filter(
@@ -13470,8 +13470,7 @@ def homepage_Manufacturer(request ):
             
             # Calculate device connectivity statistics
             # Get all devices manufactured by this manufacturer
-            manufacturer_devices = DeviceTag.objects.filter(device__created_by=manufacturer_user)
-            activated_devices = manufacturer_devices.filter(status="Device_Active")
+            manufacturer_devices = DeviceTag.objects.filter(device__created_by=manufacturer_user,status = 'Owner_Final_OTP_Verified') 
             
             online_devices = 0
             online_today = 0
@@ -13756,7 +13755,7 @@ def homepage_VehicleOwner(request ):
             from django.utils import timezone
             
             # Get all devices owned by this vehicle owner
-            owned_devices = DeviceTag.objects.filter(vehicle_owner=profile)
+            owned_devices = DeviceTag.objects.filter(vehicle_owner=profile,status = 'Owner_Final_OTP_Verified')
             # Support multiple activation-like statuses; optional override via request 
 
             active_statuses = [
@@ -14084,7 +14083,7 @@ def homepage_Dealer(request ):
 
             # Tagged devices for this dealer (tag-device count)
             untagged_statuses = ['TagDeleted', 'Device_Untagged']
-            tagged_devices_qs = DeviceTag.objects.filter(device__dealer=profile).exclude(status__in=untagged_statuses)
+            tagged_devices_qs = DeviceTag.objects.filter(device__dealer=profile,status='Owner_Final_OTP_Verified').exclude(status__in=untagged_statuses)
             tagged_device_ids = tagged_devices_qs.values_list('id', flat=True)
             total_tagged_devices = tagged_devices_qs.count()
             
@@ -14719,7 +14718,8 @@ def homepage_stateAdmin(request ):
             
             # Get device tags in this state
             device_tags_in_state = DeviceTag.objects.filter(
-                district__state=state_filter
+                district__state=state_filter,
+                status='Owner_Final_OTP_Verified'
             )
             
             # Get active devices in this state
@@ -15633,7 +15633,7 @@ def create_device_model(request ):
             # Update the tac_doc_path field in the DeviceModel instance
             device_model_instance.tac_doc_path = file_path
             device_model_instance.save()
-            text="Dear User, Confirmation OTP for VLTD Model Creation at SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            text="Dear user, Confirmation OTP for VLTD Model Creation at SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
             tpid="1007338577423920274" 
             send_SMS(user.mobile,text,tpid) 
             send_mail(
@@ -15769,7 +15769,7 @@ def send_email_confirmation(request ):
         email_confirmation_serializer.save()
         url=f"https://{DEPLOY_URL}/{confirmation_token}"
         tpid ="1007515117119518623"
-        text=f"Dear User,To confirm your registration in SkyTron platform, please click at the following link and validate the registration request-{url}The link will expire in 5 minutes.-SkyTron"
+        text=f"Dear user, to confirm your registration in SkyTron platform, please click at the following link and validate the registration request-{url} The link will expire in 24 hours.-SkyTron"
 
         send_SMS(user.mobile,text,tpid) 
 
@@ -16249,13 +16249,13 @@ def send_sms_otp(request ):
             session.save()
 
             user=session.user
-            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp)
+            text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp)
             tpid="1007536593942813283"
             send_SMS(user.mobile,text,tpid) 
             """
             send_mail(
                 'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp),
+                "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp),
                 'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
@@ -16327,7 +16327,7 @@ def reset_password(request ):
 
         try:
             tpid ="1007407542374862466" #1007214796274246200"#"1007387007813205696" #1007274756418421381"
-            text='Dear User, To reset your password for SkyTron platform, please click at the following link and validate the password re-set request- '+DEPLOY_URL+'/reset-password/'+str(new_password)+' .The link will expire in 5 minutes. -SkyTron'  
+            text='Dear user, to reset your password for SkyTron platform, please click at the following link and validate the password re-set request- '+DEPLOY_URL+'/reset-password/'+str(new_password)+' .The link will expire in 24 hours. -SkyTron'  
 
             print("sending sms to",user.mobile,text)
             send_SMS(user.mobile,text,tpid)             
@@ -16507,12 +16507,12 @@ def user_login(request ):
 
 
 
-            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+            text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             send_SMS(user.mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
@@ -16669,14 +16669,14 @@ def temp_user_login(request ):
                     return error  # Return the Response object from safe_create
 
         
-        text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+        text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
         tpid="1007536593942813283"
         if tempu:
 
             send_SMS(tempu.mobile,text,tpid) 
             #send_mail(
             #    'Login OTP',
-            #    "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+            #    "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
             #    'noreply@skytron.in',
             #    ["kishalaychakraborty1@gmail.com"],
             #    fail_silently=False,
@@ -16711,7 +16711,7 @@ def temp_user_resendOTP(request ):
         tempu.otp=otp
         tempu.otp_time=otp_time
         tempu.save()
-        text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+        text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
         tpid="1007536593942813283"
         if tempu:
             send_SMS(tempu.mobile,text,tpid) 
@@ -17018,12 +17018,12 @@ def temp_user_logout(request ):
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
             session_serializer.save()         
-            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+            text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             send_SMS(user.mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
@@ -17182,12 +17182,12 @@ def user_login_app(request ):
             
             # Add session to Redis for tracking (will be updated to 'login' status after OTP validation)
             # Note: Session tracking is done in validate_otp after OTP confirmation
-            text="Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+            text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             send_SMS(user.mobile,text,tpid) 
             send_mail(
                 'Login OTP',
-                "Dear User, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                 'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
@@ -18951,7 +18951,7 @@ def activated_device_list(request):
         ]
         
         activated_devices = DeviceTag.objects.filter(
-            status__in=active_statuses
+            status='Owner_Final_OTP_Verified'
         ).select_related(
             'device',
             'device__model',
@@ -21417,7 +21417,7 @@ def create_alert_log(request):
                 'message': 'Invalid gps_ref_id'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        device_tag = DeviceTag.objects.filter(id=device_tag_id, gps_status=1).last()
+        device_tag = DeviceTag.objects.filter(id=device_tag_id,status = 'Owner_Final_OTP_Verified', gps_status=1).last()
         if not device_tag:
             return Response({
                 'status': 'error',
