@@ -10696,6 +10696,8 @@ def TagVerifyOwnerOtp(request ):
     
     
     if device_tag:
+        if timezone.now() > device_tag.otp_time + timedelta(hours=24):
+            return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
         if otp == device_tag.otp or otp=='685472':  
             device_tag.status = 'Owner_OTP_Verified'
             device_tag.save()
@@ -10732,6 +10734,8 @@ def TagVerifyOwnerOtpFinal(request ):
     
     device_tag = DeviceTag.objects.filter(device_id=device_tag_id,  status='Owner_Final_OTP_Sent').last()
     if device_tag:
+        if timezone.now() > device_tag.otp_time + timedelta(hours=24):
+            return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
         if otp == device_tag.otp or otp=='685472':  
             device_tag.status = 'Owner_Final_OTP_Verified'
             
@@ -10772,6 +10776,8 @@ def TagVerifyDealerOtp(request  ):
         #device_tag = get_object_or_404(DeviceTag, device_id=device_tag_id,  status='Dealer_OTP_Sent')
         #device_tag = device_tag.first()
         if device_tag:
+            if timezone.now() > device_tag.otp_time + timedelta(hours=24):
+                return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
             if otp == device_tag.otp or otp=='685472':  
                 
                 #data = { 
@@ -11808,7 +11814,9 @@ def COPVerifyStateAdminOtp(request ):
             return JsonResponse({'error': "Invalid OTP format"}, status=400)
 
     device_model = get_object_or_404(DeviceCOP, id=device_model_id, status='StateAdminOTPSend')
- 
+
+    if timezone.now() > device_model.otp_time + timedelta(hours=24):
+        return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
     if otp == device_model.otp:  
         device_model.status = 'StateAdminApproved'
         device_model.save()
@@ -11840,7 +11848,9 @@ def COPManufacturerOtpVerify(request  ):
             return JsonResponse({'error': "Invalid OTP format"}, status=400)
 
     device_model = get_object_or_404(DeviceCOP, id=device_model_id, created_by=user_id, status='Manufacturer_OTP_Sent')
- 
+
+    if timezone.now() > device_model.otp_time + timedelta(hours=24):
+        return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
     if otp == device_model.otp:  
         device_model.status = 'Manufacturer_OTP_Verified'
         device_model.save()
@@ -12182,9 +12192,11 @@ def DeviceVerifyStateAdminOtp(request ):
     device_model_id = request.data.get('device_model_id') 
     user_id = request.user.id 
     device_model = get_object_or_404(DeviceModel, id=device_model_id, status='StateAdminOTPSend')#created_by=user_id ,
- 
- 
+
+
     otp = request.data.get('otp')
+    if timezone.now() > device_model.otp_time + timedelta(hours=24):
+        return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
     if device_model.otp!=otp:
             return JsonResponse({'error': "Invalid OTP"}, status=400)
 
@@ -12213,8 +12225,9 @@ def DeviceCreateManufacturerOtpVerify(request  ):
     device_model = get_object_or_404(DeviceModel, id=device_model_id,status='Manufacturer_OTP_Sent')# created_by=user_id, 
     if device_model.created_by!=user:
         return Response({"error":"User is not the creator of this devicemodel"}, status=status.HTTP_400_BAD_REQUEST)
-      
- 
+
+    if timezone.now() > device_model.otp_time + timedelta(hours=24):
+        return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
     if otp == device_model.otp:  
         device_model.status = 'Manufacturer_OTP_Verified'
         device_model.save()
@@ -15743,7 +15756,8 @@ def validate_email_confirmation(request ):
 
         return Response({'status': 'Email confirmed successfully'}, status=200)
     else:
-        return Response({'error': 'Invalid email confirmation link'}, status=400)
+        email_confirmation.delete()  # clean up expired token
+        return Response({'error': 'Activation link has expired. Please request a new activation link.'}, status=400)
 
 
 
@@ -15815,7 +15829,8 @@ def validate_pwrst_confirmation(request ):
 
         return Response({'status': 'Email confirmed successfully'}, status=200)
     else:
-        return Response({'error': 'Invalid email confirmation link'}, status=400)
+        email_confirmation.delete()  # clean up expired token
+        return Response({'error': 'Password reset link has expired. Please request a new password reset.'}, status=400)
 
 
 @api_view(['POST']) 
@@ -15883,7 +15898,8 @@ def validate_sms_confirmation(request ):
 
         return Response({'status': 'Email confirmed successfully'}, status=200)
     else:
-        return Response({'error': 'Invalid email confirmation link'}, status=400)
+        email_confirmation.delete()  # clean up expired token
+        return Response({'error': 'Activation link has expired. Please request a new activation link.'}, status=400)
 
 
 @api_view(['POST']) 
@@ -16236,7 +16252,7 @@ def send_sms_otp(request ):
                 return Response({'error': 'Invalid session token.No otp pending'}, status=status.HTTP_404_NOT_FOUND)
             time_difference = timezone.now() - session.loginTime
             if time_difference.total_seconds() > 2 * 60:  # 2 minutes OTP expiry
-                return Response({'error': 'OTP has expired.Please login again.'}, status=status.HTTP_403_FORBIDDEN)
+                return Response({'error': 'OTP has expired.Please login again.'}, status=status.HTTP_400_BAD_REQUEST)
             if time_difference.total_seconds() < 2 * 60:  # 2 minutes wait for resend
                 return Response({'error': 'You need to wait 2 min to resend otp.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -16739,6 +16755,8 @@ def temp_user_OTPValidate(request ):
         tempu=TempUser.objects.filter(mobile=mobile,  session_key=session_key).last()
         if not tempu:
             return JsonResponse({'success': False, 'error': 'User not found'}) 
+        if timezone.now() > tempu.otp_time + timedelta(hours=24):
+            return JsonResponse({'success': False, 'error': 'OTP has expired. Please request a new OTP.'}, status=400)
         if str(otp)==str(tempu.otp):
 
             session_key=str(secrets.randbelow(100000000000000000000000)).zfill(23)
@@ -17258,7 +17276,7 @@ def validate_otp(request ):
         time_difference = timezone.now() - session.lastactivity
         
         if time_difference.total_seconds() > 2 * 60:  # 2 minutes OTP validity
-            return Response({'error': 'OTP has expired. Please resend and use new OTP.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': 'OTP has expired. Please resend and use new OTP.'}, status=status.HTTP_400_BAD_REQUEST)
  
         # Validate the OTP
         #print(otp,session.otp)

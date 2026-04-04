@@ -472,12 +472,9 @@ class Confirmation(models.Model):
     token = models.CharField(max_length=1500, unique=True)
     created_at = models.DateTimeField(default=timezone.now)
     type=    models.CharField(max_length=20, choices=[("email", "Email"), ("sms", "SMS"), ("pw_rst", "Password Resset")], verbose_name="Type")
-   
-    is_valid = models.BooleanField(default=True)
+
     def is_valid(self):
-        # Define your logic to check if the confirmation link is still valid (e.g., within a certain time limit)
-        # You might want to add an expiry time field to the model for this purpose
-        return self.is_valid
+        return timezone.now() < self.created_at + timedelta(hours=24)
         
 
 class Manufacturer(models.Model):
