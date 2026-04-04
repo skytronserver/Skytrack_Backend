@@ -5338,9 +5338,6 @@ def create_dealer(request ):
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    
-    
-    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="stateadmin"
     user=request.user
     uo=get_user_object(user,role)
@@ -6128,10 +6125,39 @@ def create_user(role, req):
         if field_errors:
             return [None, {'errors': field_errors}, None]
 
+        # Retire any stale pending users that hold the same unique fields.
+        # Only targets users with status='pending' — active/deactive users are never touched.
+        stale_pending = User.objects.filter(
+            status='pending'
+        ).filter(
+            Q(email__iexact=email) | Q(mobile=mobile)
+        )
+        for stale in stale_pending:
+            stale_id = stale.id
+            # Mangle unique fields so they no longer block the new registration
+            if stale.email.lower() == email.lower():
+                local, _, domain = stale.email.partition('@')
+                stale.email = f"{local}_del_{stale_id}@{domain}"
+            if stale.mobile == mobile:
+                stale.mobile = f"{stale.mobile}_del_{stale_id}"
+            stale.status = 'retired'
+            stale.save(update_fields=['email', 'mobile', 'status'])
+            # Remove all tokens/OTPs associated with the stale user
+            Confirmation.objects.filter(user_id=stale_id).delete()
+            Session.objects.filter(user_id=stale_id).delete()
+            OTPRequest.objects.filter(user=stale_id).delete()
+            TokenBlacklist.objects.filter(user_id=stale_id).delete()
+            try:
+                from rest_framework.authtoken.models import Token as DRFToken
+                DRFToken.objects.filter(user_id=stale_id).delete()
+            except Exception:
+                pass
+
         # Proactive uniqueness checks to avoid masking DB constraint details
-        if User.objects.filter(email__iexact=email).exists():
+        # (only non-pending/non-retired users remain at this point for the same email/mobile)
+        if User.objects.filter(email__iexact=email).exclude(status__in=['pending', 'retired']).exists():
             return [None, {'error': 'Email already exists.'}, None]
-        if User.objects.filter(mobile=mobile).exists():
+        if User.objects.filter(mobile=mobile).exclude(status__in=['pending', 'retired']).exists():
             return [None, {'error': 'Mobile already exists.'}, None]
         creator_id = None
         if hasattr(req, 'user') and getattr(req.user, 'is_authenticated', False):
