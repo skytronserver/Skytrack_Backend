@@ -9373,16 +9373,35 @@ def TagDevice2Vehicle(request ):
                     category_obj = Settings_VehicleCategory.objects.filter(category=str(cat_input)).first()
             if not category_obj:
                 return Response({"error": "Invalid category. Provide valid Settings_VehicleCategory id or name."}, status=status.HTTP_400_BAD_REQUEST)
-            # Normalize identifiers and pre-check unique constraints to avoid misleading IntegrityError mapping
+            # Normalize identifiers
             vehicle_reg_no = (request.data.get('vehicle_reg_no') or '').strip().upper()
             engine_no = (request.data.get('engine_no') or '').strip().upper()
             chassis_no = (request.data.get('chassis_no') or '').strip().upper()
-            if vehicle_reg_no and DeviceTag.objects.filter(vehicle_reg_no=vehicle_reg_no).exists():
-                return Response({"error": "vehicle_reg_no already exists"}, status=status.HTTP_400_BAD_REQUEST)
-            if engine_no and DeviceTag.objects.filter(engine_no=engine_no).exists():
-                return Response({"error": "engine_no already exists"}, status=status.HTTP_400_BAD_REQUEST)
-            if chassis_no and DeviceTag.objects.filter(chassis_no=chassis_no).exists():
-                return Response({"error": "chassis_no already exists"}, status=status.HTTP_400_BAD_REQUEST)
+            # Stall avoidance: if a non-terminal tag holds the same identifier, rename
+            # its field to <value>_<old_tag_id> to free it up for the new tag.
+            # Terminal statuses are considered settled records — those are real conflicts.
+            _TERMINAL = ['Device_Active', 'Device_Untagged', 'TagDeleted']
+            if vehicle_reg_no:
+                _stall = DeviceTag.objects.filter(vehicle_reg_no=vehicle_reg_no).exclude(status__in=_TERMINAL).first()
+                if _stall:
+                    _stall.vehicle_reg_no = f"{vehicle_reg_no}_{_stall.id}"
+                    _stall.save(update_fields=['vehicle_reg_no'])
+                elif DeviceTag.objects.filter(vehicle_reg_no=vehicle_reg_no).exists():
+                    return Response({"error": "vehicle_reg_no already exists"}, status=status.HTTP_400_BAD_REQUEST)
+            if engine_no:
+                _stall = DeviceTag.objects.filter(engine_no=engine_no).exclude(status__in=_TERMINAL).first()
+                if _stall:
+                    _stall.engine_no = f"{engine_no}_{_stall.id}"
+                    _stall.save(update_fields=['engine_no'])
+                elif DeviceTag.objects.filter(engine_no=engine_no).exists():
+                    return Response({"error": "engine_no already exists"}, status=status.HTTP_400_BAD_REQUEST)
+            if chassis_no:
+                _stall = DeviceTag.objects.filter(chassis_no=chassis_no).exclude(status__in=_TERMINAL).first()
+                if _stall:
+                    _stall.chassis_no = f"{chassis_no}_{_stall.id}"
+                    _stall.save(update_fields=['chassis_no'])
+                elif DeviceTag.objects.filter(chassis_no=chassis_no).exists():
+                    return Response({"error": "chassis_no already exists"}, status=status.HTTP_400_BAD_REQUEST)
             otp = str(secrets.randbelow(1000000)).zfill(6)
             device_tag ,error= DeviceTag.objects.safe_create(
             device_id=device_id,
