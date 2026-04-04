@@ -7534,30 +7534,78 @@ def DEx_getPendingCallList(request ):
             qs = qs_base.filter(ex=uo)
             cache_scope = f"ex:{getattr(uo, 'id', None)}"
 
-        # Attempt to reduce N+1 queries by joining common FKs used in serializers
-        try:
-            qs = qs.select_related(
-                'ex',
-                'ex__state',
-                'call',
-                'call__team',
-                'call__team__teamlead',
-            )
-        except Exception:
-            # If any relation path is invalid, skip silently to avoid breaking behavior
-            pass
-
         # Short-lived cache to avoid repeated heavy serialization for the same scope
         cache_key = f"DEx_getPendingCallList:pending:{cache_scope}"
         cached = cache.get(cache_key)
         if cached is not None:
             return Response({"calls": cached}, status=200)
 
-        # Serialize once, then branch on data length (avoid extra exists/evaluation)
-        data = EMCallAssignmentSerializer(qs, many=True).data
+        # Eliminate FK N+1 queries across the full serializer tree
+        qs = qs.select_related(
+            'admin',
+            'admin__state',
+            'admin__createdby',
+            'ex',
+            'ex__state',
+            'ex__createdby',
+            'call',
+            'call__team',
+            'call__team__state',
+            'call__team__teamlead',
+            'call__team__teamlead__state',
+            'call__team__teamlead__createdby',
+            'call__team__created_by',
+            'call__team__created_by__state',
+            'call__team__created_by__createdby',
+            'call__device',
+            'call__device__device',
+            'call__device__vehicle_owner',
+            'call__device__category',
+        ).prefetch_related(
+            'admin__users',
+            'ex__users',
+            'call__team__members',
+            'call__team__members__users',
+            'call__team__teamlead__users',
+            'call__team__created_by__users',
+            'call__device__drivers',
+        )
 
-        # Cache for a brief period (e.g., 10 seconds)
-        cache.set(cache_key, data, timeout=10)
+        # Evaluate the queryset once so we can post-process before serialising
+        assignments = list(qs)
+
+        # Batch-fetch GPS data for all devices to eliminate the per-device N+1
+        # in DeviceTagSerializer2.get_deviceloc().
+        device_tag_ids = list({
+            a.call.device_id
+            for a in assignments
+            if a.call_id and a.call.device_id
+        })
+        if device_tag_ids:
+            from collections import defaultdict
+            gps_rows = (
+                GPSData.objects
+                .filter(device_tag_id__in=device_tag_ids, gps_status='1')
+                .order_by('device_tag_id', '-id')
+                .values(
+                    'id', 'date', 'time', 'latitude', 'latitude_dir',
+                    'longitude', 'longitude_dir', 'altitude', 'speed',
+                    'network_operator', 'device_tag_id',
+                )
+            )
+            # Group rows in Python, keeping the top 10 (highest id) per device
+            gps_by_device = defaultdict(list)
+            for row in gps_rows:
+                bucket = gps_by_device[row['device_tag_id']]
+                if len(bucket) < 10:
+                    bucket.append(row)
+            # Attach precomputed GPS vals so the serializer skips its own DB query
+            for a in assignments:
+                if a.call_id and a.call.device_id:
+                    a.call.device._prefetched_gps_vals = gps_by_device.get(a.call.device_id, [])
+
+        data = EMCallAssignmentSerializer(assignments, many=True).data
+        cache.set(cache_key, data, timeout=5)
 
         if data:
             return Response({"calls": data}, status=200)

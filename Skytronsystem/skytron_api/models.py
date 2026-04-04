@@ -1293,50 +1293,53 @@ class EMGPSLocation(models.Model): #imergency tracking data
 
 @receiver(post_save, sender=EMGPSLocation)
 def create_emergency_call(sender, instance, created, **kwargs):
-    
-    if created :#and instance.status == 'Complete':
-     
-        # Check if an EmergencyCall entry already exists for the given vehicle and IMEI
-        existing_emergency_call =EMCall.objects.filter(
+
+    if not created:
+        return
+
+    try:
+        # Guard: device_tag must be set
+        if not instance.device_tag_id:
+            print(f"[EMCall] Skipping call creation — no device_tag on EMGPSLocation {instance.id}", flush=True)
+            return
+
+        # Check if an EMCall already exists for this device that is still open
+        existing_emergency_call = EMCall.objects.filter(
             device=instance.device_tag
-        ).exclude(status__in=["closed_false_alert",  "closed"]).last()
-        
+        ).exclude(status__in=["closed_false_alert", "closed"]).last()
+
         if existing_emergency_call:
-            pass
-            """
-            timeouts=EmergencyCall_assignment.objects.filter(
-                        emergencyCall_id=existing_emergency_call, 
-                        assign_time__gte=timezone.now() - timezone.timedelta(seconds=20),
-                        status = 'Assigned')
-            for timeout in timeouts:
-                timeout.status = 'Timeout'
-                timeout.save()
-                '''user_to_assign=get_logged_in_users_with_min_assignments()
-                print(user_to_assign) 
-                EmergencyCall_assignment.objects.create(
-                            emergencyCall_id=existing_emergency_call,
-                            user=user_to_assign,
-                            assign_time = timezone.now(), 
-                            status = 'Assigned',#Assigned,Acccepted, Rejected,Timeout,Closed
-                        )
-                ''' 
+            # If the existing call is still pending and has at least one active (non-closed,
+            # non-rejected) assignment, nothing new is needed.
+            active_assignment = EMCallAssignment.objects.filter(
+                call=existing_emergency_call,
+            ).exclude(status__in=["closed", "rejected", "closed_false_alert"]).exists()
 
-            
-            assigned=EmergencyCall_assignment.objects.filter(
-                        emergencyCall_id=existing_emergency_call,  
-                        status__in=['Assigned','Acccepted','Closed']).last()
-            if not assigned:
-                user_to_assign=get_logged_in_users_with_min_assignments()  
-                if  user_to_assign:              
-                    EmergencyCall_assignment.objects.create(
-                            emergencyCall_id=existing_emergency_call,
-                            user=user_to_assign,
-                            assign_time = timezone.now(), 
-                            status = 'Assigned',#Assigned,Acccepted, Rejected,Timeout,Closed
-                        ) 
+            if active_assignment:
+                print(
+                    f"[EMCall] Existing open EMCall #{existing_emergency_call.id} "
+                    f"(status={existing_emergency_call.status}) already has active assignments "
+                    f"— skipping new call for device_tag {instance.device_tag_id}",
+                    flush=True,
+                )
+                return
 
-        """
-        st=instance.device_tag.device.dealer.manufacturer.state 
+            # All assignments are closed/rejected but the call itself is still open.
+            # Re-open the call as pending and re-assign below instead of creating a duplicate.
+            print(
+                f"[EMCall] Existing EMCall #{existing_emergency_call.id} has no active assignments "
+                f"— resetting to pending and re-assigning for device_tag {instance.device_tag_id}",
+                flush=True,
+            )
+            existing_emergency_call.status = "pending"
+            existing_emergency_call.save(update_fields=["status"])
+
+        # Resolve state from the device_tag chain
+        try:
+            st = instance.device_tag.device.dealer.manufacturer.state
+        except AttributeError as e:
+            print(f"[EMCall] Cannot resolve state for device_tag {instance.device_tag_id}: {e}", flush=True)
+            return
 
         extention_value = (instance.extention or '').strip()
         normalized_extention = extention_value[1:-1].strip() if extention_value.startswith('{') and extention_value.endswith('}') else extention_value
@@ -1349,37 +1352,60 @@ def create_emergency_call(sender, instance, created, **kwargs):
             em_type = 'BLE_TM_PW_Fail'
         elif normalized_extention.startswith('SOS_TM_RV_'):
             em_type = 'BLE_TM_Route'
-                                                                  
-        if not existing_emergency_call:
-            # Create a new EmergencyCall entry
-            team  = EMTeams.objects.filter(status="Active",state=st
-                                           ).order_by('?').last()
-            em=EMCall.objects.create(
-                device=instance.device_tag, 
-                #start_time=timezone.now(),
+
+        if existing_emergency_call:
+            # Re-use the existing call (now reset to pending), just create fresh assignments
+            em = existing_emergency_call
+        else:
+            # Create a brand-new EMCall
+            team = EMTeams.objects.filter(status="Active", state=st).order_by('?').last()
+            em = EMCall.objects.create(
+                device=instance.device_tag,
                 team=team,
-                status='pending',  # Set the initial status as 'Pending'
+                status='pending',
                 em_type=em_type,
                 extention=extention_value or None,
-                #desk_executive_id='',
-                #field_executive_id='',
-                #final_comment='',
             )
-            #user_to_assign=get_logged_in_users_with_min_assignments()
-            #if  user_to_assign:   
+            print(f"[EMCall] Created new EMCall #{em.id} for device_tag {instance.device_tag_id}", flush=True)
+
+        # Resolve team for assignments (may differ if just re-using an old call)
+        team = EMTeams.objects.filter(status="Active", state=st).order_by('?').last()
+        if not team:
+            print(f"[EMCall] No active team found in state {st} — EMCall #{em.id} created with no assignments", flush=True)
+            return
+
+        admin = EM_admin.objects.filter(state=st).last() or EM_admin.objects.last()
+        if not admin:
+            print(f"[EMCall] No EM_admin found — cannot create assignments for EMCall #{em.id}", flush=True)
+            return
+
+        teamlead = team.teamlead
+        desk_ex = team.members.order_by('?').first()
+
+        if teamlead:
             EMCallAssignment.objects.create(
-                        admin =   EM_admin.objects.filter().last(),#,filter(users__login=True)
-                        call =em,
-                        status = "pending",
-                        type = "teamlead",
-                        ex = team.teamlead    )  
+                admin=admin,
+                call=em,
+                status="pending",
+                type="teamlead",
+                ex=teamlead,
+            )
+        else:
+            print(f"[EMCall] Team #{team.id} has no teamlead — skipping teamlead assignment", flush=True)
+
+        if desk_ex:
             EMCallAssignment.objects.create(
-                    admin = EM_admin.objects.all().last(),#
-                    call =em ,
-                    status = "pending",
-                    type = "desk_ex",
-                    ex = team.members.order_by('?').first(), #
-                    )  
+                admin=admin,
+                call=em,
+                status="pending",
+                type="desk_ex",
+                ex=desk_ex,
+            )
+        else:
+            print(f"[EMCall] Team #{team.id} has no members — skipping desk_ex assignment", flush=True)
+
+    except Exception as e:
+        print(f"[EMCall] Unexpected error in create_emergency_call signal: {e}", flush=True)
 
 
 
