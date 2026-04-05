@@ -132,40 +132,6 @@ if [ "$INSERTED" -eq 0 ]; then
 else
     echo "  Inserted $INSERTED missing record(s) into django_migrations."
 fi
-echo "--- Step 3: Insert missing migration records directly into DB ---"
-echo "    (Bypasses Django consistency check — safe when DB schema already exists)"
-
-# Get all migration file names from inside the container (sorted)
-ALL_FILES=$(docker exec "$CONTAINER" sh -c \
-    "ls $CONTAINER_MIGRATIONS/[0-9]*.py 2>/dev/null | xargs -I{} basename {} .py" \
-)
-
-# Get names already recorded in django_migrations
-ALREADY_RECORDED=$(psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -p "$DB_PORT" \
-    -P pager=off -t \
-    -c "SELECT name FROM django_migrations WHERE app = '$APP_NAME';" \
-    | tr -d ' ' | grep -v '^$'
-)
-
-INSERTED=0
-for migration_name in $ALL_FILES; do
-    if ! echo "$ALREADY_RECORDED" | grep -qx "$migration_name"; then
-        echo "  Inserting record: $migration_name"
-        psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -p "$DB_PORT" \
-            -P pager=off \
-            -c "INSERT INTO django_migrations (app, name, applied) VALUES ('$APP_NAME', '$migration_name', NOW()) ON CONFLICT DO NOTHING;" \
-            > /dev/null
-        INSERTED=$((INSERTED + 1))
-    else
-        echo "  Already recorded: $migration_name"
-    fi
-done
-
-if [ "$INSERTED" -eq 0 ]; then
-    echo "  All migration files were already recorded. Nothing inserted."
-else
-    echo "  Inserted $INSERTED missing record(s) into django_migrations."
-fi
 echo "Done."
 
 # ---------- Step 4: Remove ghost records from django_migrations ----------
@@ -217,7 +183,13 @@ if echo "$MAKEMIG_OUT" | grep -q "No changes detected"; then
     MODEL_OK=1
 else
     echo "  [WARN] models.py has changes not yet in migration files."
-    echo "         After the next git pull + image rebuild, re-run this script."
+    echo "         Run the following on production to see exactly what changed:"
+    echo "           docker exec $CONTAINER $MANAGE makemigrations --dry-run $APP_NAME"
+    echo "         Then generate a new migration on dev, commit it, and redeploy."
+    echo ""
+    echo "  --- Detected drift (makemigrations --dry-run output) ---"
+    echo "$MAKEMIG_OUT" | grep -v "^JWT" | grep -v "^Migrations"
+    echo "  ---------------------------------------------------------"
     MODEL_OK=0
     ERRORS=$((ERRORS + 1))
 fi
