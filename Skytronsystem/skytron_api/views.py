@@ -23947,12 +23947,14 @@ def sos_analysis_dashboard(request):
         one_year_ago = now - timedelta(days=365)
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         last_24h = now - timedelta(hours=24)
+        last_7_days = now - timedelta(days=7)
 
         fake_statuses = ['closed_false_alert', 'closed_false_allert']
 
         # Base querysets
         call_qs_year = EMCall.objects.filter(start_time__gte=one_year_ago)
-        call_qs_today = EMCall.objects.filter(start_time__gte=day_start)
+        # district_wise uses last 7 days so the metrics are never empty when today has no calls yet
+        call_qs_today = EMCall.objects.filter(start_time__gte=last_7_days)
 
         if state_id:
             try:
