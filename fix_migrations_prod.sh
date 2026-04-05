@@ -93,44 +93,43 @@ echo ""
 echo "--- Step 2: Current migration state inside container ---"
 docker exec "$CONTAINER" $MANAGE showmigrations "$APP_NAME"
 
-# ---------- Step 3: Insert missing migration records directly into DB ----------
-# We do this via psql instead of `migrate --fake` to bypass Django's
-# InconsistentMigrationHistory check, which fires when records are missing
-# for migrations that earlier ones depend on (e.g. 0016 missing but 0017 present).
+# ---------- Step 3: Insert missing migration records for ALL apps ----------
+# Uses `showmigrations` (which does NOT run consistency checks) to discover
+# every [ ] migration across every app (auth, contenttypes, sessions, admin,
+# skytron_api, rest_framework, etc.) and inserts the missing records via psql.
+# This avoids InconsistentMigrationHistory errors that block `migrate --fake`.
 echo ""
-echo "--- Step 3: Insert missing migration records directly into DB ---"
-echo "    (Bypasses Django consistency check — safe when DB schema already exists)"
+echo "--- Step 3: Insert missing migration records for ALL apps ---"
+echo "    (auth, contenttypes, sessions, admin, skytron_api, ...)"
 
-# Get all migration file names from inside the container (sorted)
-ALL_FILES=$(docker exec "$CONTAINER" sh -c \
-    "ls $CONTAINER_MIGRATIONS/[0-9]*.py 2>/dev/null | xargs -I{} basename {} .py" \
-)
+SHOW_OUTPUT=$(docker exec "$CONTAINER" $MANAGE showmigrations 2>/dev/null \
+    | grep -v "^JWT" | grep -v "^No changes")
 
-# Get names already recorded in django_migrations
-ALREADY_RECORDED=$(psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -p "$DB_PORT" \
-    -P pager=off -t \
-    -c "SELECT name FROM django_migrations WHERE app = '$APP_NAME';" \
-    | tr -d ' ' | grep -v '^$'
-)
-
+CURRENT_APP=""
 INSERTED=0
-for migration_name in $ALL_FILES; do
-    if ! echo "$ALREADY_RECORDED" | grep -qx "$migration_name"; then
-        echo "  Inserting record: $migration_name"
-        psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -p "$DB_PORT" \
-            -P pager=off \
-            -c "INSERT INTO django_migrations (app, name, applied) VALUES ('$APP_NAME', '$migration_name', NOW()) ON CONFLICT DO NOTHING;" \
-            > /dev/null
-        INSERTED=$((INSERTED + 1))
-    else
-        echo "  Already recorded: $migration_name"
+
+while IFS= read -r line; do
+    # App name: line that starts with a letter/underscore (no leading whitespace)
+    if echo "$line" | grep -qE '^[a-zA-Z_]'; then
+        CURRENT_APP=$(echo "$line" | tr -d ' \r')
+    # Unapplied migration: leading whitespace then [ ]
+    elif echo "$line" | grep -qE '^\s+\[ \]'; then
+        mig=$(echo "$line" | sed 's/.*\[ \] //' | tr -d ' \r')
+        if [ -n "$CURRENT_APP" ] && [ -n "$mig" ]; then
+            echo "  Inserting: ${CURRENT_APP}.${mig}"
+            psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -p "$DB_PORT" \
+                -P pager=off \
+                -c "INSERT INTO django_migrations (app, name, applied) VALUES ('$CURRENT_APP', '$mig', NOW()) ON CONFLICT DO NOTHING;" \
+                > /dev/null
+            INSERTED=$((INSERTED + 1))
+        fi
     fi
-done
+done <<< "$SHOW_OUTPUT"
 
 if [ "$INSERTED" -eq 0 ]; then
-    echo "  All migration files were already recorded. Nothing inserted."
+    echo "  All migration records already present. Nothing inserted."
 else
-    echo "  Inserted $INSERTED missing record(s) into django_migrations."
+    echo "  Inserted $INSERTED missing record(s) across all apps."
 fi
 echo "Done."
 
