@@ -229,7 +229,7 @@ class pointofinterests(models.Model):
     lon = models.FloatField(blank=True, null=True)
     radius = models.FloatField(blank=True, null=True)
     name = models.CharField(max_length=50, unique=True)
-    address = models.CharField(max_length=255)
+    address = models.CharField(max_length=255, blank=True, null=True)
     pluscode = models.CharField(max_length=50, blank=True, null=True)
     area= models.CharField(max_length=100, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)
