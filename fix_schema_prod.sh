@@ -373,8 +373,8 @@ grep '^WARN:' "$WARN_FILE" > "${WARN_FILE}.clean" 2>/dev/null && \
     mv "${WARN_FILE}.clean" "$WARN_FILE" || \
     truncate -s 0 "$WARN_FILE"
 
-FIX_COUNT=$(grep -cE '^ALTER|^CREATE INDEX' "$SQL_FILE" 2>/dev/null || echo "0")
-WARN_COUNT=$(grep -c '^WARN:' "$WARN_FILE" 2>/dev/null || echo "0")
+FIX_COUNT=$(grep -cE '^ALTER|^CREATE INDEX' "$SQL_FILE" 2>/dev/null || true); FIX_COUNT=${FIX_COUNT:-0}
+WARN_COUNT=$(grep -c '^WARN:' "$WARN_FILE" 2>/dev/null || true); WARN_COUNT=${WARN_COUNT:-0}
 
 info "Fixes found : $FIX_COUNT"
 info "Warnings    : $WARN_COUNT"
@@ -431,7 +431,7 @@ docker exec "$CONTAINER" $MANAGE shell \
     > "$VERIFY_FILE" \
     2>/dev/null || true
 
-REMAINING=$(grep -cE '^ALTER|^CREATE INDEX' "$VERIFY_FILE" 2>/dev/null || echo "0")
+REMAINING=$(grep -cE '^ALTER|^CREATE INDEX' "$VERIFY_FILE" 2>/dev/null || true); REMAINING=${REMAINING:-0}
 
 echo ""
 if grep -q 'NO_FIXES_NEEDED' "$VERIFY_FILE" 2>/dev/null && [ "$REMAINING" -eq 0 ]; then
