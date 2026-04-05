@@ -26,12 +26,12 @@
 set -o pipefail
 
 # ---- CONFIGURE THESE ----
-ENV_FILE="/home/azureuser/Skytrack_Backend/.env"
+ENV_FILE="/home/Admin/backendapi/SkytronInog_20260226/Skytrack_Backend/.env"
 CONTAINER="skytron-backend-api-container"
 APP_NAME="skytron_api"
 MANAGE="python /app/manage.py"
 # Host path to migration files (where this script lives / git repo)
-HOST_MIGRATIONS="/home/azureuser/Skytrack_Backend/Skytronsystem/skytron_api/migrations"
+HOST_MIGRATIONS="/home/Admin/backendapi/SkytronInog_20260226/Skytrack_Backend/Skytronsystem/skytron_api/migrations"
 CONTAINER_MIGRATIONS="/app/skytron_api/migrations"
 # -------------------------
 
