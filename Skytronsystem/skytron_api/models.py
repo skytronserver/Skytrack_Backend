@@ -1380,7 +1380,6 @@ def create_emergency_call(sender, instance, created, **kwargs):
             return
 
         teamlead = team.teamlead
-        desk_ex = team.members.order_by('?').first()
 
         if teamlead:
             EMCallAssignment.objects.create(
@@ -1393,16 +1392,50 @@ def create_emergency_call(sender, instance, created, **kwargs):
         else:
             print(f"[EMCall] Team #{team.id} has no teamlead — skipping teamlead assignment", flush=True)
 
-        if desk_ex:
-            EMCallAssignment.objects.create(
-                admin=admin,
-                call=em,
-                status="pending",
-                type="desk_ex",
-                ex=desk_ex,
+        # --- Smart desk_ex assignment with round-robin load balancing ---
+        # Collect all desk_ex members of this team.
+        desk_ex_members = list(team.members.filter(user_type='desk_ex'))
+
+        # Determine which of them are currently online (login=True on any linked User).
+        from django.db.models import Count, Q
+        online_desk_exs = [
+            ex for ex in desk_ex_members
+            if ex.users.filter(login=True).exists()
+        ]
+
+        if online_desk_exs:
+            # Pick the executive with the fewest active (non-closed/non-rejected) desk_ex assignments.
+            active_statuses = ["pending", "accepted", "arriving", "arrived"]
+            load = {
+                ex.id: EMCallAssignment.objects.filter(
+                    ex=ex,
+                    type="desk_ex",
+                    status__in=active_statuses,
+                ).count()
+                for ex in online_desk_exs
+            }
+            desk_ex = min(online_desk_exs, key=lambda ex: load[ex.id])
+            print(
+                f"[EMCall] Assigned EMCall #{em.id} to desk_ex #{desk_ex.id} "
+                f"(load={load[desk_ex.id]}; {len(online_desk_exs)} executives online)",
+                flush=True,
             )
         else:
-            print(f"[EMCall] Team #{team.id} has no members — skipping desk_ex assignment", flush=True)
+            # No online executive — leave unassigned; will be picked up when one logs in.
+            desk_ex = None
+            print(
+                f"[EMCall] No desk_ex online for EMCall #{em.id} — assignment left unassigned",
+                flush=True,
+            )
+
+        EMCallAssignment.objects.create(
+            admin=admin,
+            call=em,
+            status="pending",
+            type="desk_ex",
+            ex=desk_ex,  # may be None if nobody is online
+        )
+        # --- End smart assignment ---
 
     except Exception as e:
         print(f"[EMCall] Unexpected error in create_emergency_call signal: {e}", flush=True)
@@ -2038,7 +2071,7 @@ class EMCallAssignment(models.Model):
     status=[("pending", "pending"), ("accepted", "accepted"), ("rejected", "rejected"), ("arriving", "arriving"), ("arrived", "arrived"), ("closed_false_alert", "closed_false_alert"), ("closed", "closed")]
     types=[("teamlead", "teamlead"), ("desk_ex", "desk_ex"), ("police_ex", "police_ex"), ("ambulance_ex", "ambulance_ex") , ("pcr", "pcr") , ("acr", "acr") ]
     admin = models.ForeignKey(EM_admin,  on_delete=models.CASCADE,related_name='emcalladmin')
-    ex = models.ForeignKey(EM_ex,  on_delete=models.CASCADE,related_name='exec_id')
+    ex = models.ForeignKey(EM_ex, null=True, blank=True, on_delete=models.SET_NULL, related_name='exec_id')
     call = models.ForeignKey(EMCall,  on_delete=models.CASCADE,related_name='EMCall_id')
     start_time =   models.DateTimeField(auto_now_add=True, verbose_name="start_time")
     accept_time = models.DateTimeField(blank=True, null=True)

@@ -7520,6 +7520,32 @@ def DEx_getPendingCallList(request ):
     if not (uo or uo2 or uo3):
         return Response({"error":"Request must be from  "+role+' or '+role2+' or '+role3+'.'}, status=status.HTTP_400_BAD_REQUEST)
     try:
+        # --- Auto-assign unassigned desk_ex calls to this executive (desk_ex only) ---
+        # This handles the case where no executive was online when the call came in,
+        # or calls that were not yet claimed. Each poll may absorb one unassigned call.
+        if uo and uo.user_type == 'desk_ex':
+            # Find the oldest unassigned pending desk_ex assignment for this exec's state.
+            unassigned = (
+                EMCallAssignment.objects
+                .filter(
+                    ex__isnull=True,
+                    type='desk_ex',
+                    status='pending',
+                    call__status='pending',
+                    admin__state=uo.state,
+                )
+                .order_by('id')
+                .first()
+            )
+            if unassigned:
+                unassigned.ex = uo
+                unassigned.save(update_fields=['ex'])
+                # Mark the calling executive as online/active
+                user.login = True
+                user.last_activity = timezone.now()
+                user.save(update_fields=['login', 'last_activity'])
+        # --- End auto-assign ---
+
         # Base queryset: only pending calls and excluding closed assignments
         qs_base = EMCallAssignment.objects.filter(call__status="pending").exclude(status="closed")
 
@@ -7781,11 +7807,16 @@ def DEx_getLiveCallList(request ):
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
     try: 
-        ee=EMCallAssignment.objects.filter( type = "desk_ex",  ex = uo  )  
+        ee = EMCallAssignment.objects.filter(
+            type="desk_ex",
+            ex=uo,
+            status="accepted",
+            call__status="pending",
+        )
 
-        if ee: 
-            return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(dealer).data)
-        return Response({'call': str('Not found')}, status=200)#Response(SOS_userSerializer(dealer).data)
+        if ee.exists():
+            return Response({"calls": EMCallAssignmentSerializer(ee, many=True).data}, status=200)
+        return Response({'call': str('Not found')}, status=200)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
