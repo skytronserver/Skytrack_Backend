@@ -779,7 +779,7 @@ def public_device_onboarding_dashboard(request):
     ).distinct()
 
     total_manufacturers_with_onboarding_done = manufacturer_ids_with_done_onboarding.count()
-    total_esim_m2m_provider = eSimProvider.objects.count()
+    total_esim_m2m_provider = eSimProvider.objects.filter(status='Accept').count()
     total_device_models_with_onboarding_done = onboarding_done_qs.values_list(
         'device_model_id',
         flat=True
@@ -13311,14 +13311,14 @@ def homepage(request ):
 
         if True:
             count_dict = {
-            'Manufacture': Manufacturer.objects.count(),
-            'eSimProvider': eSimProvider.objects.count(),
-            'Dealer': Dealer.objects.count(),
-            'VehicleOwner': VehicleOwner.objects.count(),
-            'dto_rto': dto_rto.objects.count(),
-            'SOS_ex': EM_ex.objects.count(),
-            'SOS_user': EM_ex.objects.count(),
-            'SOS_admin': EM_admin.objects.count(),
+            'Manufacture': Manufacturer.objects.filter(technical_onboarding_requests__status='accepted').distinct().count(),
+            'eSimProvider': eSimProvider.objects.filter(status='Accept').count(),
+            'Dealer': Dealer.objects.filter(users__status='active').distinct().count(),
+            'VehicleOwner': VehicleOwner.objects.filter(users__status='active').distinct().count(),
+            'dto_rto': dto_rto.objects.filter(users__status='active').distinct().count(),
+            'SOS_ex': EM_ex.objects.filter(users__status='active').distinct().count(),
+            'SOS_user': EM_ex.objects.filter(users__status='active').distinct().count(),
+            'SOS_admin': EM_admin.objects.filter(users__status='active').distinct().count(),
             
             'TotalVehicles': DeviceTag.objects.count(),
             
@@ -13343,7 +13343,7 @@ def homepage(request ):
             'TotalFitments': total_tagged_devices,
             'TotalOnlineDevice': total_online_devices,
             'TotalOfflineDevice': total_offline_devices,
-            'TotalDeviceModel': DeviceModel.objects.count(),
+            'TotalDeviceModel': DeviceModel.objects.filter(technical_onboarding_requests__status='accepted').distinct().count(),
             'Total_device_stock': total_device_stock,
             'unassigned_device_stock': DeviceStock.objects.filter(stock_status='NotAssigned').count(),
             'Waiting_device_stock': DeviceStock.objects.filter(stock_status='Available_for_fitting').count(),
@@ -13601,7 +13601,7 @@ def homepage_Manufacturer(request ):
             manufacturer_user = profile.users.last()
             
             # Basic manufacturer statistics
-            mod = DeviceModel.objects.filter(created_by=manufacturer_user)
+            mod = DeviceModel.objects.filter(created_by=manufacturer_user, technical_onboarding_requests__status='accepted').distinct()
             dealers = Dealer.objects.filter(manufacturer=profile)
             stock = DeviceStock.objects.filter(created_by=manufacturer_user)
             associated_vehicle_owners = VehicleOwner.objects.filter(
@@ -13690,7 +13690,7 @@ def homepage_Manufacturer(request ):
             
             count_dict = {
                 'Total_Model': mod.count(),
-                'Total_esim_linked': profile.esim_provider.count(),
+                'Total_esim_linked': profile.esim_provider.filter(status='Accept').count(),
                 
                 'Total_Dealer': dealers.count(),
                 'Total_Stock_Created': stock.count(),
@@ -13728,7 +13728,7 @@ def homepage_Manufacturer(request ):
                 'Device_Offline_Since_30_Days': offline_30day,
 
                 # Requested additional eSIM statistics
-                'ESim_Attached_M2M_Service_Provider': profile.esim_provider.count(),
+                'ESim_Attached_M2M_Service_Provider': profile.esim_provider.filter(status='Accept').count(),
                 'ESim_Activation_Request_Sent': esim_act_requests.count(),
                 'ESim_Activated': esim_validated,
                 'ESim_1_Year_Expiry': esim_1yr_expiry,
@@ -14701,69 +14701,98 @@ def SOS_TLreport2(request ):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     
-    try: 
-        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
- 
+    try:
+        role = "sosexecutive"
+        user = request.user
+        profile = get_user_object(user, role)
+        if not profile:
+            return Response({"error": "Request must be from  teamlead"}, status=status.HTTP_400_BAD_REQUEST)
+        if 'teamlead' not in profile.user_type:
+            return Response({"error": "Request must be from  " + role + '.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Create a dictionary to hold the filter parameters
         filters = {}
-        # Add ID filter if provided
 
+        from django.db.models import Avg, Count, ExpressionWrapper, DurationField, F
+        from django.utils import timezone
+        from datetime import timedelta
 
-        if True:
-            team=EMTeams.objects.filter(status="Active").last()
-            a=0
-            b=0
-            if team:
-                a=team.members.count()
-                b=team.members.count()
-            # AlertsLog statistics (total + by type/status for the teamlead's state)
-            from django.db.models import Count
-            alerts_qs = AlertsLog.objects.all()
-            total_alertslog = alerts_qs.count()
-            alerts_breakdown = list(
-                alerts_qs.values('type', 'status').annotate(count=Count('id')).order_by('type', 'status')
+        now = timezone.now()
+        today = now.date()
+        week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        team = EMTeams.objects.filter(teamlead=profile, status="Active").last()
+        a = 0
+        b = 0
+        if team:
+            a = team.members.count()
+            b = team.members.count()
+
+        # AlertsLog statistics (global breakdown; kept as-is)
+        alerts_qs = AlertsLog.objects.all()
+        total_alertslog = alerts_qs.count()
+        alerts_breakdown = list(
+            alerts_qs.values('type', 'status').annotate(count=Count('id')).order_by('type', 'status')
+        )
+
+        calls_qs = EMCall.objects.filter(team__teamlead=profile, team__state=profile.state)
+        rejected_assignments_qs = EMCallAssignment.objects.filter(status="rejected", call__team__teamlead=profile)
+
+        # Average time to accept: mean of (accept_time - start_time) for accepted assignments for this teamlead
+        avg_result = EMCallAssignment.objects.filter(
+            call__team__teamlead=profile,
+            accept_time__isnull=False
+        ).annotate(
+            accept_duration=ExpressionWrapper(
+                F('accept_time') - F('start_time'),
+                output_field=DurationField()
             )
-            count_dict = {
- 
-                 
-                'Total_DeskExecutives':a, 
-                'Live_DeskExecutives':b,
+        ).aggregate(avg_duration=Avg('accept_duration'))['avg_duration']
+        avg_accept_seconds = round(avg_result.total_seconds(), 2) if avg_result else None
 
-                'Total_AlertsLog': total_alertslog,
-                'AlertsLog_ByTypeStatus': alerts_breakdown,
+        count_dict = {
+            'Total_DeskExecutives': a,
+            'Live_DeskExecutives': b,
 
-                'Total_Incoming_Calls':EMCall.objects.count(),
-                'Total_Incoming_Calls_thismonth':EMCall.objects.count(),
-                'Total_Incoming_Calls_thisweek':EMCall.objects.count(),
-                'Total_Incoming_Calls_today':EMCall.objects.count(),
+            'Total_AlertsLog': total_alertslog,
+            'AlertsLog_ByTypeStatus': alerts_breakdown,
 
-                'Total_Closed_Calls':EMCall.objects.count(),
-                'Total_Closed_Calls_thismonth':EMCall.objects.count(),
-                'Total_Closed_Calls_thisweek':EMCall.objects.count(),
-                'Total_Closed_Calls_today':EMCall.objects.count(),
+            'Total_Incoming_Calls': calls_qs.count(),
+            'Total_Incoming_Calls_thismonth': calls_qs.filter(start_time__gte=month_start).count(),
+            'Total_Incoming_Calls_thisweek': calls_qs.filter(start_time__gte=week_start).count(),
+            'Total_Incoming_Calls_today': calls_qs.filter(start_time__date=today).count(),
 
-                'Total_Fake_Calls':EMCall.objects.filter(status="closed_false_allert").count(),
-                'Total_Fake_Calls_thismonth':EMCall.objects.filter(status="closed_false_allert").count(),
-                'Total_Fake_Calls_thisweek':EMCall.objects.filter(status="closed_false_allert").count(),
-                'Total_Fake_Calls_today':EMCall.objects.filter(status="closed_false_allert").count(),
+            'Total_Closed_Calls': calls_qs.filter(status="closed").count(),
+            'Total_Closed_Calls_thismonth': calls_qs.filter(status="closed", start_time__gte=month_start).count(),
+            'Total_Closed_Calls_thisweek': calls_qs.filter(status="closed", start_time__gte=week_start).count(),
+            'Total_Closed_Calls_today': calls_qs.filter(status="closed", start_time__date=today).count(),
 
-                'Total_Active_Calls':EMCall.objects.filter( status__in=["desk_ex_assigned","broadcast_pending", "field_ex_aproaching" , "field_ex_arrived"]).count(),  
-                'Total_Pending_Calls':EMCall.objects.count(),
+            'Total_Fake_Calls': calls_qs.filter(status="closed_false_allert").count(),
+            'Total_Fake_Calls_thismonth': calls_qs.filter(status="closed_false_allert", start_time__gte=month_start).count(),
+            'Total_Fake_Calls_thisweek': calls_qs.filter(status="closed_false_allert", start_time__gte=week_start).count(),
+            'Total_Fake_Calls_today': calls_qs.filter(status="closed_false_allert", start_time__date=today).count(),
 
-                'Total_Rejected_Assignemnt':EMCallAssignment.objects.filter(status="rejected").count(),
-                'Total_Rejected_Assignemn_thistmonth':EMCallAssignment.objects.filter(status="rejected").count(),
-                'Total_Rejected_Assignemn_thisweek':EMCallAssignment.objects.filter(status="rejected").count(),
-                'Total_Rejected_Assignemn_today':EMCallAssignment.objects.filter(status="rejected").count(),
+            'Total_Active_Calls': calls_qs.filter(status__in=[
+                "desk_ex_assigned",
+                "broadcast_pending",
+                "field_ex_aproaching",
+                "field_ex_arrived"
+            ]).count(),
+            'Total_Pending_Calls': calls_qs.filter(status="pending").count(),
 
-                'Average_time_to_Accept':EMCallAssignment.objects.filter(status="accepted").count(),
+            'Total_Rejected_Assignemnt': rejected_assignments_qs.count(),
+            'Total_Rejected_Assignemn_thistmonth': rejected_assignments_qs.filter(start_time__gte=month_start).count(),
+            'Total_Rejected_Assignemn_thisweek': rejected_assignments_qs.filter(start_time__gte=week_start).count(),
+            'Total_Rejected_Assignemn_today': rejected_assignments_qs.filter(start_time__date=today).count(),
 
-             
-            }
-            # Return the serialized data as JSON response
-            return Response(count_dict)
-        else:
-            return Response({'error': "Unauthorised user"}, status=400)
+            # Backward-compatible key + explicit unit key
+            'Average_time_to_Accept': avg_accept_seconds,
+            'Average_time_to_Accept_seconds': avg_accept_seconds,
+
+        }
+
+        return Response(count_dict)
 
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
@@ -14798,36 +14827,50 @@ def SOS_EXreport(request ):
         # Add ID filter if provided
 
 
-        if profile: 
+        if profile:
+            from django.db.models import Avg, ExpressionWrapper, DurationField, F
+            from django.utils import timezone
+            from datetime import timedelta
+
+            now = timezone.now()
+            today = now.date()
+            week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+            base_qs = EMCallAssignment.objects.filter(ex=profile)
+
+            # Average time to accept: mean of (accept_time - start_time) for accepted assignments
+            avg_result = base_qs.filter(accept_time__isnull=False).annotate(
+                accept_duration=ExpressionWrapper(
+                    F('accept_time') - F('start_time'),
+                    output_field=DurationField()
+                )
+            ).aggregate(avg_duration=Avg('accept_duration'))['avg_duration']
+            avg_accept_seconds = round(avg_result.total_seconds(), 2) if avg_result else None
+
             count_dict = {
- 
+                'Total_Assignemnt_thistmonth': base_qs.filter(start_time__gte=month_start).count(),
+                'Total_Assignemnt_thisweek': base_qs.filter(start_time__gte=week_start).count(),
+                'Total_Assignemnt_today': base_qs.filter(start_time__date=today).count(),
+                'Total_Assignemnt': base_qs.count(),
 
-  
-                 
-                'Total_Assignemnt_thistmonth':EMCallAssignment.objects.filter(ex=profile).count(),
-                'Total_Assignemnt_thisweek':EMCallAssignment.objects.filter(ex=profile).count(),
-                'Total_Assignemnt_today':EMCallAssignment.objects.filter( ex=profile).count(),
-                'Total_Assignemnt':EMCallAssignment.objects.filter( ex=profile).count(),
+                'Total_Closed_Assignemnt_thistmonth': base_qs.filter(status="closed", start_time__gte=month_start).count(),
+                'Total_Closed_Assignemnt_thisweek': base_qs.filter(status="closed", start_time__gte=week_start).count(),
+                'Total_Closed_Assignemnt_today': base_qs.filter(status="closed", start_time__date=today).count(),
+                'Total_Closed_Assignemnt': base_qs.filter(status="closed").count(),
 
-                'Total_Closed_Assignemnt_thistmonth':EMCallAssignment.objects.filter(status="closed",ex=profile).count(),
-                'Total_Closed_Assignemnt_thisweek':EMCallAssignment.objects.filter(status="closed",ex=profile).count(),
-                'Total_Closed_Assignemnt_today':EMCallAssignment.objects.filter(status="closed",ex=profile).count(),
-                'Total_Closed_Assignemnt':EMCallAssignment.objects.filter(status="closed",ex=profile).count(),
-                 
-                'Total_False_Assignemnt_thistmonth':EMCallAssignment.objects.filter(status="closed_false_allert",ex=profile).count(),
-                'Total_False_Assignemnt_thisweek':EMCallAssignment.objects.filter(status="closed_false_allert",ex=profile).count(),
-                'Total_False_Assignemnt_today':EMCallAssignment.objects.filter(status="closed_false_allert",ex=profile).count(),
-                'Total_False_Assignemnt':EMCallAssignment.objects.filter(status="closed_false_allert",ex=profile).count(),
+                'Total_False_Assignemnt_thistmonth': base_qs.filter(status="closed_false_allert", start_time__gte=month_start).count(),
+                'Total_False_Assignemnt_thisweek': base_qs.filter(status="closed_false_allert", start_time__gte=week_start).count(),
+                'Total_False_Assignemnt_today': base_qs.filter(status="closed_false_allert", start_time__date=today).count(),
+                'Total_False_Assignemnt': base_qs.filter(status="closed_false_allert").count(),
 
-                 
-                'Total_Rejected_Assignemnt_thistmonth':EMCallAssignment.objects.filter(status="rejected",ex=profile).count(),
-                'Total_Rejected_Assignemnt_thisweek':EMCallAssignment.objects.filter(status="rejected",ex=profile).count(),
-                'Total_Rejected_Assignemnt_today':EMCallAssignment.objects.filter(status="rejected",ex=profile).count(),
-                'Total_Rejected_Assignemnt':EMCallAssignment.objects.filter(status="rejected",ex=profile).count(),
+                'Total_Rejected_Assignemnt_thistmonth': base_qs.filter(status="rejected", start_time__gte=month_start).count(),
+                'Total_Rejected_Assignemnt_thisweek': base_qs.filter(status="rejected", start_time__gte=week_start).count(),
+                'Total_Rejected_Assignemnt_today': base_qs.filter(status="rejected", start_time__date=today).count(),
+                'Total_Rejected_Assignemnt': base_qs.filter(status="rejected").count(),
 
-                'Average_time_to_Accept':EMCallAssignment.objects.filter(status="accepted",ex=profile).count(),
+                'Average_time_to_Accept': avg_accept_seconds,
 
-             
             }
             # Return the serialized data as JSON response
             return Response(count_dict)
@@ -15003,8 +15046,8 @@ def homepage_stateAdmin(request ):
             count_dict = {
                 # User counts filtered by state
                 'Total_Dealer_available': dealers_in_state.count(),
-                'Total_Manufacture_available': manufacturers_in_state.count(),
-                'Total_M2M_Service_Provider_available': eSimProvider.objects.filter(state=state_filter).count(),
+                'Total_Manufacture_available': manufacturers_in_state.filter(technical_onboarding_requests__status='accepted').distinct().count(),
+                'Total_M2M_Service_Provider_available': eSimProvider.objects.filter(state=state_filter, status='Accept').count(),
                 'Total_DTO_available': dtos_in_state.count(),
                 'Total_Vehicle_Owner_available': vehicle_owners_in_state.count(),
 
@@ -15150,16 +15193,16 @@ def homepage_user1(request ):
         # User counts should be based on actual user accounts by role
         if True:
             count_dict = {
-            'total_user': UserModel.objects.count(),
-            'state_admin': UserModel.objects.filter(role='stateadmin').count(),
-            'manufacturer_admin': UserModel.objects.filter(role='devicemanufacture').count(),
-            'dtorto_admin': UserModel.objects.filter(role='dtorto').count(),
-            'eSimProvider': UserModel.objects.filter(role='esimprovider').count(),
-            'Dealer': UserModel.objects.filter(role='dealer').count(),
-            'VehicleOwner': UserModel.objects.filter(role='owner').count(),
-            'SOS_ex': UserModel.objects.filter(role='sosexecutive').count(),
-            'SOS_user': UserModel.objects.filter(role='teamleader').count(),
-            'SOS_admin': UserModel.objects.filter(role='sosadmin').count(),
+            'total_user': UserModel.objects.filter(status='active').count(),
+            'state_admin': UserModel.objects.filter(role='stateadmin', status='active').count(),
+            'manufacturer_admin': UserModel.objects.filter(role='devicemanufacture', status='active').count(),
+            'dtorto_admin': UserModel.objects.filter(role='dtorto', status='active').count(),
+            'eSimProvider': UserModel.objects.filter(role='esimprovider', status='active').count(),
+            'Dealer': UserModel.objects.filter(role='dealer', status='active').count(),
+            'VehicleOwner': UserModel.objects.filter(role='owner', status='active').count(),
+            'SOS_ex': UserModel.objects.filter(role='sosexecutive', status='active').count(),
+            'SOS_user': UserModel.objects.filter(role='teamleader', status='active').count(),
+            'SOS_admin': UserModel.objects.filter(role='sosadmin', status='active').count(),
         }
         # Return the serialized data as JSON response
         return Response(count_dict)
@@ -15185,13 +15228,13 @@ def homepage_user2(request ):
         if True:
             count_dict = {
              
-            'dtorto_admin': dto_rto.objects.count(),
-            'eSimProvider': eSimProvider.objects.count(),
-            'Dealer': Dealer.objects.count(),
-            'VehicleOwner': VehicleOwner.objects.count(), 
-            'SOS_ex': EM_ex.objects.count(),
-            'SOS_user': EM_ex.objects.count(),
-            'SOS_admin': EM_admin.objects.count(),
+            'dtorto_admin': dto_rto.objects.filter(users__status='active').distinct().count(),
+            'eSimProvider': eSimProvider.objects.filter(status='Accept').count(),
+            'Dealer': Dealer.objects.filter(users__status='active').distinct().count(),
+            'VehicleOwner': VehicleOwner.objects.filter(users__status='active').distinct().count(), 
+            'SOS_ex': EM_ex.objects.filter(users__status='active').distinct().count(),
+            'SOS_user': EM_ex.objects.filter(users__status='active').distinct().count(),
+            'SOS_admin': EM_admin.objects.filter(users__status='active').distinct().count(),
         }
         # Return the serialized data as JSON response
         return Response(count_dict)
