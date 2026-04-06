@@ -11703,12 +11703,28 @@ def deviceStockCreateBulk(request ):
             'created':timezone.now(),
         }
 
-        # Validate and create DeviceStock instance
+        # Pre-flight: check ALL unique fields at once and report every conflict before writing anything
+        unique_fields_check = ['device_esn', 'iccid', 'imei', 'iccid2', 'msisdn1', 'msisdn2']
+        unique_conflicts = {}
+        for uf in unique_fields_check:
+            val = data.get(uf)
+            if val not in (None, '', 'None'):
+                if DeviceStock.objects.filter(**{uf: val}).exists():
+                    unique_conflicts[uf] = f"{uf} '{val}' already exists."
+        if unique_conflicts:
+            error_rows.append({'row': index + 1, 'errors': unique_conflicts})
+            continue
+
+        # Validate and create DeviceStock instance — atomic per row so no partial saves stall future retries
         serializer = DeviceStockSerializer(data=data)
         if serializer.is_valid():
-            serializer.save()
-            success_count += 1
-            success_rows.append(index + 1)
+            try:
+                with transaction.atomic():
+                    serializer.save()
+                success_count += 1
+                success_rows.append(index + 1)
+            except Exception as save_exc:
+                error_rows.append({'row': index + 1, 'errors': {'save_error': str(save_exc)}})
         else:
             error_rows.append({'row': index + 1, 'errors': serializer.errors})
 
@@ -11726,6 +11742,7 @@ def deviceStockCreateBulk(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@transaction.atomic
 def deviceStockCreate(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -11763,10 +11780,21 @@ def deviceStockCreate(request ):
         if field in data:
             data[field] = clean_int_field(data[field])
 
+    # Pre-flight: check ALL unique fields at once and report every conflict before writing anything
+    unique_fields = ['device_esn', 'iccid', 'imei', 'iccid2', 'msisdn1', 'msisdn2']
+    unique_conflicts = {}
+    for field in unique_fields:
+        val = data.get(field)
+        if val not in (None, '', 'None'):
+            if DeviceStock.objects.filter(**{field: val}).exists():
+                unique_conflicts[field] = f"{field} '{val}' already exists."
+    if unique_conflicts:
+        return Response({'errors': unique_conflicts}, status=status.HTTP_400_BAD_REQUEST)
+
     serializer = DeviceStockSerializer(data=data)
     serializer.is_valid(raise_exception=True)
 
-    # Save the DeviceStock instance
+    # Save the DeviceStock instance (atomic — rolls back everything on any failure)
     serializer.save()
 
     return Response(serializer.data, status=201)
