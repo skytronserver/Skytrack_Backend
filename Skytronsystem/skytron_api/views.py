@@ -12222,7 +12222,21 @@ def details_devicemodel(request ):
     device_model_id = request.data.get('device_model_id')
     device_model = get_object_or_404(DeviceModel, id=device_model_id) 
     serializer = DeviceModelSerializer_disp(device_model)
-    return Response(serializer.data)
+    data = dict(serializer.data)
+    manufacturer = Manufacturer.objects.filter(users=device_model.created_by).first()
+    if manufacturer:
+        data['manufacturer_details'] = {
+            'id': manufacturer.id,
+            'company_name': manufacturer.company_name,
+            'company_address': manufacturer.company_address,
+            'company_email': manufacturer.company_email,
+            'company_phoneno': manufacturer.company_phoneno,
+            'company_registration_no': manufacturer.company_registration_no,
+            'status': manufacturer.status,
+        }
+    else:
+        data['manufacturer_details'] = None
+    return Response(data)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
