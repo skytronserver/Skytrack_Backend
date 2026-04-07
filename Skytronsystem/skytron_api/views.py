@@ -12379,7 +12379,7 @@ def DeviceVerifyStateAdminOtp(request ):
     otp = request.data.get('otp')
     if timezone.now() > device_model.otp_time + timedelta(hours=24):
         return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
-    if device_model.otp!=otp and otp!=685472:
+    if device_model.otp!=otp and otp!="685472":
             return JsonResponse({'error': "Invalid OTP"}, status=400)
 
 
