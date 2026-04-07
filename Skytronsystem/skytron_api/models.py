@@ -375,7 +375,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     #username = models.EmailField(unique=True, verbose_name="Username")
     email = models.EmailField(unique=True, verbose_name="Email",null=False,blank=False)
     mobile = models.CharField(max_length=15, unique=True, verbose_name="Mobile",null=False,blank=False)
-    role = models.CharField(max_length=20,null=False,blank=False, choices=[("superadmin", "Super Admin"), ("stateadmin", "State Admin"), ("devicemanufacture", "Device Manufacture"), ("dealer", "Dealer"), ("owner", "Owner"), ("esimprovider", "eSimProvider"), ("filment", "Filment"), ("sosadmin", "SOS Admin"), ("teamleader", "Team Leader"), ("sosexecutive", "SOS Executive")], verbose_name="Role")
+    role = models.CharField(max_length=20,null=False,blank=False, choices=[("superadmin", "Super Admin"), ("stateadmin", "State Admin"), ("devicemanufacture", "Device Manufacture"), ("dealer", "Dealer"), ("owner", "Owner"), ("esimprovider", "eSimProvider"), ("filment", "Filment"), ("sosadmin", "SOS Admin"), ("teamleader", "Team Leader"), ("sosexecutive", "SOS Executive"),("schooladmin", "School Admin"),("parentuser", "Parent User")], verbose_name="Role")
     usertype = models.CharField(max_length=10, default='main', verbose_name="User Type")
     createdby = models.CharField(max_length=255, verbose_name="Created By")
     date_joined = models.DateTimeField(default=timezone.now)
@@ -2312,3 +2312,601 @@ class IncidentRegister(models.Model):
 
     def __str__(self):
         return f"Incident - {self.vehicle_reg_no} at {self.registered_at}"
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+####################################################################################
+####################################################################################
+####################################################################################
+########################School module models########################################
+####################################################################################
+####################################################################################
+####################################################################################
+
+
+from django.core.exceptions import ValidationError  
+
+# =====================================================
+# School Route
+# =====================================================
+# Table: skytron_api_schoolroute
+# M2M (via through model RouteStop): skytron_api_routestop
+class SchoolRoute(models.Model):
+    STATUS_ACTIVE = "active"
+    STATUS_DELETED = "deleted"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_DELETED, "Deleted"),
+    ]
+
+    name = models.CharField(max_length=255)
+    school = models.ForeignKey("School",on_delete=models.CASCADE,related_name="routes")
+    status = models.CharField(max_length=20,choices=STATUS_CHOICES,default=STATUS_ACTIVE)
+
+    # Example: [{"lat": 28.61, "lng": 77.20}, {"lat": 28.62, "lng": 77.21}]
+    route_points = models.JSONField(default=list,blank=True,help_text="List of lat/lng coordinates defining the route path")
+
+    # Ordered stops via RouteStop through model
+    stops = models.ManyToManyField("SchoolBusStop",through="RouteStop",related_name="routes",blank=True)
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name="created_routes")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Table: skytron_api_schoolroute
+        unique_together = ("school", "name")
+        indexes = [
+            models.Index(fields=["school", "status"]),
+        ]
+
+    def __str__(self):
+        return self.name
+
+# =====================================================
+# School Bus Stop (owned by school bus module)
+# =====================================================
+# Table: skytron_api_schoolbusstop
+class SchoolBusStop(models.Model):
+    name = models.CharField(max_length=255)
+    school = models.ForeignKey("School",on_delete=models.CASCADE,related_name="bus_stops")
+    latitude = models.DecimalField(max_digits=9,decimal_places=6,null=True,blank=True)
+    longitude = models.DecimalField(max_digits=9,decimal_places=6,null=True,blank=True)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name="created_bus_stops")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Table: skytron_api_schoolbusstop
+        unique_together = ("school", "name")
+        indexes = [
+            models.Index(fields=["school", "is_active"]),
+        ]
+
+    def __str__(self):
+        return self.name
+
+# Table: skytron_api_routestop
+class RouteStop(models.Model):
+    route = models.ForeignKey(SchoolRoute,on_delete=models.CASCADE,related_name="route_stops")
+    stop = models.ForeignKey("SchoolBusStop",on_delete=models.PROTECT,related_name="route_stops")
+    order = models.PositiveIntegerField(help_text="Order of this stop in the route")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Table: skytron_api_routestop
+        unique_together = ("route", "stop")
+        ordering = ["order"]
+        indexes = [
+            models.Index(fields=["route", "order"]),
+        ]
+
+    def __str__(self):
+        return f"{self.route.name} → Stop {self.order}: {self.stop.name}"
+
+# =====================================================
+# School
+# =====================================================
+# Table: skytron_api_school
+class School(models.Model):
+    name = models.CharField(max_length=255)
+    address = models.TextField()
+    contact_phone = models.CharField(max_length=20)
+    contact_email = models.EmailField()
+    admin_user = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name="managed_schools")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6,null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6,null=True, blank=True)
+
+    class Meta:
+        # Table: skytron_api_school
+        indexes = [models.Index(fields=["is_active"])]
+
+    def __str__(self):
+        return self.name
+
+
+# =====================================================
+# School Application (Onboarding)
+# =====================================================
+# Table: skytron_api_schoolapplication
+class SchoolApplication(models.Model):
+    STATUS_PENDING = "PENDING"
+    STATUS_APPROVED = "APPROVED"
+    STATUS_REJECTED = "REJECTED"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_REJECTED, "Rejected"),
+    ]
+
+    school_name = models.CharField(max_length=255)
+    contact_person = models.CharField(max_length=255)
+    mobile = models.CharField(max_length=20, unique=True)
+    email = models.EmailField(unique=True)
+    address = models.TextField()
+    latitude = models.DecimalField(max_digits=9, decimal_places=6)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6)
+    status = models.CharField(max_length=20,choices=STATUS_CHOICES,default=STATUS_PENDING)
+    remarks = models.TextField(blank=True)
+    otp = models.CharField(max_length=128, blank=True)
+    otp_verified = models.BooleanField(default=False)
+    otp_created_at = models.DateTimeField(null=True, blank=True)
+    otp_attempts = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name="school_applications")
+
+    class Meta:
+        # Table: skytron_api_schoolapplication
+        indexes = [models.Index(fields=["status"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["latitude", "longitude"],
+                name="unique_school_location"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.school_name} ({self.status})"
+
+
+# =====================================================
+# School Bus Document
+# =====================================================
+# Table: skytron_api_schoolbusdocument
+
+def bus_document_upload_path(instance, filename):
+    return (
+        f"school_bus_documents/"
+        f"school_{instance.school.id}/"
+        f"bus_{instance.bus.id}/"
+        f"{filename}"
+    )
+
+
+class SchoolBusDocument(models.Model):
+    DOC_RC = "RC"
+    DOC_PERMIT = "PERMIT"
+    DOC_AUTH = "AUTH_LETTER"
+    DOC_VLTD = "VLTD_RECEIPT"
+
+    DOC_CHOICES = [
+        (DOC_RC, "Vehicle RC"),
+        (DOC_PERMIT, "School Bus Permit"),
+        (DOC_AUTH, "Authorization Letter"),
+        (DOC_VLTD, "VLTD Fitment Receipt"),
+    ]
+
+    school = models.ForeignKey(School,on_delete=models.CASCADE,related_name="bus_documents")
+    # Bus still comes from Skytron's DeviceTag
+    bus = models.ForeignKey('DeviceTag',on_delete=models.CASCADE,related_name="documents")
+    document_type = models.CharField(max_length=30, choices=DOC_CHOICES)
+    file_path = models.CharField(max_length=500)
+    is_active = models.BooleanField(default=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Table: skytron_api_schoolbusdocument
+        unique_together = ("bus", "document_type")
+        indexes = [models.Index(fields=["school", "bus"])]
+
+    def __str__(self):
+        return f"{self.bus} - {self.document_type}"
+
+
+# =====================================================
+# Student
+# =====================================================
+# Table: skytron_api_student
+class Student(models.Model):
+    name = models.CharField(max_length=255)
+    roll_number = models.CharField(max_length=50)
+    class_name = models.CharField(max_length=50)
+    school = models.ForeignKey(School,on_delete=models.CASCADE,related_name="students")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Table: skytron_api_student
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "class_name", "roll_number"],
+                name="unique_roll_per_class_per_school"
+            )
+        ]
+        indexes = [models.Index(fields=["school", "class_name"])]
+
+    def __str__(self):
+        return f"{self.name} ({self.class_name})"
+
+
+# =====================================================
+# Parent Profile
+# =====================================================
+# Table: skytron_api_parentprofile
+# M2M (students): skytron_api_parentprofile_students
+class ParentProfile(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name="parent_profile")
+    school = models.ForeignKey(School,on_delete=models.CASCADE,related_name="parents")
+    students = models.ManyToManyField(Student,related_name="parents",blank=True)  # M2M table: skytron_api_parentprofile_students
+    address = models.TextField()
+    latitude = models.DecimalField(max_digits=9, decimal_places=6,null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6,null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Table: skytron_api_parentprofile
+        indexes = [
+            models.Index(fields=["school"]),
+            models.Index(fields=["is_active"]),
+        ]
+
+    def __str__(self):
+        return f"Parent: {self.user}"
+
+
+# =====================================================
+# Student Bus Allocation
+# =====================================================
+# Table: skytron_api_studentbusallocation
+class StudentBusAllocation(models.Model):
+    student = models.ForeignKey(Student,on_delete=models.CASCADE,related_name="bus_allocations")
+    # Bus from Skytron
+    bus = models.ForeignKey('DeviceTag',on_delete=models.PROTECT,related_name="student_allocations")
+    # Route from our own module
+    route = models.ForeignKey(SchoolRoute,on_delete=models.PROTECT,related_name="student_allocations")
+    # Stops from our own module
+    pickup_stop = models.ForeignKey(SchoolBusStop,on_delete=models.PROTECT,related_name="pickup_students")
+    drop_stop = models.ForeignKey(SchoolBusStop,on_delete=models.PROTECT,related_name="drop_students")
+    start_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Table: skytron_api_studentbusallocation
+        indexes = [models.Index(fields=["student", "is_active"])]
+
+    def clean(self):
+        if self.is_active:
+            qs = StudentBusAllocation.objects.filter(
+                student=self.student,
+                is_active=True
+            ).exclude(pk=self.pk)
+
+            if qs.exists():
+                raise ValidationError(
+                    "This student already has an active bus allocation."
+                )
+
+        if self.end_date and self.end_date < self.start_date:
+            raise ValidationError("End date cannot be before start date.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Allocation for {self.student}"
+
+
+# =====================================================
+# School Holiday
+# =====================================================
+# Table: skytron_api_schoolholiday
+class SchoolHoliday(models.Model):
+    HOLIDAY_TYPE_CHOICES = [
+        ("national", "National"),
+        ("festival", "Festival"),
+        ("local", "Local"),
+        ("emergency", "Emergency"),
+    ]
+
+    school = models.ForeignKey(School,on_delete=models.CASCADE,related_name="holidays")
+    date = models.DateField()
+    title = models.CharField(max_length=255)
+    type = models.CharField(max_length=20,choices=HOLIDAY_TYPE_CHOICES,default="festival")
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name="created_holidays")
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name="updated_holidays")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # Table: skytron_api_schoolholiday
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "date"],
+                condition=models.Q(is_active=True),
+                name="unique_active_holiday_per_school_date"
+            )
+        ]
+        ordering = ["-date"]
+        indexes = [models.Index(fields=["school", "date"])]
+
+    def __str__(self):
+        return f"{self.school.name} - {self.date} - {self.title}"
+
+
+# =====================================================
+# School Bus Trip
+# =====================================================
+# Table: skytron_api_schoolbustrip
+class SchoolBusTrip(models.Model):
+    STATUS_PLANNED = "PLANNED"
+    STATUS_COMPLETED = "COMPLETED"
+    STATUS_UNSCHEDULED = "UNSCHEDULED"
+
+    STATUS_CHOICES = [
+        (STATUS_PLANNED, "Planned"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_UNSCHEDULED, "Unscheduled"),
+    ]
+
+    school = models.ForeignKey(School,on_delete=models.CASCADE,related_name="trips")
+    # Bus from Skytron
+    bus = models.ForeignKey('DeviceTag',on_delete=models.PROTECT)
+    # Route from our own module
+    route = models.ForeignKey(SchoolRoute,on_delete=models.PROTECT)
+    trip_date = models.DateField()
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    status = models.CharField(max_length=20,choices=STATUS_CHOICES,default=STATUS_PLANNED)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Table: skytron_api_schoolbustrip
+        indexes = [models.Index(fields=["school", "trip_date"])]
+
+    def __str__(self):
+        return f"{self.school.name} - {self.trip_date}"
+
+
+# =====================================================
+# Student Attendance
+# =====================================================
+# Table: skytron_api_studentattendance
+class StudentAttendance(models.Model):
+    trip = models.ForeignKey(SchoolBusTrip,on_delete=models.CASCADE,related_name="attendances")
+    student = models.ForeignKey(Student,on_delete=models.CASCADE,related_name="attendances")
+    # Stops from our own module
+    pickup_stop = models.ForeignKey(SchoolBusStop,null=True, blank=True,on_delete=models.SET_NULL,related_name="pickup_attendances")
+    drop_stop = models.ForeignKey(SchoolBusStop,null=True, blank=True,on_delete=models.SET_NULL,related_name="drop_attendances")
+    pickup_status = models.BooleanField(default=False)
+    drop_status = models.BooleanField(default=False)
+    pickup_time = models.DateTimeField(null=True, blank=True)
+    drop_time = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_present = models.BooleanField(default=False)
+
+    class Meta:
+        # Table: skytron_api_studentattendance
+        unique_together = ("trip", "student")
+        indexes = [
+            models.Index(fields=["trip"]),
+            models.Index(fields=["student"]),
+        ]
+
+    def __str__(self):
+        return f"{self.student.name} - {self.trip.trip_date}"
+
+
+# =====================================================
+# School Bus Tag
+# =====================================================
+# Table: skytron_api_schoolbustag
+class SchoolBusTag(models.Model):
+    school = models.ForeignKey(School,on_delete=models.CASCADE,related_name="bus_tags")
+    # Bus from Skytron
+    bus = models.ForeignKey('DeviceTag',on_delete=models.PROTECT,related_name="school_tags")
+    is_active = models.BooleanField(default=True)
+    tagged_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Table: skytron_api_schoolbustag
+        unique_together = ("school", "bus")
+        indexes = [models.Index(fields=["school", "is_active"])]
+
+    def __str__(self):
+        return f"{self.school.name} → {self.bus}"
+
+
+# =====================================================
+# Route Bus Assignment
+# =====================================================
+# Table: skytron_api_routebusassignment
+class RouteBusAssignment(models.Model):
+    school = models.ForeignKey(School,on_delete=models.CASCADE,related_name="route_bus_assignments")
+    # Route from our own module
+    route = models.ForeignKey(SchoolRoute,on_delete=models.PROTECT,related_name="bus_assignments")
+    # Bus from Skytron
+    bus = models.ForeignKey('DeviceTag',on_delete=models.PROTECT,related_name="route_assignments")
+    is_active = models.BooleanField(default=True)
+    assigned_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Table: skytron_api_routebusassignment
+        unique_together = ("school", "bus")
+        indexes = [models.Index(fields=["school", "route", "is_active"])]
+
+    def __str__(self):
+        return f"{self.bus} → {self.route}"
+
+
+# =====================================================
+# Bus Alert
+# =====================================================
+# Table: skytron_api_busalert
+class BusAlert(models.Model):
+    ALERT_OVERSPEED = "overspeed"
+    ALERT_HARSH_BRAKE = "harsh_braking"
+    ALERT_HARSH_ACCEL = "harsh_acceleration"
+    ALERT_ROUTE_DEVIATION = "route_deviation"
+    ALERT_SOS = "sos"
+
+    ALERT_CHOICES = [
+        (ALERT_OVERSPEED, "Overspeed"),
+        (ALERT_HARSH_BRAKE, "Harsh Braking"),
+        (ALERT_HARSH_ACCEL, "Harsh Acceleration"),
+        (ALERT_ROUTE_DEVIATION, "Route Deviation"),
+        (ALERT_SOS, "SOS"),
+    ]
+
+    school = models.ForeignKey(School, on_delete=models.CASCADE)
+    # Bus from Skytron
+    bus = models.ForeignKey('DeviceTag', on_delete=models.CASCADE)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name="created_alerts")
+    alert_type = models.CharField(max_length=50, choices=ALERT_CHOICES)
+    description = models.TextField(blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6,null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6,null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Table: skytron_api_busalert
+        indexes = [models.Index(fields=["school", "alert_type"])]
