@@ -523,9 +523,11 @@ class Manufacturer(models.Model):
             ('Allow to login', 'Allow to login'),
             ('Allow to add dealer', 'Allow to add dealer'),
             ('Accept', 'Accept'),
+            ('TechnicalOnboardingApproved', 'Technical Onboarding Approved'),
+            ('TechnicalOnboardingRejected', 'Technical Onboarding Rejected'),
         ] 
     
-    status = models.CharField(max_length=20, choices=status_choices)
+    status = models.CharField(max_length=30, choices=status_choices)
 
 class eSimProvider(models.Model):
     objects = SafeCreateManager()

@@ -1870,6 +1870,8 @@ ALLOWED_PARTNER_STATUSES = {
     'Allow to login',
     'Allow to add dealer',
     'Accept',
+    'TechnicalOnboardingApproved',
+    'TechnicalOnboardingRejected',
 }
 
 
@@ -5338,7 +5340,7 @@ def create_dealer(request ):
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    role="stateadmin"
+    role="superadmin"
     user=request.user
     uo=get_user_object(user,role)
     if not uo:
@@ -6084,6 +6086,135 @@ def filter_manufacturers(request ):
 
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+@require_http_methods(['GET', 'POST'])
+def approve_manufacturer_tech_onboarding(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        state_admin_obj = get_user_object(request.user, 'stateadmin')
+        if not state_admin_obj:
+            return Response({'error': 'Only state admin can perform this action.'}, status=403)
+
+        manufacturer_id = request.data.get('manufacturer_id')
+        if not manufacturer_id:
+            return Response({'error': 'manufacturer_id is required.'}, status=400)
+
+        action = request.data.get('action', '').strip().lower()
+        if action not in ('approve', 'reject'):
+            return Response({'error': "action is required and must be 'approve' or 'reject'."}, status=400)
+
+        man = Manufacturer.objects.filter(id=manufacturer_id).last()
+        if not man:
+            return Response({'error': 'Invalid manufacturer_id.'}, status=400)
+
+        if action == 'approve':
+            man.status = 'TechnicalOnboardingApproved'
+        else:
+            man.status = 'TechnicalOnboardingRejected'
+        man.save()
+
+        manufacturer_serializer = ManufacturerSerializer(man)
+        return Response(manufacturer_serializer.data)
+
+    except Exception as e:
+        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def filter_TechOnboardmanufacturers(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        manufacturer_id = request.data.get('manufacturer_id', None)
+        email = request.data.get('email', '')
+        company_name = request.data.get('company_name', '')
+        name = request.data.get('name', '')
+        phone_no = request.data.get('phone_no', '')
+
+        all_user_raw = None
+        try:
+            all_user_raw = request.query_params.get('all_user')
+        except Exception:
+            all_user_raw = request.GET.get('all_user') if hasattr(request, 'GET') else None
+        all_user = str(all_user_raw).strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
+        user = request.user
+
+        esim_provider_obj = get_user_object(user, "esimprovider")
+
+        # Only manufacturers with at least one accepted technical onboarding request
+        manufacturers = Manufacturer.objects.filter(
+            technical_onboarding_requests__status='accepted'
+        ).distinct()
+
+        if esim_provider_obj:
+            manufacturers = manufacturers.filter(esim_provider=esim_provider_obj)
+
+        if manufacturer_id:
+            manufacturers = manufacturers.filter(
+                id=manufacturer_id,
+                users__email__icontains=email,
+                company_name__icontains=company_name,
+                users__name__icontains=name,
+                users__mobile__icontains=phone_no,
+            ).distinct()
+        else:
+            if all_user:
+                manufacturers = manufacturers.filter(
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no,
+                ).distinct()
+            else:
+                manufacturers = manufacturers.filter(
+                    users__status='active',
+                    users__email__icontains=email,
+                    company_name__icontains=company_name,
+                    users__name__icontains=name,
+                    users__mobile__icontains=phone_no,
+                ).distinct()
+
+        # Prefetch only accepted onboarding requests with their device_model
+        accepted_qs = DeviceModelTechnicalOnboardingRequest.objects.filter(
+            status='accepted'
+        ).select_related('device_model')
+        manufacturers = manufacturers.prefetch_related(
+            Prefetch('technical_onboarding_requests', queryset=accepted_qs, to_attr='_accepted_onboarding')
+        )
+
+        result = []
+        for mfr in manufacturers:
+            mfr_data = ManufacturerSerializer(mfr).data
+
+            # Collect unique device models from the prefetched accepted requests
+            seen_ids = set()
+            tech_models = []
+            for req in mfr._accepted_onboarding:
+                if req.device_model_id not in seen_ids:
+                    seen_ids.add(req.device_model_id)
+                    tech_models.append(req.device_model)
+
+            mfr_data['tech_onboarded_models'] = DeviceModelSerializer_disp(tech_models, many=True).data
+            result.append(mfr_data)
+
+        return Response(result)
+
+    except Exception as e:
+        return Response({'error': "Unable to process request." + str(e)}, status=400)
 
 
 from django.db import IntegrityError
