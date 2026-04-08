@@ -6226,7 +6226,7 @@ def create_user(role, req):
         email = (req.data.get('email', '') or '').strip()
         mobile = (req.data.get('mobile', '') or '').strip()
         name = (req.data.get('name', '') or '').strip()
-        dob = (req.data.get('dob', '') or '').strip()
+        dob = (req.data.get('dob', '') or '').strip().replace('/', '-')
         address = req.data.get('address', '')
         address_pin = req.data.get('pin', '') or req.data.get('address_pin', '')
 
@@ -12454,8 +12454,9 @@ def DeviceModelAwaitingStateApproval(request ):
 def DeviceSendStateAdminOtp(request ): 
     user=request.user 
     sa=get_user_object(user,"stateadmin")
-    if not sa:
-        return Response({"error":"Request must be from stateadmin"}, status=status.HTTP_400_BAD_REQUEST)
+    super_admin_obj=get_user_object(user,"superadmin")
+    if not (sa or super_admin_obj):
+        return Response({"error":"Request must be from stateadmin or superadmin"}, status=status.HTTP_400_BAD_REQUEST)
       
     device_model_id = request.data.get('device_model_id')
     # Validate current status and update the status
@@ -12499,8 +12500,9 @@ def DeviceVerifyStateAdminOtp(request ):
     
     user=request.user 
     sa=get_user_object(user,"stateadmin")
-    if not sa:
-        return Response({"error":"Request must be from stateadmin"}, status=status.HTTP_400_BAD_REQUEST)
+    super_admin_obj=get_user_object(user,"superadmin")
+    if not (sa or super_admin_obj):
+        return Response({"error":"Request must be from stateadmin or superadmin"}, status=status.HTTP_400_BAD_REQUEST)
       
     device_model_id = request.data.get('device_model_id') 
     user_id = request.user.id 
@@ -16430,10 +16432,9 @@ def password_reset(request ):
         mobile = request.data.get('mobile', None)
         id_no = request.data.get('id_no', None)
         new_password = request.data.get('new_password', None)
-        dob = request.data.get('dob', None)
+        dob = (request.data.get('dob', None) or '')
+        dob = dob.replace('/', '-') or None
 
-        if not id_no:
-            return Response({'error': 'id_no not provided'}, status=status.HTTP_400_BAD_REQUEST)
         if not dob:
             return Response({'error': 'dob not provided'}, status=status.HTTP_400_BAD_REQUEST)
         if not mobile:
@@ -16526,6 +16527,8 @@ def password_reset(request ):
                 pas=True
                 user=None
             if not pas:
+                if not id_no:
+                    return Response({'error': 'id_no not provided'}, status=status.HTTP_400_BAD_REQUEST)
                 if not prof:
                     return Response({'error': 'Invalid user role for password reset'}, status=status.HTTP_400_BAD_REQUEST)
                 if not prof.idProofno:
