@@ -2912,3 +2912,29 @@ class BusAlert(models.Model):
     class Meta:
         # Table: skytron_api_busalert
         indexes = [models.Index(fields=["school", "alert_type"])]
+
+
+class TestAgency(models.Model):
+    objects = SafeCreateManager()
+    agency_name = models.CharField(max_length=255, verbose_name="Test Agency Name")
+    company_address = models.CharField(max_length=255, blank=True, null=True)
+    company_pin = models.CharField(max_length=20, blank=True, null=True)
+    file_authLetter = models.CharField(max_length=255, blank=True, null=True)
+    idProofno = models.CharField(max_length=255, blank=True, null=True)
+    file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    users = models.ManyToManyField('User', related_name='testagency_user')
+    created = models.DateField(auto_now_add=True)
+    expirydate = models.DateField(default=timezone.localdate)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE, related_name='testagency_createdby')
+    status_choices = [
+        ('Created', 'Created'),
+        ('UserVerified', 'UserVerified'),
+        ('UserExpired', 'UserExpired'),
+        ('Discontinued', 'Discontinued'),
+        ('Accept', 'Accept'),
+        ('Reject', 'Reject'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices)
+
+    def __str__(self):
+        return self.agency_name

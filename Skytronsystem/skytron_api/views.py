@@ -1793,7 +1793,7 @@ def validate_inputs(datar):
             errors['user_type'] = 'invalid user_type.'
     user_type = data.get('role')
     if user_type:# "superadmin", "stateadmin", "devicemanufacture", "dealer", "owner", "esimprovider","filment","sosadmin", "teamleader","sosexecutive"
-        if str(user_type) not in ["superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider","superadmin", "stateadmin", "devicemanufacture", "dealer", "owner", "esimprovider","filment","sosadmin", "teamleader","sosexecutive"]:
+        if str(user_type) not in ["superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider","superadmin", "stateadmin", "devicemanufacture", "dealer", "owner", "esimprovider","filment","sosadmin", "teamleader","sosexecutive","testagency"]:
             errors['role'] = 'invalid role.'
     
     regex_validations = {
@@ -15707,6 +15707,8 @@ def get_user_object(user,role):
         ret=VehicleOwner.objects.filter(users=user).last() 
     if role=="esimprovider":
         ret=eSimProvider.objects.filter(users=user).last() 
+    if role=="testagency":
+        ret=TestAgency.objects.filter(users=user).last()
     if role=="sosadmin":
         ret=EM_admin.objects.filter(users=user).last() 
     if role=="sosexecutive":
@@ -24652,3 +24654,234 @@ def sos_monitoring_dashboard(request):
     except Exception as e:
         logger.error(f"Error in sos_monitoring_dashboard: {str(e)}")
         return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ─────────────────────────────────────────────────────────────────
+# TEST AGENCY APIs
+# ─────────────────────────────────────────────────────────────────
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def create_testAgency(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    role = "superadmin"
+    user = request.user
+    uo = get_user_object(user, role)
+    if not uo:
+        return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        agency_name = request.data.get('agency_name', '').strip()
+        if not agency_name:
+            return Response({'error': 'agency_name is required.'}, status=400)
+
+        company_address = request.data.get('company_address', '')
+        company_pin = request.data.get('company_pin', '')
+        idProofno = request.data.get('idProofno', '')
+        createdby = request.user
+        date_joined = timezone.localdate()
+        expirydate = date_joined + timezone.timedelta(days=365 * 2)
+
+        partner_status = _normalize_partner_status(request.data.get('status'))
+        if partner_status is None:
+            partner_status = 'Created'
+        elif partner_status not in ALLOWED_PARTNER_STATUSES:
+            return Response(
+                {'error': 'Invalid status. Allowed values are: Reject, Allow to login, Allow to add dealer, Accept'},
+                status=400
+            )
+
+        new_user, error, new_password = create_user('testagency', request)
+        if new_user:
+            try:
+                file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/testagency')
+                file_idProof = save_file(request, 'file_idProof', 'fileuploads/testagency')
+
+                if not file_authLetter:
+                    new_user.delete()
+                    return Response({'error': 'Invalid or missing authorisation letter file.'}, status=400)
+                if not file_idProof:
+                    new_user.delete()
+                    return Response({'error': 'Invalid or missing ID proof file.'}, status=400)
+            except Exception as e:
+                new_user.delete()
+                return Response({'error': 'Unable to process files: ' + str(e)}, status=400)
+
+            agency, db_error = TestAgency.objects.safe_create(
+                agency_name=agency_name,
+                company_address=company_address,
+                company_pin=company_pin,
+                idProofno=idProofno,
+                file_authLetter=file_authLetter,
+                file_idProof=file_idProof,
+                expirydate=expirydate,
+                createdby=createdby,
+                status=partner_status,
+            )
+            if db_error:
+                new_user.delete()
+                return db_error
+
+            agency.users.add(new_user)
+            send_usercreation_otp(new_user, new_password, 'TestAgency')
+            return Response(TestAgencySerializer(agency).data)
+        else:
+            return Response({'error': str(error)}, status=400)
+
+    except Exception as e:
+        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def update_testAgency(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    role = "superadmin"
+    user = request.user
+    uo = get_user_object(user, role)
+    if not uo:
+        return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        agency_id = request.data.get('testagency_id')
+        if not agency_id:
+            return Response({'error': 'testagency_id is required.'}, status=400)
+
+        agency = TestAgency.objects.filter(id=agency_id).last()
+        if not agency:
+            return Response({'error': 'Invalid testagency_id.'}, status=400)
+
+        agency_user = agency.users.last()
+        if not agency_user:
+            return Response({'error': 'No user mapped to this Test Agency.'}, status=400)
+
+        agency_name = request.data.get('agency_name')
+        company_address = request.data.get('company_address')
+        company_pin = request.data.get('company_pin')
+        idProofno = request.data.get('idProofno')
+        email = request.data.get('email')
+        mobile = request.data.get('mobile')
+        name = request.data.get('name')
+        dob = request.data.get('dob')
+        partner_status = _normalize_partner_status(request.data.get('status'))
+
+        if agency_name:
+            agency.agency_name = agency_name
+        if company_address:
+            agency.company_address = company_address
+        if company_pin:
+            agency.company_pin = company_pin
+        if idProofno:
+            agency.idProofno = idProofno
+
+        if request.FILES.get('file_authLetter'):
+            new_auth = save_file(request, 'file_authLetter', 'fileuploads/testagency')
+            if not new_auth:
+                return Response({'error': 'Invalid authorisation letter file.'}, status=400)
+            agency.file_authLetter = new_auth
+
+        if request.FILES.get('file_idProof'):
+            new_idproof = save_file(request, 'file_idProof', 'fileuploads/testagency')
+            if not new_idproof:
+                return Response({'error': 'Invalid ID proof file.'}, status=400)
+            agency.file_idProof = new_idproof
+
+        if partner_status is not None:
+            if partner_status not in ALLOWED_PARTNER_STATUSES:
+                return Response(
+                    {'error': 'Invalid status. Allowed values are: Reject, Allow to login, Allow to add dealer, Accept'},
+                    status=400
+                )
+            agency.status = partner_status
+
+        if email:
+            agency_user.email = email
+        if mobile:
+            agency_user.mobile = mobile
+        if name:
+            agency_user.name = name
+        if dob:
+            agency_user.dob = dob
+
+        new_password = ''.join(secrets.choice('0123456789') for _ in range(30))
+        agency_user.password = make_password(new_password)
+        agency_user.save()
+        agency.save()
+        return Response(TestAgencySerializer(agency).data)
+
+    except Exception as e:
+        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def get_testAgency_list(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    role = "superadmin"
+    user = request.user
+    uo = get_user_object(user, role)
+    if not uo:
+        return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        agencies = TestAgency.objects.all()
+        return Response(TestAgencySerializer(agencies, many=True).data)
+    except Exception as e:
+        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def get_testAgency_name_list(request):
+    """Return list of test agency names where their user accounts are active (any logged-in user)."""
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        agencies = TestAgency.objects.filter(
+            users__is_active=True
+        ).values('id', 'agency_name').distinct()
+        return Response(list(agencies))
+    except Exception as e:
+        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def get_testAgency_device_models(request):
+    """Return device models assigned to the calling test agency user's agency name."""
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    role = "testagency"
+    user = request.user
+    agency = get_user_object(user, role)
+    if not agency:
+        return Response({"error": "Request must be from a test agency user."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        device_models = DeviceModel.objects.filter(test_agency__iexact=agency.agency_name)
+        return Response(DeviceModelForTestAgencySerializer(device_models, many=True).data)
+    except Exception as e:
+        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)

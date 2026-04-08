@@ -223,8 +223,15 @@ class eSimProviderSerializer(SanitizingModelSerializer):
     class Meta:
         model = eSimProvider
         fields = '__all__'
-        
-        
+
+
+class TestAgencySerializer(SanitizingModelSerializer):
+    users = UserSerializer(many=True, read_only=True)
+    class Meta:
+        model = TestAgency
+        fields = '__all__'
+
+
 class ManufacturerSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     state = Settings_StateSerializer(many=False, read_only=True)
@@ -995,3 +1002,27 @@ class DeviceModelTechnicalOnboardingFinalizeSerializer(serializers.Serializer):
     onboarding_request_id = serializers.IntegerField()
     status = serializers.ChoiceField(choices=['accepted', 'rejected'])
     final_comment = serializers.CharField(required=True)
+
+
+class DeviceModelForTestAgencySerializer(SanitizingModelSerializer):
+    eSimProviders = eSimProviderSerializer(many=True, read_only=True)
+    created_by = UserSerializer(read_only=True)
+    cop_info = serializers.SerializerMethodField()
+    manufacturer_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeviceModel
+        fields = '__all__'
+
+    def get_cop_info(self, obj):
+        cop = DeviceCOP.objects.filter(device_model=obj, latest=True).first()
+        if cop:
+            return DeviceCOPSerializer(cop).data
+        return None
+
+    def get_manufacturer_info(self, obj):
+        manufacturers = Manufacturer.objects.filter(
+            technical_onboarding_requests__device_model=obj,
+            technical_onboarding_requests__status='accepted'
+        ).distinct()
+        return ManufacturerSerializer(manufacturers, many=True).data

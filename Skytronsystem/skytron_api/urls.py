@@ -116,6 +116,13 @@ urlpatterns = [
     path('eSimProvider/update_eSimProvider/', update_eSimProvider, name='update_eSimProvider'),
     path('pub/eSimProvider/filter_eSimProvider/', filter_eSimProvider_pub, name='filter_eSimProvider_pub'),
     path('eSimProvider/filter_eSimProvider/', filter_eSimProvider, name='filter_eSimProvider'),
+
+    path('testAgency/create_testAgency/', create_testAgency, name='create_testAgency'),
+    path('testAgency/update_testAgency/', update_testAgency, name='update_testAgency'),
+    path('testAgency/list/', get_testAgency_list, name='get_testAgency_list'),
+    path('testAgency/name_list/', get_testAgency_name_list, name='get_testAgency_name_list'),
+    path('testAgency/device_models/', get_testAgency_device_models, name='get_testAgency_device_models'),
+
     path('VehicleOwner/create_VehicleOwner/', create_VehicleOwner, name='create_VehicleOwner'),
     path('VehicleOwner/update_VehicleOwner/', update_VehicleOwner, name='update_VehicleOwner'),
     path('VehicleOwner/filter_VehicleOwner/', filter_VehicleOwner, name='filter_VehicleOwner'),
