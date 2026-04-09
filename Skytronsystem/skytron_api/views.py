@@ -2691,6 +2691,9 @@ def gps_track_data_api(request ):
         # --- End geofence logic ---
 
         # --- Helper utilities for nearest POI / Route proximity ---
+        import time as _time
+        _t0 = _time.perf_counter()
+
         # Haversine distance in kilometers
         def haversine_km(lat1, lon1, lat2, lon2):
             R = 6371.0
@@ -2699,14 +2702,25 @@ def gps_track_data_api(request ):
             a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
             return 2 * R * asin(sqrt(a))
 
-        # Resolve a representative point for a POI
-        def poi_coord(poi):
-            try:
-                if getattr(poi, 'lat', None) is not None and getattr(poi, 'lon', None) is not None:
+        # Preload POIs once and pre-compute their coordinates + serialize once
+        try:
+            all_pois = list(pointofinterests.objects.all())
+        except Exception:
+            all_pois = []
+        _t1 = _time.perf_counter()
+        print(f"TIMING: poi_fetch={_t1-_t0:.3f}s  count={len(all_pois)}")
+
+        # Build pre-computed (lat, lon, poi) tuples — parse JSON location once per POI
+        def _extract_poi_coord(poi):
+            if getattr(poi, 'lat', None) is not None and getattr(poi, 'lon', None) is not None:
+                try:
                     return float(poi.lat), float(poi.lon)
-                loc = getattr(poi, 'location', None)
-                if not loc:
-                    return None
+                except (TypeError, ValueError):
+                    pass
+            loc = getattr(poi, 'location', None)
+            if not loc:
+                return None
+            try:
                 coords = json.loads(loc) if isinstance(loc, str) else loc
                 lats, lons = [], []
                 if isinstance(coords, list):
@@ -2720,72 +2734,86 @@ def gps_track_data_api(request ):
                 if lats and lons:
                     return sum(lats) / len(lats), sum(lons) / len(lons)
             except Exception:
-                return None
+                pass
             return None
 
-        # Preload POIs and Routes once for efficiency
-        try:
-            all_pois = list(pointofinterests.objects.all())
-        except Exception:
-            all_pois = []
-        police_pois = [p for p in all_pois if getattr(p, 'use_type', None) == 'police']
+        # Pre-build coordinate + serialized-data tuples for all POIs (done once)
+        _poi_index = []          # (lat, lon, poi, serialized_data)
+        _police_poi_index = []
+        for _p in all_pois:
+            _c = _extract_poi_coord(_p)
+            if _c is None:
+                continue
+            _sd = PointOfInterestSerializer(_p).data
+            _entry = (_c[0], _c[1], _p, _sd)
+            _poi_index.append(_entry)
+            if getattr(_p, 'use_type', None) == 'police':
+                _police_poi_index.append(_entry)
+        _t2 = _time.perf_counter()
+        print(f"TIMING: poi_serialize={_t2-_t1:.3f}s  poi_index={len(_poi_index)}")
 
+        # Pre-build route point arrays and serialize once
         try:
             all_routes = list(Route.objects.all())
         except Exception:
             all_routes = []
+        _t3 = _time.perf_counter()
+        print(f"TIMING: route_fetch={_t3-_t2:.3f}s  count={len(all_routes)}")
 
-        def nearest_poi_info(lat, lon, poi_list):
-            best = None
+        # _route_index: list of (list_of_(lat,lon)_tuples, serialized_route)
+        _route_index = []
+        for _r in all_routes:
+            _pts_raw = None
+            if hasattr(_r, 'route') and getattr(_r, 'route') is not None:
+                _pts_raw = getattr(_r, 'route')
+            elif hasattr(_r, 'routepoints') and getattr(_r, 'routepoints') is not None:
+                _pts_raw = getattr(_r, 'routepoints')
+            if not _pts_raw:
+                continue
+            try:
+                _pts = json.loads(_pts_raw) if isinstance(_pts_raw, str) else _pts_raw
+            except Exception:
+                continue
+            _coords = []
+            if isinstance(_pts, list):
+                for _pt in _pts:
+                    if isinstance(_pt, (list, tuple)) and len(_pt) >= 2:
+                        _coords.append((float(_pt[1]), float(_pt[0])))  # (lat, lon)
+                    elif isinstance(_pt, dict) and 'lat' in _pt and 'lon' in _pt:
+                        _coords.append((float(_pt['lat']), float(_pt['lon'])))
+            if _coords:
+                _route_index.append((_coords, routeSerializer(_r).data))
+        _t4 = _time.perf_counter()
+        print(f"TIMING: route_serialize={_t4-_t3:.3f}s  route_index={len(_route_index)}")
+
+        def nearest_poi_info(lat, lon, poi_index):
             best_dist = None
-            for poi in poi_list:
-                pc = poi_coord(poi)
-                if not pc:
-                    continue
-                plat, plon = pc
+            best_entry = None
+            for (plat, plon, _poi, _sd) in poi_index:
                 d = haversine_km(lat, lon, plat, plon)
                 if best_dist is None or d < best_dist:
-                    best = poi
                     best_dist = d
-            if best is None:
+                    best_entry = (_poi, _sd)
+            if best_entry is None:
                 return None
-            # Return full POI data using standard serializer with distance metadata
             return {
-                'data': PointOfInterestSerializer(best).data,
+                'data': best_entry[1],
                 'distance_meters': int(round((best_dist or 0) * 1000)),
             }
 
         def routes_within_100m(lat, lon):
             results = []
-            for r in all_routes:
-                pts_raw = None
-                if hasattr(r, 'route') and getattr(r, 'route') is not None:
-                    pts_raw = getattr(r, 'route')
-                elif hasattr(r, 'routepoints') and getattr(r, 'routepoints') is not None:
-                    pts_raw = getattr(r, 'routepoints')
-                if not pts_raw:
-                    continue
-                try:
-                    pts = json.loads(pts_raw) if isinstance(pts_raw, str) else pts_raw
-                except Exception:
-                    continue
+            for (_coords, _rdata) in _route_index:
                 min_km = None
-                if isinstance(pts, list):
-                    for pt in pts:
-                        # Expect [lon, lat, altitude] or [lon, lat]
-                        if isinstance(pt, (list, tuple)) and len(pt) >= 2:
-                            lon_r = float(pt[0])
-                            lat_r = float(pt[1])
-                            d = haversine_km(lat, lon, lat_r, lon_r)
-                            if min_km is None or d < min_km:
-                                min_km = d
-                        elif isinstance(pt, dict) and 'lat' in pt and 'lon' in pt:
-                            d = haversine_km(lat, lon, float(pt['lat']), float(pt['lon']))
-                            if min_km is None or d < min_km:
-                                min_km = d
-                if min_km is not None and min_km <= 0.1:  # within 100 meters
+                for (lat_r, lon_r) in _coords:
+                    d = haversine_km(lat, lon, lat_r, lon_r)
+                    if min_km is None or d < min_km:
+                        min_km = d
+                    if min_km is not None and min_km <= 0.1:
+                        break  # early exit: already within 100m
+                if min_km is not None and min_km <= 0.1:
                     results.append({
-                        'data': routeSerializer(r).data,
+                        'data': _rdata,
                         'min_distance_meters': int(round(min_km * 1000)),
                     })
             return results
@@ -2794,7 +2822,7 @@ def gps_track_data_api(request ):
         from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
         # Single query: PostgreSQL DISTINCT ON fetches one latest row per device_tag, eliminating N+1.
         # select_related pre-joins all FK paths; prefetch_related covers the M2M vehicle_owner->users.
-        latest_entries = (
+        latest_entries = list(
             gps_queryset
             .order_by('device_tag', '-entry_time')
             .distinct('device_tag')
@@ -2810,6 +2838,8 @@ def gps_track_data_api(request ):
             )
             .prefetch_related('device_tag__vehicle_owner__users')
         )
+        _t5 = _time.perf_counter()
+        print(f"TIMING: db_query={_t5-_t4:.3f}s  rows={len(latest_entries)}")
         data = []
         for latest_entry in latest_entries:
             if latest_entry:
@@ -2885,8 +2915,8 @@ def gps_track_data_api(request ):
                 lat = getattr(latest_entry, 'latitude', None)
                 lon = getattr(latest_entry, 'longitude', None)
                 if lat is not None and lon is not None:
-                    np_info = nearest_poi_info(float(lat), float(lon), all_pois)
-                    npp_info = nearest_poi_info(float(lat), float(lon), police_pois)
+                    np_info = nearest_poi_info(float(lat), float(lon), _poi_index)
+                    npp_info = nearest_poi_info(float(lat), float(lon), _police_poi_index)
                     near_rs = routes_within_100m(float(lat), float(lon))
                 else:
                     np_info = None
@@ -2896,6 +2926,8 @@ def gps_track_data_api(request ):
                 dd['nearest_police'] = npp_info
                 dd['nearby_routes_within_100m'] = near_rs
                 data.append(dd)
+        _t6 = _time.perf_counter()
+        print(f"TIMING: per_vehicle_loop={_t6-_t5:.3f}s  output={len(data)}  TOTAL={_t6-_t0:.3f}s")
         data_list = list(data)
         response = {'data': data_list}
         if geofence_message:
