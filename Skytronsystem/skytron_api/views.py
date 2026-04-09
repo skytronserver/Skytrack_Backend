@@ -2498,7 +2498,7 @@ def gps_track_data_api(request ):
         poi_t_cf = str(poi_t).casefold() if poi_t is not None else None
 
         # Get base queryset
-        gps_queryset = GPSData.objects.exclude(device_tag=None).filter(gps_status=1)
+        gps_queryset = GPSData.objects.exclude(device_tag=None).filter(gps_status=1, device_tag__status='Owner_Final_OTP_Verified')
 
         # Filter by imei if provided (partial match)
         if imei and imei != "None":
@@ -2526,6 +2526,11 @@ def gps_track_data_api(request ):
         if speed_limit is not None:
             # Settings_VehicleCategory.maxSpeed is stored as text; allow leading zeros
             gps_queryset = gps_queryset.filter(device_tag__category__maxSpeed__regex=rf'^0*{speed_limit}$')
+        # Push owner name filter to DB level (device_tag-level attribute — safe to apply early)
+        if owner_name_substr:
+            gps_queryset = gps_queryset.filter(
+                device_tag__vehicle_owner__users__name__icontains=owner_name_substr
+            )
 
         # Apply role-based filtering (unchanged)
         if request.user and request.user.is_authenticated:
@@ -2786,12 +2791,27 @@ def gps_track_data_api(request ):
             return results
         # --- End helper utilities ---
 
-        distinct_registration_numbers = gps_queryset.values('device_tag').distinct()
-        data = []
         from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
-        for x in distinct_registration_numbers:
-            latest_entry = gps_queryset.filter(device_tag=x['device_tag']).filter(gps_status=1).order_by('-entry_time')
-            latest_entry = latest_entry.first()
+        # Single query: PostgreSQL DISTINCT ON fetches one latest row per device_tag, eliminating N+1.
+        # select_related pre-joins all FK paths; prefetch_related covers the M2M vehicle_owner->users.
+        latest_entries = (
+            gps_queryset
+            .order_by('device_tag', '-entry_time')
+            .distinct('device_tag')
+            .select_related(
+                'device_tag',
+                'device_tag__device',
+                'device_tag__device__dealer',
+                'device_tag__device__dealer__manufacturer',
+                'device_tag__vehicle_owner',
+                'device_tag__category',
+                'device_tag__district',
+                'device_tag__district__state',
+            )
+            .prefetch_related('device_tag__vehicle_owner__users')
+        )
+        data = []
+        for latest_entry in latest_entries:
             if latest_entry:
                 # Filter by poi_t in latest GPSData.road or GPSData.city (case-insensitive substring)
                 if poi_t_cf:
@@ -2801,17 +2821,6 @@ def gps_track_data_api(request ):
                     city_cf = str(city_value).casefold() if city_value is not None else ''
                     if poi_t_cf not in road_cf and poi_t_cf not in city_cf:
                         continue
-                # Owner name substring filter
-                if owner_name_substr:
-                    owner_obj = getattr(getattr(latest_entry.device_tag, 'vehicle_owner', None), 'users', None)
-                    owner_match = False
-                    if owner_obj:
-                        for user in owner_obj.all():
-                            if owner_name_substr.lower() in (user.name or '').lower():
-                                owner_match = True
-                                break
-                    if not owner_match:
-                        continue  # skip if no owner matches substring
                 # Geofence filter: check polygon containment OR POI radius
                 if polygon is not None:
                     lat = getattr(latest_entry, 'latitude', None)
@@ -2836,7 +2845,7 @@ def gps_track_data_api(request ):
                     dd['entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
                 if latest_entry.device_tag:
                     dd['vehicle_registration_number'] = latest_entry.device_tag.vehicle_reg_no
-                    dd['imei'] = latest_entry.device_tag.device.imei
+                    dd['imei'] = latest_entry.device_tag.device.imei if latest_entry.device_tag.device else None
                     device_tag_obj = latest_entry.device_tag
                     device_tag_data = DeviceTagSerializer(device_tag_obj).data
                     # Attach concise device/manufacturer summary for convenience
@@ -16525,6 +16534,10 @@ def password_reset(request ):
                 prof=EM_ex.objects.filter( 
                 users=user, 
                 ).last()  
+            elif user.role ==  "testagency":
+                prof=TestAgency.objects.filter( 
+                users=user, 
+                ).last()
             else:
                 pas=True
                 user=None
@@ -24857,7 +24870,7 @@ def get_testAgency_name_list(request):
 
     try:
         agencies = TestAgency.objects.filter(
-            users__is_active=True
+            users__status='active'
         ).values('id', 'agency_name').distinct()
         return Response(list(agencies))
     except Exception as e:

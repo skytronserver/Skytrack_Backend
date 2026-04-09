@@ -1107,6 +1107,8 @@ class DeviceTag(models.Model):
         ('Device_Active', 'Device Active'),
         ('Device_Not_Active', 'Device Not Active'),
         ('Device_Untagged', 'Device Untagged'),
+        ('Device_Untagged', 'Device Untagged'),
+        ('Owner_Final_OTP_Verified', 'Owner Final OTP Verified'),
         ('TagDeleted', 'TagDeleted'),
         ('untaged_after_failed_taging', 'Untagged After Failed Tagging'),
     ]
