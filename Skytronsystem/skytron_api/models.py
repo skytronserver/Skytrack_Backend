@@ -2940,3 +2940,13 @@ class TestAgency(models.Model):
 
     def __str__(self):
         return self.agency_name
+
+
+class TestAgencyDetails(models.Model):
+    name = models.CharField(max_length=255)
+    address = models.CharField(max_length=500, blank=True, null=True)
+    pincode = models.CharField(max_length=20, blank=True, null=True)
+    created = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name

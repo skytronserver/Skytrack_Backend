@@ -232,6 +232,12 @@ class TestAgencySerializer(SanitizingModelSerializer):
         fields = '__all__'
 
 
+class TestAgencyDetailsSerializer(SanitizingModelSerializer):
+    class Meta:
+        model = TestAgencyDetails
+        fields = '__all__'
+
+
 class ManufacturerSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     state = Settings_StateSerializer(many=False, read_only=True)

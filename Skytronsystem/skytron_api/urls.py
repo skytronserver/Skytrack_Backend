@@ -121,6 +121,8 @@ urlpatterns = [
     path('testAgency/update_testAgency/', update_testAgency, name='update_testAgency'),
     path('testAgency/list/', get_testAgency_list, name='get_testAgency_list'),
     path('testAgency/name_list/', get_testAgency_name_list, name='get_testAgency_name_list'),
+    path('testAgency/details/create/', create_testAgencyDetails, name='create_testAgencyDetails'),
+    path('testAgency/details/update/', update_testAgencyDetails, name='update_testAgencyDetails'),
     path('testAgency/device_models/', get_testAgency_device_models, name='get_testAgency_device_models'),
 
     path('VehicleOwner/create_VehicleOwner/', create_VehicleOwner, name='create_VehicleOwner'),
