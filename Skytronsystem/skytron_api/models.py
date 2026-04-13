@@ -2323,6 +2323,40 @@ class IncidentRegister(models.Model):
     
     
     
+class TestAgency(models.Model):
+    objects = SafeCreateManager()
+    agency_name = models.CharField(max_length=255, verbose_name="Test Agency Name")
+    company_address = models.CharField(max_length=255, blank=True, null=True)
+    company_pin = models.CharField(max_length=20, blank=True, null=True)
+    file_authLetter = models.CharField(max_length=255, blank=True, null=True)
+    idProofno = models.CharField(max_length=255, blank=True, null=True)
+    file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    users = models.ManyToManyField('User', related_name='testagency_user')
+    created = models.DateField(auto_now_add=True)
+    expirydate = models.DateField(default=timezone.localdate)
+    createdby = models.ForeignKey('User', on_delete=models.CASCADE, related_name='testagency_createdby')
+    status_choices = [
+        ('Created', 'Created'),
+        ('UserVerified', 'UserVerified'),
+        ('UserExpired', 'UserExpired'),
+        ('Discontinued', 'Discontinued'),
+        ('Accept', 'Accept'),
+        ('Reject', 'Reject'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices)
+
+    def __str__(self):
+        return self.agency_name
+
+
+class TestAgencyDetails(models.Model):
+    name = models.CharField(max_length=255)
+    address = models.CharField(max_length=500, blank=True, null=True)
+    pincode = models.CharField(max_length=20, blank=True, null=True)
+    created = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
     
     
     
@@ -2463,7 +2497,7 @@ class SchoolRoute(models.Model):
     STATUS_DELETED = "deleted"
     STATUS_CHOICES = [
         (STATUS_ACTIVE, "Active"),
-        (STATUS_DELETED, "Deleted"),
+        ("inactive", "Inactive"),  
     ]
 
     name = models.CharField(max_length=255)
@@ -2478,6 +2512,7 @@ class SchoolRoute(models.Model):
 
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name="created_routes")
     created_at = models.DateTimeField(auto_now_add=True)
+    description = models.TextField(blank=True)
 
     class Meta:
         # Table: skytron_api_schoolroute
@@ -2501,6 +2536,7 @@ class SchoolBusStop(models.Model):
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,related_name="created_bus_stops")
     created_at = models.DateTimeField(auto_now_add=True)
+    timing = models.TimeField(null=True, blank=True)
 
     class Meta:
         # Table: skytron_api_schoolbusstop
@@ -2617,12 +2653,14 @@ class SchoolBusDocument(models.Model):
     DOC_PERMIT = "PERMIT"
     DOC_AUTH = "AUTH_LETTER"
     DOC_VLTD = "VLTD_RECEIPT"
+    DOC_REQUEST_LETTER = "REQUEST_LETTER"
 
     DOC_CHOICES = [
         (DOC_RC, "Vehicle RC"),
         (DOC_PERMIT, "School Bus Permit"),
         (DOC_AUTH, "Authorization Letter"),
         (DOC_VLTD, "VLTD Fitment Receipt"),
+        (DOC_REQUEST_LETTER, "Request Letter From School Principal"), 
     ]
 
     school = models.ForeignKey(School,on_delete=models.CASCADE,related_name="bus_documents")
@@ -2652,6 +2690,7 @@ class Student(models.Model):
     class_name = models.CharField(max_length=50)
     school = models.ForeignKey(School,on_delete=models.CASCADE,related_name="students")
     created_at = models.DateTimeField(auto_now_add=True)
+    section = models.CharField(max_length=50, blank=True)
 
     class Meta:
         # Table: skytron_api_student
@@ -2851,9 +2890,45 @@ class SchoolBusTag(models.Model):
     is_active = models.BooleanField(default=True)
     tagged_at = models.DateTimeField(auto_now_add=True)
 
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("pending", "Pending"),
+            ("approved", "Approved"),
+            ("rejected", "Rejected"),
+        ],
+        default="pending"
+    )
+    otp = models.CharField(max_length=128, blank=True)
+    otp_verified = models.BooleanField(default=False)
+    otp_created_at = models.DateTimeField(null=True, blank=True)
+    otp_attempts = models.IntegerField(default=0)
+    remarks = models.TextField(blank=True)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="requested_bus_tags"
+    )
+    requested_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="reviewed_bus_tags"
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+
     class Meta:
         # Table: skytron_api_schoolbustag
-        unique_together = ("school", "bus")
+        constraints = [
+        models.UniqueConstraint(
+                fields=["school", "bus"],
+                condition=models.Q(status__in=["pending", "approved"]),
+                name="unique_active_tag_per_school_bus"
+            )
+        ]
         indexes = [models.Index(fields=["school", "is_active"])]
 
     def __str__(self):
@@ -2865,6 +2940,18 @@ class SchoolBusTag(models.Model):
 # =====================================================
 # Table: skytron_api_routebusassignment
 class RouteBusAssignment(models.Model):
+    
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("active", "Active"),
+            ("inactive", "Inactive"),
+        ],
+        default="active"
+    )
+
+
+    
     school = models.ForeignKey(School,on_delete=models.CASCADE,related_name="route_bus_assignments")
     # Route from our own module
     route = models.ForeignKey(SchoolRoute,on_delete=models.PROTECT,related_name="bus_assignments")
@@ -2915,38 +3002,3 @@ class BusAlert(models.Model):
         # Table: skytron_api_busalert
         indexes = [models.Index(fields=["school", "alert_type"])]
 
-
-class TestAgency(models.Model):
-    objects = SafeCreateManager()
-    agency_name = models.CharField(max_length=255, verbose_name="Test Agency Name")
-    company_address = models.CharField(max_length=255, blank=True, null=True)
-    company_pin = models.CharField(max_length=20, blank=True, null=True)
-    file_authLetter = models.CharField(max_length=255, blank=True, null=True)
-    idProofno = models.CharField(max_length=255, blank=True, null=True)
-    file_idProof = models.CharField(max_length=255, blank=True, null=True)
-    users = models.ManyToManyField('User', related_name='testagency_user')
-    created = models.DateField(auto_now_add=True)
-    expirydate = models.DateField(default=timezone.localdate)
-    createdby = models.ForeignKey('User', on_delete=models.CASCADE, related_name='testagency_createdby')
-    status_choices = [
-        ('Created', 'Created'),
-        ('UserVerified', 'UserVerified'),
-        ('UserExpired', 'UserExpired'),
-        ('Discontinued', 'Discontinued'),
-        ('Accept', 'Accept'),
-        ('Reject', 'Reject'),
-    ]
-    status = models.CharField(max_length=20, choices=status_choices)
-
-    def __str__(self):
-        return self.agency_name
-
-
-class TestAgencyDetails(models.Model):
-    name = models.CharField(max_length=255)
-    address = models.CharField(max_length=500, blank=True, null=True)
-    pincode = models.CharField(max_length=20, blank=True, null=True)
-    created = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return self.name
