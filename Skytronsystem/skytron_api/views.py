@@ -2126,140 +2126,66 @@ def save_file(request, tag, path):
             return None 
         #return Response({'error': "Invalid file detected. Upload denied."}, status=400)
     
-    # Create the directory in the host storage path if it doesn't exist
-    if not path.startswith('fileuploads/') and path != 'fileuploads' and not path.startswith('./fileuploads/'):
-        # Prepend fileuploads/ to ensure consistent path structure
-        host_path = os.path.join(HOST_STORAGE_PATH, 'fileuploads', path.lstrip('./'))
-    else:
-        host_path = os.path.join(HOST_STORAGE_PATH, path.lstrip('./'))
-    
-    try:
-        os.makedirs(host_path, exist_ok=True)
-    except PermissionError:
-        return None
-    
     file_extension = valid_mime_types[mime_type]
     file_name = ''.join(secrets.choice('0123456789') for _ in range(40)) + "." + file_extension
-    file_path = os.path.join(host_path, file_name)
-    
-    with open(file_path, 'wb') as file:
-        uploaded_file.seek(0)  # Reset file pointer to the beginning
-        for chunk in uploaded_file.chunks():
-            file.write(chunk)
 
-    # Return the path that will be stored in the database and used for retrieval
-    if not path.startswith('fileuploads/') and path != 'fileuploads' and not path.startswith('./fileuploads/'):
-        # Return path with folder name included, e.g., "notice/filename.jpg"
-        return os.path.join(path.lstrip('./'), file_name)
+    clean_path = path.lstrip('./')
+    # Build the MinIO object key, always rooted under fileuploads/
+    if not clean_path.startswith('fileuploads/') and clean_path != 'fileuploads':
+        object_key = 'fileuploads/' + clean_path.rstrip('/') + '/' + file_name
     else:
-        # Path already has structure, just return it
-        return os.path.join(path.lstrip('./'), file_name)
+        object_key = clean_path.rstrip('/') + '/' + file_name
+
+    uploaded_file.seek(0)
+    file_bytes = uploaded_file.read()
+    try:
+        from . import minio_storage
+        minio_storage.upload_bytes(object_key, file_bytes, mime_type)
+    except Exception:
+        return None
+
+    # Return the relative path stored in the database (same shape as before)
+    return clean_path.rstrip('/') + '/' + file_name
 
 
 
 def find_file_in_folders(filename, folders):
-    # First try with the original path which might include directories
-    
-    
-    filename=os.path.join(HOST_STORAGE_PATH, filename)
-    if os.path.isfile(filename):
-        return filename
-                
-    return None
-    for folder in folders:
-        filename_clean = filename.replace("%20", " ")
-        
-        # Case 1: If filename already contains path components like 'notice/file.jpg'
-        if '/' in filename_clean:
-            # Try direct path
-            potential_path = os.path.join(folder, filename_clean)
-            if os.path.isfile(potential_path):
-                return potential_path
-                
-            # Try with fileuploads prefix if not already there
-            if not filename_clean.startswith('fileuploads/'):
-                potential_path = os.path.join(folder, 'fileuploads', filename_clean)
-                if os.path.isfile(potential_path):
-                    return potential_path
-        
-        # Case 2: Simple filename without directory
-        else:
-            # Try direct path for simple filename
-            potential_path = os.path.join(folder, filename_clean)
-            if os.path.isfile(potential_path):
-                return potential_path
-            
-            # Try common subdirectories for files
-            for subdir in ['', 'notice', 'fileuploads/notice']:
-                potential_path = os.path.join(folder, subdir, filename_clean)
-                if os.path.isfile(potential_path):
-                    return potential_path
+    """Locate *filename* in the MinIO bucket and return its object key, or None."""
+    from . import minio_storage
 
-    # Use glob as a fallback for more flexible matching
-    for folder in folders:
-        # Try to find by filename only, anywhere under the folder
-        pattern = os.path.join(folder, '**', os.path.basename(filename.replace("%20", " ")))
-        matches = glob.glob(pattern, recursive=True)
-        if matches and os.path.isfile(matches[0]):
-            return matches[0]
-            
+    filename_clean = filename.replace("%20", " ").lstrip('/')
+
+    # Build candidate object keys that mirror the key structure used in save_file
+    candidates = []
+    if not filename_clean.startswith('fileuploads/'):
+        candidates.append('fileuploads/' + filename_clean)
+    candidates.append(filename_clean)
+
+    for key in candidates:
+        if minio_storage.object_exists(key):
+            return key
     return None
+# The folders list is kept for backward-compatible function signatures;
+# actual storage is now in MinIO (local disk is no longer used).
 folders = [
-    os.path.join(HOST_STORAGE_PATH, ''),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/tac_docs/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/Receipt_files/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/kyc_files/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/cop_files/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/file_bin/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/man/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/media/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/notice/'),
-    os.path.join(HOST_STORAGE_PATH, 'fileuploads/driver/'),
-    # Add more folders as needed
+    'fileuploads/',
+    'fileuploads/tac_docs/',
+    'fileuploads/Receipt_files/',
+    'fileuploads/kyc_files/',
+    'fileuploads/cop_files/',
+    'fileuploads/file_bin/',
+    'fileuploads/man/',
+    'fileuploads/media/',
+    'fileuploads/notice/',
+    'fileuploads/driver/',
 ]
 
-# Ensure directories exist (do not crash at import time if host path isn't writable)
-_host_storage_init_ok = True
-for folder in folders:
-    try:
-        os.makedirs(folder, exist_ok=True)
-    except PermissionError:
-        _host_storage_init_ok = False
-        break
-
-# Backward-compatible local relative folders used by legacy code paths on some VMs.
-for legacy_local_folder in ['fileuploads/cop_files', 'fileuploads/copfiles']:
-    try:
-        os.makedirs(legacy_local_folder, exist_ok=True)
-    except PermissionError:
-        pass
-
-if not _host_storage_init_ok:
-    HOST_STORAGE_PATH = os.environ.get('HOST_STORAGE_FALLBACK_PATH', '/tmp/skytrack_storage')
-    folders = [
-        os.path.join(HOST_STORAGE_PATH, ''),
-        os.path.join(HOST_STORAGE_PATH, 'fileuploads/'),
-        os.path.join(HOST_STORAGE_PATH, 'fileuploads/tac_docs/'),
-        os.path.join(HOST_STORAGE_PATH, 'fileuploads/Receipt_files/'),
-        os.path.join(HOST_STORAGE_PATH, 'fileuploads/kyc_files/'),
-        os.path.join(HOST_STORAGE_PATH, 'fileuploads/cop_files/'),
-        os.path.join(HOST_STORAGE_PATH, 'fileuploads/file_bin/'),
-        os.path.join(HOST_STORAGE_PATH, 'fileuploads/man/'),
-        os.path.join(HOST_STORAGE_PATH, 'fileuploads/media/'),
-        os.path.join(HOST_STORAGE_PATH, 'fileuploads/notice/'),
-        os.path.join(HOST_STORAGE_PATH, 'fileuploads/driver/'),
-    ]
-    for folder in folders:
-        try:
-            os.makedirs(folder, exist_ok=True)
-        except PermissionError:
-            pass
-    for legacy_local_folder in ['fileuploads/cop_files', 'fileuploads/copfiles']:
-        try:
-            os.makedirs(legacy_local_folder, exist_ok=True)
-        except PermissionError:
-            pass
+# Ensure the MinIO bucket exists at startup (non-fatal if MinIO is unreachable)
+try:
+    from . import minio_storage as _ms_init
+    _ms_init.ensure_bucket()
+except Exception:
+    pass
 
 
 @api_view(['POST'])
@@ -2295,13 +2221,13 @@ def downloadfile(request):
             if not full_path:
                 return JsonResponse({'error': f'file not found: {file_path}'}, status=400) 
                 
-            try:                
-                with open(full_path, 'rb') as file:
-                    response = HttpResponse(file.read(), content_type='application/octet-stream')
-                    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                    return response
-                    return response
-            except FileNotFoundError:
+            try:
+                from . import minio_storage
+                file_bytes = minio_storage.download_bytes(full_path)
+                response = HttpResponse(file_bytes, content_type='application/octet-stream')
+                response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                return response
+            except Exception:
                 return HttpResponse("File not found.", status=404) 
         except DeviceTag.DoesNotExist:
             return JsonResponse({'error': 'Error in reading file.'}, status=404)

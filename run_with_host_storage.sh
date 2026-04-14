@@ -74,6 +74,11 @@ docker build -t skytron-backend-api -f Skytronsystem/dockerfile.api \
   --build-arg JWT_ALGORITHM="$JWT_ALGORITHM" \
   --build-arg JWT_ACCESS_TOKEN_LIFETIME="$JWT_ACCESS_TOKEN_LIFETIME" \
   --build-arg JWT_REFRESH_TOKEN_LIFETIME="$JWT_REFRESH_TOKEN_LIFETIME" \
+  --build-arg MINIO_ENDPOINT="$MINIO_ENDPOINT" \
+  --build-arg MINIO_ACCESS_KEY="$MINIO_ACCESS_KEY" \
+  --build-arg MINIO_SECRET_KEY="$MINIO_SECRET_KEY" \
+  --build-arg MINIO_BUCKET="$MINIO_BUCKET" \
+  --build-arg MINIO_SECURE="$MINIO_SECURE" \
   Skytronsystem/
  
 # Stop any running container with the same name
