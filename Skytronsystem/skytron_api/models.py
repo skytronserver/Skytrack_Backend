@@ -3002,3 +3002,6 @@ class BusAlert(models.Model):
         # Table: skytron_api_busalert
         indexes = [models.Index(fields=["school", "alert_type"])]
 
+
+
+

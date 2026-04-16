@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IMEI Comparison Tool</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --surface2: #273549;
+            --border: #334155;
+            --text: #e2e8f0;
+            --subtext: #94a3b8;
+            --green: #22c55e;
+            --red: #ef4444;
+            --yellow: #f59e0b;
+            --blue: #3b82f6;
+            --accent: #6366f1;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-size: 14px;
+            min-height: 100vh;
+        }
+
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        header h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        header .badge {
+            background: var(--accent);
+            color: #fff;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 999px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px 24px;
+        }
+
+        /* Setup form */
+        .setup-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .setup-card h2 {
+            font-size: 14px;
+            color: var(--subtext);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            margin-bottom: 14px;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .form-group label {
+            font-size: 12px;
+            color: var(--subtext);
+        }
+
+        .form-group input,
+        .form-group textarea {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            padding: 8px 12px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color .15s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            border-color: var(--accent);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 60px;
+            width: 340px;
+            font-family: monospace;
+        }
+
+        .form-group.grow {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .form-group input.wide {
+            width: 260px;
+        }
+
+        button {
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            padding: 9px 18px;
+            font-size: 13px;
+            font-weight: 500;
+            transition: opacity .15s;
+        }
+
+        button:hover {
+            opacity: .85;
+        }
+
+        button.primary {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        button.danger {
+            background: var(--red);
+            color: #fff;
+        }
+
+        button.success {
+            background: var(--green);
+            color: #fff;
+        }
+
+        button.secondary {
+            background: var(--surface2);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        button:disabled {
+            opacity: .45;
+            cursor: default;
+        }
+
+        /* Mode tabs */
+        .mode-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .tab {
+            padding: 8px 20px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--surface2);
+            color: var(--subtext);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all .15s;
+        }
+
+        .tab.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        /* Field selector */
+        .field-selector {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+        }
+
+        .field-selector h2 {
+            font-size: 13px;
+            color: var(--subtext);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            margin-bottom: 12px;
+        }
+
+        .field-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .field-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 5px 10px;
+            cursor: pointer;
+            user-select: none;
+            transition: all .15s;
+            font-size: 12px;
+        }
+
+        .field-chip:hover {
+            border-color: var(--accent);
+        }
+
+        .field-chip.selected {
+            background: rgba(99, 102, 241, .2);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .field-chip input[type=checkbox] {
+            display: none;
+        }
+
+        .select-all-btn {
+            font-size: 12px;
+        }
+
+        /* Status bar */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .live-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--subtext);
+            flex-shrink: 0;
+        }
+
+        .live-dot.active {
+            background: var(--green);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: .4;
+            }
+        }
+
+        .status-text {
+            font-size: 13px;
+            color: var(--subtext);
+        }
+
+        .countdown {
+            font-size: 12px;
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* Comparison table */
+        .table-wrap {
+            overflow-x: auto;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 600px;
+        }
+
+        thead {
+            background: var(--surface2);
+        }
+
+        thead th {
+            padding: 10px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: var(--subtext);
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        thead th.imei-col {
+            color: var(--text);
+        }
+
+        tbody tr {
+            border-bottom: 1px solid var(--border);
+            transition: background .1s;
+        }
+
+        tbody tr:last-child {
+            border-bottom: none;
+        }
+
+        tbody tr:hover {
+            background: rgba(255, 255, 255, .02);
+        }
+
+        tbody td {
+            padding: 9px 14px;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        td.field-name {
+            color: var(--subtext);
+            font-size: 12px;
+            font-family: monospace;
+        }
+
+        td.value-std {
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        td.value-ok {
+            color: var(--green);
+            font-weight: 500;
+        }
+
+        td.value-fail {
+            color: var(--red);
+            font-weight: 600;
+            background: rgba(239, 68, 68, .08);
+        }
+
+        td.value-na {
+            color: var(--subtext);
+            font-style: italic;
+        }
+
+        /* History */
+        .history-section {
+            margin-top: 24px;
+        }
+
+        .history-section h2 {
+            font-size: 14px;
+            color: var(--subtext);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            margin-bottom: 12px;
+        }
+
+        .history-entry {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .history-header {
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            border-radius: 8px;
+            transition: background .1s;
+        }
+
+        .history-header:hover {
+            background: var(--surface2);
+        }
+
+        .history-header .ts {
+            font-size: 12px;
+            color: var(--accent);
+            font-family: monospace;
+        }
+
+        .history-body {
+            display: none;
+            padding: 0 16px 12px;
+            overflow-x: auto;
+        }
+
+        .history-body.open {
+            display: block;
+        }
+
+        .history-table {
+            font-size: 12px;
+        }
+
+        .mismatch-count {
+            font-size: 11px;
+            background: var(--red);
+            color: #fff;
+            border-radius: 999px;
+            padding: 1px 7px;
+            margin-left: 8px;
+        }
+
+        .mismatch-count.zero {
+            background: var(--green);
+        }
+
+        .empty-state {
+            text-align: center;
+            color: var(--subtext);
+            padding: 40px;
+            font-size: 13px;
+        }
+
+        .error-msg {
+            color: var(--red);
+            font-size: 13px;
+            padding: 8px 0;
+        }
+
+        .section-title {
+            font-size: 13px;
+            color: var(--subtext);
+            margin-bottom: 8px;
+        }
+
+        .flex-gap {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        /* Last updated time per imei column */
+        .col-updated {
+            font-size: 10px;
+            color: var(--subtext);
+            display: block;
+            font-weight: 400;
+            margin-top: 2px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>IMEI Comparison Tool</h1>
+        <span class="badge">Live / History</span>
+    </header>
+
+    <div class="container">
+
+        <!-- Setup -->
+        <div class="setup-card">
+            <h2>Configuration</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Standard IMEI</label>
+                    <input type="text" id="stdImei" class="wide" placeholder="e.g. 860000000000001" maxlength="20">
+                </div>
+                <div class="form-group grow">
+                    <label>Test IMEIs (comma-separated)</label>
+                    <textarea id="testImeis" placeholder="860000000000002, 860000000000003, ..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Poll interval (sec)</label>
+                    <input type="number" id="pollInterval" value="5" min="2" max="60" style="width:90px">
+                </div>
+                <div class="form-group" style="justify-content: flex-end;">
+                    <label>&nbsp;</label>
+                    <div class="flex-gap">
+                        <button class="success" id="startBtn" onclick="startComparison()">▶ Start</button>
+                        <button class="danger" id="stopBtn" onclick="stopComparison()" disabled>■ Stop</button>
+                        <button class="secondary" onclick="clearHistory()">🗑 Clear History</button>
+                    </div>
+                </div>
+            </div>
+            <div class="error-msg" id="configError"></div>
+        </div>
+
+        <!-- Mode tabs -->
+        <div class="mode-tabs">
+            <div class="tab active" id="tabLive" onclick="switchMode('live')">🔴 Live Comparison</div>
+            <div class="tab" id="tabHistory" onclick="switchMode('history')">📋 History</div>
+        </div>
+
+        <!-- Field selector -->
+        <div class="field-selector" id="fieldSelector">
+            <div class="flex-gap" style="margin-bottom:10px;">
+                <h2>Fields to Compare</h2>
+                <button class="secondary select-all-btn" onclick="toggleAllFields(true)">Select All</button>
+                <button class="secondary select-all-btn" onclick="toggleAllFields(false)">Deselect All</button>
+            </div>
+            <div class="field-grid" id="fieldGrid"></div>
+        </div>
+
+        <!-- LIVE panel -->
+        <div id="livePanel">
+            <div class="status-bar">
+                <div class="live-dot" id="liveDot"></div>
+                <span class="status-text" id="statusText">Not started</span>
+                <span class="countdown" id="countdown"></span>
+            </div>
+            <div class="table-wrap" id="liveTableWrap">
+                <div class="empty-state">Configure IMEIs above and click Start.</div>
+            </div>
+        </div>
+
+        <!-- HISTORY panel -->
+        <div id="historyPanel" style="display:none;">
+            <div class="history-section">
+                <h2>Comparison History <span style="font-size:12px;color:var(--accent);" id="histCount"></span></h2>
+                <div id="historyList">
+                    <div class="empty-state">No history yet. Start live comparison to build history.</div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /container -->
+
+    <script>
+        // =====================================================================
+        // State
+        // =====================================================================
+        const ALL_FIELDS = [
+            { key: 'latitude', label: 'Latitude' },
+            { key: 'longitude', label: 'Longitude' },
+            { key: 'latitude_dir', label: 'Lat Dir' },
+            { key: 'longitude_dir', label: 'Lon Dir' },
+            { key: 'speed', label: 'Speed' },
+            { key: 'heading', label: 'Heading' },
+            { key: 'altitude', label: 'Altitude' },
+            { key: 'network_operator', label: 'Network Op.' },
+            { key: 'gsm_signal_strength', label: 'GSM Signal' },
+            { key: 'mcc', label: 'MCC' },
+            { key: 'mnc', label: 'MNC' },
+            { key: 'lac', label: 'LAC' },
+            { key: 'cell_id', label: 'Cell ID' },
+            { key: 'nbr1_cell_id', label: 'NBR1 Cell ID' },
+            { key: 'nbr1_lac', label: 'NBR1 LAC' },
+            { key: 'nbr1_signal_strength', label: 'NBR1 Signal' },
+            { key: 'nbr2_cell_id', label: 'NBR2 Cell ID' },
+            { key: 'nbr2_lac', label: 'NBR2 LAC' },
+            { key: 'nbr2_signal_strength', label: 'NBR2 Signal' },
+            { key: 'nbr3_cell_id', label: 'NBR3 Cell ID' },
+            { key: 'nbr3_lac', label: 'NBR3 LAC' },
+            { key: 'nbr3_signal_strength', label: 'NBR3 Signal' },
+            { key: 'nbr4_cell_id', label: 'NBR4 Cell ID' },
+            { key: 'nbr4_lac', label: 'NBR4 LAC' },
+            { key: 'nbr4_signal_strength', label: 'NBR4 Signal' },
+        ];
+
+        let selectedFields = new Set(ALL_FIELDS.map(f => f.key));
+        let pollTimer = null;
+        let countdownTimer = null;
+        let countdownVal = 5;
+        let running = false;
+        let currentMode = 'live';
+        let history = [];    // array of snapshot objects
+        let lastData = null;
+
+        // =====================================================================
+        // Init
+        // =====================================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            buildFieldChips();
+        });
+
+        function buildFieldChips() {
+            const grid = document.getElementById('fieldGrid');
+            grid.innerHTML = '';
+            ALL_FIELDS.forEach(f => {
+                const chip = document.createElement('label');
+                chip.className = 'field-chip' + (selectedFields.has(f.key) ? ' selected' : '');
+                chip.dataset.key = f.key;
+                chip.innerHTML = `<input type="checkbox" ${selectedFields.has(f.key) ? 'checked' : ''}> ${f.label}`;
+                chip.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    toggleField(f.key, chip);
+                });
+                grid.appendChild(chip);
+            });
+        }
+
+        function toggleField(key, chip) {
+            if (selectedFields.has(key)) {
+                selectedFields.delete(key);
+                chip.classList.remove('selected');
+                chip.querySelector('input').checked = false;
+            } else {
+                selectedFields.add(key);
+                chip.classList.add('selected');
+                chip.querySelector('input').checked = true;
+            }
+            if (lastData) renderLiveTable(lastData);
+        }
+
+        function toggleAllFields(val) {
+            ALL_FIELDS.forEach(f => {
+                if (val) selectedFields.add(f.key);
+                else selectedFields.delete(f.key);
+            });
+            buildFieldChips();
+            if (lastData) renderLiveTable(lastData);
+        }
+
+        // =====================================================================
+        // Mode switching
+        // =====================================================================
+        function switchMode(mode) {
+            currentMode = mode;
+            document.getElementById('tabLive').classList.toggle('active', mode === 'live');
+            document.getElementById('tabHistory').classList.toggle('active', mode === 'history');
+            document.getElementById('livePanel').style.display = mode === 'live' ? 'block' : 'none';
+            document.getElementById('historyPanel').style.display = mode === 'history' ? 'block' : 'none';
+        }
+
+        // =====================================================================
+        // Start / Stop
+        // =====================================================================
+        function startComparison() {
+            const stdImei = document.getElementById('stdImei').value.trim();
+            const testRaw = document.getElementById('testImeis').value.trim();
+            const errEl = document.getElementById('configError');
+
+            if (!stdImei) { errEl.textContent = 'Please enter a Standard IMEI.'; return; }
+            if (!testRaw) { errEl.textContent = 'Please enter at least one Test IMEI.'; return; }
+            errEl.textContent = '';
+
+            countdownVal = parseInt(document.getElementById('pollInterval').value) || 5;
+            running = true;
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('liveDot').classList.add('active');
+
+            fetchAndRender();
+        }
+
+        function stopComparison() {
+            running = false;
+            clearTimeout(pollTimer);
+            clearTimeout(countdownTimer);
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('liveDot').classList.remove('active');
+            document.getElementById('statusText').textContent = 'Stopped';
+            document.getElementById('countdown').textContent = '';
+        }
+
+        function clearHistory() {
+            history = [];
+            renderHistory();
+        }
+
+        // =====================================================================
+        // Fetch
+        // =====================================================================
+        function fetchAndRender() {
+            if (!running) return;
+
+            const stdImei = document.getElementById('stdImei').value.trim();
+            const testImeis = document.getElementById('testImeis').value.trim();
+
+            document.getElementById('statusText').textContent = 'Fetching…';
+            document.getElementById('countdown').textContent = '';
+
+            const url = `/api/imei-comparison/data/?standard_imei=${encodeURIComponent(stdImei)}&test_imeis=${encodeURIComponent(testImeis)}`;
+
+            fetch(url)
+                .then(r => {
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    return r.json();
+                })
+                .then(data => {
+                    lastData = data;
+                    renderLiveTable(data);
+                    pushHistory(data, stdImei, testImeis);
+                    document.getElementById('statusText').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+                    startCountdown();
+                })
+                .catch(err => {
+                    document.getElementById('statusText').textContent = '⚠ Error: ' + err.message;
+                    startCountdown();
+                });
+        }
+
+        function startCountdown() {
+            if (!running) return;
+            let secs = parseInt(document.getElementById('pollInterval').value) || 5;
+            const cdEl = document.getElementById('countdown');
+
+            function tick() {
+                if (!running) { cdEl.textContent = ''; return; }
+                cdEl.textContent = `Next poll in ${secs}s`;
+                if (secs <= 0) {
+                    cdEl.textContent = '';
+                    fetchAndRender();
+                    return;
+                }
+                secs--;
+                countdownTimer = setTimeout(tick, 1000);
+            }
+            clearTimeout(countdownTimer);
+            tick();
+        }
+
+        // =====================================================================
+        // Render live table
+        // =====================================================================
+        function renderLiveTable(data) {
+            const stdImei = document.getElementById('stdImei').value.trim();
+            const testImeis = document.getElementById('testImeis').value
+                .split(',').map(s => s.trim()).filter(Boolean);
+
+            const fields = ALL_FIELDS.filter(f => selectedFields.has(f.key));
+            if (!fields.length) {
+                document.getElementById('liveTableWrap').innerHTML = '<div class="empty-state">No fields selected.</div>';
+                return;
+            }
+
+            const allImeis = [stdImei, ...testImeis];
+            const stdData = data[stdImei] || {};
+
+            let html = '<table><thead><tr>';
+            html += '<th>Field</th>';
+            allImeis.forEach((imei, i) => {
+                const rec = data[imei] || {};
+                const ts = rec.entry_time ? new Date(rec.entry_time).toLocaleTimeString() : '—';
+                html += `<th class="imei-col">${i === 0 ? '⭐ ' : ''}${imei}<span class="col-updated">${ts}</span></th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            fields.forEach(f => {
+                html += `<tr><td class="field-name">${f.label}</td>`;
+
+                allImeis.forEach((imei, i) => {
+                    const rec = data[imei] || {};
+                    if (!rec.found) {
+                        html += `<td class="value-na">N/A</td>`;
+                        return;
+                    }
+                    const val = rec[f.key];
+                    const disp = val !== null && val !== undefined ? val : '—';
+                    if (i === 0) {
+                        html += `<td class="value-std">${disp}</td>`;
+                    } else {
+                        const stdVal = stdData[f.key];
+                        const match = stdData.found && val !== undefined && val !== null && stdVal !== undefined && stdVal !== null
+                            ? String(val).trim() === String(stdVal).trim() : null;
+                        if (match === null) {
+                            html += `<td class="value-na">${disp}</td>`;
+                        } else if (match) {
+                            html += `<td class="value-ok">✓ ${disp}</td>`;
+                        } else {
+                            html += `<td class="value-fail">✗ ${disp}</td>`;
+                        }
+                    }
+                });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            document.getElementById('liveTableWrap').innerHTML = html;
+        }
+
+        // =====================================================================
+        // History management (frontend-only, cleared on reload)
+        // =====================================================================
+        function pushHistory(data, stdImei, testImeis) {
+            const testList = testImeis.split(',').map(s => s.trim()).filter(Boolean);
+            const stdData = data[stdImei] || {};
+
+            // Count total mismatches across all test imeis and selected fields
+            let totalMismatches = 0;
+            testList.forEach(imei => {
+                const rec = data[imei] || {};
+                if (!rec.found) return;
+                ALL_FIELDS.filter(f => selectedFields.has(f.key)).forEach(f => {
+                    if (stdData.found && String(rec[f.key]).trim() !== String(stdData[f.key]).trim()) {
+                        totalMismatches++;
+                    }
+                });
+            });
+
+            history.unshift({
+                ts: new Date().toISOString(),
+                data: JSON.parse(JSON.stringify(data)),
+                stdImei,
+                testImeis: testList,
+                mismatches: totalMismatches,
+                fields: [...selectedFields],
+            });
+
+            // Keep last 200 entries
+            if (history.length > 200) history.pop();
+
+            if (currentMode === 'history') renderHistory();
+            document.getElementById('histCount').textContent = `(${history.length} entries)`;
+        }
+
+        function renderHistory() {
+            document.getElementById('histCount').textContent = history.length ? `(${history.length} entries)` : '';
+            const container = document.getElementById('historyList');
+            if (!history.length) {
+                container.innerHTML = '<div class="empty-state">No history yet.</div>';
+                return;
+            }
+
+            container.innerHTML = history.map((snap, idx) => {
+                const ts = new Date(snap.ts).toLocaleString();
+                const mc = snap.mismatches;
+                const badgeCls = mc === 0 ? 'zero' : '';
+                return `
+      <div class="history-entry">
+        <div class="history-header" onclick="toggleHistEntry(${idx})">
+          <span>
+            <strong>${ts}</strong>
+            <span class="mismatch-count ${badgeCls}">${mc} mismatch${mc === 1 ? '' : 'es'}</span>
+          </span>
+          <span style="color:var(--subtext);font-size:11px;">▼ expand</span>
+        </div>
+        <div class="history-body" id="hb${idx}">
+          ${buildHistoryTable(snap)}
+        </div>
+      </div>`;
+            }).join('');
+        }
+
+        function toggleHistEntry(idx) {
+            const body = document.getElementById(`hb${idx}`);
+            body.classList.toggle('open');
+        }
+
+        function buildHistoryTable(snap) {
+            const { data, stdImei, testImeis, fields } = snap;
+            const activeFields = ALL_FIELDS.filter(f => fields.includes(f.key));
+            const stdData = data[stdImei] || {};
+            const allImeis = [stdImei, ...testImeis];
+
+            let html = '<table class="history-table"><thead><tr><th>Field</th>';
+            allImeis.forEach((imei, i) => {
+                const rec = data[imei] || {};
+                const ts = rec.entry_time ? new Date(rec.entry_time).toLocaleTimeString() : '—';
+                html += `<th class="imei-col">${i === 0 ? '⭐ ' : ''}${imei}<span class="col-updated">${ts}</span></th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            activeFields.forEach(f => {
+                html += `<tr><td class="field-name">${f.label}</td>`;
+                allImeis.forEach((imei, i) => {
+                    const rec = data[imei] || {};
+                    if (!rec.found) { html += `<td class="value-na">N/A</td>`; return; }
+                    const val = rec[f.key];
+                    const disp = val !== null && val !== undefined ? val : '—';
+                    if (i === 0) {
+                        html += `<td class="value-std">${disp}</td>`;
+                    } else {
+                        const stdVal = stdData[f.key];
+                        const match = stdData.found && val !== undefined && val !== null && stdVal !== undefined && stdVal !== null
+                            ? String(val).trim() === String(stdVal).trim() : null;
+                        if (match === null) html += `<td class="value-na">${disp}</td>`;
+                        else if (match) html += `<td class="value-ok">✓ ${disp}</td>`;
+                        else html += `<td class="value-fail">✗ ${disp}</td>`;
+                    }
+                });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            return html;
+        }
+    </script>
+</body>
+
+</html>

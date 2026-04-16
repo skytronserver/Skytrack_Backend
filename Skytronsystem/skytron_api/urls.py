@@ -535,6 +535,10 @@ urlpatterns = [
     path('dashboard/erss-summary/', erss_dashboard_summary, name='erss_dashboard_summary'),
     path('dashboard/sos-analysis/', sos_analysis_dashboard, name='sos_analysis_dashboard'),
     path('dashboard/sos-monitoring/', sos_monitoring_dashboard, name='sos_monitoring_dashboard'),
+
+    # IMEI Comparison Tool (public)
+    path('imei-comparison/', imei_comparison_page, name='imei_comparison_page'),
+    path('imei-comparison/data/', imei_comparison_data, name='imei_comparison_data'),
 ]  
 
 

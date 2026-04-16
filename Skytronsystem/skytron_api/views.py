@@ -24930,3 +24930,75 @@ def get_testAgency_device_models(request):
         return Response(DeviceModelForTestAgencySerializer(device_models, many=True).data)
     except Exception as e:
         return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+
+
+# ---------------------------------------------------------------------------
+# IMEI Comparison Tool  –  public, no auth required
+# ---------------------------------------------------------------------------
+
+_IMEI_COMPARE_FIELDS = [
+    'latitude', 'longitude', 'latitude_dir', 'longitude_dir',
+    'speed', 'heading', 'altitude',
+    'network_operator', 'gsm_signal_strength',
+    'mcc', 'mnc', 'lac', 'cell_id',
+    'nbr1_cell_id', 'nbr1_lac', 'nbr1_signal_strength',
+    'nbr2_cell_id', 'nbr2_lac', 'nbr2_signal_strength',
+    'nbr3_cell_id', 'nbr3_lac', 'nbr3_signal_strength',
+    'nbr4_cell_id', 'nbr4_lac', 'nbr4_signal_strength',
+]
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def imei_comparison_page(request):
+    """Serve the IMEI comparison HTML page."""
+    return render(request, 'imei_comparison.html')
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def imei_comparison_data(request):
+    """
+    Pull latest GPSData for a standard IMEI and one or more test IMEIs.
+
+    Query params:
+        standard_imei   – single IMEI string (required)
+        test_imeis      – comma-separated IMEI strings (required)
+
+    Returns JSON:
+        {
+          "<imei>": { "found": true, "entry_time": "...", <field>: <value>, ... },
+          ...
+        }
+    """
+    standard_imei = request.query_params.get('standard_imei', '').strip()
+    test_imeis_raw = request.query_params.get('test_imeis', '').strip()
+
+    if not standard_imei:
+        return Response({'error': 'standard_imei is required'}, status=400)
+
+    test_imeis = [x.strip() for x in test_imeis_raw.split(',') if x.strip()]
+    all_imeis = [standard_imei] + test_imeis
+
+    fetch_fields = _IMEI_COMPARE_FIELDS + ['entry_time']
+
+    result = {}
+    for imei in all_imeis:
+        record = (
+            GPSData.objects
+            .filter(device_tag__device__imei=imei)
+            .order_by('-entry_time', '-id')
+            .values(*fetch_fields)
+            .first()
+        )
+        if record:
+            data = {field: record[field] for field in _IMEI_COMPARE_FIELDS}
+            et = record['entry_time']
+            data['entry_time'] = et.isoformat() if et else None
+            data['found'] = True
+        else:
+            data = {'found': False, 'entry_time': None}
+
+        result[imei] = data
+
+    return Response(result)
