@@ -31,8 +31,8 @@ from rest_framework.authtoken.models import Token
 from skytron_api.secure_token import verify_jwt_token, decode_jwt_token
 
 # MQTT Configuration
-ADMIN_USER = "admin"
-ADMIN_PASS = "adminpass"
+ADMIN_USER = os.environ.get('MQTT_ADMIN_USER', '')
+ADMIN_PASS = os.environ.get('MQTT_ADMIN_PASS', '')
 MQTT_HOST = "127.0.0.1"
 MQTT_PORT = "8883"
 CA_FILE = "/etc/mosquitto/certs/ca.crt"

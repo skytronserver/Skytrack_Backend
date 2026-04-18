@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 # MQTT Configuration
-MQTT_ADMIN_USER = getattr(settings, 'MQTT_ADMIN_USER', 'admin')
-MQTT_ADMIN_PASS = getattr(settings, 'MQTT_ADMIN_PASS', 'adminpass')
+MQTT_ADMIN_USER = getattr(settings, 'MQTT_ADMIN_USER', '')
+MQTT_ADMIN_PASS = getattr(settings, 'MQTT_ADMIN_PASS', '')
 MQTT_HOST = getattr(settings, 'MQTT_HOST', '127.0.0.1')
 MQTT_PORT = getattr(settings, 'MQTT_PORT', '8883')
 MQTT_CA_FILE = getattr(settings, 'MQTT_CA_FILE', '/etc/mosquitto/certs/ca.crt')

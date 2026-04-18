@@ -90,3 +90,9 @@ north-eastern-zone-251218.osm.pbf
 tester_bundle/.venv/*
 Skytronsystem/skytron_api/__pycache__/admin.cpython-312.pyc
 .env
+Skytronsystem/Skytronsystem/__pycache__/settings.cpython-312.pyc
+Skytronsystem/skytron_api/__pycache__/minio_storage.cpython-312.pyc
+Skytronsystem/skytron_api/__pycache__/mqtt_auth_views.cpython-312.pyc
+Skytronsystem/skytron_api/__pycache__/mqtt_validate_views.cpython-312.pyc
+Skytronsystem/Skytronsystem/__pycache__/settings.cpython-312.pyc
+Skytronsystem/skytron_api/__pycache__/mqtt_auth_views.cpython-312.pyc

@@ -864,6 +864,7 @@ class DeviceModel(models.Model):
     status = models.CharField(max_length=255, choices=STATUS_CHOICES, db_index=True)
     tac_doc_path = models.FileField(upload_to='tac_docs/', null=True, blank=True)
     otp = models.CharField(max_length=6 )
+    mqtt_pw = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
         # Composite index for common filtering combinations

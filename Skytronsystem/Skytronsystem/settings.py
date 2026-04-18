@@ -34,9 +34,11 @@ JWT_PUBLIC_KEY_PATH = os.path.join(BASE_DIR, 'keys', 'jwt_public_key.pem')
 # MQTT Broker Configuration
 MQTT_HOST = os.environ.get('MQTT_HOST', '127.0.0.1')
 MQTT_PORT = os.environ.get('MQTT_PORT', '8883')
-MQTT_ADMIN_USER = os.environ.get('MQTT_ADMIN_USER', 'admin')
-MQTT_ADMIN_PASS = os.environ.get('MQTT_ADMIN_PASS', 'adminpass')
+MQTT_ADMIN_USER = os.environ.get('MQTT_ADMIN_USER', '')
+MQTT_ADMIN_PASS = os.environ.get('MQTT_ADMIN_PASS', '')
 MQTT_CA_FILE = os.environ.get('MQTT_CA_FILE', '/etc/mosquitto/certs/ca.crt')
+# If True, any IMEI can connect via MQTT without password verification (dev/test mode)
+ALLOW_ALL_DEV_MQTT = os.environ.get('ALLOWALLDEVMQTT', 'false').lower() == 'true'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True  # os.environ.get('DEBUG', 'False') == 'True'
