@@ -1006,7 +1006,7 @@ class DeviceModelTechnicalOnboardingMarkEvaluationSerializer(serializers.Seriali
 
 class DeviceModelTechnicalOnboardingFinalizeSerializer(serializers.Serializer):
     onboarding_request_id = serializers.IntegerField()
-    status = serializers.ChoiceField(choices=['accepted', 'rejected'])
+    status = serializers.ChoiceField(choices=['technically_compatible', 'technically_not_compatible'])
     final_comment = serializers.CharField(required=True)
 
 

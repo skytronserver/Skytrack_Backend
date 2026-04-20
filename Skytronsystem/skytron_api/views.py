@@ -771,7 +771,7 @@ def public_device_onboarding_dashboard(request):
         Manufacturer,
     )
 
-    onboarding_done_qs = DeviceModelTechnicalOnboardingRequest.objects.filter(status='accepted')
+    onboarding_done_qs = DeviceModelTechnicalOnboardingRequest.objects.filter(status='StateAdminApproved')
 
     manufacturer_ids_with_done_onboarding = onboarding_done_qs.values_list(
         'manufacturer_id',
@@ -6074,6 +6074,14 @@ def approve_manufacturer_tech_onboarding(request):
         if not manufacturer_id:
             return Response({'error': 'manufacturer_id is required.'}, status=400)
 
+        model_id = request.data.get('model_id')
+        if not model_id:
+            return Response({'error': 'model_id is required.'}, status=400)
+
+        techonboardingrequest_id = request.data.get('techonboardingrequest_id')
+        if not techonboardingrequest_id:
+            return Response({'error': 'techonboardingrequest_id is required.'}, status=400)
+
         action = request.data.get('action', '').strip().lower()
         if action not in ('approve', 'reject'):
             return Response({'error': "action is required and must be 'approve' or 'reject'."}, status=400)
@@ -6082,11 +6090,28 @@ def approve_manufacturer_tech_onboarding(request):
         if not man:
             return Response({'error': 'Invalid manufacturer_id.'}, status=400)
 
+        # Verify that the onboarding request matches all three: manufacturer, device model, and request id
+        onboarding_req = DeviceModelTechnicalOnboardingRequest.objects.filter(
+            id=techonboardingrequest_id,
+            manufacturer=man,
+            device_model_id=model_id,
+        ).last()
+        if not onboarding_req:
+            return Response({'error': 'No matching technical onboarding request found. manufacturer_id, model_id and techonboardingrequest_id must all match.'}, status=400)
+
+        if onboarding_req.status != 'technically_compatible':
+            return Response({'error': "Onboarding request must be in 'technically_compatible' status before state admin can approve or reject."}, status=400)
+
         if action == 'approve':
             man.status = 'TechnicalOnboardingApproved'
+            onboarding_req.status = 'StateAdminApproved'
         else:
             man.status = 'TechnicalOnboardingRejected'
+            onboarding_req.status = 'StateAdminRejected'
+
         man.save()
+        onboarding_req.decision_datetime = timezone.now()
+        onboarding_req.save()
 
         manufacturer_serializer = ManufacturerSerializer(man)
         return Response(manufacturer_serializer.data)
@@ -6111,74 +6136,45 @@ def filter_TechOnboardmanufacturers(request):
         name = request.data.get('name', '')
         phone_no = request.data.get('phone_no', '')
 
-        all_user_raw = None
-        try:
-            all_user_raw = request.query_params.get('all_user')
-        except Exception:
-            all_user_raw = request.GET.get('all_user') if hasattr(request, 'GET') else None
-        all_user = str(all_user_raw).strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
-
         user = request.user
 
         esim_provider_obj = get_user_object(user, "esimprovider")
 
-        # Only manufacturers with at least one accepted technical onboarding request
-        manufacturers = Manufacturer.objects.filter(
-            technical_onboarding_requests__status='accepted'
-        ).distinct()
-
-        if esim_provider_obj:
-            manufacturers = manufacturers.filter(esim_provider=esim_provider_obj)
-
-        if manufacturer_id:
-            manufacturers = manufacturers.filter(
-                id=manufacturer_id,
-                users__email__icontains=email,
-                company_name__icontains=company_name,
-                users__name__icontains=name,
-                users__mobile__icontains=phone_no,
-            ).distinct()
-        else:
-            if all_user:
-                manufacturers = manufacturers.filter(
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no,
-                ).distinct()
-            else:
-                manufacturers = manufacturers.filter(
-                    users__status='active',
-                    users__email__icontains=email,
-                    company_name__icontains=company_name,
-                    users__name__icontains=name,
-                    users__mobile__icontains=phone_no,
-                ).distinct()
-
-        # Prefetch only accepted onboarding requests with their device_model
-        accepted_qs = DeviceModelTechnicalOnboardingRequest.objects.filter(
-            status='accepted'
-        ).select_related('device_model')
-        manufacturers = manufacturers.prefetch_related(
-            Prefetch('technical_onboarding_requests', queryset=accepted_qs, to_attr='_accepted_onboarding')
+        # Return one entry per technically_compatible onboarding request (request-wise, not manufacturer-wise)
+        onboarding_qs = DeviceModelTechnicalOnboardingRequest.objects.filter(
+            status='technically_compatible'
+        ).select_related(
+            'manufacturer__state',
+            'device_model__created_by',
+        ).prefetch_related(
+            'demo_devices',
+            'manufacturer__users',
+            'manufacturer__esim_provider',
+            'device_model__eSimProviders',
         )
 
-        result = []
-        for mfr in manufacturers:
-            mfr_data = ManufacturerSerializer(mfr).data
+        if esim_provider_obj:
+            onboarding_qs = onboarding_qs.filter(manufacturer__esim_provider=esim_provider_obj)
 
-            # Collect unique device models from the prefetched accepted requests
-            seen_ids = set()
-            tech_models = []
-            for req in mfr._accepted_onboarding:
-                if req.device_model_id not in seen_ids:
-                    seen_ids.add(req.device_model_id)
-                    tech_models.append(req.device_model)
+        if manufacturer_id:
+            onboarding_qs = onboarding_qs.filter(manufacturer_id=manufacturer_id)
 
-            mfr_data['tech_onboarded_models'] = DeviceModelSerializer_disp(tech_models, many=True).data
-            result.append(mfr_data)
+        if company_name:
+            onboarding_qs = onboarding_qs.filter(manufacturer__company_name__icontains=company_name)
 
-        return Response(result)
+        if email:
+            onboarding_qs = onboarding_qs.filter(manufacturer__users__email__icontains=email)
+
+        if name:
+            onboarding_qs = onboarding_qs.filter(manufacturer__users__name__icontains=name)
+
+        if phone_no:
+            onboarding_qs = onboarding_qs.filter(manufacturer__users__mobile__icontains=phone_no)
+
+        onboarding_qs = onboarding_qs.distinct().order_by('-request_datetime', '-id')
+
+        serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_qs, many=True)
+        return Response(serializer.data)
 
     except Exception as e:
         return Response({'error': "Unable to process request." + str(e)}, status=400)
@@ -7644,19 +7640,33 @@ def DEx_getPendingCallList(request ):
                 user.save(update_fields=['login', 'last_activity'])
         # --- End auto-assign ---
 
-        # Base queryset: only pending calls and excluding closed assignments
-        qs_base = EMCallAssignment.objects.filter(call__status="pending").exclude(status="closed")
+        # Parse ignore_before_days from request body (default 3, clamped 1–30).
+        # Older assignments are excluded to keep the result set small and fast.
+        try:
+            ignore_before_days = int((request.data or {}).get('ignore_before_days', 3))
+            ignore_before_days = max(1, min(ignore_before_days, 30))
+        except (TypeError, ValueError):
+            ignore_before_days = 30
+        ignore_before_days = 30
+        cutoff = timezone.now() - timedelta(days=ignore_before_days)
+
+        # Base queryset: only pending calls, excluding closed assignments, within cutoff window
+        qs_base = (
+            EMCallAssignment.objects
+            .filter(call__status="pending", start_time__gte=cutoff)
+            .exclude(status="closed")
+        )
 
         # Scope selection based on role
         if uo2:
             qs = qs_base.filter(ex__state=uo2.state)
-            cache_scope = f"state:{getattr(uo2.state, 'id', uo2.state_id)}"
+            cache_scope = f"state:{getattr(uo2.state, 'id', uo2.state_id)}:d{ignore_before_days}"
         elif uo3:
             qs = qs_base.filter(ex__state=uo3.state)
-            cache_scope = f"state:{getattr(uo3.state, 'id', uo3.state_id)}"
+            cache_scope = f"state:{getattr(uo3.state, 'id', uo3.state_id)}:d{ignore_before_days}"
         else:
             qs = qs_base.filter(ex=uo)
-            cache_scope = f"ex:{getattr(uo, 'id', None)}"
+            cache_scope = f"ex:{getattr(uo, 'id', None)}:d{ignore_before_days}"
 
         # Short-lived cache to avoid repeated heavy serialization for the same scope
         cache_key = f"DEx_getPendingCallList:pending:{cache_scope}"
@@ -17603,11 +17613,10 @@ def validate_otp(request ):
         if session.status == 'login':
             # Create/update MQTT user for existing session
             try:
-                mqtt_success = create_mqtt_user(session.user.mobile, session.token)
-                mqtt_token = session.token if mqtt_success else "error_creating_mqtt_user1"
+                create_mqtt_user(session.user.mobile, session.token)
             except Exception as e:
                 print(f"MQTT user creation failed for existing session: {e}")
-                mqtt_token = "error_creating_mqtt_user2"
+            mqtt_token = session.token
             
             return Response({'status':'Login Successful','token': session.token,'token2': mqtt_token,'user':UserSerializer2(session.user).data}, status=status.HTTP_200_OK)
 
@@ -17679,11 +17688,10 @@ def validate_otp(request ):
 
                 # Create/update MQTT user after successful OTP validation
                 try:
-                    mqtt_success = create_mqtt_user(session.user.mobile, session.token)
-                    mqtt_token = session.token if mqtt_success else "error_creating_mqtt_user3"
+                    create_mqtt_user(session.user.mobile, session.token)
                 except Exception as e:
                     print(f"MQTT user creation failed for OTP validation: {e}")
-                    mqtt_token = "error_creating_mqtt_user4"
+                mqtt_token = session.token
 
                 return Response({'status':'Login Successful','token': session.token,'token2': mqtt_token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
             except Exception as e:

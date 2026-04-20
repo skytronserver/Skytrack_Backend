@@ -881,8 +881,10 @@ class DeviceModelTechnicalOnboardingRequest(models.Model):
     STATUS_CHOICES = [
         ('submitted', 'Submitted'),
         ('ongoing_evaluation', 'Ongoing Evaluation'),
-        ('accepted', 'Accepted'),
-        ('rejected', 'Rejected'),
+        ('technically_compatible', 'Technically Compatible'),
+        ('technically_not_compatible', 'Technically Not Compatible'),
+        ('StateAdminApproved', 'State Admin Approved'),
+        ('StateAdminRejected', 'State Admin Rejected'),
     ]
 
     manufacturer = models.ForeignKey('Manufacturer', on_delete=models.CASCADE, related_name='technical_onboarding_requests')

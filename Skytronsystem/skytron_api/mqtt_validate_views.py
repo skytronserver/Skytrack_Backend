@@ -67,14 +67,18 @@ def _jwt_session_key(clientid):
 
 
 def _cache_jwt_for_client(clientid, raw_jwt, payload):
-    """Store the raw JWT in Redis keyed by clientid, expiring when the JWT expires."""
+    """Store the raw JWT + user mobile in Redis keyed by clientid, expiring when the JWT expires."""
     try:
         exp = payload.get('exp')
         if exp:
             ttl = max(int(exp) - int(time.time()), 60)  # at least 60s
         else:
             ttl = 86400  # 24h default if no exp claim
-        cache.set(_jwt_session_key(clientid), raw_jwt, timeout=ttl)
+        data = {
+            'jwt': raw_jwt,
+            'mobile': str(payload.get('user_mobile', '')),
+        }
+        cache.set(_jwt_session_key(clientid), data, timeout=ttl)
         logger.debug(f"MQTT JWT session cached for clientid='{clientid}', ttl={ttl}s")
     except Exception as e:
         logger.error(f"MQTT JWT session cache write error for clientid='{clientid}': {e}")
@@ -203,15 +207,20 @@ def _verify_mode2_password(user, password):
     return False
 
 
+# acc values from go-auth
+_ACC_READ  = 1  # subscribe
+_ACC_WRITE = 2  # publish
+
+
 def _topic_allowed(username, topic, acc):
     """
-    Enforce topic ownership.
+    Enforce topic ownership and access direction.
+
     Rules:
     - Superuser / admin: full access
-    - $SYS/… internal topics: deny for non-superusers
-    - Otherwise: the topic must contain the user's username as a path segment
-      e.g. username='1000000002', topic='deviceResponse/1000000002' → allowed
-           topic='deviceResponse/9999999999' → denied
+    - $SYS/# topics: denied for all non-superusers
+    - '<prefix>/<token>/server' topics: subscribe (read) only — server publishes, clients listen
+    - '<prefix>/<token>' topics: publish + subscribe allowed if token matches user's identifier
     """
     if not username:
         return False
@@ -225,36 +234,67 @@ def _topic_allowed(username, topic, acc):
         logger.warning(f"MQTT ACL: $SYS topic denied for {username}")
         return False
 
-    # Split topic into segments and check if username appears as a segment
     segments = topic.split('/')
-    if username in segments:
-        return True
 
-    # Also allow if topic *starts* / *ends* with the username (no separator at boundary)
-    # e.g. "username/data" or "data/username"
-    if segments[0] == username or segments[-1] == username:
+    # '/server' suffix topics: clients may only subscribe, not publish
+    # Format: <prefix>/<token>/server
+    if len(segments) == 3 and segments[-1] == 'server':
+        if int(acc) == _ACC_WRITE:
+            logger.warning(f"MQTT ACL: publish to /server topic denied for '{username}', topic='{topic}'")
+            return False
+        # Allow subscribe only if user's identifier is the middle segment
+        if username == segments[1]:
+            return True
+        logger.warning(f"MQTT ACL: /server topic denied for '{username}', topic='{topic}'")
+        return False
+
+    # Standard topics: user's identifier must appear as a segment
+    if username in segments:
         return True
 
     logger.warning(f"MQTT ACL: topic '{topic}' denied for '{username}'")
     return False
 
 
-def _topic_allowed_for_client(clientid, topic):
+def _topic_allowed_for_client(clientid, topic, acc):
     """
     Secondary ACL check for JWT-authenticated clients.
-    Looks up the cached JWT for this clientid and checks whether any topic
-    segment matches it — allowing topics like 'owner/<jwt>', 'dtorto/<jwt>', etc.
-    Returns True if the cached JWT appears as a segment in the topic.
+    Looks up the cached {jwt, mobile} for this clientid and checks whether:
+    1. The raw JWT token appears as the token segment of the topic
+    2. The user's mobile number appears as the token segment of the topic
+    '/server' suffix topics: subscribe only — publish denied for non-admin.
     """
     if not clientid:
         return False
     try:
-        cached_jwt = cache.get(_jwt_session_key(clientid))
-        if not cached_jwt:
+        cached = cache.get(_jwt_session_key(clientid))
+        if not cached:
             return False
         segments = topic.split('/')
-        if cached_jwt in segments:
+
+        # '/server' topics: clients may only subscribe
+        is_server_topic = len(segments) == 3 and segments[-1] == 'server'
+        if is_server_topic and int(acc) == _ACC_WRITE:
+            logger.warning(f"MQTT ACL: publish to /server topic denied for clientid='{clientid}', topic='{topic}'")
+            return False
+
+        # The token segment to check against: for /server topics it's segments[1], else any segment
+        check_segments = [segments[1]] if is_server_topic else segments
+
+        # Support both new dict format and legacy string format
+        if isinstance(cached, str):
+            if cached in check_segments:
+                logger.info(f"MQTT ACL: JWT segment match (legacy) for clientid='{clientid}', topic='{topic}'")
+                return True
+            return False
+
+        jwt_token = cached.get('jwt', '')
+        mobile = cached.get('mobile', '')
+        if jwt_token and jwt_token in check_segments:
             logger.info(f"MQTT ACL: JWT segment match for clientid='{clientid}', topic='{topic}'")
+            return True
+        if mobile and mobile in check_segments:
+            logger.info(f"MQTT ACL: Mobile segment match for clientid='{clientid}', mobile={mobile}, topic='{topic}'")
             return True
     except Exception as e:
         logger.error(f"MQTT ACL: JWT session lookup error for clientid='{clientid}': {e}")
@@ -298,22 +338,25 @@ def mqtt_validate_connection(request):
                             status=status.HTTP_403_FORBIDDEN)
 
         # --- MODE 1: JWT-only ---
-        is_jwt_mode = (not username or username.lower() in ['jwt', 'token', 'bearer']) and password
+        # Mobile apps may send the JWT as username (with any password) or as password (with empty/placeholder username)
+        jwt_in_username = bool(username and _looks_like_jwt(username))
+        is_jwt_mode = jwt_in_username or ((not username or username.lower() in ['jwt', 'token', 'bearer']) and password)
+        jwt_token = username if jwt_in_username else password
         if is_jwt_mode:
-            logger.info("MQTT Auth: JWT-only mode detected")
+            logger.info(f"MQTT Auth: JWT-only mode detected (token field: {'username' if jwt_in_username else 'password'})")
 
             # *** EARLY FORMAT CHECK — no DB hit for obviously bad tokens ***
-            if not _looks_like_jwt(password):
+            if not _looks_like_jwt(jwt_token):
                 logger.warning(f"MQTT Auth: password rejected by format check (not a JWT), clientid={clientid}")
                 _record_failure(clientid)
                 return Response({'error': 'Invalid credentials'}, status=status.HTTP_403_FORBIDDEN)
 
-            if not verify_jwt_token(password):
+            if not verify_jwt_token(jwt_token):
                 logger.warning("MQTT Auth: JWT verification failed")
                 _record_failure(clientid)
                 return Response({'error': 'Invalid JWT'}, status=status.HTTP_403_FORBIDDEN)
 
-            payload = decode_jwt_token(password)
+            payload = decode_jwt_token(jwt_token)
             if not payload:
                 logger.warning("MQTT Auth: JWT decode failed")
                 _record_failure(clientid)
@@ -324,7 +367,7 @@ def mqtt_validate_connection(request):
                 user = User.objects.get(id=user_id, is_active=True)
                 _clear_failure(clientid)
                 # Cache raw JWT keyed by clientid so ACL can match JWT-based topic segments
-                _cache_jwt_for_client(clientid, password, payload)
+                _cache_jwt_for_client(clientid, jwt_token, payload)
                 logger.info(f"MQTT Auth: JWT mode SUCCESS - user_id={user.id}, mobile={user.mobile}")
                 return Response({'ok': True, 'user_id': user.id, 'username': user.mobile},
                                 status=status.HTTP_200_OK)
@@ -334,7 +377,7 @@ def mqtt_validate_connection(request):
                 return Response({'error': 'User not found'}, status=status.HTTP_403_FORBIDDEN)
 
         # --- MODE 2 / MODE 3: Username + Password ---
-        elif username and password:
+        elif username and password and not jwt_in_username:
             logger.info(f"MQTT Auth: Username/Password mode - username={username}")
 
             # --- ADMIN BYPASS: Check admin credentials before format check ---
@@ -428,15 +471,32 @@ def mqtt_validate_acl(request):
 
         logger.info(f"MQTT ACL: username={username}, clientid={clientid}, topic={topic}, acc={acc}")
 
-        # Primary check: username appears as a segment in the topic
-        if _topic_allowed(username, topic, acc):
+        # For JWT users, go-auth may pass the original JWT as username.
+        # Resolve it to the mobile number using the Redis-cached session.
+        effective_username = username
+        if _looks_like_jwt(username):
+            try:
+                cached = cache.get(_jwt_session_key(clientid))
+                if cached and isinstance(cached, dict) and cached.get('mobile'):
+                    effective_username = cached['mobile']
+                    logger.debug(f"MQTT ACL: resolved JWT username → mobile={effective_username}")
+            except Exception:
+                pass
+
+        # Primary check: effective username (mobile or original) appears as a topic segment
+        if _topic_allowed(effective_username, topic, acc):
             return Response({'ok': True}, status=status.HTTP_200_OK)
 
-        # Secondary check: JWT token (cached at CONNECT time) appears as a segment
-        # Enables topics like 'owner/<jwt>', 'dtorto/<jwt>', 'sosEx/<jwt>'
-        if _topic_allowed_for_client(clientid, topic):
+        # If original username was a JWT and differs from mobile, also check the JWT directly as a segment
+        if effective_username != username and _topic_allowed(username, topic, acc):
             return Response({'ok': True}, status=status.HTTP_200_OK)
 
+        # Secondary check: JWT token OR mobile (cached at CONNECT time) appears as a segment
+        # Covers topics like 'sosEx/<jwt>', 'owner/<jwt>', 'dtorto/<mobile>', etc.
+        if _topic_allowed_for_client(clientid, topic, acc):
+            return Response({'ok': True}, status=status.HTTP_200_OK)
+
+        logger.warning(f"MQTT ACL: DENIED — username={username}, clientid={clientid}, topic={topic}")
         return Response({'error': 'Topic access denied'}, status=status.HTTP_403_FORBIDDEN)
 
     except Exception as e:

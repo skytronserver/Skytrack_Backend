@@ -44,6 +44,15 @@ def _safe_run_dynsec(base_cmd: List[str], args: List[str], ignore_errors: List[s
 
 
 def create_mqtt_user(username: str, password: str) -> bool:
+    """
+    No-op under go-auth: authentication is handled at MQTT CONNECT time by the
+    Django endpoint (mqtt_validate_views.py). No pre-registration of users is
+    required. Returns True so callers treat the user as ready to connect.
+    """
+    print(f"MQTT: go-auth mode — no pre-registration needed for '{username}'. Skipping dynsec.")
+    return True
+
+    # --- Legacy dynsec path (kept for reference, unreachable) ---
     ca_file = os.getenv("MQTT_CA_FILE", "/home/azureuser/Skytrack_Backend/Skytronsystem/keys/ca.crt")
     host = os.getenv("MQTT_BROKER_HOST", "103.195.217.127")
     port = os.getenv("MQTT_BROKER_PORT", "8883")
