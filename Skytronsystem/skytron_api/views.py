@@ -11752,6 +11752,9 @@ def deviceStockCreateBulk(request ):
     except Exception as e:
         return JsonResponse({'error': 'Error reading Excel file.', 'details': f"Unable to process request. {str(e)}"}, status=400)
 
+    # Normalize column names to lowercase so 'IMEI', 'Imei', etc. all work
+    excel_data.columns = excel_data.columns.str.lower()
+
     headers = list(excel_data.columns)
     success_count = 0
     success_rows = []
@@ -11922,11 +11925,19 @@ def COPCreate(request ):
                 otp  = str(685472)
     else:
                 otp = str(secrets.randbelow(1000000)).zfill(6)
- 
+
+    new_model_create_raw = request.data.get('new_model_create', False)
+    if isinstance(new_model_create_raw, str):
+        new_model_create = new_model_create_raw.strip().lower() in ('true', '1', 'yes')
+    else:
+        new_model_create = bool(new_model_create_raw)
+
+    cop_status = 'Manufacturer_OTP_Verified' if new_model_create else 'Manufacturer_OTP_Sent'
+
     data = {
         'created_by': manufacturer,
         'created': timezone.now(),  
-        'status': 'Manufacturer_OTP_Sent',
+        'status': cop_status,
         'valid':True,
         'latest':True,
         'otp_time': timezone.now(),
@@ -11960,17 +11971,18 @@ def COPCreate(request ):
             # Update the cop_file field in the DeviceCOP instance
             device_cop_instance.cop_file = relative_file_path
             device_cop_instance.save()
-                    
-            text="Dear user, your OTP to validate COP creation/update in SkyTron portal is {}. Please DO NOT disclose it to anyone. -SkyTron".format(otp)
-            tpid="1007967997984175182"
-            send_SMS(user.mobile,text,tpid) 
-            """send_mail(
-                'Login OTP',
-                "Dear user, Your OTP to validate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'noreply@skytron.in',
-                [user.email],
-                fail_silently=False,
-            )"""
+
+            if not new_model_create:
+                text="Dear user, your OTP to validate COP creation/update in SkyTron portal is {}. Please DO NOT disclose it to anyone. -SkyTron".format(otp)
+                tpid="1007967997984175182"
+                send_SMS(user.mobile,text,tpid) 
+                """send_mail(
+                    'Login OTP',
+                    "Dear user, Your OTP to validate COP in SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                    'noreply@skytron.in',
+                    [user.email],
+                    fail_silently=False,
+                )"""
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 

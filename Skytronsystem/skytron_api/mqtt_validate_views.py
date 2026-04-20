@@ -21,6 +21,7 @@ from django.core.cache import cache
 from django.conf import settings
 import hashlib
 import re
+import time
 import logging
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,26 @@ def _throttle_key(clientid):
     """Cache key for the fail counter for a given clientid."""
     safe = clientid.replace(' ', '_')[:64]
     return f"mqtt:fail:{safe}"
+
+
+def _jwt_session_key(clientid):
+    """Cache key for JWT token stored during Mode 1 CONNECT, used in ACL checks."""
+    safe = clientid.replace(' ', '_')[:64]
+    return f"mqtt:jwt:{safe}"
+
+
+def _cache_jwt_for_client(clientid, raw_jwt, payload):
+    """Store the raw JWT in Redis keyed by clientid, expiring when the JWT expires."""
+    try:
+        exp = payload.get('exp')
+        if exp:
+            ttl = max(int(exp) - int(time.time()), 60)  # at least 60s
+        else:
+            ttl = 86400  # 24h default if no exp claim
+        cache.set(_jwt_session_key(clientid), raw_jwt, timeout=ttl)
+        logger.debug(f"MQTT JWT session cached for clientid='{clientid}', ttl={ttl}s")
+    except Exception as e:
+        logger.error(f"MQTT JWT session cache write error for clientid='{clientid}': {e}")
 
 
 def _block_key(clientid):
@@ -218,6 +239,28 @@ def _topic_allowed(username, topic, acc):
     return False
 
 
+def _topic_allowed_for_client(clientid, topic):
+    """
+    Secondary ACL check for JWT-authenticated clients.
+    Looks up the cached JWT for this clientid and checks whether any topic
+    segment matches it — allowing topics like 'owner/<jwt>', 'dtorto/<jwt>', etc.
+    Returns True if the cached JWT appears as a segment in the topic.
+    """
+    if not clientid:
+        return False
+    try:
+        cached_jwt = cache.get(_jwt_session_key(clientid))
+        if not cached_jwt:
+            return False
+        segments = topic.split('/')
+        if cached_jwt in segments:
+            logger.info(f"MQTT ACL: JWT segment match for clientid='{clientid}', topic='{topic}'")
+            return True
+    except Exception as e:
+        logger.error(f"MQTT ACL: JWT session lookup error for clientid='{clientid}': {e}")
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Views
 # ---------------------------------------------------------------------------
@@ -280,6 +323,8 @@ def mqtt_validate_connection(request):
             try:
                 user = User.objects.get(id=user_id, is_active=True)
                 _clear_failure(clientid)
+                # Cache raw JWT keyed by clientid so ACL can match JWT-based topic segments
+                _cache_jwt_for_client(clientid, password, payload)
                 logger.info(f"MQTT Auth: JWT mode SUCCESS - user_id={user.id}, mobile={user.mobile}")
                 return Response({'ok': True, 'user_id': user.id, 'username': user.mobile},
                                 status=status.HTTP_200_OK)
@@ -377,15 +422,22 @@ def mqtt_validate_acl(request):
     """
     try:
         username = request.data.get('username', '')
+        clientid = request.data.get('clientid', '')
         topic = request.data.get('topic', '')
         acc = request.data.get('acc', 1)
 
-        logger.info(f"MQTT ACL: username={username}, topic={topic}, acc={acc}")
+        logger.info(f"MQTT ACL: username={username}, clientid={clientid}, topic={topic}, acc={acc}")
 
+        # Primary check: username appears as a segment in the topic
         if _topic_allowed(username, topic, acc):
             return Response({'ok': True}, status=status.HTTP_200_OK)
-        else:
-            return Response({'error': 'Topic access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Secondary check: JWT token (cached at CONNECT time) appears as a segment
+        # Enables topics like 'owner/<jwt>', 'dtorto/<jwt>', 'sosEx/<jwt>'
+        if _topic_allowed_for_client(clientid, topic):
+            return Response({'ok': True}, status=status.HTTP_200_OK)
+
+        return Response({'error': 'Topic access denied'}, status=status.HTTP_403_FORBIDDEN)
 
     except Exception as e:
         logger.error(f"MQTT ACL: Exception - {str(e)}")

@@ -2572,22 +2572,81 @@ class RouteStop(models.Model):
 # =====================================================
 # Table: skytron_api_school
 class School(models.Model):
-    name = models.CharField(max_length=255)
-    address = models.TextField()
-    contact_phone = models.CharField(max_length=20)
-    contact_email = models.EmailField()
-    admin_user = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name="managed_schools")
-    is_active = models.BooleanField(default=True)
+
+    # ── STATUS ────────────────────────────────────────────────────────────────
+    STATUS_SUBMITTED            = "SUBMITTED"
+    STATUS_UNDER_REVIEW         = "UNDER_REVIEW"
+    STATUS_APPROVED             = "APPROVED"
+    STATUS_REJECTED             = "REJECTED"
+    STATUS_SETUP_SENT           = "SETUP_SENT"
+    STATUS_SETUP_LINK_APPROVED  = "SETUP_LINK_APPROVED"
+
+    STATUS_CHOICES = [
+        (STATUS_SUBMITTED, "Submitted"),
+        (STATUS_UNDER_REVIEW, "Under Review"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_REJECTED, "Rejected"),
+        (STATUS_SETUP_SENT, "Setup Sent"),
+        (STATUS_SETUP_LINK_APPROVED, "Setup Link Approved"),
+    ]
+
+    status = models.CharField(
+        max_length=25,
+        choices=STATUS_CHOICES,
+        default=STATUS_SUBMITTED,
+        db_index=True
+    )
+
+    # ── SCHOOL DETAILS ────────────────────────────────────────────────────────
+    school_name          = models.CharField(max_length=255)
+    school_address       = models.TextField()
+    school_pin    = models.CharField(max_length=20, db_index=True)
+    school_phone = models.CharField(max_length=20)
+    school_email = models.EmailField()
+
+    school_lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    school_lon = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+
+    state = models.ForeignKey(
+        'skytron_api.Settings_State',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+
+    district = models.ForeignKey(
+        'skytron_api.Settings_District',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+
+    # ── USER RELATIONS ────────────────────────────────────────────────────────
+
+
+    # School admins (after setup completion)
+    users = models.ManyToManyField(User,
+        related_name="schooladmin_user",
+        )
+
+    # ── DOCUMENTS (FTP PATHS) ─────────────────────────────────────────────────
+    file_id_proof = models.CharField(max_length=1000, blank=True, null=True)
+    file_authorization_letter = models.CharField(max_length=1000, blank=True, null=True)
+    extra_documents = models.JSONField(default=list, blank=True)
+
+    # ── META ──────────────────────────────────────────────────────────────────
+    remarks    = models.TextField(blank=True)
+    is_active  = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    latitude = models.DecimalField(max_digits=9, decimal_places=6,null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6,null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        # Table: skytron_api_school
-        indexes = [models.Index(fields=["is_active"])]
+        indexes = [
+            models.Index(fields=["status", "is_active"]),
+        ]
 
     def __str__(self):
-        return self.name
+        return f"{self.name} ({self.status})"
 
 
 # =====================================================
