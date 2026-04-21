@@ -2116,15 +2116,11 @@ def save_file(request, tag, path):
     # Additional validation to prevent executable files
     uploaded_file.seek(0)  # Reset file pointer to the beginning
     file_content = uploaded_file.read(2048)  # Read the first 2 KB of the file
-    if b'MZ' in file_content or b'PK\x03\x04' in file_content:
-        return None 
-        return Response({'error': "Invalid file detected. Upload denied."}, status=400)
-    data=file_content
+    data = file_content
     if data.startswith(b"MZ") or data.startswith(b"\x7FELF") or data.startswith(b"\xcf\xfa\xed\xfe") or \
         data.startswith(b"\xce\xfa\xed\xfe") or \
-        data.startswith(b"\xca\xfe\xba\xbe")or data.startswith(b"#!"):
-            return None 
-        #return Response({'error': "Invalid file detected. Upload denied."}, status=400)
+        data.startswith(b"\xca\xfe\xba\xbe") or data.startswith(b"#!"):
+        return None
     
     file_extension = valid_mime_types[mime_type]
     file_name = ''.join(secrets.choice('0123456789') for _ in range(40)) + "." + file_extension
@@ -5651,13 +5647,26 @@ def create_manufacturer_pub(request ):
                 # Create a savepoint for rollback if needed
                 sid = transaction.savepoint()
                 
-                file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man') 
-                file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
-                file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
-                file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
-                if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof:
-                    transaction.savepoint_rollback(sid)
-                    return Response({'error': "Invalid file." }, status=400)
+                _required_files = [
+                    ('file_authLetter', 'Authorization Letter'),
+                    ('file_companRegCertificate', 'Company Registration Certificate'),
+                    ('file_GSTCertificate', 'GST Certificate'),
+                    ('file_idProof', 'ID Proof'),
+                ]
+                _saved_files = {}
+                for _field, _label in _required_files:
+                    if not request.FILES.get(_field):
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': f"'{_label}' file is required ({_field})."}, status=400)
+                    _saved = save_file(request, _field, 'fileuploads/man')
+                    if not _saved:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': f"Invalid file for '{_label}' ({_field}). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
+                    _saved_files[_field] = _saved
+                file_authLetter = _saved_files['file_authLetter']
+                file_companRegCertificate = _saved_files['file_companRegCertificate']
+                file_GSTCertificate = _saved_files['file_GSTCertificate']
+                file_idProof = _saved_files['file_idProof']
 
                 # Optional file upload: only validate if provided
                 file_affidavitNda = None
@@ -5665,49 +5674,49 @@ def create_manufacturer_pub(request ):
                     file_affidavitNda = save_file(request, 'file_affidavitNda', 'fileuploads/man')
                     if not file_affidavitNda:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'Affidavit NDA' (file_affidavitNda). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 file_company_registration_certificate = None
                 if request.FILES.get('file_company_registration_certificate'):
                     file_company_registration_certificate = save_file(request, 'file_company_registration_certificate', 'fileuploads/man')
                     if not file_company_registration_certificate:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'Company Registration Certificate' (file_company_registration_certificate). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 file_officialTechnicalOnboardingRequestLetter = None
                 if request.FILES.get('file_officialTechnicalOnboardingRequestLetter'):
                     file_officialTechnicalOnboardingRequestLetter = save_file(request, 'file_officialTechnicalOnboardingRequestLetter', 'fileuploads/man')
                     if not file_officialTechnicalOnboardingRequestLetter:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'Official Technical Onboarding Request Letter' (file_officialTechnicalOnboardingRequestLetter). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 file_vehicleTypeApprovalTacAnnexureCopy = None
                 if request.FILES.get('file_vehicleTypeApprovalTacAnnexureCopy'):
                     file_vehicleTypeApprovalTacAnnexureCopy = save_file(request, 'file_vehicleTypeApprovalTacAnnexureCopy', 'fileuploads/man')
                     if not file_vehicleTypeApprovalTacAnnexureCopy:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'Vehicle Type Approval TAC Annexure Copy' (file_vehicleTypeApprovalTacAnnexureCopy). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 file_ais140DeviceTacCopy = None
                 if request.FILES.get('file_ais140DeviceTacCopy'):
                     file_ais140DeviceTacCopy = save_file(request, 'file_ais140DeviceTacCopy', 'fileuploads/man')
                     if not file_ais140DeviceTacCopy:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'AIS140 Device TAC Copy' (file_ais140DeviceTacCopy). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 file_factoryFitmentDeclaration = None
                 if request.FILES.get('file_factoryFitmentDeclaration'):
                     file_factoryFitmentDeclaration = save_file(request, 'file_factoryFitmentDeclaration', 'fileuploads/man')
                     if not file_factoryFitmentDeclaration:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'Factory Fitment Declaration' (file_factoryFitmentDeclaration). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 cop_file = None
                 if request.FILES.get('cop_file'):
                     cop_file = save_file(request, 'cop_file', 'fileuploads/man')
                     if not cop_file:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'COP File' (cop_file). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 manufacturer ,error= Manufacturer.objects.safe_create(
                     company_name=company_name,
@@ -5848,13 +5857,26 @@ def create_manufacturer(request ):
                 # Create a savepoint for rollback if needed
                 sid = transaction.savepoint()
                 
-                file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man') 
-                file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
-                file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
-                file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
-                if not file_authLetter or not file_companRegCertificate or not file_GSTCertificate or not file_idProof:
-                    transaction.savepoint_rollback(sid)
-                    return Response({'error': "Invalid file." }, status=400)
+                _required_files = [
+                    ('file_authLetter', 'Authorization Letter'),
+                    ('file_companRegCertificate', 'Company Registration Certificate'),
+                    ('file_GSTCertificate', 'GST Certificate'),
+                    ('file_idProof', 'ID Proof'),
+                ]
+                _saved_files = {}
+                for _field, _label in _required_files:
+                    if not request.FILES.get(_field):
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': f"'{_label}' file is required ({_field})."}, status=400)
+                    _saved = save_file(request, _field, 'fileuploads/man')
+                    if not _saved:
+                        transaction.savepoint_rollback(sid)
+                        return Response({'error': f"Invalid file for '{_label}' ({_field}). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
+                    _saved_files[_field] = _saved
+                file_authLetter = _saved_files['file_authLetter']
+                file_companRegCertificate = _saved_files['file_companRegCertificate']
+                file_GSTCertificate = _saved_files['file_GSTCertificate']
+                file_idProof = _saved_files['file_idProof']
 
                 # Optional file upload: only validate if provided
                 file_affidavitNda = None
@@ -5862,49 +5884,49 @@ def create_manufacturer(request ):
                     file_affidavitNda = save_file(request, 'file_affidavitNda', 'fileuploads/man')
                     if not file_affidavitNda:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'Affidavit NDA' (file_affidavitNda). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 file_company_registration_certificate = None
                 if request.FILES.get('file_company_registration_certificate'):
                     file_company_registration_certificate = save_file(request, 'file_company_registration_certificate', 'fileuploads/man')
                     if not file_company_registration_certificate:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'Company Registration Certificate' (file_company_registration_certificate). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 file_officialTechnicalOnboardingRequestLetter = None
                 if request.FILES.get('file_officialTechnicalOnboardingRequestLetter'):
                     file_officialTechnicalOnboardingRequestLetter = save_file(request, 'file_officialTechnicalOnboardingRequestLetter', 'fileuploads/man')
                     if not file_officialTechnicalOnboardingRequestLetter:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'Official Technical Onboarding Request Letter' (file_officialTechnicalOnboardingRequestLetter). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 file_vehicleTypeApprovalTacAnnexureCopy = None
                 if request.FILES.get('file_vehicleTypeApprovalTacAnnexureCopy'):
                     file_vehicleTypeApprovalTacAnnexureCopy = save_file(request, 'file_vehicleTypeApprovalTacAnnexureCopy', 'fileuploads/man')
                     if not file_vehicleTypeApprovalTacAnnexureCopy:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'Vehicle Type Approval TAC Annexure Copy' (file_vehicleTypeApprovalTacAnnexureCopy). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 file_ais140DeviceTacCopy = None
                 if request.FILES.get('file_ais140DeviceTacCopy'):
                     file_ais140DeviceTacCopy = save_file(request, 'file_ais140DeviceTacCopy', 'fileuploads/man')
                     if not file_ais140DeviceTacCopy:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'AIS140 Device TAC Copy' (file_ais140DeviceTacCopy). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 file_factoryFitmentDeclaration = None
                 if request.FILES.get('file_factoryFitmentDeclaration'):
                     file_factoryFitmentDeclaration = save_file(request, 'file_factoryFitmentDeclaration', 'fileuploads/man')
                     if not file_factoryFitmentDeclaration:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'Factory Fitment Declaration' (file_factoryFitmentDeclaration). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 cop_file = None
                 if request.FILES.get('cop_file'):
                     cop_file = save_file(request, 'cop_file', 'fileuploads/man')
                     if not cop_file:
                         transaction.savepoint_rollback(sid)
-                        return Response({'error': "Invalid file." }, status=400)
+                        return Response({'error': "Invalid file for 'COP File' (cop_file). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."}, status=400)
 
                 manufacturer ,error= Manufacturer.objects.safe_create(
                     company_name=company_name,
