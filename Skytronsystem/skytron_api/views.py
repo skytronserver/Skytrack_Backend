@@ -24951,6 +24951,18 @@ def get_testAgency_name_list(request):
         return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
+def public_testAgencyDetails_list(request):
+    """Public endpoint — no authentication required. Returns list of all TestAgencyDetails."""
+    try:
+        qs = TestAgencyDetails.objects.all().order_by('name')
+        return Response(TestAgencyDetailsSerializer(qs, many=True).data)
+    except Exception as e:
+        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
