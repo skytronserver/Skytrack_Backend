@@ -12315,26 +12315,32 @@ def deviceStockCreateBulk(request ):
                 return str(val)
 
         # Extract data from the row
+        # Column name mapping (Excel header → model field):
+        #   "Device ESN"                  → device_esn
+        #   "Primary ICCID"               → iccid
+        #   "Secondary ICCID"             → iccid2
+        #   "Primary Telecom Provider"    → telecom_provider1
+        #   "Secondary Telecom Provider"  → telecom_provider2
+        #   "Primary MSISDN"              → msisdn1
+        #   "Secondary MSISDN"            → msisdn2
         data = {
             'model': model_id,
-            'device_esn': row.get('device_esn', ''),
-            'iccid': clean_int_field(row.get('iccid', '')),
-            'iccid2': clean_int_field(row.get('iccid2', '')),
+            'device_esn': row.get('device esn', ''),
+            'iccid': clean_int_field(row.get('primary iccid', '')),
+            'iccid2': clean_int_field(row.get('secondary iccid', '')),
             'imei': clean_int_field(row.get('imei', '')),
-            'telecom_provider1': row.get('telecom_provider1', ''),
-            'telecom_provider2': row.get('telecom_provider2', ''),
-            'msisdn1': clean_int_field(row.get('msisdn1', '')),
-            'msisdn2': clean_int_field(row.get('msisdn2', '')),
+            'telecom_provider1': row.get('primary telecom provider', ''),
+            'telecom_provider2': row.get('secondary telecom provider', ''),
+            'msisdn1': clean_int_field(row.get('primary msisdn', '')),
+            'msisdn2': clean_int_field(row.get('secondary msisdn', '')),
             'imsi1': clean_int_field(row.get('imsi1', '')),
             'imsi2': clean_int_field(row.get('imsi2', '')),
-            'esim_validity': row.get('esim_validity', ''), 
             'stock_status': "NotAssigned",
-            'esim_status':"NotAssigned",
+            'esim_status': "NotAssigned",
             'esim_provider': esim_provider,
             'remarks': row.get('remarks', ''),
             'created_by': request.user.id,
-            'stock_status': "NotAssigned",
-            'created':timezone.now(),
+            'created': timezone.now(),
         }
 
         # Pre-flight: check ALL unique fields at once and report every conflict before writing anything
@@ -14346,7 +14352,7 @@ def homepage_Manufacturer(request ):
                     device_stock = DeviceStock.objects.filter(
                         device_esn=device.device.device_esn
                     ).first()
-                    if device_stock and device_stock.esim_validity < now:
+                    if device_stock and device_stock.esim_validity and device_stock.esim_validity < now:
                         expired_devices += 1
             
             count_dict = {
@@ -16204,6 +16210,7 @@ def update_esim_activation_request(request ):
         if serializer.is_valid():
             if data['status']=='valid':
                 dev.esim_status='ESIM_Active_Confirmed'
+                dev.esim_validity = esim_request.valid_upto
             elif data['status']=='invalid':
                 dev.esim_status='ESIM_Active_Rejected'
             

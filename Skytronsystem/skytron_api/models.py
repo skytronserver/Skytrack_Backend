@@ -1002,7 +1002,7 @@ class DeviceStock(models.Model):
     msisdn2 = models.CharField(max_length=255, unique=True,blank=True, null=True)
     imsi1 = models.CharField(max_length=255,blank=True, null=True)
     imsi2 = models.CharField(max_length=255, blank=True, null=True)
-    esim_validity = models.DateTimeField()
+    esim_validity = models.DateTimeField(null=True, blank=True)
     esim_provider = models.ManyToManyField(eSimProvider, related_name='eSimProvider_devicestock')
     
     #esim_provider = models.CharField(max_length=255)
