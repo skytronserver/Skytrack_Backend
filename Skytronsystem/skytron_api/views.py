@@ -5638,6 +5638,11 @@ def create_manufacturer_pub(request ):
         file_ais140DeviceTacCopy = request.data.get('file_ais140DeviceTacCopy')
         file_factoryFitmentDeclaration = request.data.get('file_factoryFitmentDeclaration')
         cop_file = request.data.get('cop_file')
+        assam_office_address = request.data.get('assam_office_address')
+        assam_office_pin = request.data.get('assam_office_pin')
+        assam_office_phone = request.data.get('assam_office_phone')
+        assam_office_lat = request.data.get('assam_office_lat')
+        assam_office_lon = request.data.get('assam_office_lon')
         esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
         print(esim_provider_ids)
 
@@ -5748,6 +5753,11 @@ def create_manufacturer_pub(request ):
                     cop_validity=cop_validity,
                     manufacturer_type=manufacturer_type,
                     device_model_details=device_model_details,
+                    assam_office_address=assam_office_address,
+                    assam_office_pin=assam_office_pin,
+                    assam_office_phone=assam_office_phone,
+                    assam_office_lat=assam_office_lat,
+                    assam_office_lon=assam_office_lon,
                     state_id=state,
                     createdby=createdby,
                     status=partner_status,
@@ -5848,6 +5858,16 @@ def create_manufacturer(request ):
         file_ais140DeviceTacCopy = request.data.get('file_ais140DeviceTacCopy')
         file_factoryFitmentDeclaration = request.data.get('file_factoryFitmentDeclaration')
         cop_file = request.data.get('cop_file')
+        assam_office_address = request.data.get('assam_office_address')
+        assam_office_pin = request.data.get('assam_office_pin')
+        assam_office_phone = request.data.get('assam_office_phone')
+        assam_office_lat = request.data.get('assam_office_lat')
+        assam_office_lon = request.data.get('assam_office_lon')
+        assam_office_address = request.data.get('assam_office_address')
+        assam_office_pin = request.data.get('assam_office_pin')
+        assam_office_phone = request.data.get('assam_office_phone')
+        assam_office_lat = request.data.get('assam_office_lat')
+        assam_office_lon = request.data.get('assam_office_lon')
         esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
         print(esim_provider_ids)
 
@@ -5958,6 +5978,11 @@ def create_manufacturer(request ):
                     cop_validity=cop_validity,
                     manufacturer_type=manufacturer_type,
                     device_model_details=device_model_details,
+                    assam_office_address=assam_office_address,
+                    assam_office_pin=assam_office_pin,
+                    assam_office_phone=assam_office_phone,
+                    assam_office_lat=assam_office_lat,
+                    assam_office_lon=assam_office_lon,
                     state_id=state,
                     createdby=createdby,
                     status=partner_status,
