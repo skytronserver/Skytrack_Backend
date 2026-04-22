@@ -15652,23 +15652,38 @@ def create_esim_activation_request(request ):
 
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 @require_http_methods(['GET', 'POST'])
-def filter_esim_activation_request(request ): 
+def filter_esim_activation_request(request):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-           
-    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    role="esimprovider"
-    user=request.user
-    #ret=get_user_object(user,role)
-    #if not ret:
-    #    return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
-        
+    user = request.user
+    user_role = getattr(user, 'role', None)
+
     if request.method == 'POST':
-        filters = request.data.get('filters', {}) 
-        queryset = esimActivationRequest.objects.filter(**filters)
+        filters = request.data.get('filters', {})
+        queryset = esimActivationRequest.objects.select_related(
+            'eSim_provider', 'ceated_by', 'device'
+        ).filter(**filters)
+
+        # Scope based on role
+        if user_role == 'superadmin':
+            pass  # full access
+        elif user_role == 'esimprovider':
+            esim_provider = eSimProvider.objects.filter(users=user).last()
+            if not esim_provider:
+                return Response({"error": "No eSIM provider record found for this user."}, status=status.HTTP_403_FORBIDDEN)
+            queryset = queryset.filter(eSim_provider=esim_provider)
+        elif user_role == 'dealer':
+            dealer = Dealer.objects.filter(users=user).last()
+            if not dealer:
+                return Response({"error": "No dealer record found for this user."}, status=status.HTTP_403_FORBIDDEN)
+            queryset = queryset.filter(ceated_by=dealer)
+        else:
+            return Response({"error": "Not authorised for this API."}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = EsimActivationRequestSerializer_R(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -21946,146 +21961,175 @@ def update_alert_log(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 def filter_alert_log(request):
-    """Filter alert logs with multiple parameters and pagination"""
+    """Filter alert logs with multiple parameters, role-based scoping and pagination"""
     try:
-        # Get filter parameters (supports single value or list/comma-separated)
-        alert_type = request.data.get('type')
-        alert_status = request.data.get('status')
-        vehicle_reg_no = request.data.get('vehicle_reg_no')
-        state_id = request.data.get('state_id')
-        district = request.data.get('district')
-        start_date = request.data.get('start_date')
-        end_date = request.data.get('end_date')
-        latitude = request.data.get('latitude')
-        longitude = request.data.get('longitude')
-        radius = request.data.get('radius', 10)  # Default 10 km
-        page = request.data.get('page', 1)
-        page_size = request.data.get('page_size', 10)
+        from django.db.models import Q
 
-        # Helper: parse list or comma-separated string to list
+        # ── Helper ──────────────────────────────────────────────────────────
         def _parse_multi(val, cast=None):
             if val is None:
                 return []
-            items = []
             if isinstance(val, (list, tuple)):
                 items = list(val)
             elif isinstance(val, str):
-                # Split comma-separated string, strip whitespace
-                items = [v.strip() for v in val.split(',') if v.strip() != '']
+                items = [v.strip() for v in val.split(',') if v.strip()]
             else:
-                # Single primitive value
                 items = [val]
-
             if cast is not None:
                 parsed = []
                 for v in items:
                     try:
                         parsed.append(cast(v))
                     except (ValueError, TypeError):
-                        # skip values that cannot be cast
-                        continue
+                        pass
                 return parsed
             return items
-        
-        # Build query
-        query = AlertsLog.objects.all()
-        
-        # Import Q for OR queries
-        from django.db.models import Q
 
-        # Filter by type (supports list)
+        # ── Request params ───────────────────────────────────────────────────
+        alert_type    = request.data.get('type')
+        alert_status  = request.data.get('status')
+        vehicle_reg_no = request.data.get('vehicle_reg_no')
+        state_id      = request.data.get('state_id')
+        district      = request.data.get('district')
+        start_date    = request.data.get('start_date')
+        end_date      = request.data.get('end_date')
+        latitude      = request.data.get('latitude')
+        longitude     = request.data.get('longitude')
+        radius        = request.data.get('radius', 10)
+        page          = request.data.get('page', 1)
+        page_size     = request.data.get('page_size', 10)
+
+        # ── Base query with eager-loaded relations ───────────────────────────
+        query = AlertsLog.objects.select_related(
+            'gps_ref',
+            'deviceTag',
+            'deviceTag__device',
+            'deviceTag__device__model',
+            'deviceTag__district',
+            'deviceTag__vehicle_owner',
+            'state',
+        ).all()
+
+        # ── Role-based scoping ───────────────────────────────────────────────
+        user = request.user
+        user_role = getattr(user, 'role', None)
+
+        if user_role in ('superadmin', 'sosadmin', 'sosexecutive'):
+            # Full access — no scoping filter
+            pass
+
+        elif user_role == 'stateadmin':
+            state_admins = StateAdmin.objects.filter(users=user).values_list('state_id', flat=True)
+            if not state_admins:
+                return Response({'status': 'error', 'message': 'No state found for this state admin.'}, status=status.HTTP_403_FORBIDDEN)
+            query = query.filter(state_id__in=list(state_admins))
+
+        elif user_role == 'dtorto':
+            dto_rtos = dto_rto.objects.filter(users=user)
+            if not dto_rtos.exists():
+                return Response({'status': 'error', 'message': 'No DTO/RTO record found for this user.'}, status=status.HTTP_403_FORBIDDEN)
+            district_names = [dr.district for dr in dto_rtos if dr.district]
+            if district_names:
+                query = query.filter(deviceTag__district__district__in=district_names)
+            else:
+                fallback_states = [dr.state_id for dr in dto_rtos]
+                query = query.filter(state_id__in=fallback_states)
+
+        elif user_role == 'devicemanufacture':
+            manufacturers = Manufacturer.objects.filter(users=user).values_list('device_model_details_id', flat=True)
+            if not manufacturers:
+                return Response({'status': 'error', 'message': 'No manufacturer record found for this user.'}, status=status.HTTP_403_FORBIDDEN)
+            query = query.filter(deviceTag__device__model_id__in=list(manufacturers))
+
+        elif user_role == 'owner':
+            vehicle_owners = VehicleOwner.objects.filter(users=user)
+            if not vehicle_owners.exists():
+                return Response({'status': 'error', 'message': 'No vehicle owner record found for this user.'}, status=status.HTTP_403_FORBIDDEN)
+            query = query.filter(deviceTag__vehicle_owner__in=vehicle_owners)
+
+        else:
+            return Response({'status': 'error', 'message': 'User role not authorised for this API.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # ── User-supplied filters ────────────────────────────────────────────
+
         types = _parse_multi(alert_type)
         if types:
             query = query.filter(type__in=types)
-        
-        # Filter by status (supports list)
+
         statuses = _parse_multi(alert_status)
         if statuses:
             query = query.filter(status__in=statuses)
-        
-        # Filter by vehicle registration number (supports list, OR icontains)
+
         vehicle_regs = _parse_multi(vehicle_reg_no)
         if vehicle_regs:
             vr_q = Q()
             for vr in vehicle_regs:
                 vr_q |= Q(deviceTag__vehicle_reg_no__icontains=vr)
             query = query.filter(vr_q)
-        
-        # Filter by state (supports list)
+
+        # State filter — only applied if role permits (scoped roles already restricted above)
         state_ids = _parse_multi(state_id, cast=int)
         if state_ids:
             query = query.filter(state_id__in=state_ids)
-        
-        # Filter by district from device tag (supports list, OR icontains)
+
         districts = _parse_multi(district)
         if districts:
             dist_q = Q()
             for d in districts:
                 dist_q |= Q(deviceTag__district__district__icontains=d)
             query = query.filter(dist_q)
-        
-        # Filter by date range
+
         if start_date:
             try:
-                start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
-                query = query.filter(timestamp__gte=start_datetime)
+                query = query.filter(timestamp__gte=datetime.strptime(start_date, '%Y-%m-%d'))
             except ValueError:
-                return Response({
-                    'status': 'error',
-                    'message': 'Invalid start_date format. Use YYYY-MM-DD'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        
+                return Response({'status': 'error', 'message': 'Invalid start_date format. Use YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
+
         if end_date:
             try:
-                end_datetime = datetime.strptime(end_date, '%Y-%m-%d')
-                end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
-                query = query.filter(timestamp__lte=end_datetime)
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+                query = query.filter(timestamp__lte=end_dt)
             except ValueError:
-                return Response({
-                    'status': 'error',
-                    'message': 'Invalid end_date format. Use YYYY-MM-DD'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Filter by location (lat, lon, radius)
+                return Response({'status': 'error', 'message': 'Invalid end_date format. Use YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ── Location filter with bounding-box pre-filter ─────────────────────
         if latitude and longitude:
             try:
-                latitude = float(latitude)
-                longitude = float(longitude)
+                lat_c  = float(latitude)
+                lon_c  = float(longitude)
                 radius = float(radius)
-                
-                # Get all alerts with GPS data
-                alerts_with_location = []
-                for alert in query:
+
+                # Approximate bounding box to cut DB rows before Python Haversine
+                deg_lat = radius / 111.0
+                deg_lon = radius / (111.0 * cos(radians(lat_c)))
+                query = query.filter(
+                    gps_ref__latitude__gte=lat_c - deg_lat,
+                    gps_ref__latitude__lte=lat_c + deg_lat,
+                    gps_ref__longitude__gte=lon_c - deg_lon,
+                    gps_ref__longitude__lte=lon_c + deg_lon,
+                )
+
+                lat1, lon1 = radians(lat_c), radians(lon_c)
+                within_radius = []
+                for alert in query.only('id', 'gps_ref_id').select_related('gps_ref'):
                     if alert.gps_ref:
-                        gps_lat = float(alert.gps_ref.latitude)
-                        gps_lon = float(alert.gps_ref.longitude)
-                        
-                        # Calculate distance using Haversine formula
-                        lat1, lon1 = radians(latitude), radians(longitude)
-                        lat2, lon2 = radians(gps_lat), radians(gps_lon)
-                        
-                        dlat = lat2 - lat1
-                        dlon = lon2 - lon1
-                        
+                        lat2 = radians(float(alert.gps_ref.latitude))
+                        lon2 = radians(float(alert.gps_ref.longitude))
+                        dlat, dlon = lat2 - lat1, lon2 - lon1
                         a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-                        c = 2 * asin(sqrt(a))
-                        distance = 6371 * c  # Earth radius in kilometers
-                        
-                        if distance <= radius:
-                            alerts_with_location.append(alert.id)
-                
-                # Filter by IDs within radius
-                query = query.filter(id__in=alerts_with_location)
+                        if 6371 * 2 * asin(sqrt(a)) <= radius:
+                            within_radius.append(alert.id)
+                query = AlertsLog.objects.select_related(
+                    'gps_ref', 'deviceTag', 'deviceTag__device',
+                    'deviceTag__device__model', 'deviceTag__district',
+                    'deviceTag__vehicle_owner', 'state',
+                ).filter(id__in=within_radius)
             except (ValueError, TypeError):
-                return Response({
-                    'status': 'error',
-                    'message': 'Invalid latitude, longitude, or radius format'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Order by timestamp (newest first)
+                return Response({'status': 'error', 'message': 'Invalid latitude, longitude, or radius format'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ── Ordering + Pagination ────────────────────────────────────────────
         query = query.order_by('-timestamp')
-        
-        # Pagination
+
         try:
             page = int(page)
         except (ValueError, TypeError):
@@ -22098,11 +22142,11 @@ def filter_alert_log(request):
         paginator = Paginator(query, page_size)
         try:
             alerts = paginator.page(page)
-        except:
+        except Exception:
             alerts = paginator.page(1)
-        
+
         serializer = AlertsLogSerializer(alerts, many=True)
-        
+
         return Response({
             'status': 'success',
             'message': 'Alert logs retrieved successfully',
