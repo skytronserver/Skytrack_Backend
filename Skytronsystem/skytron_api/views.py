@@ -2479,7 +2479,7 @@ def gps_track_data_api(request ):
                     else:
                         gps_queryset = GPSData.objects.none()
                         return JsonResponse({'error': 'No district or state found for this DTO/RTO user.'}, status=400)
-            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive', 'dealer']:
+            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive']:
                 user_states = []
                 if user_role == 'stateadmin':
                     state_admins = StateAdmin.objects.filter(users=request.user)
@@ -2500,7 +2500,8 @@ def gps_track_data_api(request ):
                 if not dlrs.exists():
                     gps_queryset = GPSData.objects.none()
                     return JsonResponse({'error': 'No dealer record found for this user.'}, status=400)
-                gps_queryset = gps_queryset.filter(device_tag__device__dealer__in=dlrs)
+                dealer_user_ids = dlrs.values_list('users', flat=True)
+                gps_queryset = gps_queryset.filter(device_tag__tagged_by__in=dealer_user_ids)
             elif user_role == 'owner':
                 vehicle_owners = VehicleOwner.objects.filter(users=request.user)#, status='UserVerified')
                 if vehicle_owners.exists():
