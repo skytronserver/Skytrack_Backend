@@ -3284,7 +3284,12 @@ def gps_track_lite_api(request):
     if _err:
         return _err
 
-    # Latest entry per device_tag via DISTINCT ON (PostgreSQL)
+    # Latest entry per device_tag via DISTINCT ON (PostgreSQL).
+    # count=false skips the extra COUNT query (saves ~50% DB time when caller
+    # only needs data, e.g. map rendering or streaming updates).
+    want_count = request.GET.get('count', 'true').lower() != 'false'
+
+    # Base DISTINCT ON queryset — no slice yet so count() can reuse it.
     latest_qs = (
         base_qs
         .order_by('device_tag', '-entry_time')
@@ -3299,9 +3304,11 @@ def gps_track_lite_api(request):
         .prefetch_related('device_tag__vehicle_owner__users')
     )
 
-    total = latest_qs.count()
+    # COUNT is optional — skip it to save a full-scan query on large tables.
+    total = latest_qs.count() if want_count else None
     start = page * page_length
-    page_qs = latest_qs[start: start + page_length]
+    # Slicing produces the data query with LIMIT/OFFSET; prefetch fires here.
+    page_qs = list(latest_qs[start: start + page_length])
 
     data = []
     for g in page_qs:
@@ -3310,7 +3317,13 @@ def gps_track_lite_api(request):
         owner_id = None
         if dt and dt.vehicle_owner:
             owner_id = dt.vehicle_owner.id
-            users = list(dt.vehicle_owner.users.all())
+            # Access the prefetch_related cache directly — avoids N+1.
+            # Django stores it in _prefetched_objects_cache after evaluation.
+            cached_users = getattr(dt.vehicle_owner, '_prefetched_objects_cache', {}).get('users')
+            if cached_users is not None:
+                users = list(cached_users)
+            else:
+                users = list(dt.vehicle_owner.users.all())
             if users:
                 owner_name = getattr(users[0], 'name', '') or getattr(users[0], 'username', '')
         data.append({
@@ -3334,10 +3347,10 @@ def gps_track_lite_api(request):
     return JsonResponse({
         'data': data,
         'pagination': {
-            'total':       total,
+            'total':       total,   # null when count=false was passed
             'page':        page,
             'page_length': page_length,
-            'total_pages': math.ceil(total / page_length) if page_length > 0 else 1,
+            'total_pages': math.ceil(total / page_length) if (total is not None and page_length > 0) else None,
         },
     })
 

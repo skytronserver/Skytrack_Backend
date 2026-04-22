@@ -17,3 +17,12 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;
 GRANT USAGE, CREATE ON SCHEMA public TO $DB_USER;
 
 EOF
+# ── GPS lite API performance index ─────────────────────────────────────────
+# Supports DISTINCT ON (device_tag_id) ORDER BY device_tag_id, entry_time DESC
+# for verified, active devices without a full GPSData table scan.
+# CONCURRENTLY means no table lock — safe to run on live production.
+# psql -U <db_user> -d <db_name> -c "
+# CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_gpsdata_lite_lookup
+#     ON skytron_api_gpsdata (device_tag_id, entry_time DESC)
+#     WHERE device_tag_id IS NOT NULL;
+# "
