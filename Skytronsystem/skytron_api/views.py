@@ -22036,10 +22036,10 @@ def filter_alert_log(request):
                 query = query.filter(state_id__in=fallback_states)
 
         elif user_role == 'devicemanufacture':
-            manufacturers = Manufacturer.objects.filter(users=user).values_list('device_model_details_id', flat=True)
-            if not manufacturers:
+            model_ids = Manufacturer.objects.filter(users=user).values_list('device_model_details', flat=True)
+            if not model_ids:
                 return Response({'status': 'error', 'message': 'No manufacturer record found for this user.'}, status=status.HTTP_403_FORBIDDEN)
-            query = query.filter(deviceTag__device__model_id__in=list(manufacturers))
+            query = query.filter(deviceTag__device__model_id__in=list(model_ids))
 
         elif user_role == 'owner':
             vehicle_owners = VehicleOwner.objects.filter(users=user)
