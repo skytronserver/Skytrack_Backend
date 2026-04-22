@@ -292,6 +292,9 @@ urlpatterns = [
       
     path('pub/gps_track_data_api/',gps_track_data_api_pub, name='gps_track_data_api_pub'), 
     path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),  # live tracking api
+    path('gps_track_lite/', gps_track_lite_api, name='gps_track_lite_api'),     # lightweight tracking api
+    path('gps_cluster/', gps_cluster_api, name='gps_cluster_api'),             # cluster summary api
+    path('gps_grid_cluster/', gps_grid_cluster_api, name='gps_grid_cluster_api'),  # grid-based cluster api
     path('saveRoute/',saveRoute, name='saveRout'), 
     path('delRoute/',delRoute, name='delRout'), 
     path('getRoute/',getRoute, name='getRout'), 

@@ -2303,6 +2303,68 @@ from itertools import chain
 # which is already imported from django.forms.models
 
 
+def _gps_scope_by_role(request, queryset):
+    """Apply role-based scoping to a GPS queryset.
+    Returns (scoped_queryset, error_response_or_None).
+    On error the queryset is None and a ready-to-return JsonResponse is provided.
+    """
+    if not (request.user and request.user.is_authenticated):
+        return None, JsonResponse({'error': 'User not authenticated.'}, status=401)
+    user_role = getattr(request.user, 'role', None)
+    if not user_role:
+        return None, JsonResponse({'error': 'User role not found.'}, status=400)
+
+    if user_role == 'superadmin':
+        return queryset, None
+
+    elif user_role == 'dtorto':
+        dto_rtos = dto_rto.objects.filter(users=request.user)
+        if not dto_rtos.exists():
+            return None, JsonResponse({'error': 'No DTO/RTO record found for this user.'}, status=400)
+        district_names = [dr.district for dr in dto_rtos if dr.district]
+        if district_names:
+            return queryset.filter(device_tag__district__district__in=district_names), None
+        fallback_states = [dr.state_id for dr in dto_rtos]
+        if fallback_states:
+            return queryset.filter(device_tag__district__state__id__in=fallback_states), None
+        return None, JsonResponse({'error': 'No district or state found for this DTO/RTO user.'}, status=400)
+
+    elif user_role == 'stateadmin':
+        user_states = list(StateAdmin.objects.filter(users=request.user).values_list('state_id', flat=True))
+        if not user_states:
+            return None, JsonResponse({'error': 'No state found for this state admin.'}, status=400)
+        return queryset.filter(device_tag__district__state__id__in=user_states), None
+
+    elif user_role == 'sosadmin':
+        user_states = list(EM_admin.objects.filter(users=request.user).values_list('state_id', flat=True))
+        if not user_states:
+            return None, JsonResponse({'error': 'No state found for this SOS admin.'}, status=400)
+        return queryset.filter(device_tag__district__state__id__in=user_states), None
+
+    elif user_role == 'sosexecutive':
+        user_states = list(EM_ex.objects.filter(users=request.user).values_list('state_id', flat=True))
+        if not user_states:
+            return None, JsonResponse({'error': 'No state found for this SOS executive.'}, status=400)
+        return queryset.filter(device_tag__district__state__id__in=user_states), None
+
+    elif user_role == 'dealer':
+        dlrs = Dealer.objects.filter(users=request.user)
+        if not dlrs.exists():
+            return None, JsonResponse({'error': 'No dealer record found for this user.'}, status=400)
+        dealer_user_ids = list(dlrs.values_list('users', flat=True))
+        return queryset.filter(device_tag__tagged_by__in=dealer_user_ids), None
+
+    elif user_role == 'owner':
+        vehicle_owners = VehicleOwner.objects.filter(users=request.user)
+        if not vehicle_owners.exists():
+            return None, JsonResponse({'error': 'User is not linked to any vehicles.'}, status=400)
+        owned_tags = DeviceTag.objects.filter(
+            vehicle_owner__in=vehicle_owners, status='Owner_Final_OTP_Verified'
+        )
+        return queryset.filter(device_tag__in=owned_tags), None
+
+    else:
+        return None, JsonResponse({'error': 'User not Authorised for this api.'}, status=400)
 
 
 @csrf_exempt   
@@ -2454,68 +2516,10 @@ def gps_track_data_api(request ):
                 device_tag__vehicle_owner__users__name__icontains=owner_name_substr
             )
 
-        # Apply role-based filtering (unchanged)
-        if request.user and request.user.is_authenticated:
-            user_role = getattr(request.user, 'role', None)
-            if not user_role:
-                gps_queryset = GPSData.objects.none()
-                return JsonResponse({'error': 'User role not found.'}, status=400)
-            if user_role == 'superadmin':
-                pass
-            elif user_role == 'dtorto':
-                dto_rtos = dto_rto.objects.filter(users=request.user)
-                if not dto_rtos.exists():
-                    gps_queryset = GPSData.objects.none()
-                    return JsonResponse({'error': 'No DTO/RTO record found for this user.'}, status=400)
-                # Filter by district names stored in the dto_rto records
-                user_district_names = [dr.district for dr in dto_rtos if dr.district]
-                if user_district_names:
-                    gps_queryset = gps_queryset.filter(device_tag__district__district__in=user_district_names)
-                else:
-                    # Fall back to state-level filter if no district is set
-                    user_states = [dr.state.id for dr in dto_rtos]
-                    if user_states:
-                        gps_queryset = gps_queryset.filter(device_tag__district__state__id__in=user_states)
-                    else:
-                        gps_queryset = GPSData.objects.none()
-                        return JsonResponse({'error': 'No district or state found for this DTO/RTO user.'}, status=400)
-            elif user_role in ['stateadmin', 'sosadmin', 'sosexecutive']:
-                user_states = []
-                if user_role == 'stateadmin':
-                    state_admins = StateAdmin.objects.filter(users=request.user)
-                    user_states = [sa.state.id for sa in state_admins]
-                elif user_role == 'sosadmin':
-                    em_admins = EM_admin.objects.filter(users=request.user)
-                    user_states = [ea.state.id for ea in em_admins]
-                elif user_role == 'sosexecutive':
-                    em_exs = EM_ex.objects.filter(users=request.user)
-                    user_states = [ee.state.id for ee in em_exs]
-                if user_states:
-                    gps_queryset = gps_queryset.filter(device_tag__district__state__id__in=user_states)
-                else:
-                    gps_queryset = GPSData.objects.none()
-                    return JsonResponse({'error':  'No user states found.'}, status=400)
-            elif user_role == 'dealer':
-                dlrs = Dealer.objects.filter(users=request.user)
-                if not dlrs.exists():
-                    gps_queryset = GPSData.objects.none()
-                    return JsonResponse({'error': 'No dealer record found for this user.'}, status=400)
-                dealer_user_ids = dlrs.values_list('users', flat=True)
-                gps_queryset = gps_queryset.filter(device_tag__tagged_by__in=dealer_user_ids)
-            elif user_role == 'owner':
-                vehicle_owners = VehicleOwner.objects.filter(users=request.user)#, status='UserVerified')
-                if vehicle_owners.exists():
-                    owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners,status = 'Owner_Final_OTP_Verified')
-                    gps_queryset = gps_queryset.filter(device_tag__in=owned_device_tags)
-                else:
-                    gps_queryset = GPSData.objects.none()
-                    return JsonResponse({'error':  'User is not linked to any vehicles.'}, status=400)
-            else:
-                gps_queryset = GPSData.objects.none()
-                return JsonResponse({'error':  'User not Authorised for this api.'}, status=400)
-        else:
-            gps_queryset = GPSData.objects.none()
-            return JsonResponse({'error': 'User not authenticated.'}, status=401)
+        # Apply role-based filtering
+        gps_queryset, _role_err = _gps_scope_by_role(request, gps_queryset)
+        if _role_err:
+            return _role_err
 
         # --- Geofence filter logic ---
         polygon = None
@@ -2852,9 +2856,32 @@ def gps_track_data_api(request ):
         _t6 = _time.perf_counter()
         print(f"TIMING: per_vehicle_loop={_t6-_t5:.3f}s  output={len(data)}  TOTAL={_t6-_t0:.3f}s")
         data_list = list(data)
-        response = {'data': data_list}
+
+        # Pagination
+        try:
+            _page = int(request.GET.get('page', 0))
+        except (ValueError, TypeError):
+            _page = 0
+        try:
+            _page_length = int(request.GET.get('page_length', 100))
+            if _page_length < 1:
+                _page_length = 100
+        except (ValueError, TypeError):
+            _page_length = 100
+
+        _total = len(data_list)
+        _start = _page * _page_length
+        paged_data = data_list[_start: _start + _page_length]
+
+        response = {'data': paged_data}
         if geofence_message:
             response['geofence_message'] = geofence_message
+        response['pagination'] = {
+            'total': _total,
+            'page': _page,
+            'page_length': _page_length,
+            'total_pages': math.ceil(_total / _page_length) if _page_length > 0 else 1,
+        }
         return JsonResponse(response)
     return JsonResponse({'error':  'Invalid request method. Only GET is allowed.'}, status=400)
 
@@ -3194,6 +3221,441 @@ def gps_track_data_api_pub(request ):
         return JsonResponse(response)
     return JsonResponse({'error':  'Invalid request method. Only GET is allowed.'}, status=400)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Lightweight GPS tracking API  – minimal fields, DB-level pagination
+# GET /api/gps_track_lite/
+# Params: same filter params as gps_track_data_api plus page (default 0) and
+#         page_length (default 100).
+# Returns: device_tag_id, vehicle_reg_no, device_stock_id, owner_name, owner_id,
+#          imei, last_seen, emergency_status, speed, latitude, longitude,
+#          gps_status, district, state, city
+# ─────────────────────────────────────────────────────────────────────────────
+@csrf_exempt
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def gps_track_lite_api(request):
+    """Lightweight GPS tracking API – returns only essential vehicle fields."""
+    def _norm(v):
+        if v is None:
+            return None
+        if isinstance(v, str) and v.strip().lower() in ('', 'none', 'null', 'undefined'):
+            return None
+        return v
+
+    imei          = _norm(request.GET.get('imei'))
+    regno         = _norm(request.GET.get('regno'))
+    district_id   = _norm(request.GET.get('district_id'))
+    district_text = _norm(request.GET.get('district'))
+    state_text    = _norm(request.GET.get('state'))
+
+    try:
+        page = int(request.GET.get('page', 0))
+    except (ValueError, TypeError):
+        page = 0
+    try:
+        page_length = int(request.GET.get('page_length', 100))
+        if page_length < 1:
+            page_length = 100
+    except (ValueError, TypeError):
+        page_length = 100
+
+    base_qs = GPSData.objects.exclude(device_tag=None).filter(
+        gps_status=1, device_tag__status='Owner_Final_OTP_Verified'
+    )
+
+    # Optional filters
+    if imei:
+        base_qs = base_qs.filter(device_tag__device__imei__icontains=imei)
+    if regno:
+        base_qs = base_qs.filter(device_tag__vehicle_reg_no__icontains=regno)
+    if district_id:
+        try:
+            base_qs = base_qs.filter(device_tag__district__id=int(district_id))
+        except (ValueError, TypeError):
+            pass
+    if district_text:
+        base_qs = base_qs.filter(device_tag__district__district__icontains=district_text)
+    if state_text:
+        base_qs = base_qs.filter(device_tag__district__state__state__icontains=state_text)
+
+    # Role-based scope
+    base_qs, _err = _gps_scope_by_role(request, base_qs)
+    if _err:
+        return _err
+
+    # Latest entry per device_tag via DISTINCT ON (PostgreSQL)
+    latest_qs = (
+        base_qs
+        .order_by('device_tag', '-entry_time')
+        .distinct('device_tag')
+        .select_related(
+            'device_tag',
+            'device_tag__device',
+            'device_tag__vehicle_owner',
+            'device_tag__district',
+            'device_tag__district__state',
+        )
+        .prefetch_related('device_tag__vehicle_owner__users')
+    )
+
+    total = latest_qs.count()
+    start = page * page_length
+    page_qs = latest_qs[start: start + page_length]
+
+    data = []
+    for g in page_qs:
+        dt = g.device_tag
+        owner_name = ''
+        owner_id = None
+        if dt and dt.vehicle_owner:
+            owner_id = dt.vehicle_owner.id
+            users = list(dt.vehicle_owner.users.all())
+            if users:
+                owner_name = getattr(users[0], 'name', '') or getattr(users[0], 'username', '')
+        data.append({
+            'device_tag_id':    dt.id if dt else None,
+            'vehicle_reg_no':   dt.vehicle_reg_no if dt else None,
+            'device_stock_id':  dt.device_id if dt else None,
+            'imei':             dt.device.imei if (dt and dt.device) else None,
+            'owner_name':       owner_name,
+            'owner_id':         owner_id,
+            'last_seen':        g.entry_time.isoformat() if g.entry_time else None,
+            'emergency_status': g.emergency_status,
+            'speed':            g.speed,
+            'latitude':         g.latitude,
+            'longitude':        g.longitude,
+            'gps_status':       g.gps_status,
+            'district':         g.district or (dt.district.district if (dt and dt.district) else None),
+            'state':            g.state or (dt.district.state.state if (dt and dt.district and dt.district.state) else None),
+            'city':             g.city,
+        })
+
+    return JsonResponse({
+        'data': data,
+        'pagination': {
+            'total':       total,
+            'page':        page,
+            'page_length': page_length,
+            'total_pages': math.ceil(total / page_length) if page_length > 0 else 1,
+        },
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cluster summary API  – aggregated counts by location level
+# GET /api/gps_cluster/
+# Params:
+#   level = district | state | city | road  (default: district)
+#   All the same role/filter params as gps_track_lite_api
+# Response per cluster:
+#   { cluster_name, total, online, offline, emergency, moving, avg_lat, avg_lon }
+# online  = last_seen within 10 minutes
+# offline = last_seen older than 10 minutes
+# emergency = emergency_status field indicates active SOS ('1', '0001', etc.)
+# moving  = speed > 2 km/h
+# ─────────────────────────────────────────────────────────────────────────────
+@csrf_exempt
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def gps_cluster_api(request):
+    """Cluster summary – aggregated vehicle counts by district/state/city/road."""
+    from django.db.models import Count, Avg, Case, When, IntegerField, Value, Subquery
+    from django.utils import timezone as dj_timezone
+    from datetime import timedelta
+
+    VALID_LEVELS = ('district', 'state', 'city', 'road')
+    level = request.GET.get('level', 'district').lower().strip()
+    if level not in VALID_LEVELS:
+        return JsonResponse({'error': f"Invalid level. Choose from: {', '.join(VALID_LEVELS)}"}, status=400)
+
+    # Map level → GPSData field name used for grouping
+    level_field = {
+        'district': 'district',
+        'state':    'state',
+        'city':     'city',
+        'road':     'road',
+    }[level]
+
+    def _norm(v):
+        if v is None:
+            return None
+        if isinstance(v, str) and v.strip().lower() in ('', 'none', 'null', 'undefined'):
+            return None
+        return v
+
+    # For cluster: include ALL verified devices regardless of current gps_status so
+    # that every district/city/state/road that has even one device's last-known
+    # position is represented in the response.
+    base_qs = GPSData.objects.exclude(device_tag=None).filter(
+        device_tag__status='Owner_Final_OTP_Verified'
+    )
+
+    # Optional filters (same as lite API)
+    imei          = _norm(request.GET.get('imei'))
+    regno         = _norm(request.GET.get('regno'))
+    district_id   = _norm(request.GET.get('district_id'))
+    district_text = _norm(request.GET.get('district'))
+    state_text    = _norm(request.GET.get('state'))
+
+    if imei:
+        base_qs = base_qs.filter(device_tag__device__imei__icontains=imei)
+    if regno:
+        base_qs = base_qs.filter(device_tag__vehicle_reg_no__icontains=regno)
+    if district_id:
+        try:
+            base_qs = base_qs.filter(device_tag__district__id=int(district_id))
+        except (ValueError, TypeError):
+            pass
+    if district_text:
+        base_qs = base_qs.filter(device_tag__district__district__icontains=district_text)
+    if state_text:
+        base_qs = base_qs.filter(device_tag__district__state__state__icontains=state_text)
+
+    # Role-based scope
+    base_qs, _err = _gps_scope_by_role(request, base_qs)
+    if _err:
+        return _err
+
+    # Get the most-recent GPS entry per device_tag (DISTINCT ON – PostgreSQL).
+    # This guarantees every device appears exactly once, using its last known
+    # recorded position — whether it is currently online or offline.
+    latest_ids = (
+        base_qs
+        .order_by('device_tag', '-entry_time')
+        .distinct('device_tag')
+        .values('id')
+    )
+
+    ONLINE_THRESHOLD = dj_timezone.now() - timedelta(minutes=10)
+    EMERGENCY_STATUSES = ('1', '0001', '1111')  # adjust to your protocol values
+
+    clusters = (
+        GPSData.objects
+        .filter(id__in=Subquery(latest_ids))
+        # Only include rows where the reverse-geocoded level field is populated;
+        # devices whose last GPS position hasn't been geocoded to this level yet
+        # are excluded from that level's breakdown but counted in coarser levels.
+        .exclude(**{level_field: None})
+        .exclude(**{level_field: ''})
+        .values(level_field)
+        .annotate(
+            total=Count('id'),
+            online=Count(Case(
+                When(entry_time__gte=ONLINE_THRESHOLD, then=1),
+                output_field=IntegerField()
+            )),
+            offline=Count(Case(
+                When(entry_time__lt=ONLINE_THRESHOLD, then=1),
+                output_field=IntegerField()
+            )),
+            emergency=Count(Case(
+                When(emergency_status__in=EMERGENCY_STATUSES, then=1),
+                output_field=IntegerField()
+            )),
+            moving=Count(Case(
+                When(speed__gt=2, then=1),
+                output_field=IntegerField()
+            )),
+            avg_lat=Avg('latitude'),
+            avg_lon=Avg('longitude'),
+        )
+        .order_by('-total')
+    )
+
+    data = [
+        {
+            'cluster_name': row[level_field],
+            'level':        level,
+            'total':        row['total'],
+            'online':       row['online'],
+            'offline':      row['offline'],
+            'emergency':    row['emergency'],
+            'moving':       row['moving'],
+            'stationary':   row['total'] - row['moving'],
+            'avg_lat':      float(row['avg_lat']) if row['avg_lat'] is not None else None,
+            'avg_lon':      float(row['avg_lon']) if row['avg_lon'] is not None else None,
+        }
+        for row in clusters
+    ]
+
+    return JsonResponse({
+        'level': level,
+        'total_clusters': len(data),
+        'data': data,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Grid-based cluster API
+# GET /api/gps_grid_cluster/
+#
+# Divides the Earth into uniform square cells and returns one row per cell
+# that contains at least one device's last known GPS position.
+#
+# Param:  grid = 1 | 25 | 100 | 2500 | 40000 | 1000000  (sq km, default 100)
+#   1         → ~1×1 km  cells  (cell_deg ≈ 0.009°)
+#   25        → ~5×5 km  cells  (cell_deg ≈ 0.045°)
+#   100       → ~10×10 km cells (cell_deg ≈ 0.090°)
+#   2500      → ~50×50 km cells (cell_deg ≈ 0.449°)
+#   40000     → ~200×200 km cells (cell_deg ≈ 1.796°)
+#   1000000   → ~1000×1000 km cells (cell_deg ≈ 8.983°)
+#
+# All user-role and other filters are applied BEFORE aggregation.
+#
+# Response per cell:
+#   grid_lat, grid_lon   – centre-point of the cell
+#   grid_sq_km           – requested grid size
+#   cell_deg             – approximate cell side in degrees
+#   total, online, offline, emergency, moving, stationary
+# ─────────────────────────────────────────────────────────────────────────────
+@csrf_exempt
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def gps_grid_cluster_api(request):
+    """Grid-based cluster summary – aggregated counts per geographic grid cell."""
+    from django.db.models import Count, Avg, Case, When, IntegerField, FloatField, Subquery
+    from django.db.models.expressions import RawSQL
+    from django.utils import timezone as dj_timezone
+    from datetime import timedelta
+
+    # ── Grid size → cell side in degrees (1° latitude ≈ 111.32 km) ──────────
+    GRID_SIZES = {
+        1:       round(1.0   / 111.32, 7),   # ~0.00898°
+        25:      round(5.0   / 111.32, 7),   # ~0.04491°
+        100:     round(10.0  / 111.32, 7),   # ~0.08983°
+        2500:    round(50.0  / 111.32, 7),   # ~0.44914°
+        40000:   round(200.0 / 111.32, 7),   # ~1.79628°
+        1000000: round(1000.0/ 111.32, 7),   # ~8.98128°
+    }
+
+    try:
+        grid_sq_km = int(request.GET.get('grid', 100))
+    except (ValueError, TypeError):
+        grid_sq_km = 100
+
+    if grid_sq_km not in GRID_SIZES:
+        return JsonResponse({
+            'error': f"Invalid grid. Allowed values (sq km): {sorted(GRID_SIZES.keys())}"
+        }, status=400)
+
+    cell_deg = GRID_SIZES[grid_sq_km]
+    half_deg = cell_deg / 2.0
+
+    def _norm(v):
+        if v is None:
+            return None
+        if isinstance(v, str) and v.strip().lower() in ('', 'none', 'null', 'undefined'):
+            return None
+        return v
+
+    # ── Base queryset: ALL verified devices' GPS history ─────────────────────
+    # (No gps_status filter so offline devices' last position is included.)
+    base_qs = GPSData.objects.exclude(device_tag=None).filter(
+        device_tag__status='Owner_Final_OTP_Verified',
+        latitude__isnull=False,
+        longitude__isnull=False,
+    )
+
+    # ── Optional pre-filters ─────────────────────────────────────────────────
+    imei          = _norm(request.GET.get('imei'))
+    regno         = _norm(request.GET.get('regno'))
+    district_id   = _norm(request.GET.get('district_id'))
+    district_text = _norm(request.GET.get('district'))
+    state_text    = _norm(request.GET.get('state'))
+
+    if imei:
+        base_qs = base_qs.filter(device_tag__device__imei__icontains=imei)
+    if regno:
+        base_qs = base_qs.filter(device_tag__vehicle_reg_no__icontains=regno)
+    if district_id:
+        try:
+            base_qs = base_qs.filter(device_tag__district__id=int(district_id))
+        except (ValueError, TypeError):
+            pass
+    if district_text:
+        base_qs = base_qs.filter(device_tag__district__district__icontains=district_text)
+    if state_text:
+        base_qs = base_qs.filter(device_tag__district__state__state__icontains=state_text)
+
+    # ── Role-based scope (applied BEFORE aggregation) ────────────────────────
+    base_qs, _err = _gps_scope_by_role(request, base_qs)
+    if _err:
+        return _err
+
+    # ── Latest entry per device_tag (DISTINCT ON – PostgreSQL) ───────────────
+    latest_ids = (
+        base_qs
+        .order_by('device_tag', '-entry_time')
+        .distinct('device_tag')
+        .values('id')
+    )
+
+    # ── Grid cell centre computed via parameterised SQL ──────────────────────
+    # ROUND(...::numeric, 6) prevents floating-point grouping artefacts.
+    grid_lat_expr = RawSQL(
+        'ROUND((FLOOR(latitude  / %s) * %s + %s)::numeric, 6)',
+        [cell_deg, cell_deg, half_deg],
+        output_field=FloatField(),
+    )
+    grid_lon_expr = RawSQL(
+        'ROUND((FLOOR(longitude / %s) * %s + %s)::numeric, 6)',
+        [cell_deg, cell_deg, half_deg],
+        output_field=FloatField(),
+    )
+
+    ONLINE_THRESHOLD   = dj_timezone.now() - timedelta(minutes=10)
+    EMERGENCY_STATUSES = ('1', '0001', '1111')
+
+    clusters = (
+        GPSData.objects
+        .filter(id__in=Subquery(latest_ids))
+        .annotate(grid_lat=grid_lat_expr, grid_lon=grid_lon_expr)
+        .values('grid_lat', 'grid_lon')
+        .annotate(
+            total=Count('id'),
+            online=Count(Case(
+                When(entry_time__gte=ONLINE_THRESHOLD, then=1),
+                output_field=IntegerField()
+            )),
+            offline=Count(Case(
+                When(entry_time__lt=ONLINE_THRESHOLD, then=1),
+                output_field=IntegerField()
+            )),
+            emergency=Count(Case(
+                When(emergency_status__in=EMERGENCY_STATUSES, then=1),
+                output_field=IntegerField()
+            )),
+            moving=Count(Case(
+                When(speed__gt=2, then=1),
+                output_field=IntegerField()
+            )),
+        )
+        .order_by('-total')
+    )
+
+    data = [
+        {
+            'grid_lat':    float(row['grid_lat']),
+            'grid_lon':    float(row['grid_lon']),
+            'grid_sq_km':  grid_sq_km,
+            'cell_deg':    cell_deg,
+            'total':       row['total'],
+            'online':      row['online'],
+            'offline':     row['offline'],
+            'emergency':   row['emergency'],
+            'moving':      row['moving'],
+            'stationary':  row['total'] - row['moving'],
+        }
+        for row in clusters
+    ]
+
+    return JsonResponse({
+        'grid_sq_km':    grid_sq_km,
+        'cell_deg':      cell_deg,
+        'total_cells':   len(data),
+        'data':          data,
+    })
 
 
 @api_view(['GET'])
