@@ -10973,7 +10973,7 @@ def TagSendOwnerOtpFinal(request ):
     device_model_id = request.data.get('device_id')
     # Validate current status and update the status
     #device_model = get_object_or_404(DeviceTag, id=device_model_id,   status='TempActive')
-    device_model = get_object_or_404(DeviceTag, device__id=device_model_id,  status__in=['Owner_OTP_Verified','TempActiveSent','TempActive',"Owner_Final_OTP_Sent"])
+    device_model = get_object_or_404(DeviceTag, device__id=device_model_id,  status__in=['Owner_OTP_Verified','Dealer_OTP_Verified','TempActiveSent','TempActive',"Owner_Final_OTP_Sent"])
 
     if STATIC_OTP_CAP:
         device_model.otp  = str(685472)
