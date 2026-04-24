@@ -6836,23 +6836,13 @@ def create_user(role, req):
         return [None, {'error': "Unable to process request.1"+str(e)}, None]
 
 
-def send_usercreation_otp(user,new_password,type):
-    try:
-        tpid ="1007515117119518623"  
-        
-        text='Dear user, to confirm your registration in SkyTron platform, please click at the following link and validate the registration request- '+DEPLOY_URL+'/new/'+str(new_password)+'. The link will expire in 24 hours. -SkyTron'
-        send_SMS(user.mobile,text,tpid) 
-        """
-        send_mail(
-                type+' Account Created',text
-                #f'Temporery password is : {new_password}'
-                ,'noreply@skytron.in',
-                [user.email],
-                fail_silently=False,
-                ) """
-    except Exception as e:
-        pass
-        # Response({'error': "Error in sendig email  "+"Unable to process request."+str(e)}, status=400)
+def send_usercreation_otp(user, new_password, type):
+    tpid = "1007515117119518623"
+    text = ('Dear user, to confirm your registration in SkyTron platform, '
+            'please click at the following link and validate the registration request- '
+            'https://' + DEPLOY_URL + '/new/' + str(new_password) +
+            '. The link will expire in 24 hours. -SkyTron')
+    send_SMS(user.mobile, text, tpid)
 
 
 def _role_to_account_type(role: str) -> str:
@@ -6876,8 +6866,7 @@ def _role_to_account_type(role: str) -> str:
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([OTPRateThrottle])
-@require_http_methods(['POST'])
+@throttle_classes([UserRateThrottle])
 def resend_usercreation_otp(request):
     """Resend the user creation OTP/link.
 
@@ -6927,7 +6916,10 @@ def resend_usercreation_otp(request):
         target_user.save(update_fields=["password"])
 
     account_type = _role_to_account_type(getattr(target_user, "role", ""))
-    send_usercreation_otp(target_user, token_str, account_type)
+    try:
+        send_usercreation_otp(target_user, token_str, account_type)
+    except Exception as e:
+        return Response({"error": "Failed to send OTP. Please try again later."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     return Response({"message": "User creation OTP sent successfully."}, status=status.HTTP_200_OK)
     
