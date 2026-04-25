@@ -16980,10 +16980,25 @@ def password_reset(request ):
             return Response({'error': new_password+'Password must contain at least one Capital, Small, Numaric, and Special Charecter'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            user =  User.objects.filter( 
-                dob=dob,
-                mobile=mobile 
-                ).last()
+            dob_candidates = set()
+            if dob:
+                dob = dob.strip()
+                dob_candidates.add(dob)
+
+                parts = dob.split('-')
+                if len(parts) == 3 and all(p.isdigit() for p in parts):
+                    if len(parts[0]) == 4:
+                        year, month, day = parts
+                    else:
+                        day, month, year = parts
+
+                    dob_candidates.add(f"{year}-{month.zfill(2)}-{day.zfill(2)}")
+                    dob_candidates.add(f"{day.zfill(2)}-{month.zfill(2)}-{year}")
+
+            user = User.objects.filter(
+                dob__in=list(dob_candidates),
+                mobile=mobile
+            ).last()
             
             if not user:
                 return Response({'error': 'user information missmatch'}, status=status.HTTP_400_BAD_REQUEST)
@@ -17005,6 +17020,10 @@ def password_reset(request ):
             pas=False
             if user.role == "superadmin":
                 pas=True
+            elif user.role in ["schooladmin", "school_admin", "parentuser", "parent"]:
+                # School/parent users do not have legacy profile models with idProofno.
+                # Validate them using mobile + dob (+ token2 when provided).
+                pas = True
             elif user.role ==  "dtorto":
                 prof=dto_rto.objects.filter( 
                 users=user, 
