@@ -27,7 +27,7 @@ COPY . /app
 
 # Copy requirements file
 COPY requirements.txt /app/requirements.txt
-
+RUN mkdir -p /app/logs
 # Install Python dependencies
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt

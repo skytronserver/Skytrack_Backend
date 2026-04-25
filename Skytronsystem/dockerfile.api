@@ -70,7 +70,8 @@ RUN chmod 644 /app/Skytronsystem/root_ca.crt
 
 # Ensure certificates are available in both locations for compatibility
 RUN cp /app/keys/ca.crt /etc/mosquitto/certs/ca.crt || cp /app/ca.crt /etc/mosquitto/certs/ca.crt || echo "Warning: CA certificate setup may need manual configuration"
-
+# Ensure Django log directory exists before startup commands like collectstatic.
+RUN mkdir -p /app/logs
 
 # (Optional) If you need to collect static files, uncomment the line below:
 RUN python manage.py collectstatic --noinput

@@ -20,7 +20,7 @@ RUN mkdir -p /app/keys
 COPY keys/ca.crt /app/keys/ca.crt
 #COPY Skytronsystem/keys/private_key.pem /app/keys/private_key.pem
 #COPY Skytronsystem/keys/public_key.pem /app/keys/public_key.pem
-
+RUN mkdir -p /app/logs
 # Install Python dependencies BEFORE copying application code.
 # This way Docker caches this layer and skips pip install on code-only changes.
 # pip install only re-runs when requirements.txt itself changes.
