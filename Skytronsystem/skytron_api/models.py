@@ -373,7 +373,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(max_length=255, verbose_name="Name",null=False,blank=False) 
     #companyName=models.CharField(max_length=255, default='',verbose_name="companyName") 
     #username = models.EmailField(unique=True, verbose_name="Username")
-    email = models.EmailField(unique=True, verbose_name="Email",null=False,blank=False)
+    email = models.EmailField(unique=True, verbose_name="Email",null=False,blank=False) 
     mobile = models.CharField(max_length=25, unique=True, verbose_name="Mobile",null=False,blank=False)
     role = models.CharField(max_length=20,null=False,blank=False, choices=[("superadmin", "Super Admin"), ("stateadmin", "State Admin"), ("devicemanufacture", "Device Manufacture"), ("dealer", "Dealer"), ("owner", "Owner"), ("esimprovider", "eSimProvider"), ("filment", "Filment"), ("sosadmin", "SOS Admin"), ("teamleader", "Team Leader"), ("sosexecutive", "SOS Executive"),("schooladmin", "School Admin"),("parentuser", "Parent User")], verbose_name="Role")
     usertype = models.CharField(max_length=10, default='main', verbose_name="User Type")
