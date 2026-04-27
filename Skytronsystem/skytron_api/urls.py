@@ -59,6 +59,7 @@ urlpatterns = [
     path('send_sms_otp/', send_sms_otp, name='send_sms_otp'),
     path('resend_usercreation_otp/', resend_usercreation_otp, name='resend_usercreation_otp'),
     path('user_login/', user_login, name='user_login'),
+    path('user_login_sosexecutive_direct/', user_login_sosexecutive_direct, name='user_login_sosexecutive_direct'),
     path('user_login_app/', user_login_app, name='user_login_app'),
     path('reset_password_request/', reset_password, name='reset_password'),
      

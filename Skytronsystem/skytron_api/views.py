@@ -17449,6 +17449,147 @@ def user_login(request ):
             return Response({'error': 'Failed to create session', 'details': session_serializer.errors}, status=400)
 
 
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Dedicated direct-login endpoint for SOS executives
+@throttle_classes([LoginRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def user_login_sosexecutive_direct(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if request.method == 'POST':
+        username = request.data.get('username', None)
+        password = request.data.get('password', None)
+        key = request.data.get('captcha_key', None)
+        user_input = request.data.get('captcha_reply', None)
+
+        if not username or not password:
+            return Response({'error': 'Incomplete credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not REMOVE_OTP_CAP:
+            try:
+                password = decrypt_field(request.data.get('password', None), PRIVATE_KEY)
+            except Exception:
+                return JsonResponse({'success': False, 'error': 'Invalid Password'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if not password:
+                return JsonResponse({'success': False, 'error': 'Invalid Password'}, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                user_input = int(user_input)
+            except Exception:
+                return JsonResponse({'success': False, 'error': 'Invalid Captcha Input. Only integers allowed'})
+
+            try:
+                captcha = Captcha.objects.filter(key=key).last()
+                if not captcha or not captcha.is_valid():
+                    if captcha:
+                        captcha.delete()
+                    return JsonResponse({'success': False, 'error': 'Captcha expired'})
+                if int(user_input) == int(captcha.answer):
+                    captcha.delete()
+                else:
+                    return JsonResponse({'success': False, 'error': 'Invalid captcha'})
+            except Captcha.DoesNotExist:
+                return JsonResponse({'success': False, 'error': 'Captcha not found'})
+            except Exception:
+                return JsonResponse({'success': False, 'error': 'Captcha not found'})
+
+        user = User.objects.filter(mobile=username, is_active=True).last()
+        if not user or not check_password(password, user.password):
+            return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if str(user.role) not in ('sosexecutive', 'teamleader'):
+            return Response(
+                {'success': False, 'error': 'This login API is allowed only for sosexecutive and teamleader accounts.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        from .login_settings_cache import (
+            validate_login_allowed,
+            increment_daily_login_count,
+            get_session_expiry_minutes,
+            add_active_session,
+        )
+
+        is_allowed, error_message = validate_login_allowed(user.id, user.role)
+        if not is_allowed:
+            return Response({'success': False, 'error': error_message}, status=status.HTTP_403_FORBIDDEN)
+
+        increment_daily_login_count(user.id)
+        session_expiry_mins = get_session_expiry_minutes(user.role)
+
+        user.is_active = True
+        user.login = True
+        user.save()
+
+        Token.objects.filter(user=user).delete()
+
+        jwt_token = generate_jwt_token(
+            user_id=user.id,
+            user_mobile=user.mobile,
+            session_data={
+                "login_type": "sosexecutive_direct",
+                "status": "authenticated",
+                "role": user.role,
+            },
+            expiry_minutes=session_expiry_mins
+        )
+
+        if jwt_token:
+            token_value = jwt_token
+        else:
+            token_obj = Token.objects.create(user=user)
+            token_value = str(token_obj.key)
+
+        session_data = {
+            'user': user.id,
+            'token': token_value,
+            'otp': 0,
+            'status': 'login',
+            'loginTime': timezone.now(),
+        }
+        session_serializer = SessionSerializer(data=session_data)
+        if not session_serializer.is_valid():
+            return Response({'error': 'Failed to create session', 'details': session_serializer.errors}, status=400)
+
+        session_serializer.save()
+
+        add_active_session(user.id, token_value, session_expiry_mins)
+
+        try:
+            timenow = timezone.now()
+            user.last_login = timenow
+            user.last_activity = timenow
+            user.login = True
+            user.save()
+
+            uu = get_user_object(user, user.role)
+            if uu:
+                uu = recursive_model_to_dict(uu, ["users", "esim_provider"])
+
+            try:
+                create_mqtt_user(user.mobile, token_value)
+            except Exception as e:
+                print(f"MQTT user creation failed for direct SOS executive login: {e}")
+
+            return Response(
+                {
+                    'status': 'Login Successful',
+                    'token': token_value,
+                    'token2': token_value,
+                    'user': UserSerializer2(user).data,
+                    'info': uu,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response({'error': "Unable to process request." + str(e)}, status=400)
+
+    return JsonResponse({'success': False, 'error': 'Invalid input'})
+
+
 
 
 
