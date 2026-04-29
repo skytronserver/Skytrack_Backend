@@ -1132,6 +1132,11 @@ class DeviceTag(models.Model):
     vehicle_make = models.CharField(max_length= 55)
     vehicle_model = models.CharField(max_length= 55)
     device_sell_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    sale_type = models.CharField(
+        max_length=20,
+        choices=[('withinstate', 'Within State'), ('interstate', 'Inter State')],
+        default='withinstate'
+    )
     category = models.ForeignKey(Settings_VehicleCategory, on_delete=models.CASCADE)
     rc_file = models.CharField(max_length=255)
     receipt_file_or = models.CharField(max_length=255)
