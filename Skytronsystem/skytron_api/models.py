@@ -42,6 +42,8 @@ from rest_framework.authtoken.models import Token
 from django.db import models, IntegrityError
 from rest_framework.response import Response
 from rest_framework import status
+import os
+import time
 
 
 def generate_uuid_hex():
@@ -1830,12 +1832,38 @@ def _gps_classify_road_type(geo_payload, road_value, city_value):
 
 def _gps_reverse_geocode_from_api(lat, lon):
     """Resolve state/district/city/road from map-geocoding.gromed.in reverse API."""
+    geocode_enabled = os.getenv('GPS_REVERSE_GEOCODE_ENABLED', '1').strip().lower()
+    if geocode_enabled in {'0', 'false', 'no', 'off'}:
+        return {}
+
+    fail_until = getattr(_gps_reverse_geocode_from_api, '_fail_until', 0.0)
+    now = time.monotonic()
+    if fail_until and now < fail_until:
+        return {}
+
+    timeout_raw = os.getenv('GPS_REVERSE_GEOCODE_TIMEOUT', '1.0').strip()
+    cooldown_raw = os.getenv('GPS_REVERSE_GEOCODE_COOLDOWN', '15').strip()
+
+    try:
+        timeout_sec = max(0.2, float(timeout_raw))
+    except Exception:
+        timeout_sec = 1.0
+
+    try:
+        cooldown_sec = max(1.0, float(cooldown_raw))
+    except Exception:
+        cooldown_sec = 15.0
+
     try:
         import json
         from urllib.parse import urlencode
         from urllib.request import Request, urlopen
     except Exception:
         return {}
+
+    base_url = (os.getenv('GPS_REVERSE_GEOCODE_ROOT', 'https://map-geocoding.gromed.in').strip() or 'https://map-geocoding.gromed.in')
+    if not base_url.startswith(('http://', 'https://')):
+        base_url = f"https://{base_url}"
 
     params = {
         'format': 'jsonv2',
@@ -1846,14 +1874,17 @@ def _gps_reverse_geocode_from_api(lat, lon):
         'extratags': '1',
         'namedetails': '1',
     }
-    api_url = f"https://map-geocoding.gromed.in/reverse?{urlencode(params)}"
+    api_url = f"{base_url.rstrip('/')}/reverse?{urlencode(params)}"
 
     try:
         req = Request(api_url, headers={'User-Agent': 'SkytrackBackend/1.0'})
-        with urlopen(req, timeout=3.5) as resp:
+        with urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode('utf-8', errors='ignore'))
     except Exception:
+        _gps_reverse_geocode_from_api._fail_until = time.monotonic() + cooldown_sec
         return {}
+
+    _gps_reverse_geocode_from_api._fail_until = 0.0
 
     address = payload.get('address') or {}
 

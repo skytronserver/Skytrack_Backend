@@ -748,33 +748,16 @@ def process_device_tracking_data(data_str, source="unknown"):
                         if device_tag:
                             reg_no = (getattr(device_tag, "vehicle_reg_no", None) or "").strip()
 
-                            # Replace incoming default registration value in the full raw string (logging only)
-                            # str.replace replaces ALL occurrences.
-                            if reg_no:
-                                data_str_for_log = data_str_for_log.replace("DL01AB1234", reg_no)
+                            
 
                             # Add device tag and remove IMEI/vehicle info
                             gps_data['device_tag'] = device_tag
                             gps_data.pop('imei', None)
                             gps_data.pop('vehicle_registration_number', None)
 
-                            # Save GPS data
+                            # Save GPS data.
+                            # Note: GPSData post_save signal already performs enrichment.
                             gps_record = GPSData.objects.create(**gps_data)
-                            gps_record.save()
-
-                            # Explicitly run enrichment to avoid missed signal in long-running workers
-                            try:
-                                gpsdata_populate_location_and_consecutive_time(
-                                    sender=GPSData,
-                                    instance=gps_record,
-                                    created=True,
-                                )
-                                gps_record.refresh_from_db(fields=[
-                                    'state', 'district', 'city', 'road', 'road_type',
-                                    'time_in_same_state', 'time_in_same_district', 'time_in_same_city'
-                                ])
-                            except Exception as enrich_error:
-                                print(f"[{source}] GPS enrichment error: {enrich_error}", flush=True)
 
                             # Process alerts
                             process_alerts(gps_data, gps_record.id)

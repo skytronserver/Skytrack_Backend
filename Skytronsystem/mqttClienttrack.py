@@ -85,8 +85,15 @@ authenticator = HybridAuthentication()
 # Callback when the client connects to the broker
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        print("Connected successfully") 
-        client.subscribe("#") 
+        print("Connected successfully")
+        topics = [
+            ("deviceTracking/+", 0),
+            ("deviceEM/+", 0),
+            ("sosEx/#", 0),
+            ("owner/+", 0),
+            ("dtorto/+", 0),
+        ]
+        client.subscribe(topics)
     else:
         print(f"Connection failed with code {rc}")
 

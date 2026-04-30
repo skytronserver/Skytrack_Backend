@@ -59,6 +59,10 @@ docker build -t skytrack-mqtt-client -f Skytronsystem/dockerfile.mqtt \
   --build-arg JWT_ALGORITHM="$JWT_ALGORITHM" \
   --build-arg JWT_ACCESS_TOKEN_LIFETIME="$JWT_ACCESS_TOKEN_LIFETIME" \
   --build-arg JWT_REFRESH_TOKEN_LIFETIME="$JWT_REFRESH_TOKEN_LIFETIME" \
+  --build-arg GPS_REVERSE_GEOCODE_ENABLED="$GPS_REVERSE_GEOCODE_ENABLED" \
+  --build-arg GPS_REVERSE_GEOCODE_TIMEOUT="$GPS_REVERSE_GEOCODE_TIMEOUT" \
+  --build-arg GPS_REVERSE_GEOCODE_COOLDOWN="$GPS_REVERSE_GEOCODE_COOLDOWN" \
+  --build-arg GPS_REVERSE_GEOCODE_ROOT="$GPS_REVERSE_GEOCODE_ROOT" \
   Skytronsystem/
  
 # Stop any running container with the same name
