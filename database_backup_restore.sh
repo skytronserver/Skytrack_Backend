@@ -7,7 +7,7 @@
 DB_NAME="skytrondb_main"
 DB_USER="dbadmin"
 DB_PASSWORD="lask1028zmnx"
-DB_HOST="135.235.166.209"
+DB_HOST=" "
 DB_PORT="5432"
 
 # New Server Configuration (Update these values for your new server)

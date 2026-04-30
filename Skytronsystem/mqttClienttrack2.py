@@ -30,7 +30,7 @@ from skytron_api.data_processor import process_device_tracking_data, process_eme
 
 # MQTT Settings - using environment variables for deployment flexibility
 #BROKER_URL = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")  # Default fallback
-BROKER_URL = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")  # Default fallback
+BROKER_URL = os.getenv("MQTT_BROKER_HOST", "")  # Default fallback
 BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))  # Use SSL/TLS port
 TOPIC = "field_ex/location_update"
 

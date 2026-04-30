@@ -22,7 +22,7 @@ PASSIVE_PORT_END = int(os.getenv("FTP_PASSIVE_PORT_END", "50020"))
 
 # If the server is behind NAT (common on cloud VMs), set this to your PUBLIC IP so the
 # server advertises the correct address in PASV/EPSV responses.
-# Example: export FTP_PUBLIC_IP=135.235.166.209
+# Example: export FTP_PUBLIC_IP=xxx.xxx.xxx.xxx
 FTP_PUBLIC_IP = os.getenv("FTP_PUBLIC_IP")
 
 def main():

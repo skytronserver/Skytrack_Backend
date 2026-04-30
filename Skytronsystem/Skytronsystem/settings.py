@@ -188,7 +188,7 @@ DATABASES = {
         'NAME': os.environ.get('DB_NAME', 'skytrondb_main'),
         'USER': os.environ.get('DB_USER', 'dbadmin'),
         'PASSWORD': os.environ.get('DB_PASSWORD', 'lask1028zmnx'),
-        'HOST': os.environ.get('DB_HOST', '135.235.166.209'),
+        'HOST': os.environ.get('DB_HOST', ''),
         'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }

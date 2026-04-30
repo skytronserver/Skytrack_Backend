@@ -1,7 +1,25 @@
 #!/bin/bash
 
-# Load environment variables from .env file
-source .env
+# Load environment variables from a configurable file.
+# Priority: ENV_FILE, then .env, then .renv.
+ENV_FILE="${ENV_FILE:-.env}"
+if [ ! -f "$ENV_FILE" ] && [ -f ".renv" ]; then
+  ENV_FILE=".renv"
+fi
+
+if [ ! -f "$ENV_FILE" ]; then
+  echo "Environment file not found: $ENV_FILE"
+  exit 1
+fi
+
+source "$ENV_FILE"
+echo "Loaded environment from: $ENV_FILE"
+
+if [ -z "$DB_HOST" ]; then
+  echo "DB_HOST is not set in $ENV_FILE"
+  exit 1
+fi
+echo "Using DB_HOST: $DB_HOST"
 
 # Run the host storage setup script first
 bash setup_host_storage.sh

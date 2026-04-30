@@ -31,20 +31,20 @@ from skytron_api.data_processor import process_device_tracking_data, process_eme
 
 # MQTT Settings - using environment variables for deployment flexibility
 #BROKER_URL = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")  # Default fallback
-BROKER_URL = os.getenv("MQTT_BROKER_HOST", "135.235.166.209")  # Default fallback
+BROKER_URL = os.getenv("MQTT_BROKER_HOST", "")  # Default fallback
 BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))  # Use SSL/TLS port
 TOPIC = "field_ex/location_update"
 
 # MQTT Authentication - using environment variables
-MQTT_USERNAME = os.getenv("MQTT_USERNAME", "6026969588")
-MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h")
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
 
 # Paths to certificates - Docker container path
 # Use root CA certificate for proper chain of trust validation
 ROOT_CA = "/app/keys/ca.crt"  # Root CA for certificate chain validation
 #CLIENT_CERT = "/app/mqttKeys/client.crt"  # Optional: for mutual TLS
 #CLIENT_KEY = "/app/mqttKeys/client.key"    # Optional: for mutual TLS
-#mosquitto_sub -h '135.235.166.209' -p 8883 -t '#' --cafile /app/ca.crt --cert /app/client.crt --key /app/client.key -d
+#mosquitto_sub -h 'xxx.xxx.xxx.xxx' -p 8883 -t '#' --cafile /app/ca.crt --cert /app/client.crt --key /app/client.key -d
 
 
 
@@ -69,7 +69,7 @@ client.tls_set(ca_certs="/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt",
                keyfile="/home/azureuser/Skytrack_Backend/Skytronsystem/client.key")
 client.on_connect = on_connect
 client.on_message = on_message
-client.connect("135.235.166.209", 8883)
+client.connect("xxx.xxx.xxx.xxx", 8883)
 client.loop_forever()
 
 """

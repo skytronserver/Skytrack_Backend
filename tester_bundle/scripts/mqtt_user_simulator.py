@@ -186,7 +186,7 @@ def parse_args(argv):
     parser.add_argument("mode", choices=["sosEx", "owner", "dtorto"], help="User type to simulate")
 
     # Broker
-    parser.add_argument("--host", default=os.getenv("MQTT_BROKER_HOST", "135.235.166.209"), help="MQTT broker host")
+    parser.add_argument("--host", default=os.getenv("MQTT_BROKER_HOST", ""), help="MQTT broker host")
     parser.add_argument("--port", type=int, default=int(os.getenv("MQTT_BROKER_PORT", "8883")), help="MQTT broker port")
     parser.add_argument("--cafile", default=os.getenv("MQTT_CAFILE", "/home/azureuser/Skytrack_Backend/Skytronsystem/keys/ca.crt"), help="Path to root CA file (PEM). If empty, system store is used.")
     parser.add_argument("--insecure", action="store_true", help="Disable TLS hostname verification (testing only)")

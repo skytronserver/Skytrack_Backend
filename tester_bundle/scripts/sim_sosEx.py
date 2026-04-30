@@ -9,7 +9,7 @@ USER_ID = os.getenv("USER_ID", "")
 JWT_TOKEN = os.getenv("JWT_TOKEN", "")
 
 # Optional overrides via env
-HOST = os.getenv("MQTT_HOST", "135.235.166.209")
+HOST = os.getenv("MQTT_HOST", "")
 PORT = int(os.getenv("MQTT_PORT", "8883"))
 CAFILE = os.getenv("MQTT_CAFILE", "/home/azureuser/Skytrack_Backend/Skytronsystem/keys/ca.crt")
 TIMEOUT = int(os.getenv("MQTT_TIMEOUT", "12"))

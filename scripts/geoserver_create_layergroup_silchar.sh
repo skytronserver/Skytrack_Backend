@@ -8,7 +8,7 @@ ADMIN_PASS=${ADMIN_PASS:-"geoserver"}
 WORKSPACE=${WORKSPACE:-"skytron"}
 LAYERGROUP_NAME=${LAYERGROUP_NAME:-"Silchar_map_soi"}
 
-PG_HOST=${PG_HOST:-"135.235.166.209"}
+PG_HOST=${PG_HOST:-""}
 PG_PORT=${PG_PORT:-"5432"}
 PG_DB=${PG_DB:-"soi_silchar"}
 PG_SCHEMA=${PG_SCHEMA:-"soi"}
