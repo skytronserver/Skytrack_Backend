@@ -5,6 +5,7 @@ from rest_framework.pagination import PageNumberPagination
 from math import radians, sin, cos, sqrt, asin
 # --- API: Get latest EMUserLocation for all unique field executives ---
 from django.db.models import OuterRef, Subquery, Max
+from django.db import transaction
 
 from .models import Trip
 from .serializers import TripSerializer
@@ -8075,6 +8076,91 @@ def list_EM_team(request ):
         return Response({'error': "Unable to process request."+str(e)}, status=400)
 
 
+def _auto_reassign_stale_desk_ex_calls(state=None):
+    """Reassign stale/unassigned pending desk_ex assignments.
+
+    Rules:
+    - Candidate assignments are pending desk_ex assignments for pending calls.
+    - Reassign if unassigned OR pending for >= 1 minute.
+    - Only assign to executives with login=True and last_activity within 1 minute.
+    - Pick the executive with the least active load to keep distribution balanced.
+    """
+    now = timezone.now()
+    stale_cutoff = now - timedelta(minutes=1)
+    active_user_cutoff = now - timedelta(minutes=1)
+    active_assignment_statuses = ["pending", "accepted", "arriving", "arrived"]
+
+    qs = EMCallAssignment.objects.filter(
+        type='desk_ex',
+        call__status='pending',
+        status='pending',
+    ).filter(
+        Q(ex__isnull=True) | Q(start_time__lte=stale_cutoff)
+    )
+
+    if state is not None:
+        qs = qs.filter(admin__state=state)
+
+    candidates = list(
+        qs.select_related('call', 'call__team', 'admin__state', 'ex').order_by('start_time', 'id')
+    )
+
+    if not candidates:
+        return 0
+
+    reassigned_count = 0
+    for assignment in candidates:
+        admin_state = getattr(assignment.admin, 'state', None)
+        if not admin_state:
+            continue
+
+        # Assignment is independent of team membership; use all desk_ex in state.
+        desk_ex_members = list(
+            EM_ex.objects.filter(state=admin_state, user_type='desk_ex').distinct()
+        )
+        if not desk_ex_members:
+            continue
+
+        online_executives = [
+            ex for ex in desk_ex_members
+            if ex.users.filter(login=True, last_activity__gte=active_user_cutoff).exists()
+        ]
+        if not online_executives:
+            # Keep it pending/unassigned. It will get picked once someone becomes active.
+            if assignment.ex_id is not None:
+                assignment.ex = None
+                assignment.save(update_fields=['ex'])
+            continue
+
+        # Prefer a different executive on reassignment if available.
+        preferred_pool = [ex for ex in online_executives if ex.id != assignment.ex_id] or online_executives
+
+        load_map = {
+            ex.id: EMCallAssignment.objects.filter(
+                ex=ex,
+                type='desk_ex',
+                status__in=active_assignment_statuses,
+                call__status='pending',
+            ).count()
+            for ex in preferred_pool
+        }
+        selected_ex = min(preferred_pool, key=lambda ex: load_map[ex.id])
+
+        updates = []
+        if assignment.ex_id != selected_ex.id:
+            assignment.ex = selected_ex
+            updates.append('ex')
+        # Reset assignment start_time to make the 1-minute timeout relative to this offer.
+        assignment.start_time = now
+        updates.append('start_time')
+
+        if updates:
+            assignment.save(update_fields=updates)
+            reassigned_count += 1
+
+    return reassigned_count
+
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -8086,19 +8172,19 @@ def TLEx_getPendingCallList(request ):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     
-    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    role="superadmin"
-    user=request.user
-    uo=get_user_object(user,role)
-    if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
     role="sosexecutive"
     user=request.user
     uo=get_user_object(user,role)
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    if uo.user_type != 'teamlead':
+        return Response({"error":"Request must be from team lead."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
-        ee=EMCallAssignment.objects.filter( call__team__teamlead= uo  ).all()
+        # Teamlead visibility is state-scoped and independent of team assignment.
+        ee = EMCallAssignment.objects.filter(
+            Q(ex__state=uo.state) |
+            Q(ex__isnull=True, admin__state=uo.state)
+        ).all()
 
         if ee: 
             return Response({ "calls":EMCallAssignmentSerializer(ee,many=True).data}, status=200)#Response(SOS_userSerializer(dealer).data)
@@ -8129,31 +8215,18 @@ def DEx_getPendingCallList(request ):
     if not (uo or uo2 or uo3):
         return Response({"error":"Request must be from  "+role+' or '+role2+' or '+role3+'.'}, status=status.HTTP_400_BAD_REQUEST)
     try:
-        # --- Auto-assign unassigned desk_ex calls to this executive (desk_ex only) ---
-        # This handles the case where no executive was online when the call came in,
-        # or calls that were not yet claimed. Each poll may absorb one unassigned call.
+        # Keep desk_ex assignment distribution fair and prevent missed calls.
+        if uo2:
+            _auto_reassign_stale_desk_ex_calls(state=uo2.state)
+        elif uo3:
+            _auto_reassign_stale_desk_ex_calls(state=uo3.state)
+        elif uo and uo.user_type == 'desk_ex':
+            _auto_reassign_stale_desk_ex_calls(state=uo.state)
+
         if uo and uo.user_type == 'desk_ex':
-            # Find the oldest unassigned pending desk_ex assignment for this exec's state.
-            unassigned = (
-                EMCallAssignment.objects
-                .filter(
-                    ex__isnull=True,
-                    type='desk_ex',
-                    status='pending',
-                    call__status='pending',
-                    admin__state=uo.state,
-                )
-                .order_by('id')
-                .first()
-            )
-            if unassigned:
-                unassigned.ex = uo
-                unassigned.save(update_fields=['ex'])
-                # Mark the calling executive as online/active
-                user.login = True
-                user.last_activity = timezone.now()
-                user.save(update_fields=['login', 'last_activity'])
-        # --- End auto-assign ---
+            user.login = True
+            user.last_activity = timezone.now()
+            user.save(update_fields=['login', 'last_activity'])
 
         # Parse ignore_before_days from request body (default 3, clamped 1–30).
         # Older assignments are excluded to keep the result set small and fast.
@@ -8288,6 +8361,14 @@ def DEx_getPendingCallListTL(request ):
     if not (uo or uo2 or uo3 or uo4):
         return Response({"error":"Request must be from  "+role+' or '+role2+' or '+role3+' or '+role4+'.'}, status=status.HTTP_400_BAD_REQUEST)
     try:
+        # Trigger desk_ex stale-assignment rebalance before listing.
+        if uo2:
+            _auto_reassign_stale_desk_ex_calls(state=uo2.state)
+        elif uo3:
+            _auto_reassign_stale_desk_ex_calls(state=uo3.state)
+        elif uo and getattr(uo, 'state', None):
+            _auto_reassign_stale_desk_ex_calls(state=uo.state)
+
         # Base queryset: only pending calls and excluding closed assignments
         qs_base = EMCallAssignment.objects.all()
 
@@ -8299,8 +8380,11 @@ def DEx_getPendingCallListTL(request ):
             qs = qs_base.filter(ex__state=uo3.state)
             cache_scope = f"state:{getattr(uo3.state, 'id', uo3.state_id)}"
         else:
-            qs = qs_base.all()
-            cache_scope = f"ex:{getattr(uo, 'id', None)}"
+            qs = qs_base.filter(
+                Q(ex__state=uo.state) |
+                Q(ex__isnull=True, admin__state=uo.state)
+            )
+            cache_scope = f"state:{getattr(uo.state, 'id', uo.state_id)}"
 
         # Attempt to reduce N+1 queries by joining common FKs used in serializers
         try:
@@ -8736,45 +8820,45 @@ def  DEx_closeCase(request ):
     #if not uo.user_type=='desk_ex' or uo.user_type=='teamlead' :
     #    return Response({"error":"Request must be from   desk_ex or  teamlead ."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
-        assignment =request.data.get("assignment_id")  
-        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo).last()
+        assignment = request.data.get("assignment_id")
+        assignment = EMCallAssignment.objects.filter(id=assignment, ex=uo).select_related('call', 'call__device', 'call__device__device').last()
         if not assignment:
             return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
-        assignments =EMCallAssignment.objects.filter(call=assignment.call,status="pending").all()
+        call = assignment.call
+        now = timezone.now()
         try:
-            
             final_command = "@SETSOSDIS-1*"
-
             payload = { 
                 'keys': final_command,
-                
             }
 
- 
-            send_general_mqtt_message(str(assignment.call.device.device.imei), payload)
+            send_general_mqtt_message(str(call.device.device.imei), payload)
             time.sleep(5)
-        
-        
-            #send_sos_mqtt_message(assignment.call.device.device.imei, 2)
-            
+
         except:
             return Response({"error":"MQTT COMMAND NOT SENT" }, status=status.HTTP_400_BAD_REQUEST) 
-        ee=EMCallBroadcast.objects.filter(
-            call = assignment.call,status="pending").all()
-        for e in ee:
-            e.status="canceled"
-            e.save()
-        
-        for a in assignments:
-            a.status="closed"
-            a.save()
-        assignment.call.status="closed"
-        assignment.call.save()
-        
-        
 
-        
-        return Response( EMCallSerializer(assignment.call,many=False).data, status=200)#Response(SOS_userSerializer(dealer).data)
+        closer_comment = request.data.get("closer_comment")
+        with transaction.atomic():
+            EMCallBroadcast.objects.filter(call=call, status="pending").update(
+                status="canceled",
+                canceled_time=now,
+            )
+
+            EMCallAssignment.objects.filter(call=call).exclude(
+                status__in=["closed", "closed_false_alert", "rejected"]
+            ).update(
+                status="closed",
+                complete_time=now,
+            )
+
+            call.status = "closed"
+            call.end_time = now
+            if closer_comment:
+                call.closer_comment = closer_comment
+            call.save(update_fields=['status', 'end_time', 'closer_comment'])
+
+        return Response(EMCallSerializer(call, many=False).data, status=200)
         
 
     except Exception as e:

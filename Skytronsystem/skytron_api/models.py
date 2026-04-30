@@ -1,5 +1,6 @@
 # skytronapp/models.py
 from django.db import models
+from django.db.models.functions import Coalesce
 import hashlib
 from django.utils import timezone  # Add this line
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -1323,6 +1324,28 @@ def create_emergency_call(sender, instance, created, **kwargs):
             print(f"[EMCall] Skipping call creation — no device_tag on EMGPSLocation {instance.id}", flush=True)
             return
 
+        # Cooldown guard: if this device call was just closed, ignore fresh SOS packets
+        # for a short window so delayed device-side SOS state updates don't reopen a call.
+        em_reopen_cooldown_seconds = 20
+        latest_closed_call = (
+            EMCall.objects
+            .filter(device=instance.device_tag, status__in=["closed", "closed_false_alert"])
+            .annotate(effective_closed_time=Coalesce('end_time', 'start_time'))
+            .order_by('-effective_closed_time', '-id')
+            .first()
+        )
+        if latest_closed_call:
+            last_closed_time = latest_closed_call.end_time or latest_closed_call.start_time
+            cooldown_cutoff = timezone.now() - timedelta(seconds=em_reopen_cooldown_seconds)
+            if last_closed_time and last_closed_time >= cooldown_cutoff:
+                print(
+                    f"[EMCall] Cooldown active for device_tag {instance.device_tag_id} "
+                    f"(last closed call #{latest_closed_call.id} at {last_closed_time}) "
+                    f"— skipping new call",
+                    flush=True,
+                )
+                return
+
         # Check if an EMCall already exists for this device that is still open
         existing_emergency_call = EMCall.objects.filter(
             device=instance.device_tag
@@ -1413,14 +1436,16 @@ def create_emergency_call(sender, instance, created, **kwargs):
             print(f"[EMCall] Team #{team.id} has no teamlead — skipping teamlead assignment", flush=True)
 
         # --- Smart desk_ex assignment with round-robin load balancing ---
-        # Collect all desk_ex members of this team.
-        desk_ex_members = list(team.members.filter(user_type='desk_ex'))
+        # Team membership is not used for desk_ex assignment. Any desk_ex in
+        # the same state can receive calls.
+        desk_ex_members = list(EM_ex.objects.filter(state=st, user_type='desk_ex').distinct())
 
-        # Determine which of them are currently online (login=True on any linked User).
+        # Determine which of them are currently online/active in the last minute.
+        online_threshold = timezone.now() - timedelta(minutes=1)
         from django.db.models import Count, Q
         online_desk_exs = [
             ex for ex in desk_ex_members
-            if ex.users.filter(login=True).exists()
+            if ex.users.filter(login=True, last_activity__gte=online_threshold).exists()
         ]
 
         if online_desk_exs:
