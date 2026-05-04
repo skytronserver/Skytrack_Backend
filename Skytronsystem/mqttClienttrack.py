@@ -1,39 +1,40 @@
-import ssl
-import paho.mqtt.client as mqtt
+# Standard library
 import json
-import django
 import os
+import ssl
+import time
+from typing import Optional, Tuple
 
-# Set up Django environment
+# Third-party
+import django
+import paho.mqtt.client as mqtt
+from rest_framework.exceptions import AuthenticationFailed
+
+# Django setup must happen before any app imports
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "Skytronsystem.settings")
 django.setup()
 
-import  re 
-from skytron_api.models import * #EMCallAssignment, EMCallBroadcast, EMCallMessages, EMGPSLocation, GPSData, GPSDataLog ,DeviceTag, DeviceStock
-
-from skytron_api.serializers import * #EMCallBroadcastSerializer, EMCallMessagesSerializer
-import threading
-import time
-
+# Django / local app
 from django.utils import timezone
-from skytron_api.models import EMUserLocation
-from skytron_api.views import get_user_object
-from django.contrib.auth.models import User
-
-from rest_framework.authentication import TokenAuthentication
-from rest_framework.exceptions import AuthenticationFailed
-
-# Import JWT authentication for proper token handling
+from skytron_api.data_processor import (
+    get_device_response_data,
+    process_device_tracking_data,
+    process_emergency_data,
+)
 from skytron_api.jwt_authentication import HybridAuthentication
-
-# Import our common data processor
-from skytron_api.data_processor import process_device_tracking_data, process_emergency_data, get_device_response_data
+from skytron_api.models import (  # noqa: F401 – wildcard kept for dynamic model access
+    EMCallAssignment, EMCallBroadcast, EMCallMessages,
+    EMUserLocation, GPSData, AlertsLog, DeviceTag, DeviceStock,
+)
+from skytron_api.serializers import (  # noqa: F401 – wildcard kept for dynamic serializer access
+    EMCallBroadcastSerializer, EMCallMessagesSerializer, AlertsLogSerializer,
+)
+from skytron_api.views import get_user_object
 
 # MQTT Settings - using environment variables for deployment flexibility
 #BROKER_URL = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")  # Default fallback
 BROKER_URL = os.getenv("MQTT_BROKER_HOST", "")  # Default fallback
 BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))  # Use SSL/TLS port
-TOPIC = "field_ex/location_update"
 
 # MQTT Authentication - using environment variables
 MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
@@ -54,34 +55,40 @@ ROOT_CA = "/app/keys/ca.crt"  # Root CA for certificate chain validation
 
 
 
-
-
-"""
-import paho.mqtt.client as mqtt
-def on_connect(client, userdata, flags, rc):
-    print(f"Connected with result code {rc}")
-    client.subscribe("#")  # Subscribe to all topics
-def on_message(client, userdata, msg):
-    print(f"{msg.topic} {msg.payload.decode()}")
-client = mqtt.Client()
-client.tls_set(ca_certs="/home/azureuser/Skytrack_Backend/Skytronsystem/ca.crt",
-               certfile="/home/azureuser/Skytrack_Backend/Skytronsystem/client.crt",
-               keyfile="/home/azureuser/Skytrack_Backend/Skytronsystem/client.key")
-client.on_connect = on_connect
-client.on_message = on_message
-client.connect("xxx.xxx.xxx.xxx", 8883)
-client.loop_forever()
-
-"""
-
-
-
+ 
 
 
 
 
 
 authenticator = HybridAuthentication()
+
+
+class FakeRequest:
+    """Minimal request-like object for DRF authentication backends."""
+
+    def __init__(self, auth_header: str) -> None:
+        self.META = {'HTTP_AUTHORIZATION': auth_header}
+        self.data = {}
+        self.GET = {}
+
+
+def authenticate_topic_user(token: str, topic_parts) -> Optional[Tuple[object, object]]:
+    """Authenticate MQTT topic token and return DRF auth tuple or None."""
+    auth_header = f"Token {token}"
+    try:
+        fake_request = FakeRequest(auth_header)
+        user_auth_tuple = authenticator.authenticate(fake_request)
+        if user_auth_tuple is None:
+            raise AuthenticationFailed("Invalid token.")
+        return user_auth_tuple
+    except AuthenticationFailed as e:
+        error_message = f"Authentication mqtt error: {topic_parts[0]} {topic_parts[1]} {str(e)}"
+        print(error_message)
+        return None
+
+
+
 # Callback when the client connects to the broker
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -97,6 +104,7 @@ def on_connect(client, userdata, flags, rc):
     else:
         print(f"Connection failed with code {rc}")
 
+
 # Lightweight execution time logger
 def log_exec_time(name, func, *args, **kwargs):
     start = time.perf_counter()
@@ -106,13 +114,14 @@ def log_exec_time(name, func, *args, **kwargs):
         duration_ms = (time.perf_counter() - start) * 1000.0
         print(f"[MQTT][Perf] {name} took {duration_ms:.2f} ms", flush=True)
 
-def Process_sosEx_Data(msg,topic_parts): 
+
+def Process_sosEx_Data(msg, topic_parts):
+    """Handle sosEx/<token> updates and publish executive-facing responses."""
     try:
-        # Print raw message for debugging
         raw_message = msg.payload.decode()
-        if len(topic_parts)>2:
-            print(f"Topic parts: {topic_parts}")    
-            print(f"Raw message received: {raw_message}")
+        if len(topic_parts) > 2:
+            #print(f"Topic parts: {topic_parts}")    
+            #print(f"Raw message received: {raw_message}")
             return 0
         
         try:
@@ -125,61 +134,28 @@ def Process_sosEx_Data(msg,topic_parts):
             return
             
         print("Parsed data:", data)
-        
-        token=topic_parts[1]  #data.get("token")
+
+        token = topic_parts[1]  # token is the second part of the topic path
         if token:
-            # Use Token token format for JWT tokens
-            auth_header = f"Token {token}"
             client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "update", "message": "user authentication in progress"}))
 
-            # Authenticate the token using HybridAuthentication
-            try:
-                # We need a request-like object to pass into the authenticate method
-                class FakeRequest:
-                    def __init__(self, auth_header):
-                        self.META = {'HTTP_AUTHORIZATION': auth_header}
-                        self.data = {}  # Add empty data dict for compatibility
-                        self.GET = {}   # Add empty GET dict for compatibility
-                        #print(f"Authorization Header: {auth_header}")
-                
-                fake_request = FakeRequest(auth_header)
-                user_auth_tuple = authenticator.authenticate(fake_request)
-
-                if user_auth_tuple is None:
-                    #client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps3#({"status": "error1", "message": "Invalid token."}))
- 
-                    print("Invalid token.")
-                    raise AuthenticationFailed("Invalid token.")
-                
-                
-                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status":"update", "message": "user found"}))
-                #print("user found")
-                user = user_auth_tuple[0]  # Extract the user from the authentication tuple
-            except AuthenticationFailed as e:
-                error_message = f"Authentication mqtt error: {topic_parts[0]} {topic_parts[1]} {str(e)}"
-                #print(error_message)
-                #client.publish(topic_parts[0]+"/"+topic_parts[1]+"", json.dumps({"status": "error", "message": error_message}))
-                #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+            user_auth_tuple = authenticate_topic_user(token, topic_parts)
+            if user_auth_tuple is None:
                 return
+
+            client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status":"update", "message": "user found"}))
+            user = user_auth_tuple[0]  # Extract the user from the authentication tuple
 
             # Get user object and validate roles
             role = "sosexecutive"
-            uo = get_user_object(user, role) 
+            uo = get_user_object(user, role)
 
             if not uo:
                 error_message = f"Request must be from {role}"
                 print(error_message)
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
                 return
-            #print("User verified:")
-            # Optional role validation for specific user types
-            # Uncomment if needed
-            # if not (uo.user_type == 'police_ex' or uo.user_type == 'ambulance_ex'):
-            #     error_message = "Request must be from police_ex or ambulance_ex."
-            #     print(error_message)
-            #     client.publish("field_ex/location_update_response", json.dumps({"status": "error", "message": error_message}))
-            #     return 
-            # Create EMUserLocation object
+
             try:
                 em_lat = float(data.get("em_lat"))
                 em_lon = float(data.get("em_lon"))
@@ -189,7 +165,6 @@ def Process_sosEx_Data(msg,topic_parts):
                 error_message = f"Invalid location or speed data: {ve}"
                 print(error_message)
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
-                
                 return
             except Exception as e:
                 error_message = f"Error processing location or speed data: {e}"
@@ -197,172 +172,79 @@ def Process_sosEx_Data(msg,topic_parts):
                 client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
                 return
 
-            ob = EMUserLocation.objects.create(field_ex=uo, em_lat=em_lat, em_lon=em_lon, speed=speed)
-            if ob:
-                user.last_activity = timezone.now()
-                user.login = True
-                user.save()
-                success_message = f"Location updated successfully"
-                assignment_id=None
+            EMUserLocation.objects.create(field_ex=uo, em_lat=em_lat, em_lon=em_lon, speed=speed)
+            user.last_activity = timezone.now()
+            user.login = True
+            user.save()
+            success_message = "Location updated successfully"
+            assignment_id = data.get("assignment_id")
+            print(f"assignmentid:{assignment_id}")
+
+            if assignment_id is not None:
                 try:
-                    assignment_id =data.get("assignment_id")  
-                    print(f"assignmentid:{assignment_id}")
-
-                    assignment =EMCallAssignment.objects.filter(id=assignment_id,ex=uo,status__in=["accepted"],call__status="pending").last()
-                    if not assignment and assignment_id!=None:
+                    assignment = EMCallAssignment.objects.filter(id=assignment_id, ex=uo, status__in=["accepted"], call__status="pending").last()
+                    if not assignment:
                         client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": "Invalid assignment id"}))
-                        return 
-                    else:
-                        # Prefer EMGPSLocation, but fall back to GPSData with a compatible shape
-                        #em_qs = list(EMGPSLocation.objects.filter(device_tag=assignment.call.device).order_by('-id')[:100].values())
-                        #if em_qs:
-                        #    deviceloc = em_qs
-                        if False:
-                            gps_vals = list(
-                                GPSData.objects
-                                .filter(device_tag=assignment.call.device,gps_status='1')
-                                .order_by('-id')[:10]
-                                .values(
-                                    'id',
-                                    'packet_status',
-                                    'date',
-                                    'time',
-                                    'latitude',
-                                    'latitude_dir',
-                                    'longitude',
-                                    'longitude_dir',
-                                    'altitude',
-                                    'speed',
-                                    'gps_status',
-                                    'network_operator',
-                                    'device_tag_id',
-                                    'device_tag__vehicle_reg_no',
-                                    'device_tag__device__imei'
-                                )
-                            )
-                            # Map GPSData fields to EMGPSLocation-like keys to preserve frontend expectations
-                            #deviceloc = [
-                            #    {
-                            #        'id': g.get('id'),
-                            #        'message_type': 'EMR', 
-                            #        'packet_status': "NM",
-                            #        'date': g.get('date'),
-                            #        'time': g.get('time'),
-                            #        'gps_validity': 'A',
-                            #        'latitude': g.get('latitude'),
-                            #        'latitude_direction': g.get('latitude_dir'),
-                            #        'longitude': g.get('longitude'),
-                            #        'longitude_direction': g.get('longitude_dir'),
-                            #        'altitude': g.get('altitude'),
-                            #        'speed': g.get('speed'),
-                            #        'distance': '0',
-                            #        'provider': g.get('network_operator'),
-                            #        'vehicle_reg_no': g.get('device_tag__vehicle_reg_no'),
-                            #        'reply_mob_no': '9401633421',
-                            #        'device_imei': g.get#('device_tag__device__imei'),
-                            #        'device_tag_id': g.get('device_tag_id'),
-                            #    }
-                            #    for g in gps_vals
-                            #]
-        
-                        ee=EMCallBroadcast.objects.filter( type=uo.user_type,call=assignment.call,status="accepted",call__status="pending").order_by('-id')[:1]
-             
-                        msg=EMCallMessages.objects.filter(call=assignment.call).all()
-                        #"locationHistory":deviceloc,
-                        
-                        data_to_send={"status": "success", "broadcast":EMCallBroadcastSerializer(ee, many=True).data, "groupMSG":EMCallMessagesSerializer(msg, many=True).data, "message": success_message}
-        
-                        client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(data_to_send))
+                        return
 
-                        lat = None
-                        lon = None
-                        try:
-                            b = data_to_send.get("broadcast") or []
-                            if b:
-                                dloc = b[0].get("call", {}).get("device", {}).get("deviceloc") or []
-                                if dloc:
-                                    lat = dloc[0].get("latitude")
-                                    lon = dloc[0].get("longitude")
-                        except Exception:
-                            pass
+                    ee = EMCallBroadcast.objects.filter(type=uo.user_type, call=assignment.call, status="accepted", call__status="pending").order_by('-id')[:1]
+                    msg2 = EMCallMessages.objects.filter(call=assignment.call).all()
 
-                        print("sending accepted call data ----","UserObject:",uo,"pendning broadcast list :",ee,"first_device_lat_lon:",lat,lon)
-                         
-                        return 
+                    data_to_send = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee, many=True).data, "groupMSG": EMCallMessagesSerializer(msg2, many=True).data, "message": success_message}
+                    client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(data_to_send))
+
+                    lat = None
+                    lon = None
+                    try:
+                        b = data_to_send.get("broadcast") or []
+                        if b:
+                            dloc = b[0].get("call", {}).get("device", {}).get("deviceloc") or []
+                            if dloc:
+                                lat = dloc[0].get("latitude")
+                                lon = dloc[0].get("longitude")
+                    except Exception:
+                        pass
+
+                    print("sending accepted call data ----", "UserObject:", uo, "pendning broadcast list :", ee, "first_device_lat_lon:", lat, lon)
+                    return
                 except Exception as e:
-                    if assignment_id!=None:
-                        print(f"assignmentid error:{assignment_id} ")
-                        client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "update","logseq": "2", "message":"  "+str(e)}))
-                    
-                     
+                    print(f"assignmentid error: {assignment_id}")
+                    client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "update", "logseq": "2", "message": str(e)}))
+                    return
 
+            # No assignment_id — send pending broadcast list for this user type
+            ee_qs = EMCallBroadcast.objects.filter(type=uo.user_type, status="pending").order_by('-id')[:1]
+            ee_list = list(ee_qs)
 
-
-        
-                # Check for active broadcasts for this user type (optimized, single evaluation)
-                ee_qs = EMCallBroadcast.objects.filter(type=uo.user_type, status="pending").order_by('-id')[:1]
-                ee_list = list(ee_qs)
-                
-                if ee_list :
-                    dat = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee_list, many=True).data, "message": success_message}
-                    
-                else:
-                    dat = {"status": "success", "broadcast": [], "message": success_message}
-                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(dat)) 
-                print("sending pending broadcast list----","UserObject:",uo,"pendning broadcast list :",ee_list)
-                return 
-       
+            if ee_list:
+                dat = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee_list, many=True).data, "message": success_message}
             else:
-                error_message = "Location not updated. Value error."
-                print(error_message)
-                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
-                return 
-        
+                dat = {"status": "success", "broadcast": [], "message": success_message}
+            client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps(dat))
+            print("sending pending broadcast list----", "UserObject:", uo, "pending broadcast list:", ee_list)
+            return
+
         else:
- 
             print("Invalid token in message payload")
-            #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error2", "message": "Invalid token."}))
 
-               
     except Exception as e:
-            client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": "Something went wrong."}))
-            print("data processign error function ",e)
-            raise e
-            
+        client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": "Something went wrong."}))
+        print("[sosEx] data processing error:", e)
+        raise e
 
 
-def Process_owner_Data(msg,topic_parts): 
+def Process_owner_Data(msg, topic_parts):
+    """Handle owner/<token> requests and publish alert history."""
     try:
         data = json.loads(msg.payload.decode())
-        #print(data)
-        token=data.get("token")
-        
+        token = data.get("token")
+
         if token:
-            # Use Token token format for JWT tokens
-            auth_header = f"Token {token}"
- 
-            try: 
-                class FakeRequest:
-                    def __init__(self, auth_header):
-                        self.META = {'HTTP_AUTHORIZATION': auth_header}
-                        self.data = {}  # Add empty data dict for compatibility
-                        self.GET = {}   # Add empty GET dict for compatibility
-                        print(f"Authorization Header: {auth_header}")
-                
-                fake_request = FakeRequest(auth_header)
-                user_auth_tuple = authenticator.authenticate(fake_request)
-
-                if user_auth_tuple is None:
-                    raise AuthenticationFailed("Invalid token.")
-
-                user = user_auth_tuple[0]  # Extract the user from the authentication tuple
-            except AuthenticationFailed as e:
-                error_message = f"Authentication mqtt error: {topic_parts[0]} {topic_parts[1]} {str(e)}"
-                print(error_message)
-                #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+            user_auth_tuple = authenticate_topic_user(token, topic_parts)
+            if user_auth_tuple is None:
                 return
 
-
+            user = user_auth_tuple[0]
             role = "owner"
             uo = get_user_object(user, role)
 
@@ -371,73 +253,39 @@ def Process_owner_Data(msg,topic_parts):
                 print(error_message)
                 client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
                 return
-            
 
             user.last_activity = timezone.now()
             user.login = True
-            user.save() 
-            #print(user)
+            user.save()
+
             try:
-                #alerts = AlertsLog.objects.filter(deviceTag__vehicle_owner=uo).order_by('-id')[:10] for demo testing 
                 alerts = AlertsLog.objects.order_by('-id')[:10]
                 if alerts:
                     serializer = AlertsLogSerializer(alerts, many=True)
-     
-                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory":serializer.data}))
+                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory": serializer.data}))
                     print("data sent")
-                    return 0
                 else:
-                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory":[]}))
+                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory": []}))
                     print("no data")
-                    return 0
-            except Exception as e :
-                    print(e)
-            return 0
+            except Exception as e:
+                print(e)
 
-
-
-         
-           
-           
     except Exception as e:
-            raise e
-            print("data processign error function ",e, flush=True)
-            
-            
-            
+        raise e
 
-def Process_dtorto_Data(msg,topic_parts): 
+
+def Process_dtorto_Data(msg, topic_parts):
+    """Handle dtorto/<token> requests and publish alert history."""
     try:
         data = json.loads(msg.payload.decode())
-        #print(data)
-        token=data.get("token")
-        
+        token = data.get("token")
+
         if token:
-            # Use Token token format for JWT tokens
-            auth_header = f"Token {token}"
- 
-            try: 
-                class FakeRequest:
-                    def __init__(self, auth_header):
-                        self.META = {'HTTP_AUTHORIZATION': auth_header}
-                        self.data = {}  # Add empty data dict for compatibility
-                        self.GET = {}   # Add empty GET dict for compatibility
-                        print(f"Authorization Header: {auth_header}")
-                
-                fake_request = FakeRequest(auth_header)
-                user_auth_tuple = authenticator.authenticate(fake_request)
-
-                if user_auth_tuple is None:
-                    raise AuthenticationFailed("Invalid token.")
-
-                user = user_auth_tuple[0]  # Extract the user from the authentication tuple
-            except AuthenticationFailed as e:
-                error_message = f"Authentication mqtt error: {topic_parts[0]} {topic_parts[1]} {str(e)}"
-                print(error_message)
-                #client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+            user_auth_tuple = authenticate_topic_user(token, topic_parts)
+            if user_auth_tuple is None:
                 return
 
-
+            user = user_auth_tuple[0]
             role = "dtorto"
             uo = get_user_object(user, role)
 
@@ -446,216 +294,107 @@ def Process_dtorto_Data(msg,topic_parts):
                 print(error_message)
                 client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
                 return
-            
 
             user.last_activity = timezone.now()
             user.login = True
-            user.save() 
-            #print(user)
+            user.save()
+
             try:
                 alerts = AlertsLog.objects.order_by('-id')[:10]
                 if alerts:
                     serializer = AlertsLogSerializer(alerts, many=True)
-     
-                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory":serializer.data}))
+                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory": serializer.data}))
                     print("data sent")
-                    return 0
                 else:
-                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory":[]}))
+                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory": []}))
                     print("no data")
-                    return 0
-            except Exception as e :
-                    print(e)
-            return 0
+            except Exception as e:
+                print(e)
 
-
-
-         
-           
-           
     except Exception as e:
-            raise e
-            print("data processign error function ",e, flush=True)
+        raise e
+
 
 def Process_Device_Data(msg):
-    """Process device tracking data using common processor and send response"""
+    """Process device tracking data using common processor and send response."""
     try:
         data_str = str(msg.payload.decode())
-        #print(f"[MQTT] Processing device tracking data: {data_str}", flush=True)
-        
-        # Process the GPS data
         process_device_tracking_data(data_str, source="MQTT")
-        
-        # Extract IMEI from the data for response
+
+        # Extract IMEI for PVT format: $,PVT,<model>,<ver>,NR,<seq>,L,<imei>,...
         imei = None
         try:
-            # Parse the data to extract IMEI
             data_parts = data_str.split(',')
             if len(data_parts) > 7:
-                # For PVT format: $,PVT,HPSP,1.0.0,NR,01,L,860269065242240,...
-                imei = data_parts[7]  # IMEI is at index 7
-                #print(f"[MQTT] Extracted IMEI for response: {imei}", flush=True)
+                imei = data_parts[7]
         except Exception as e:
             print(f"[MQTT] Error extracting IMEI: {e}", flush=True)
-        
-        # Send device response if IMEI was found
+
         if imei:
             try:
-                # Get _
                 response_data = get_device_response_data(imei)
-                
-                # Publish response to deviceResponse/<IMEI>
-                response_topic = f"deviceResponse/{imei}"
-                response_json = json.dumps(response_data)
-                
-                client.publish(response_topic, response_json)
-                #print(f"[MQTT] Sent response to {response_topic}: {response_json}", flush=True)
-                
+                client.publish(f"deviceResponse/{imei}", json.dumps(response_data))
             except Exception as e:
                 print(f"[MQTT] Error sending device response: {e}", flush=True)
-                
+
     except Exception as e:
         print(f"[MQTT] Device data processing error: {e}", flush=True)
 
 
 def Process_EM_Data(msg):
-    """Process emergency data using common processor"""
+    """Process emergency data using common processor."""
     data_str = str(msg.payload.decode())
-    #print(f"[MQTT] Processing emergency data: {data_str}", flush=True)
     process_emergency_data(data_str, source="MQTT")
 
+
 def on_message(client, userdata, msg):
+    """Route incoming MQTT messages to the appropriate handler."""
     try:
-        # Split the topic to extract the user ID
         topic_parts = msg.topic.split('/')
-        #print(f"Message Topic: {topic_parts}")
-        # Early ignore to prevent loops on server replies
+
+        # Ignore server-side reply topics to prevent processing loops
         if len(topic_parts) >= 3 and topic_parts[-1] in ("server", "response", "noLocal"):
             return
+
         if len(topic_parts) == 2 and topic_parts[0] == 'deviceTracking':
-            user_id = topic_parts[1]
-            #print(f"Message received for user ID: {user_id}")
-            #print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
-            #print(f"Message received payload: {msg.payload.decode()}")
             log_exec_time("Process_Device_Data", Process_Device_Data, msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'deviceEM':
-            user_id = topic_parts[1]
-            #print(f"Message received for user ID: {user_id}")
-            #print(f"Message received topic: {topic_parts[0]} {topic_parts[1]}")
-            #print(f"Message received payload: {msg.payload.decode()}")
             log_exec_time("Process_EM_Data", Process_EM_Data, msg)
         elif len(topic_parts) >= 2 and topic_parts[0] == 'sosEx':
-            #print("message payload decode" ,msg.payload.decode())
             log_exec_time("Process_sosEx_Data", Process_sosEx_Data, msg, topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'owner':
             log_exec_time("Process_owner_Data", Process_owner_Data, msg, topic_parts)
-
         elif len(topic_parts) == 2 and topic_parts[0] == 'dtorto':
             log_exec_time("Process_dtorto_Data", Process_dtorto_Data, msg, topic_parts)
- 
         elif len(topic_parts) == 2 and topic_parts[0] == 'deviceResponse':
-            return
-
-            
+            return  # responses are published by us; nothing to process
         else:
-            print("Invalid topic format")
-            print(topic_parts)
-            return
-        return
-
- 
-        data = json.loads(msg.payload.decode())
-        print(data)
-        token = "Bearer "+data.get("token")
-
-                    # Authenticate the token using HybridAuthentication
-        try:
-            # We need a request-like object to pass into the authenticate method
-            class FakeRequest:
-                def __init__(self, token):
-                    self.META = {'HTTP_AUTHORIZATION': f'{token}'}
-                    print(f"Authorization Header: Token {token}")
-            
-            fake_request = FakeRequest(token)
-            user_auth_tuple = authenticator.authenticate(fake_request)
-
-            if user_auth_tuple is None:
-                raise AuthenticationFailed("Invalid token.")
-
-            user = user_auth_tuple[0]  # Extract the user from the authentication tuple
-        except AuthenticationFailed as e:
-            error_message = f"Authentication error: {str(e)}"
-            print(error_message)
-            client.publish("field_ex/location_update_response", json.dumps({"status": "error", "message": error_message}))
-            return
-
-        # Get user object and validate roles
-        role = "sosexecutive"
-        uo = get_user_object(user, role)
-
-        if not uo:
-            error_message = f"Request must be from {role}"
-            print(error_message)
-            client.publish("field_ex/location_update_response", json.dumps({"status": "error", "message": error_message}))
-            return
-        
-        # Optional role validation for specific user types
-        # Uncomment if needed
-        # if not (uo.user_type == 'police_ex' or uo.user_type == 'ambulance_ex'):
-        #     error_message = "Request must be from police_ex or ambulance_ex."
-        #     print(error_message)
-        #     client.publish("field_ex/location_update_response", json.dumps({"status": "error", "message": error_message}))
-        #     return
-
-        # Create EMUserLocation object
-        em_lat = float(data.get("em_lat"))
-        em_lon = float(data.get("em_lon"))
-        speed = float(data.get("speed"))
-
-        ob = EMUserLocation.objects.create(field_ex=uo, em_lat=em_lat, em_lon=em_lon, speed=speed)
-        if ob:
-            user.last_activity = timezone.now()
-            user.login = True
-            user.save()
-            success_message = f"Location updated successfully"
-            print(success_message)
-            client.publish("field_ex/location_update_response", json.dumps({"status": "success", "message": success_message}))
-        else:
-            error_message = "Location not updated. Value error."
-            print(error_message)
-            client.publish("field_ex/location_update_response", json.dumps({"status": "error", "message": error_message}))
+            print(f"[MQTT] Unknown topic format: {topic_parts}")
 
     except Exception as e:
+        print(f"[MQTT] on_message error: {e}", flush=True)
         raise e
-        error_message = f"Error processing message: {str(e)}"
-        print(error_message)
-        client.publish("field_ex/location_update_response", json.dumps({"status": "error", "message": error_message}))
 
 
+# ---------------------------------------------------------------------------
+# MQTT client setup
+# ---------------------------------------------------------------------------
 client = mqtt.Client()
-
-# Set username and password for authentication
 client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
-# ✅ SECURE: Set up SSL/TLS with proper certificate validation (security audit compliant)
-# - Uses root CA for certificate chain validation
-# - Requires valid server certificate (CERT_REQUIRED)
-# - Enables hostname verification
-# - No certificate validation bypass
+# TLS: certificate chain validation, hostname verification, no bypass
 client.tls_set(
     ca_certs=ROOT_CA,
-    certfile=None,  # Client cert not required for this connection
+    certfile=None,
     keyfile=None,
-    cert_reqs=ssl.CERT_REQUIRED,  # ✅ Require valid certificate
-    tls_version=ssl.PROTOCOL_TLSv1_2,  # Use TLS 1.2 or higher
-    ciphers=None  # Use default secure ciphers
+    cert_reqs=ssl.CERT_REQUIRED,
+    tls_version=ssl.PROTOCOL_TLSv1_2,
+    ciphers=None,
 )
 
-# Set up callbacks
 client.on_connect = on_connect
 client.on_message = on_message
 
-# Connect to the broker using hostname (must match certificate CN/SAN)
+# Connect and block indefinitely, processing callbacks
 client.connect(BROKER_URL, BROKER_PORT, 60)
-# Blocking loop to keep listening to messages
 client.loop_forever()
