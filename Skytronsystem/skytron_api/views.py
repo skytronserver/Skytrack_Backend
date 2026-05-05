@@ -3687,23 +3687,30 @@ def get_size(obj, seen=None):
 @permission_classes([IsAuthenticated])
 @require_http_methods(['GET', 'POST'])
 def gps_history_map_data(request ): 
-    t = time.time()
-
-    mapdata=[]
-    data=[]     
+    mapdata = []
     try:
-        try:
-            vehicle_registration_number = request.GET.get('vehicle_registration_number', None)
-            start_datetime = request.GET.get('start_datetime', None)
-            end_datetime = request.GET.get('end_datetime', None)
-            owner_name_substr = request.GET.get('owner_name_substr', None)
-        except:
-            pass
+        vehicle_registration_number = request.GET.get('vehicle_registration_number')
+        start_datetime = request.GET.get('start_datetime')
+        end_datetime = request.GET.get('end_datetime')
+        owner_name_substr = request.GET.get('owner_name_substr')
 
-        if not vehicle_registration_number or vehicle_registration_number == "":
+        # Optional payload/quality controls for long ranges
+        dedupe_enabled = str(request.GET.get('dedupe', '1')).strip().lower() not in ('0', 'false', 'no')
+        include_device_info_per_row = str(request.GET.get('embed_device_tag_info', '0')).strip().lower() in ('1', 'true', 'yes')
+        max_points_param = request.GET.get('max_points', '12000')
+
+        try:
+            max_points = int(max_points_param)
+            if max_points < 1000:
+                max_points = 1000
+            if max_points > 50000:
+                max_points = 50000
+        except (TypeError, ValueError):
+            max_points = 12000
+
+        if not vehicle_registration_number:
             return JsonResponse({'error': "Vehicle registration number is required"}, status=400)
 
-        # Validate datetime inputs and enforce 24-hour window
         if not start_datetime or not end_datetime:
             return JsonResponse({'error': "Invalid Search 22"}, status=403)
 
@@ -3713,101 +3720,131 @@ def gps_history_map_data(request ):
             return JsonResponse({'error': "Invalid datetime format for start_datetime/end_datetime"}, status=400)
         if end_dt < start_dt:
             return JsonResponse({'error': "end_datetime must be after start_datetime"}, status=400)
-        if (end_dt - start_dt) > timedelta(hours=24):
-            return JsonResponse({'error': "Time range cannot exceed 24 hours"}, status=400)
+        if (end_dt - start_dt) > timedelta(hours=48):
+            return JsonResponse({'error': "Time range cannot exceed 48 hours"}, status=400)
 
-        # User authentication and authorization checks
         if not request.user or not request.user.is_authenticated:
             return JsonResponse({'error': "Authentication required"}, status=401)
-        
+
         user_role = getattr(request.user, 'role', None)
         if not user_role:
             return JsonResponse({'error': "User role not found"}, status=403)
 
-        # Check if user has access to this registration number
-        device_tag = DeviceTag.objects.filter(vehicle_reg_no=vehicle_registration_number,status = 'Owner_Final_OTP_Verified').first()
+        device_tag = DeviceTag.objects.select_related('district', 'district__state', 'vehicle_owner').filter(
+            vehicle_reg_no=vehicle_registration_number,
+            status='Owner_Final_OTP_Verified'
+        ).first()
         if not device_tag:
             return JsonResponse({'error': "Vehicle registration number not found in system"}, status=404)
 
-        # Role-based authorization
         has_access = False
-        
         if user_role == 'superadmin':
             has_access = True
-        elif user_role == 'stateadmin':
-            state_admins = StateAdmin.objects.filter(users=request.user)#, status='UserVerified')
-            user_states = [sa.state.id for sa in state_admins]
-            if user_states and device_tag.district and device_tag.district.state.id in user_states:
-                has_access = True
-        elif user_role == 'dtorto':
-            dto_rtos = dto_rto.objects.filter(users=request.user )
-            user_districts = [dr.district for dr in dto_rtos if dr.district]
-            if user_districts and device_tag.district and device_tag.district.district_code in user_districts:
-                has_access = True
+        elif user_role == 'stateadmin' and device_tag.district and device_tag.district.state:
+            has_access = StateAdmin.objects.filter(users=request.user, state_id=device_tag.district.state.id).exists()
+        elif user_role == 'dtorto' and device_tag.district:
+            has_access = dto_rto.objects.filter(users=request.user, district=device_tag.district.district_code).exists()
         elif user_role == 'owner':
-            vehicle_owners = VehicleOwner.objects.filter(users=request.user)#, status='UserVerified')
-            if vehicle_owners.exists():
-                owned_device_tags = DeviceTag.objects.filter(vehicle_owner__in=vehicle_owners,status = 'Owner_Final_OTP_Verified')
-                if device_tag in owned_device_tags:
-                    has_access = True
+            has_access = DeviceTag.objects.filter(
+                id=device_tag.id,
+                status='Owner_Final_OTP_Verified',
+                vehicle_owner__users=request.user
+            ).exists()
 
         if not has_access:
             return JsonResponse({'error': "Unauthorised access to history data"}, status=403)
 
-        if vehicle_registration_number:
-            # Base queryset with essential filters
-            # Use exact device_tag FK filter for index utilization
-            data = (
-                GPSData.objects
-                .filter(gps_status=1)
-                .filter(device_tag=device_tag)
-                .filter(entry_time__range=(start_dt, end_dt))
+        base_qs = GPSData.objects.filter(
+            gps_status='1',
+            device_tag_id=device_tag.id,
+            entry_time__range=(start_dt, end_dt),
+        )
+
+        if owner_name_substr:
+            base_qs = base_qs.filter(device_tag__vehicle_owner__users__name__icontains=owner_name_substr).distinct()
+
+        total_points_before_optimization = base_qs.count()
+
+        # Keep DB -> Python transfer narrow and ordered for deterministic downsampling.
+        rows_qs = base_qs.order_by('entry_time').values(
+            'entry_time', 'packet_type',
+            'latitude', 'longitude', 'speed', 'heading', 'satellites',
+            'gps_status', 'altitude', 'network_operator', 'ignition_status',
+            'main_power_status', 'main_input_voltage', 'internal_battery_voltage',
+            'emergency_status', 'box_tamper_alert', 'gsm_signal_strength',
+            'digital_input_status', 'digital_output_status', 'frame_number', 'odometer'
+        )
+
+        stride = 1
+        if total_points_before_optimization > max_points:
+            stride = int(math.ceil(float(total_points_before_optimization) / float(max_points)))
+
+        data_serialized = []
+        prev_signature = None
+        for idx, row in enumerate(rows_qs.iterator(chunk_size=5000)):
+            if stride > 1 and (idx % stride) != 0:
+                continue
+
+            signature = (
+                row['latitude'],
+                row['longitude'],
+                row['speed'],
+                row['heading'],
+                row['ignition_status'],
+                row['main_power_status'],
             )
+            if dedupe_enabled and signature == prev_signature:
+                continue
+            prev_signature = signature
 
-            # Apply owner name filter at DB level if provided
-            if owner_name_substr:
-                data = data.filter(device_tag__vehicle_owner__users__name__icontains=owner_name_substr)
+            point = {
+                'et': row['entry_time'],
+                'ps': row['packet_type'],
+                'lat': row['latitude'],
+                'lon': row['longitude'],
+                's': row['speed'],
+                'h': row['heading'],
+                'sat': row['satellites'],
+                'gpsS': row['gps_status'],
+                'alt': row['altitude'],
+                'no': row['network_operator'],
+                'igs': row['ignition_status'],
+                'mps': row['main_power_status'],
+                'miv': row['main_input_voltage'],
+                'ibv': row['internal_battery_voltage'],
+                'ems': row['emergency_status'],
+                'bta': row['box_tamper_alert'],
+                'gss': row['gsm_signal_strength'],
+                'dis': row['digital_input_status'],
+                'dos': row['digital_output_status'],
+                'fn': row['frame_number'],
+                'om': row['odometer'],
+            }
+            data_serialized.append(point)
 
-            # Avoid N+1 queries; ensure unique rows if M2M filter applied
-            data = (
-                data.select_related('device_tag', 'device_tag__vehicle_owner')
-                    .prefetch_related('device_tag__vehicle_owner__users')
-                    .order_by('entry_time')
-            )
-            if owner_name_substr:
-                data = data.distinct()
+        device_tag_info = None
+        if device_tag:
+            from .serializers import DeviceTagSerializer
+            device_tag_info = DeviceTagSerializer(device_tag).data
 
-            # Use count() instead of len(queryset) to avoid evaluation
-            total_count = data.count()
-            datalen = total_count - 1
+        if include_device_info_per_row and device_tag_info is not None:
+            for item in data_serialized:
+                item['device_tag_info'] = device_tag_info
 
-            from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
-            data_serialized = []
-
-            # Stream rows to keep memory in check
-            for entry in data.iterator(chunk_size=1000):
-                entry_data = GPSData_modSerializer(entry).data
-                if entry.device_tag:
-                    device_tag_obj = entry.device_tag
-                    device_tag_data = DeviceTagSerializer(device_tag_obj).data
-                    if device_tag_obj.vehicle_owner:
-                        owner_data = VehicleOwnerSerializer(device_tag_obj.vehicle_owner).data
-                        if 'users' in owner_data:
-                            pass
-                        else:
-                            owner_data['users'] = UserSerializer(device_tag_obj.vehicle_owner.users.all(), many=True).data
-                        device_tag_data['vehicle_owner'] = owner_data
-                    entry_data['device_tag_info'] = device_tag_data
-                else:
-                    entry_data['device_tag_info'] = None
-                data_serialized.append(entry_data)
-
-            try:
-                return JsonResponse({'data': data_serialized, 'mapdata': mapdata, 'mapdata_length': datalen})
-            except Exception as e:
-                return JsonResponse({"error": "Unable to process request." + "No Record Found 1: " + vehicle_registration_number}, status=403)
-
-        return JsonResponse({'error': "Invalid Search"}, status=403)
+        datalen = max(len(data_serialized) - 1, 0)
+        return JsonResponse({
+            'data': data_serialized,
+            'device_tag_info': None if include_device_info_per_row else device_tag_info,
+            'mapdata': mapdata,
+            'mapdata_length': datalen,
+            'meta': {
+                'total_points_before_optimization': total_points_before_optimization,
+                'total_points_returned': len(data_serialized),
+                'stride': stride,
+                'dedupe_enabled': dedupe_enabled,
+                'max_points': max_points,
+            }
+        })
     except Exception as e:
         return JsonResponse({'error': "Unable to process request." + str(e)})
 
