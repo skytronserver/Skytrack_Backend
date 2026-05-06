@@ -3,6 +3,8 @@ import json
 import os
 import ssl
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Tuple
 
 # Third-party
@@ -348,7 +350,14 @@ def Process_EM_Data(msg):
 
 
 def on_message(client, userdata, msg):
-    """Route incoming MQTT messages to the appropriate handler."""
+    """Route incoming MQTT messages to the appropriate handler.
+
+    Priority design:
+    - deviceEM / sosEx messages go to the HIGH-PRIORITY executor (max 4 workers)
+      so SOS/emergency data is NEVER queued behind slow tracking packets.
+    - deviceTracking / owner / dtorto go to the NORMAL executor (max 2 workers)
+      to bound CPU usage from the geodesic route-checking loop.
+    """
     try:
         topic_parts = msg.topic.split('/')
 
@@ -357,15 +366,15 @@ def on_message(client, userdata, msg):
             return
 
         if len(topic_parts) == 2 and topic_parts[0] == 'deviceTracking':
-            log_exec_time("Process_Device_Data", Process_Device_Data, msg)
+            _tracking_executor.submit(_safe_exec, "Process_Device_Data", Process_Device_Data, msg)
         elif len(topic_parts) == 2 and topic_parts[0] == 'deviceEM':
-            log_exec_time("Process_EM_Data", Process_EM_Data, msg)
+            _em_executor.submit(_safe_exec, "Process_EM_Data", Process_EM_Data, msg)
         elif len(topic_parts) >= 2 and topic_parts[0] == 'sosEx':
-            log_exec_time("Process_sosEx_Data", Process_sosEx_Data, msg, topic_parts)
+            _em_executor.submit(_safe_exec, "Process_sosEx_Data", Process_sosEx_Data, msg, topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'owner':
-            log_exec_time("Process_owner_Data", Process_owner_Data, msg, topic_parts)
+            _tracking_executor.submit(_safe_exec, "Process_owner_Data", Process_owner_Data, msg, topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'dtorto':
-            log_exec_time("Process_dtorto_Data", Process_dtorto_Data, msg, topic_parts)
+            _tracking_executor.submit(_safe_exec, "Process_dtorto_Data", Process_dtorto_Data, msg, topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'deviceResponse':
             return  # responses are published by us; nothing to process
         else:
@@ -375,6 +384,19 @@ def on_message(client, userdata, msg):
         print(f"[MQTT] on_message error: {e}", flush=True)
         raise e
 
+
+def _safe_exec(name, func, *args, **kwargs):
+    """Wrapper executed inside a thread-pool worker: logs total time."""
+    log_exec_time(name, func, *args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Thread-pool executors
+# EM/SOS messages → high-priority pool (never blocked by tracking).
+# Tracking / owner / dtorto → normal pool (bounded to limit CPU from route checks).
+# ---------------------------------------------------------------------------
+_em_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mqtt-em")
+_tracking_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mqtt-track")
 
 # ---------------------------------------------------------------------------
 # MQTT client setup
@@ -395,6 +417,19 @@ client.tls_set(
 client.on_connect = on_connect
 client.on_message = on_message
 
-# Connect and block indefinitely, processing callbacks
+# Connect and use loop_start() so the MQTT network thread is non-blocking.
+# All heavy processing is dispatched to thread-pool executors in on_message.
 client.connect(BROKER_URL, BROKER_PORT, 60)
-client.loop_forever()
+client.loop_start()
+
+print("[MQTT] Client started with threaded executor model. Waiting for messages...", flush=True)
+try:
+    while True:
+        time.sleep(1)
+except KeyboardInterrupt:
+    print("[MQTT] Shutting down...", flush=True)
+finally:
+    client.loop_stop()
+    client.disconnect()
+    _em_executor.shutdown(wait=False)
+    _tracking_executor.shutdown(wait=False)

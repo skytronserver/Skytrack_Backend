@@ -209,6 +209,7 @@ def process_em_data(data_str):
     ...,*,{SOS_PUB_AS01PT0010},5C
     Used by EM server and MQTT deviceEM topic
     """
+    _t_em_start = time.perf_counter()
     try:
         data_list = data_str.split(',')
         
@@ -326,18 +327,24 @@ def process_em_data(data_str):
                         
                         # Find device by IMEI
                         imei = data_list[3]
+                        _t_em0 = time.perf_counter()
                         device = DeviceStock.objects.filter(imei__contains=str(imei)).last()
+                        _t_em1 = time.perf_counter()
                         #print(f"#{imei}# -> Device: {device}", flush=True)
+                        print(f"[EM][Perf] device_lookup={(_t_em1-_t_em0)*1000:.1f}ms imei={imei}", flush=True)
                         
                         device_tag = None
                         if device:
                             device_tag = DeviceTag.objects.filter(device=device,status = 'Owner_Final_OTP_Verified').last()
+                            _t_em2 = time.perf_counter()
+                            print(f"[EM][Perf] device_tag_lookup={(_t_em2-_t_em1)*1000:.1f}ms", flush=True)
                             #print(f"Device tag found: {device_tag}", flush=True)
                         else:
                             #print(f"No device found for IMEI: {imei}", flush=True)
                             return None
                         
                         # Create EMGPSLocation directly
+                        _t_em3 = time.perf_counter()
                         location = EMGPSLocation.objects.create(
                             message_type=data_list[2],        # EMR
                             device_imei=data_list[3],         # 860269065242240
@@ -360,6 +367,9 @@ def process_em_data(data_str):
                         )
                         
                         print(f"[MQTT] EM location created successfully: {location}", flush=True)
+                        _t_em4 = time.perf_counter()
+                        print(f"[EM][Perf] em_location_save={(_t_em4-_t_em3)*1000:.1f}ms  (includes post_save/create_emergency_call signal)", flush=True)
+                        print(f"[EM][Perf] TOTAL process_em_data={(_t_em4-_t_em_start)*1000:.1f}ms", flush=True)
                         return location
                         
                     except Exception as create_error:
@@ -635,9 +645,11 @@ def process_alerts(gps_data, loc_id):
 
 def process_route_alerts(gps_data, loc_id, device_tag, lat, lon):
     """Process route-based alerts"""
+    _t_route_start = time.perf_counter()
     try:
         # Fetch active routes associated with the device
         routes = Route.objects.filter(status='Active', device=device_tag.device)
+        _t_routes_fetched = time.perf_counter()
         
         # Fetch last route alerts
         last_alerts = AlertsLog.objects.filter(
@@ -652,9 +664,13 @@ def process_route_alerts(gps_data, loc_id, device_tag, lat, lon):
             if key not in last_alert_map:
                 last_alert_map[key] = alert
 
-        print(f"Routes found: {len(routes)}", flush=True)
+        route_count = len(routes)
+        print(f"Routes found: {route_count}", flush=True)
+        _t_last_alerts_fetched = time.perf_counter()
+        print(f"[Tracking][Perf] route_fetch={(_t_routes_fetched-_t_route_start)*1000:.1f}ms  last_alerts_fetch={(_t_last_alerts_fetched-_t_routes_fetched)*1000:.1f}ms  routes={route_count}", flush=True)
         
-        for route in routes:
+        for i, route in enumerate(routes):
+            _t_ri = time.perf_counter()
             r = route.route  # Route string containing coordinates
             points = json.loads(r)  # Convert route string into a list of points
             status = "out"  # Default status
@@ -681,6 +697,9 @@ def process_route_alerts(gps_data, loc_id, device_tag, lat, lon):
                     deviceTag=device_tag,
                     state=device_tag.device.dealer.manufacturer.state
                 )
+            print(f"[Tracking][Perf]   route[{i}] id={route.id} pts={len(points)} status={status} took={(time.perf_counter()-_t_ri)*1000:.1f}ms", flush=True)
+
+        print(f"[Tracking][Perf] process_route_alerts TOTAL={(time.perf_counter()-_t_route_start)*1000:.1f}ms", flush=True)
 
     except Exception as e:
         print(f"Error processing route alerts: {e}", flush=True)
@@ -691,6 +710,7 @@ def process_device_tracking_data(data_str, source="unknown"):
     Main function to process device tracking data
     Used by both TCP server and MQTT deviceTracking topic
     """
+    _t_total_start = time.perf_counter()
     # Close old database connections to prevent leaks
     close_old_connections()
 
@@ -739,11 +759,16 @@ def process_device_tracking_data(data_str, source="unknown"):
                     imei = gps_data['imei']
 
                     # Find device by IMEI
+                    _t0 = time.perf_counter()
                     device = DeviceStock.objects.filter(imei__contains=str(imei)).last()
+                    _t1 = time.perf_counter()
                     print(f"#{imei}# -> Device: {device}", flush=True)
+                    print(f"[Tracking][Perf] device_lookup={(_t1-_t0)*1000:.1f}ms", flush=True)
 
                     if device:
-                        device_tag = DeviceTag.objects.filter(device=device,status = 'Owner_Final_OTP_Verified').last() 
+                        device_tag = DeviceTag.objects.filter(device=device,status = 'Owner_Final_OTP_Verified').last()
+                        _t2 = time.perf_counter()
+                        print(f"[Tracking][Perf] device_tag_lookup={(_t2-_t1)*1000:.1f}ms", flush=True)
 
                         if device_tag:
                             reg_no = (getattr(device_tag, "vehicle_reg_no", None) or "").strip()
@@ -757,10 +782,15 @@ def process_device_tracking_data(data_str, source="unknown"):
 
                             # Save GPS data.
                             # Note: GPSData post_save signal already performs enrichment.
+                            _t3 = time.perf_counter()
                             gps_record = GPSData.objects.create(**gps_data)
+                            _t4 = time.perf_counter()
+                            print(f"[Tracking][Perf] gps_save={(_t4-_t3)*1000:.1f}ms  (includes post_save signal/geocoding)", flush=True)
 
                             # Process alerts
                             process_alerts(gps_data, gps_record.id)
+                            _t5 = time.perf_counter()
+                            print(f"[Tracking][Perf] process_alerts={(_t5-_t4)*1000:.1f}ms", flush=True)
                         else:
                             print(f"[{source}] No device tag found for device: {device}", flush=True)
                     else:
@@ -782,6 +812,7 @@ def process_device_tracking_data(data_str, source="unknown"):
     finally:
         # Close any remaining database connections
         close_old_connections()
+    print(f"[Tracking][Perf] TOTAL process_device_tracking_data={( time.perf_counter()-_t_total_start)*1000:.1f}ms source={source}", flush=True)
 
 
 def process_emergency_data(data_str, source="unknown"):
