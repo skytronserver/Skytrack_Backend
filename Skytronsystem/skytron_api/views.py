@@ -70,14 +70,24 @@ from django.utils.dateparse import parse_datetime
 from .models import pointofinterests
 from .serializers import PointOfInterestSerializer
 from django.db.models import F, Value as V
-from django.db.models.functions import Concat
-from django.db.models import FloatField
+from django.db.models.functions import Concat, Coalesce
+from django.db.models import FloatField, DateTimeField
 from django.db.models.functions import Cast
 import math
 
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper
 from django.db.models.functions import TruncMonth
 from django.db.models import Prefetch
+
+
+def _gps_annotate_effective_datetime(queryset):
+    return queryset.annotate(
+        effective_datetime=Coalesce('packet_datetime', 'entry_time', output_field=DateTimeField())
+    )
+
+
+def _gps_effective_datetime_value(gps_row):
+    return getattr(gps_row, 'packet_datetime', None) or getattr(gps_row, 'entry_time', None)
 
 
 @api_view(['GET'])
@@ -2713,8 +2723,8 @@ def gps_track_data_api(request ):
         _start = _page * _page_length
 
         latest_qs = (
-            gps_queryset
-            .order_by('device_tag', '-entry_time')
+            _gps_annotate_effective_datetime(gps_queryset)
+            .order_by('device_tag', '-effective_datetime', '-id')
             .distinct('device_tag')
         )
 
@@ -2770,8 +2780,10 @@ def gps_track_data_api(request ):
                             continue
                 serializer = GPSData_Serializer(latest_entry)
                 dd = serializer.data.copy()
-                if 'entry_time' not in dd and hasattr(latest_entry, 'entry_time'):
-                    dd['entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
+                effective_dt = _gps_effective_datetime_value(latest_entry)
+                dd['entry_time'] = effective_dt.isoformat() if effective_dt else None
+                dd['server_entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
+                dd['packet_datetime'] = latest_entry.packet_datetime.isoformat() if latest_entry.packet_datetime else None
                 device_tag_obj = device_tag_map.get(getattr(latest_entry, 'device_tag_id', None))
                 if device_tag_obj:
                     dd['vehicle_registration_number'] = device_tag_obj.vehicle_reg_no
@@ -3091,7 +3103,7 @@ def gps_track_data_api_pub(request ):
 
         data = []
         from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
-        latest_entry = gps_queryset.order_by('-entry_time')
+        latest_entry = _gps_annotate_effective_datetime(gps_queryset).order_by('-effective_datetime', '-id')
         if imei and str(imei).strip().lower() not in ('', 'none', 'null', 'undefined'):
             latest_entry = latest_entry.filter(device_tag__device__imei__icontains=str(imei).strip())
         latest_entry = latest_entry.first()
@@ -3127,8 +3139,10 @@ def gps_track_data_api_pub(request ):
         if latest_entry:
             serializer = GPSData_Serializer(latest_entry)
             dd = serializer.data.copy()
-            if 'entry_time' not in dd and hasattr(latest_entry, 'entry_time'):
-                dd['entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
+            effective_dt = _gps_effective_datetime_value(latest_entry)
+            dd['entry_time'] = effective_dt.isoformat() if effective_dt else None
+            dd['server_entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
+            dd['packet_datetime'] = latest_entry.packet_datetime.isoformat() if latest_entry.packet_datetime else None
             if latest_entry.device_tag:
                 dd['vehicle_registration_number'] = latest_entry.device_tag.vehicle_reg_no
                 dd['imei'] = latest_entry.device_tag.device.imei
@@ -3245,8 +3259,8 @@ def gps_track_lite_api(request):
 
     # Base DISTINCT ON queryset — no slice yet so count() can reuse it.
     latest_qs = (
-        base_qs
-        .order_by('device_tag', '-entry_time')
+        _gps_annotate_effective_datetime(base_qs)
+        .order_by('device_tag', '-effective_datetime', '-id')
         .distinct('device_tag')
         .select_related(
             'device_tag',
@@ -3287,7 +3301,9 @@ def gps_track_lite_api(request):
             'imei':             dt.device.imei if (dt and dt.device) else None,
             'owner_name':       owner_name,
             'owner_id':         owner_id,
-            'last_seen':        g.entry_time.isoformat() if g.entry_time else None,
+            'last_seen':        _gps_effective_datetime_value(g).isoformat() if _gps_effective_datetime_value(g) else None,
+            'server_entry_time': g.entry_time.isoformat() if g.entry_time else None,
+            'packet_datetime':  g.packet_datetime.isoformat() if g.packet_datetime else None,
             'emergency_status': g.emergency_status,
             'speed':            g.speed,
             'latitude':         g.latitude,
@@ -3388,8 +3404,8 @@ def gps_cluster_api(request):
     # This guarantees every device appears exactly once, using its last known
     # recorded position — whether it is currently online or offline.
     latest_ids = (
-        base_qs
-        .order_by('device_tag', '-entry_time')
+        _gps_annotate_effective_datetime(base_qs)
+        .order_by('device_tag', '-effective_datetime', '-id')
         .distinct('device_tag')
         .values('id')
     )
@@ -3398,7 +3414,7 @@ def gps_cluster_api(request):
     EMERGENCY_STATUSES = ('1', '0001', '1111')  # adjust to your protocol values
 
     clusters = (
-        GPSData.objects
+        _gps_annotate_effective_datetime(GPSData.objects)
         .filter(id__in=Subquery(latest_ids))
         # Only include rows where the reverse-geocoded level field is populated;
         # devices whose last GPS position hasn't been geocoded to this level yet
@@ -3409,11 +3425,11 @@ def gps_cluster_api(request):
         .annotate(
             total=Count('id'),
             online=Count(Case(
-                When(entry_time__gte=ONLINE_THRESHOLD, then=1),
+                When(effective_datetime__gte=ONLINE_THRESHOLD, then=1),
                 output_field=IntegerField()
             )),
             offline=Count(Case(
-                When(entry_time__lt=ONLINE_THRESHOLD, then=1),
+                When(effective_datetime__lt=ONLINE_THRESHOLD, then=1),
                 output_field=IntegerField()
             )),
             emergency=Count(Case(
@@ -3552,8 +3568,8 @@ def gps_grid_cluster_api(request):
 
     # ── Latest entry per device_tag (DISTINCT ON – PostgreSQL) ───────────────
     latest_ids = (
-        base_qs
-        .order_by('device_tag', '-entry_time')
+        _gps_annotate_effective_datetime(base_qs)
+        .order_by('device_tag', '-effective_datetime', '-id')
         .distinct('device_tag')
         .values('id')
     )
@@ -3575,18 +3591,18 @@ def gps_grid_cluster_api(request):
     EMERGENCY_STATUSES = ('1', '0001', '1111')
 
     clusters = (
-        GPSData.objects
+        _gps_annotate_effective_datetime(GPSData.objects)
         .filter(id__in=Subquery(latest_ids))
         .annotate(grid_lat=grid_lat_expr, grid_lon=grid_lon_expr)
         .values('grid_lat', 'grid_lon')
         .annotate(
             total=Count('id'),
             online=Count(Case(
-                When(entry_time__gte=ONLINE_THRESHOLD, then=1),
+                When(effective_datetime__gte=ONLINE_THRESHOLD, then=1),
                 output_field=IntegerField()
             )),
             offline=Count(Case(
-                When(entry_time__lt=ONLINE_THRESHOLD, then=1),
+                When(effective_datetime__lt=ONLINE_THRESHOLD, then=1),
                 output_field=IntegerField()
             )),
             emergency=Count(Case(
@@ -3771,11 +3787,12 @@ def gps_history_map_data(request ):
         if not has_access:
             return JsonResponse({'error': "Unauthorised access to history data"}, status=403)
 
-        base_qs = GPSData.objects.filter(
-            gps_status='1',
-            device_tag_id=device_tag.id,
-            entry_time__range=(start_dt, end_dt),
-        )
+        base_qs = _gps_annotate_effective_datetime(
+            GPSData.objects.filter(
+                gps_status='1',
+                device_tag_id=device_tag.id,
+            )
+        ).filter(effective_datetime__range=(start_dt, end_dt))
 
         if owner_name_substr:
             base_qs = base_qs.filter(device_tag__vehicle_owner__users__name__icontains=owner_name_substr).distinct()
@@ -3783,8 +3800,8 @@ def gps_history_map_data(request ):
         total_points_before_optimization = base_qs.count()
 
         # Keep DB -> Python transfer narrow and ordered for deterministic downsampling.
-        rows_qs = base_qs.order_by('entry_time').values(
-            'entry_time', 'packet_type',
+        rows_qs = base_qs.order_by('effective_datetime', 'id').values(
+            'effective_datetime', 'entry_time', 'packet_datetime', 'packet_type',
             'latitude', 'longitude', 'speed', 'heading', 'satellites',
             'gps_status', 'altitude', 'network_operator', 'ignition_status',
             'main_power_status', 'main_input_voltage', 'internal_battery_voltage',
@@ -3815,7 +3832,9 @@ def gps_history_map_data(request ):
             prev_signature = signature
 
             point = {
-                'et': row['entry_time'],
+                'et': row['effective_datetime'],
+                'server_entry_time': row['entry_time'],
+                'packet_datetime': row['packet_datetime'],
                 'ps': row['packet_type'],
                 'lat': row['latitude'],
                 'lon': row['longitude'],

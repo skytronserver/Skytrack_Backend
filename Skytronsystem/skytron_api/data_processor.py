@@ -69,6 +69,7 @@ def process_gps_data(data_str):
                     'imei': groups[7],         # 860269065286924
                     'vehicle_registration_number': groups[8], # DL01AB1234
                     'gps_status': groups[9][:1],   # 1 (GPS fix status, limit to 1 char)
+                    'packet_datetime': ist_datetime,
                     'date': ist_date,
                     'time': ist_time,
                     'latitude': lat,
@@ -147,6 +148,7 @@ def process_gps_data(data_str):
                     'imei': groups[7],
                     'vehicle_registration_number': groups[8],
                     'gps_status': groups[9],
+                    'packet_datetime': ist_datetime,
                     'date': ist_date,
                     'time': ist_time,
                     'latitude': lat,

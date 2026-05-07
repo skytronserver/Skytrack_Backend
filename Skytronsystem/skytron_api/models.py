@@ -1715,6 +1715,7 @@ class LoginSettings(models.Model):
 class GPSData(models.Model):
     objects = SafeCreateManager()
     entry_time = models.DateTimeField(auto_now_add=True)
+    packet_datetime = models.DateTimeField(null=True, blank=True)
     #start_character = models.CharField(max_length=1)
     #header = models.CharField(max_length=1)
     #vendor_id = models.CharField(max_length=4)
@@ -1784,6 +1785,7 @@ class GPSData(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=['device_tag', '-entry_time', '-id'], name='gpsdata_tag_time_id_idx'),
+            models.Index(fields=['device_tag', '-packet_datetime', '-id'], name='gpsdata_tag_packet_dt_idx'),
         ]
 
 
