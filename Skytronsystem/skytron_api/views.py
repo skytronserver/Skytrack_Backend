@@ -2780,9 +2780,6 @@ def gps_track_data_api(request ):
                             continue
                 serializer = GPSData_Serializer(latest_entry)
                 dd = serializer.data.copy()
-                effective_dt = _gps_effective_datetime_value(latest_entry)
-                dd['entry_time'] = effective_dt.isoformat() if effective_dt else None
-                dd['server_entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
                 dd['packet_datetime'] = latest_entry.packet_datetime.isoformat() if latest_entry.packet_datetime else None
                 device_tag_obj = device_tag_map.get(getattr(latest_entry, 'device_tag_id', None))
                 if device_tag_obj:
@@ -3139,9 +3136,6 @@ def gps_track_data_api_pub(request ):
         if latest_entry:
             serializer = GPSData_Serializer(latest_entry)
             dd = serializer.data.copy()
-            effective_dt = _gps_effective_datetime_value(latest_entry)
-            dd['entry_time'] = effective_dt.isoformat() if effective_dt else None
-            dd['server_entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
             dd['packet_datetime'] = latest_entry.packet_datetime.isoformat() if latest_entry.packet_datetime else None
             if latest_entry.device_tag:
                 dd['vehicle_registration_number'] = latest_entry.device_tag.vehicle_reg_no
@@ -3301,8 +3295,7 @@ def gps_track_lite_api(request):
             'imei':             dt.device.imei if (dt and dt.device) else None,
             'owner_name':       owner_name,
             'owner_id':         owner_id,
-            'last_seen':        _gps_effective_datetime_value(g).isoformat() if _gps_effective_datetime_value(g) else None,
-            'server_entry_time': g.entry_time.isoformat() if g.entry_time else None,
+            'last_seen':        g.entry_time.isoformat() if g.entry_time else None,
             'packet_datetime':  g.packet_datetime.isoformat() if g.packet_datetime else None,
             'emergency_status': g.emergency_status,
             'speed':            g.speed,
@@ -3832,8 +3825,7 @@ def gps_history_map_data(request ):
             prev_signature = signature
 
             point = {
-                'et': row['effective_datetime'],
-                'server_entry_time': row['entry_time'],
+                'et': row['entry_time'],
                 'packet_datetime': row['packet_datetime'],
                 'ps': row['packet_type'],
                 'lat': row['latitude'],
