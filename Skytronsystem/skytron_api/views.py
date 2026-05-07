@@ -2554,6 +2554,8 @@ def gps_track_data_api(request ):
                 geofence_message = f"Custom polygon geofence error: {e}. Geofence filter not applied."
         # --- End geofence logic ---
 
+        include_proximity = str(request.GET.get('include_proximity', 'false')).strip().lower() == 'true'
+
         # --- Helper utilities for nearest POI / Route proximity ---
         import time as _time
         _t0 = _time.perf_counter()
@@ -2566,13 +2568,22 @@ def gps_track_data_api(request ):
             a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
             return 2 * R * asin(sqrt(a))
 
-        # Preload POIs once and pre-compute their coordinates + serialize once
-        try:
-            all_pois = list(pointofinterests.objects.all())
-        except Exception:
+        _poi_index = []          # (lat, lon, poi, serialized_data)
+        _police_poi_index = []
+        _route_index = []        # (list_of_(lat,lon), serialized_route)
+
+        # Build proximity indexes only when explicitly requested.
+        if include_proximity:
+            try:
+                all_pois = list(pointofinterests.objects.all())
+            except Exception:
+                all_pois = []
+            _t1 = _time.perf_counter()
+            print(f"TIMING: poi_fetch={_t1-_t0:.3f}s  count={len(all_pois)}")
+        else:
             all_pois = []
-        _t1 = _time.perf_counter()
-        print(f"TIMING: poi_fetch={_t1-_t0:.3f}s  count={len(all_pois)}")
+            _t1 = _time.perf_counter()
+            print(f"TIMING: proximity_index_skipped={_t1-_t0:.3f}s")
 
         # Build pre-computed (lat, lon, poi) tuples — parse JSON location once per POI
         def _extract_poi_coord(poi):
@@ -2602,8 +2613,6 @@ def gps_track_data_api(request ):
             return None
 
         # Pre-build coordinate + serialized-data tuples for all POIs (done once)
-        _poi_index = []          # (lat, lon, poi, serialized_data)
-        _police_poi_index = []
         for _p in all_pois:
             _c = _extract_poi_coord(_p)
             if _c is None:
@@ -2617,15 +2626,17 @@ def gps_track_data_api(request ):
         print(f"TIMING: poi_serialize={_t2-_t1:.3f}s  poi_index={len(_poi_index)}")
 
         # Pre-build route point arrays and serialize once
-        try:
-            all_routes = list(Route.objects.all())
-        except Exception:
+        if include_proximity:
+            try:
+                all_routes = list(Route.objects.all())
+            except Exception:
+                all_routes = []
+        else:
             all_routes = []
         _t3 = _time.perf_counter()
         print(f"TIMING: route_fetch={_t3-_t2:.3f}s  count={len(all_routes)}")
 
         # _route_index: list of (list_of_(lat,lon)_tuples, serialized_route)
-        _route_index = []
         for _r in all_routes:
             _pts_raw = None
             if hasattr(_r, 'route') and getattr(_r, 'route') is not None:
@@ -2684,26 +2695,50 @@ def gps_track_data_api(request ):
         # --- End helper utilities ---
 
         from .serializers import DeviceTagSerializer, VehicleOwnerSerializer, UserSerializer
-        # Single query: PostgreSQL DISTINCT ON fetches one latest row per device_tag, eliminating N+1.
-        # select_related pre-joins all FK paths; prefetch_related covers the M2M vehicle_owner->users.
-        latest_entries = list(
+
+        # Pagination first, then process only requested page to avoid O(all vehicles)
+        # per-request work that causes upstream 504 timeouts.
+        try:
+            _page = int(request.GET.get('page', 0))
+        except (ValueError, TypeError):
+            _page = 0
+        try:
+            _page_length = int(request.GET.get('page_length', 100))
+            if _page_length < 1:
+                _page_length = 100
+        except (ValueError, TypeError):
+            _page_length = 100
+
+        want_count = str(request.GET.get('count', 'true')).lower() != 'false'
+        _start = _page * _page_length
+
+        latest_qs = (
             gps_queryset
             .order_by('device_tag', '-entry_time')
             .distinct('device_tag')
-            .select_related(
-                'device_tag',
-                'device_tag__device',
-                'device_tag__device__dealer',
-                'device_tag__device__dealer__manufacturer',
-                'device_tag__vehicle_owner',
-                'device_tag__category',
-                'device_tag__district',
-                'device_tag__district__state',
-            )
-            .prefetch_related('device_tag__vehicle_owner__users')
         )
+
+        _total = latest_qs.count() if want_count else None
+        latest_entries = list(latest_qs[_start:_start + _page_length])
+
+        page_device_tag_ids = [g.device_tag_id for g in latest_entries if getattr(g, 'device_tag_id', None)]
+        page_device_tags = DeviceTag.objects.filter(id__in=page_device_tag_ids).select_related(
+            'device',
+            'device__dealer',
+            'device__dealer__manufacturer',
+            'vehicle_owner',
+            'category',
+            'district',
+            'district__state',
+        ).prefetch_related('vehicle_owner__users')
+        device_tag_map = {dt.id: dt for dt in page_device_tags}
+
         _t5 = _time.perf_counter()
-        print(f"TIMING: db_query={_t5-_t4:.3f}s  rows={len(latest_entries)}")
+        print(
+            f"TIMING: db_query={_t5-_t4:.3f}s  page_rows={len(latest_entries)}  "
+            f"page={_page} page_length={_page_length} total={_total if _total is not None else 'skipped'}"
+        )
+
         data = []
         for latest_entry in latest_entries:
             if latest_entry:
@@ -2737,10 +2772,10 @@ def gps_track_data_api(request ):
                 dd = serializer.data.copy()
                 if 'entry_time' not in dd and hasattr(latest_entry, 'entry_time'):
                     dd['entry_time'] = latest_entry.entry_time.isoformat() if latest_entry.entry_time else None
-                if latest_entry.device_tag:
-                    dd['vehicle_registration_number'] = latest_entry.device_tag.vehicle_reg_no
-                    dd['imei'] = latest_entry.device_tag.device.imei if latest_entry.device_tag.device else None
-                    device_tag_obj = latest_entry.device_tag
+                device_tag_obj = device_tag_map.get(getattr(latest_entry, 'device_tag_id', None))
+                if device_tag_obj:
+                    dd['vehicle_registration_number'] = device_tag_obj.vehicle_reg_no
+                    dd['imei'] = device_tag_obj.device.imei if device_tag_obj.device else None
                     device_tag_data = DeviceTagSerializer(device_tag_obj).data
                     # Attach concise device/manufacturer summary for convenience
                     try:
@@ -2778,7 +2813,7 @@ def gps_track_data_api(request ):
                 # Attach nearest POI, nearest Police POI, and nearby Routes (<=100m)
                 lat = getattr(latest_entry, 'latitude', None)
                 lon = getattr(latest_entry, 'longitude', None)
-                if lat is not None and lon is not None:
+                if include_proximity and lat is not None and lon is not None:
                     np_info = nearest_poi_info(float(lat), float(lon), _poi_index)
                     npp_info = nearest_poi_info(float(lat), float(lon), _police_poi_index)
                     near_rs = routes_within_100m(float(lat), float(lon))
@@ -2792,32 +2827,14 @@ def gps_track_data_api(request ):
                 data.append(dd)
         _t6 = _time.perf_counter()
         print(f"TIMING: per_vehicle_loop={_t6-_t5:.3f}s  output={len(data)}  TOTAL={_t6-_t0:.3f}s")
-        data_list = list(data)
-
-        # Pagination
-        try:
-            _page = int(request.GET.get('page', 0))
-        except (ValueError, TypeError):
-            _page = 0
-        try:
-            _page_length = int(request.GET.get('page_length', 100))
-            if _page_length < 1:
-                _page_length = 100
-        except (ValueError, TypeError):
-            _page_length = 100
-
-        _total = len(data_list)
-        _start = _page * _page_length
-        paged_data = data_list[_start: _start + _page_length]
-
-        response = {'data': paged_data}
+        response = {'data': data}
         if geofence_message:
             response['geofence_message'] = geofence_message
         response['pagination'] = {
             'total': _total,
             'page': _page,
             'page_length': _page_length,
-            'total_pages': math.ceil(_total / _page_length) if _page_length > 0 else 1,
+            'total_pages': (math.ceil(_total / _page_length) if (_total is not None and _page_length > 0) else None),
         }
         return JsonResponse(response)
     return JsonResponse({'error':  'Invalid request method. Only GET is allowed.'}, status=400)
@@ -10317,6 +10334,15 @@ def unTagDevice2Vehicle(request ):
         except DeviceTag.DoesNotExist:
             return JsonResponse({'error': 'DeviceTag not found'}, status=404)
 
+        if not device_tag.device:
+            return JsonResponse({'error': 'Device is not mapped with this tag'}, status=400)
+
+        if (device_tag.status or '').strip() != 'Owner_Final_OTP_Verified':
+            return JsonResponse({'error': 'Untag is allowed only when tag status is Owner_Final_OTP_Verified'}, status=400)
+
+        if (device_tag.device.stock_status or '').strip() != 'Fitted':
+            return JsonResponse({'error': 'Untag is allowed only when device stock status is Fitted'}, status=400)
+
         device_tag.status = 'Device_Untagged'
         device_tag.device.stock_status= 'Device_Untagged'
         device_tag.device.save()
@@ -10331,9 +10357,9 @@ def unTagDevice2Vehicle(request ):
 @require_http_methods(['GET', 'POST'])
 def reTagDevice2Vehicle(request):
     """
-    Re-tag endpoint: undo the untag action by restoring a previous status.
-    Accepts JSON body with either `tag_id` or `device_id` and optional `restore_status`.
-    Default `restore_status` is 'Dealer_OTP_Sent'. Also attempts to set stock back to 'Fitted'.
+    Re-tag endpoint: undo the untag action by restoring terminal status.
+    Accepts JSON body with either `tag_id` or `device_id`.
+    Restores DeviceTag.status to 'Owner_Final_OTP_Verified' and stock status to 'Fitted'.
     """
     errors = validate_inputs(request)
     if errors:
@@ -10349,7 +10375,6 @@ def reTagDevice2Vehicle(request):
         data = getattr(request, 'data', {})
         tag_id = data.get('tag_id')
         device_id = data.get('device_id')
-        restore_status = (data.get('restore_status') or 'Dealer_OTP_Sent').strip()
 
         if not tag_id and not device_id:
             return JsonResponse({'error': 'Provide either tag_id or device_id'}, status=400)
@@ -10370,8 +10395,8 @@ def reTagDevice2Vehicle(request):
         if (device_tag.status or '').strip() != 'Device_Untagged':
             return JsonResponse({'error': 'Device is not in untagged state'}, status=400)
 
-        # Restore the status
-        device_tag.status = restore_status
+        # Restore the status used before untag.
+        device_tag.status = 'Owner_Final_OTP_Verified'
         device_tag.save()
 
         # Attempt to restore stock status to 'Fitted'
@@ -10481,28 +10506,24 @@ def download_receiptPDF(request ):
         tag_id = request.data.get('device_id') 
         if not tag_id:
             return JsonResponse({'error': 'device_id is required'}, status=400) 
-        try: 
-            device_tag = DeviceTag.objects.filter(device=tag_id).last()
-            if not device_tag:
-                return HttpResponse("Device tag not found.", status=404) 
-            relative_file_path = f"fileuploads/cop_files/{device_tag.id}.pdf"
-            file_path = os.path.join(HOST_STORAGE_PATH, relative_file_path)
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            try:
-                geneateCet(file_path,device_tag.device.imei,device_tag.device.model.model_name,device_tag.device.model.model_name,formatted_date ,device_tag.vehicle_reg_no,formatted_date ,formatted_date ,formatted_date ,device_tag.status,formatted_date )
-                with open(file_path,'rb') as file:
-                    response = HttpResponse(file.read(), content_type='application/octet-stream')
-                    response['Content-Disposition'] = f'attachment; filename='+str(device_tag.id)+'.pdf'
-                    return response
-            except FileNotFoundError:
-                return HttpResponse("Receipt file not found.", status=404) 
-        except DeviceTag.DoesNotExist:
-            return JsonResponse({'error': 'DeviceTag with the given tag_id does not exist'}, status=404)
+        device_tag = DeviceTag.objects.filter(device=tag_id).last()
+        if not device_tag:
+            return HttpResponse("Device tag not found.", status=404)
+        relative_file_path = f"fileuploads/cop_files/{device_tag.id}.pdf"
+        file_path = os.path.join(HOST_STORAGE_PATH, relative_file_path)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        try:
+            geneateCet(file_path,device_tag.device.imei,device_tag.device.model.model_name,device_tag.device.model.model_name,formatted_date ,device_tag.vehicle_reg_no,formatted_date ,formatted_date ,formatted_date ,device_tag.status,formatted_date )
+            with open(file_path,'rb') as file:
+                response = HttpResponse(file.read(), content_type='application/octet-stream')
+                response['Content-Disposition'] = f'attachment; filename='+str(device_tag.id)+'.pdf'
+                return response
+        except Exception:
+            return JsonResponse({'error': 'Unable to generate receipt PDF'}, status=500)
     return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
 def upload_receiptPDF(request ): 
@@ -10510,8 +10531,6 @@ def upload_receiptPDF(request ):
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    
-    
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="dealer"
