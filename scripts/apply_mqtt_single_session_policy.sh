@@ -27,12 +27,13 @@ EOF
 echo "[ok] Wrote ${TARGET}"
 
 echo "[info] Checking mosquitto config syntax..."
-mosquitto -c /etc/mosquitto/mosquitto.conf -p 0 -v >/tmp/mosq_config_check.log 2>&1 &
+# Some Mosquitto builds reject -p 0, so use a high non-default port for validation.
+mosquitto -c /etc/mosquitto/mosquitto.conf -p 18884 -v >/tmp/mosq_config_check.log 2>&1 &
 CHK_PID=$!
 sleep 1
 kill "${CHK_PID}" >/dev/null 2>&1 || true
 
-if grep -qiE "error|invalid|unknown" /tmp/mosq_config_check.log; then
+if grep -qiE "(^|[[:space:]])Error:|invalid[[:space:]]+port|unknown[[:space:]]+configuration|unsupported" /tmp/mosq_config_check.log; then
   echo "[warn] Potential config issue detected. Review /tmp/mosq_config_check.log"
   cat /tmp/mosq_config_check.log
   exit 1
