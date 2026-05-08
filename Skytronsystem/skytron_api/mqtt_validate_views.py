@@ -32,6 +32,10 @@ MQTT_FAIL_MAX = 3           # max failures before block
 MQTT_FAIL_WINDOW = 1800     # 30 min window (seconds)
 MQTT_BLOCK_DURATION = 1800  # 30 min block (seconds)
 
+# One active session per IMEI lease settings.
+MQTT_IMEI_SESSION_ENFORCE = True
+MQTT_IMEI_SESSION_TTL = 300  # seconds; refreshed on ACL checks
+
 # MQTT superuser that bypasses ACL (set in settings/env)
 MQTT_SUPERUSER = getattr(settings, 'MQTT_ADMIN_USER', '')
 MQTT_ADMIN_PASS = getattr(settings, 'MQTT_ADMIN_PASS', '')
@@ -88,6 +92,87 @@ def _block_key(clientid):
     """Cache key for the block flag for a given clientid."""
     safe = clientid.replace(' ', '_')[:64]
     return f"mqtt:block:{safe}"
+
+
+def _imei_session_key(imei):
+    safe = str(imei).replace(' ', '_')[:32]
+    return f"mqtt:imei:session:{safe}"
+
+
+def _imei_session_kind(clientid):
+    """Classify IMEI session type from clientid.
+
+    Current deployed patterns typically use `_emergency` suffix for emergency channel.
+    Everything else is treated as tracking.
+    """
+    cid = str(clientid or '').lower()
+    if 'emergency' in cid or '_em_' in cid or cid.endswith('_em'):
+        return 'emergency'
+    return 'tracking'
+
+
+def _clientid_matches_imei(clientid, imei):
+    """
+    Backward-compatible matching for deployed device clientids.
+    Accepts exact IMEI and common prefixed/suffixed forms containing IMEI
+    as a token separated by underscores.
+    """
+    cid = str(clientid or '').strip()
+    i = str(imei or '').strip()
+    if not cid or not i:
+        return False
+    if cid == i:
+        return True
+    parts = [p for p in cid.split('_') if p]
+    return i in parts
+
+
+def _acquire_or_refresh_imei_session(imei, clientid):
+    """
+    Enforce up to two active sessions per IMEI, one per session kind:
+    - tracking: 1 active clientid
+    - emergency: 1 active clientid
+
+    A different clientid for the same kind is rejected while lease is active.
+    """
+    key = _imei_session_key(imei)
+    cid = str(clientid or '').strip()
+    kind = _imei_session_kind(cid)
+    slot_key = f"{kind}_clientid"
+    try:
+        current = cache.get(key)
+
+        # Backward compatibility with older single-slot cache format.
+        if isinstance(current, dict):
+            active_cid = str(current.get(slot_key, '')).strip()
+            if not active_cid and 'clientid' in current:
+                # Legacy key existed: map it to tracking slot.
+                legacy = str(current.get('clientid', '')).strip()
+                if legacy and kind == 'tracking':
+                    active_cid = legacy
+                current = {
+                    'tracking_clientid': legacy,
+                    'emergency_clientid': str(current.get('emergency_clientid', '')).strip(),
+                }
+        else:
+            # Legacy non-dict value: treat as tracking slot.
+            legacy = str(current or '').strip()
+            active_cid = legacy if kind == 'tracking' else ''
+            current = {
+                'tracking_clientid': legacy,
+                'emergency_clientid': '',
+            }
+
+        if active_cid and active_cid != cid:
+            return False, active_cid
+
+        current[slot_key] = cid
+        cache.set(key, current, timeout=MQTT_IMEI_SESSION_TTL)
+        return True, active_cid or cid
+    except Exception as e:
+        logger.error(f"MQTT IMEI session lease error imei='{imei}' clientid='{cid}': {e}")
+        # Fail-open to avoid auth outage on cache issues.
+        return True, cid
 
 
 def _record_failure(clientid):
@@ -402,6 +487,34 @@ def mqtt_validate_connection(request):
             # so we skip the hex password format check and go straight to DB.
             if _RE_IMEI.match(username):
                 logger.info(f"MQTT Auth: Device IMEI mode - imei={username}")
+
+                # Backward-compatible clientid policy:
+                # accept existing deployed patterns if they embed the same IMEI,
+                # then enforce one active session per IMEI via Redis lease.
+                if not _clientid_matches_imei(clientid, username):
+                    logger.warning(
+                        f"MQTT Auth: Device IMEI rejected due to clientid mismatch "
+                        f"(imei={username}, clientid={clientid})"
+                    )
+                    _record_failure(clientid)
+                    return Response(
+                        {'error': 'For IMEI auth, clientid must include the same IMEI'},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+                if MQTT_IMEI_SESSION_ENFORCE:
+                    ok, active_cid = _acquire_or_refresh_imei_session(username, clientid)
+                    if not ok:
+                        logger.warning(
+                            f"MQTT Auth: Device IMEI rejected due to active session "
+                            f"(imei={username}, clientid={clientid}, active_clientid={active_cid})"
+                        )
+                        _record_failure(clientid)
+                        return Response(
+                            {'error': f'Another session is active for IMEI {username}'},
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+
                 if ALLOW_ALL_DEV_MQTT:
                     logger.info(f"MQTT Auth: ALLOWALLDEVMQTT=true — skipping password check for IMEI '{username}'")
                     _clear_failure(clientid)
@@ -485,15 +598,21 @@ def mqtt_validate_acl(request):
 
         # Primary check: effective username (mobile or original) appears as a topic segment
         if _topic_allowed(effective_username, topic, acc):
+            if MQTT_IMEI_SESSION_ENFORCE and _RE_IMEI.match(str(effective_username or '')):
+                _acquire_or_refresh_imei_session(effective_username, clientid)
             return Response({'ok': True}, status=status.HTTP_200_OK)
 
         # If original username was a JWT and differs from mobile, also check the JWT directly as a segment
         if effective_username != username and _topic_allowed(username, topic, acc):
+            if MQTT_IMEI_SESSION_ENFORCE and _RE_IMEI.match(str(effective_username or '')):
+                _acquire_or_refresh_imei_session(effective_username, clientid)
             return Response({'ok': True}, status=status.HTTP_200_OK)
 
         # Secondary check: JWT token OR mobile (cached at CONNECT time) appears as a segment
         # Covers topics like 'sosEx/<jwt>', 'owner/<jwt>', 'dtorto/<mobile>', etc.
         if _topic_allowed_for_client(clientid, topic, acc):
+            if MQTT_IMEI_SESSION_ENFORCE and _RE_IMEI.match(str(effective_username or '')):
+                _acquire_or_refresh_imei_session(effective_username, clientid)
             return Response({'ok': True}, status=status.HTTP_200_OK)
 
         logger.warning(f"MQTT ACL: DENIED — username={username}, clientid={clientid}, topic={topic}")
