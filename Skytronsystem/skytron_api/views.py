@@ -4451,6 +4451,12 @@ def get_live_vehicle_no(request ):
     
     try:
         if request.method == 'POST':
+            vehicle_no = request.data.get('vehicle_no') or request.data.get('regno') or request.data.get('vehicle_reg_no')
+            if isinstance(vehicle_no, str):
+                vehicle_no = vehicle_no.strip()
+            if not vehicle_no:
+                vehicle_no = None
+
             # Fetch distinct vehicle registration numbers with a single DB query.
             # If the requester is a vehicle owner, restrict to their devices only.
             owner = get_user_object(request.user, "owner")
@@ -4458,6 +4464,9 @@ def get_live_vehicle_no(request ):
             gps_qs = GPSData.objects.all()
             if owner:
                 gps_qs = gps_qs.filter(device_tag__vehicle_owner=owner)
+
+            if vehicle_no is not None:
+                gps_qs = gps_qs.filter(device_tag__vehicle_reg_no__icontains=vehicle_no)
 
             vehicle_list = list(
                 gps_qs
