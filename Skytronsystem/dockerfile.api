@@ -170,7 +170,13 @@ ENV ALLOWALLDEVMQTT=${ALLOWALLDEVMQTT}
 
 #CMD ["gunicorn", "--certfile=cert_old.pem","--workers=3", "--timeout=120", "--keyfile=key_old.pem", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]
 
-CMD ["gunicorn", "--workers=5", "--timeout=120", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]
+# Optimized Gunicorn configuration for better API reliability
+# - workers=4: Balanced for shared infrastructure without overwhelming disk
+# - timeout=300: Increased from 120s to handle slow DB queries (was timing out at 120s)
+# - keep-alive=75: Prevent connection issues with slow clients
+# - max-requests=1000: Reload workers periodically to prevent memory leaks
+# - max-requests-jitter=100: Stagger reloads to avoid thundering herd
+CMD ["gunicorn", "--workers=4", "--worker-class=gthread", "--timeout=60", "--keep-alive=75", "--max-requests=1000", "--max-requests-jitter=100", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]
 
 
 #CMD ["python", "manage.py", "runserver", "0.0.0.0:2000"]

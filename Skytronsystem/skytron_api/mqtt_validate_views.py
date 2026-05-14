@@ -23,9 +23,13 @@ import hashlib
 import re
 import time
 import logging
+from hashlib import sha1
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+# Repeated MQTT auth failures can flood logs on noisy brokers. Keep one line per key/window.
+MQTT_LOG_THROTTLE_SECONDS = int(getattr(settings, 'MQTT_LOG_THROTTLE_SECONDS', 300) or 300)
 
 # --- Throttle constants ---
 MQTT_FAIL_MAX = 3           # max failures before block
@@ -184,11 +188,30 @@ def _record_failure(clientid):
         cache.set(fkey, count, timeout=MQTT_FAIL_WINDOW)
         if count >= MQTT_FAIL_MAX:
             cache.set(bkey, True, timeout=MQTT_BLOCK_DURATION)
-            logger.warning(
-                f"MQTT Throttle: clientid '{clientid}' blocked after {count} failures"
-            )
+            # Log only once at block transition; avoid repeating on each new failed attempt.
+            if count == MQTT_FAIL_MAX:
+                logger.warning(
+                    f"MQTT Throttle: clientid '{clientid}' blocked after {count} failures"
+                )
     except Exception as e:
         logger.error(f"MQTT Throttle: cache write error - {e}")
+
+
+def _log_throttled(level, message, dedupe_key, window_seconds=None):
+    """Log once per dedupe key within the configured throttle window."""
+    window = window_seconds if window_seconds is not None else MQTT_LOG_THROTTLE_SECONDS
+    digest = sha1(str(dedupe_key).encode('utf-8')).hexdigest()[:16]
+    cache_key = f"mqtt:logdedupe:{digest}"
+    try:
+        if cache.get(cache_key):
+            return
+        cache.set(cache_key, True, timeout=max(int(window), 1))
+    except Exception:
+        # Fail-open: if cache is unavailable, still emit the log.
+        pass
+
+    log_fn = getattr(logger, level, logger.info)
+    log_fn(message)
 
 
 def _clear_failure(clientid):
@@ -418,7 +441,11 @@ def mqtt_validate_connection(request):
 
         # --- Throttle gate (Redis only, zero DB cost) ---
         if _is_blocked(clientid):
-            logger.warning(f"MQTT Auth: clientid '{clientid}' is currently blocked (throttle)")
+            _log_throttled(
+                'warning',
+                f"MQTT Auth: clientid '{clientid}' is currently blocked (throttle)",
+                f"blocked:{clientid}",
+            )
             return Response({'error': 'Too many failed attempts. Try again later.'},
                             status=status.HTTP_403_FORBIDDEN)
 
@@ -428,11 +455,15 @@ def mqtt_validate_connection(request):
         is_jwt_mode = jwt_in_username or ((not username or username.lower() in ['jwt', 'token', 'bearer']) and password)
         jwt_token = username if jwt_in_username else password
         if is_jwt_mode:
-            logger.info(f"MQTT Auth: JWT-only mode detected (token field: {'username' if jwt_in_username else 'password'})")
+            logger.debug(f"MQTT Auth: JWT-only mode detected (token field: {'username' if jwt_in_username else 'password'})")
 
             # *** EARLY FORMAT CHECK — no DB hit for obviously bad tokens ***
             if not _looks_like_jwt(jwt_token):
-                logger.warning(f"MQTT Auth: password rejected by format check (not a JWT), clientid={clientid}")
+                _log_throttled(
+                    'debug',
+                    f"MQTT Auth: password rejected by format check (not a JWT), clientid={clientid}",
+                    f"jwt-format:{clientid}",
+                )
                 _record_failure(clientid)
                 return Response({'error': 'Invalid credentials'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -463,7 +494,7 @@ def mqtt_validate_connection(request):
 
         # --- MODE 2 / MODE 3: Username + Password ---
         elif username and password and not jwt_in_username:
-            logger.info(f"MQTT Auth: Username/Password mode - username={username}")
+            logger.debug(f"MQTT Auth: Username/Password mode - username={username}")
 
             # --- ADMIN BYPASS: Check admin credentials before format check ---
             if MQTT_SUPERUSER and username == MQTT_SUPERUSER:
@@ -478,7 +509,11 @@ def mqtt_validate_connection(request):
 
             # *** EARLY FORMAT CHECK — no DB hit for obviously bad credentials ***
             if not _looks_like_valid_username(username):
-                logger.warning(f"MQTT Auth: username '{username}' rejected by format check (not mobile/IMEI)")
+                _log_throttled(
+                    'debug',
+                    f"MQTT Auth: username '{username}' rejected by format check (not mobile/IMEI)",
+                    f"username-format:{username}:{clientid}",
+                )
                 _record_failure(clientid)
                 return Response({'error': 'Authentication failed'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -521,7 +556,11 @@ def mqtt_validate_connection(request):
                     return Response({'ok': True, 'username': username}, status=status.HTTP_200_OK)
                 success, device_stock = _verify_device_password(username, password)
                 if not success:
-                    logger.warning(f"MQTT Auth: Device auth failed for IMEI '{username}'")
+                    _log_throttled(
+                        'warning',
+                        f"MQTT Auth: Device auth failed for IMEI '{username}'",
+                        f"imei-fail:{username}:{clientid}",
+                    )
                     _record_failure(clientid)
                     return Response({'error': 'Authentication failed'}, status=status.HTTP_403_FORBIDDEN)
                 _clear_failure(clientid)
@@ -530,7 +569,11 @@ def mqtt_validate_connection(request):
 
             # --- MODE 2: User mobile auth ---
             if not _looks_like_valid_password(password):
-                logger.warning(f"MQTT Auth: password rejected by format check for '{username}'")
+                _log_throttled(
+                    'debug',
+                    f"MQTT Auth: password rejected by format check for '{username}'",
+                    f"password-format:{username}:{clientid}",
+                )
                 _record_failure(clientid)
                 return Response({'error': 'Authentication failed'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -538,12 +581,20 @@ def mqtt_validate_connection(request):
                 user = User.objects.get(mobile=username, is_active=True)
             except User.DoesNotExist:
                 # Strict: reject unknown users — do not leak user existence either
-                logger.warning(f"MQTT Auth: Unknown username '{username}' — rejected")
+                _log_throttled(
+                    'warning',
+                    f"MQTT Auth: Unknown username '{username}' — rejected",
+                    f"unknown-user:{username}:{clientid}",
+                )
                 _record_failure(clientid)
                 return Response({'error': 'Authentication failed'}, status=status.HTTP_403_FORBIDDEN)
 
             if not _verify_mode2_password(user, password):
-                logger.warning(f"MQTT Auth: Invalid password for '{username}'")
+                _log_throttled(
+                    'warning',
+                    f"MQTT Auth: Invalid password for '{username}'",
+                    f"invalid-password:{username}:{clientid}",
+                )
                 _record_failure(clientid)
                 return Response({'error': 'Authentication failed'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -552,7 +603,7 @@ def mqtt_validate_connection(request):
             return Response({'ok': True, 'username': username}, status=status.HTTP_200_OK)
 
         else:
-            logger.warning("MQTT Auth: No credentials provided")
+            _log_throttled('debug', "MQTT Auth: No credentials provided", f"no-credentials:{clientid}")
             _record_failure(clientid)
             return Response({'error': 'No credentials'}, status=status.HTTP_403_FORBIDDEN)
 
