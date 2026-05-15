@@ -91,6 +91,7 @@ urlpatterns = [
 
 
     path('apiLog/', search_request_logs, name='apilog'),
+    path('pub/apiLog/insights/', public_api_log_insights, name='public_api_log_insights'),
     
     path('driver/add_driver/', driver_add, name='add_driver'),
     path('driver/remove_driver/', driver_remove, name='remove_driver'),

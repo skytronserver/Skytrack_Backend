@@ -339,7 +339,11 @@ def _topic_allowed(username, topic, acc):
 
     # Block $SYS topics for regular users
     if topic.startswith('$SYS/'):
-        logger.warning(f"MQTT ACL: $SYS topic denied for {username}")
+        _log_throttled(
+            'warning',
+            f"MQTT ACL: $SYS topic denied for {username}",
+            f"acl-sys-deny:{username}",
+        )
         return False
 
     segments = topic.split('/')
@@ -348,19 +352,31 @@ def _topic_allowed(username, topic, acc):
     # Format: <prefix>/<token>/server
     if len(segments) == 3 and segments[-1] == 'server':
         if int(acc) == _ACC_WRITE:
-            logger.warning(f"MQTT ACL: publish to /server topic denied for '{username}', topic='{topic}'")
+            _log_throttled(
+                'warning',
+                f"MQTT ACL: publish to /server topic denied for '{username}', topic='{topic}'",
+                f"acl-server-pub-deny-user:{username}:{topic}",
+            )
             return False
         # Allow subscribe only if user's identifier is the middle segment
         if username == segments[1]:
             return True
-        logger.warning(f"MQTT ACL: /server topic denied for '{username}', topic='{topic}'")
+        _log_throttled(
+            'warning',
+            f"MQTT ACL: /server topic denied for '{username}', topic='{topic}'",
+            f"acl-server-deny-user:{username}:{topic}",
+        )
         return False
 
     # Standard topics: user's identifier must appear as a segment
     if username in segments:
         return True
 
-    logger.warning(f"MQTT ACL: topic '{topic}' denied for '{username}'")
+    _log_throttled(
+        'warning',
+        f"MQTT ACL: topic '{topic}' denied for '{username}'",
+        f"acl-topic-deny:{username}:{topic}:{acc}",
+    )
     return False
 
 
@@ -383,7 +399,11 @@ def _topic_allowed_for_client(clientid, topic, acc):
         # '/server' topics: clients may only subscribe
         is_server_topic = len(segments) == 3 and segments[-1] == 'server'
         if is_server_topic and int(acc) == _ACC_WRITE:
-            logger.warning(f"MQTT ACL: publish to /server topic denied for clientid='{clientid}', topic='{topic}'")
+            _log_throttled(
+                'warning',
+                f"MQTT ACL: publish to /server topic denied for clientid='{clientid}', topic='{topic}'",
+                f"acl-server-pub-deny-client:{clientid}:{topic}",
+            )
             return False
 
         # The token segment to check against: for /server topics it's segments[1], else any segment
@@ -392,17 +412,17 @@ def _topic_allowed_for_client(clientid, topic, acc):
         # Support both new dict format and legacy string format
         if isinstance(cached, str):
             if cached in check_segments:
-                logger.info(f"MQTT ACL: JWT segment match (legacy) for clientid='{clientid}', topic='{topic}'")
+                logger.debug(f"MQTT ACL: JWT segment match (legacy) for clientid='{clientid}', topic='{topic}'")
                 return True
             return False
 
         jwt_token = cached.get('jwt', '')
         mobile = cached.get('mobile', '')
         if jwt_token and jwt_token in check_segments:
-            logger.info(f"MQTT ACL: JWT segment match for clientid='{clientid}', topic='{topic}'")
+            logger.debug(f"MQTT ACL: JWT segment match for clientid='{clientid}', topic='{topic}'")
             return True
         if mobile and mobile in check_segments:
-            logger.info(f"MQTT ACL: Mobile segment match for clientid='{clientid}', mobile={mobile}, topic='{topic}'")
+            logger.debug(f"MQTT ACL: Mobile segment match for clientid='{clientid}', mobile={mobile}, topic='{topic}'")
             return True
     except Exception as e:
         logger.error(f"MQTT ACL: JWT session lookup error for clientid='{clientid}': {e}")
@@ -435,7 +455,7 @@ def mqtt_validate_connection(request):
         password = request.data.get('password', '').strip()
         clientid = request.data.get('clientid', username or 'unknown')
 
-        logger.info(
+        logger.debug(
             f"MQTT Auth: username={'[empty]' if not username else username}, clientid={clientid}"
         )
 
@@ -484,7 +504,7 @@ def mqtt_validate_connection(request):
                 _clear_failure(clientid)
                 # Cache raw JWT keyed by clientid so ACL can match JWT-based topic segments
                 _cache_jwt_for_client(clientid, jwt_token, payload)
-                logger.info(f"MQTT Auth: JWT mode SUCCESS - user_id={user.id}, mobile={user.mobile}")
+                logger.debug(f"MQTT Auth: JWT mode SUCCESS - user_id={user.id}, mobile={user.mobile}")
                 return Response({'ok': True, 'user_id': user.id, 'username': user.mobile},
                                 status=status.HTTP_200_OK)
             except User.DoesNotExist:
@@ -500,7 +520,7 @@ def mqtt_validate_connection(request):
             if MQTT_SUPERUSER and username == MQTT_SUPERUSER:
                 if MQTT_ADMIN_PASS and password == MQTT_ADMIN_PASS:
                     _clear_failure(clientid)
-                    logger.info(f"MQTT Auth: Admin bypass SUCCESS - username={username}")
+                    logger.debug(f"MQTT Auth: Admin bypass SUCCESS - username={username}")
                     return Response({'ok': True, 'username': username}, status=status.HTTP_200_OK)
                 else:
                     logger.warning(f"MQTT Auth: Admin password mismatch for '{username}'")
@@ -521,7 +541,7 @@ def mqtt_validate_connection(request):
             # IMEI passwords are device-model-specific strings (not hex DRF tokens),
             # so we skip the hex password format check and go straight to DB.
             if _RE_IMEI.match(username):
-                logger.info(f"MQTT Auth: Device IMEI mode - imei={username}")
+                logger.debug(f"MQTT Auth: Device IMEI mode - imei={username}")
 
                 # Backward-compatible clientid policy:
                 # accept existing deployed patterns if they embed the same IMEI,
@@ -551,7 +571,7 @@ def mqtt_validate_connection(request):
                         )
 
                 if ALLOW_ALL_DEV_MQTT:
-                    logger.info(f"MQTT Auth: ALLOWALLDEVMQTT=true — skipping password check for IMEI '{username}'")
+                    logger.debug(f"MQTT Auth: ALLOWALLDEVMQTT=true — skipping password check for IMEI '{username}'")
                     _clear_failure(clientid)
                     return Response({'ok': True, 'username': username}, status=status.HTTP_200_OK)
                 success, device_stock = _verify_device_password(username, password)
@@ -564,7 +584,7 @@ def mqtt_validate_connection(request):
                     _record_failure(clientid)
                     return Response({'error': 'Authentication failed'}, status=status.HTTP_403_FORBIDDEN)
                 _clear_failure(clientid)
-                logger.info(f"MQTT Auth: Device IMEI mode SUCCESS - imei={username}, esn={device_stock.device_esn}")
+                logger.debug(f"MQTT Auth: Device IMEI mode SUCCESS - imei={username}, esn={device_stock.device_esn}")
                 return Response({'ok': True, 'username': username}, status=status.HTTP_200_OK)
 
             # --- MODE 2: User mobile auth ---
@@ -599,7 +619,7 @@ def mqtt_validate_connection(request):
                 return Response({'error': 'Authentication failed'}, status=status.HTTP_403_FORBIDDEN)
 
             _clear_failure(clientid)
-            logger.info(f"MQTT Auth: Username/Password mode SUCCESS - username={username}")
+            logger.debug(f"MQTT Auth: Username/Password mode SUCCESS - username={username}")
             return Response({'ok': True, 'username': username}, status=status.HTTP_200_OK)
 
         else:
@@ -633,7 +653,7 @@ def mqtt_validate_acl(request):
         topic = request.data.get('topic', '')
         acc = request.data.get('acc', 1)
 
-        logger.info(f"MQTT ACL: username={username}, clientid={clientid}, topic={topic}, acc={acc}")
+        logger.debug(f"MQTT ACL: username={username}, clientid={clientid}, topic={topic}, acc={acc}")
 
         # For JWT users, go-auth may pass the original JWT as username.
         # Resolve it to the mobile number using the Redis-cached session.
@@ -666,7 +686,11 @@ def mqtt_validate_acl(request):
                 _acquire_or_refresh_imei_session(effective_username, clientid)
             return Response({'ok': True}, status=status.HTTP_200_OK)
 
-        logger.warning(f"MQTT ACL: DENIED — username={username}, clientid={clientid}, topic={topic}")
+        _log_throttled(
+            'warning',
+            f"MQTT ACL: DENIED — username={username}, clientid={clientid}, topic={topic}",
+            f"acl-denied:{username}:{clientid}:{topic}:{acc}",
+        )
         return Response({'error': 'Topic access denied'}, status=status.HTTP_403_FORBIDDEN)
 
     except Exception as e:

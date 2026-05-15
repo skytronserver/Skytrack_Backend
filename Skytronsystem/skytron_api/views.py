@@ -9799,6 +9799,133 @@ def list_pois(request):
         return Response({'data': data}, status=200)
     except Exception as e:
         return Response({'error': str(e)}, status=400)
+
+
+def _resolve_request_log_time_window(request):
+    """Resolve analytics window from range or from/to query params."""
+    now = timezone.now()
+    range_key = str(request.GET.get('range', '1d')).strip().lower()
+    range_to_delta = {
+        '1d': timedelta(days=1),
+        '24h': timedelta(hours=24),
+        '6h': timedelta(hours=6),
+        '1h': timedelta(hours=1),
+        '30m': timedelta(minutes=30),
+        '5m': timedelta(minutes=5),
+    }
+
+    start_dt = now - range_to_delta.get(range_key, timedelta(days=1))
+    end_dt = now
+
+    from_str = request.GET.get('from')
+    to_str = request.GET.get('to')
+
+    if from_str:
+        parsed = parse_datetime(from_str)
+        if parsed:
+            start_dt = parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
+    if to_str:
+        parsed = parse_datetime(to_str)
+        if parsed:
+            end_dt = parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
+
+    if start_dt > end_dt:
+        start_dt, end_dt = end_dt, start_dt
+
+    return start_dt, end_dt, range_key
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
+def public_api_log_insights(request):
+    """Public API to identify APIs with highest latency/failure in a given time window."""
+    start_dt, end_dt, range_key = _resolve_request_log_time_window(request)
+
+    try:
+        limit = int(request.GET.get('limit', 10))
+    except (TypeError, ValueError):
+        limit = 10
+    limit = max(1, min(limit, 50))
+
+    metric = str(request.GET.get('metric', 'avg_response_time')).strip().lower()
+    allowed_metrics = {
+        'avg_response_time',
+        'max_response_time',
+        'failure_count',
+        'failure_rate',
+        'hits',
+    }
+    if metric not in allowed_metrics:
+        metric = 'avg_response_time'
+
+    logs_qs = RequestLog.objects.filter(timestamp__range=(start_dt, end_dt))
+
+    summary = logs_qs.aggregate(
+        total_requests=Count('id'),
+        total_failures=Count('id', filter=Q(error_code__isnull=False)),
+        overall_avg_response_time_ms=Avg('response_time_ms'),
+    )
+
+    total_requests = summary.get('total_requests') or 0
+    total_failures = summary.get('total_failures') or 0
+    overall_failure_rate = round((total_failures * 100.0 / total_requests), 2) if total_requests else 0.0
+
+    grouped_qs = (
+        logs_qs
+        .values('request_url', 'request_type')
+        .annotate(
+            total_hits=Count('id'),
+            avg_response_time_ms=Coalesce(
+                Avg('response_time_ms'),
+                V(0.0),
+                output_field=FloatField(),
+            ),
+            max_response_time_ms=Coalesce(
+                Cast(Max('response_time_ms'), FloatField()),
+                V(0.0),
+                output_field=FloatField(),
+            ),
+            failure_count=Count('id', filter=Q(error_code__isnull=False)),
+        )
+    )
+
+    if metric == 'failure_rate':
+        candidate_rows = list(grouped_qs.order_by('-failure_count', '-total_hits')[:500])
+        for row in candidate_rows:
+            hits = row.get('total_hits') or 0
+            failures = row.get('failure_count') or 0
+            row['failure_rate'] = round((failures * 100.0 / hits), 2) if hits else 0.0
+        top_rows = sorted(candidate_rows, key=lambda x: (x.get('failure_rate', 0.0), x.get('failure_count', 0), x.get('total_hits', 0)), reverse=True)[:limit]
+    else:
+        metric_order_map = {
+            'avg_response_time': '-avg_response_time_ms',
+            'max_response_time': '-max_response_time_ms',
+            'failure_count': '-failure_count',
+            'hits': '-total_hits',
+        }
+        top_rows = list(grouped_qs.order_by(metric_order_map[metric], '-total_hits')[:limit])
+        for row in top_rows:
+            hits = row.get('total_hits') or 0
+            failures = row.get('failure_count') or 0
+            row['failure_rate'] = round((failures * 100.0 / hits), 2) if hits else 0.0
+
+    return Response({
+        'window': {
+            'range': range_key,
+            'from': start_dt.isoformat(),
+            'to': end_dt.isoformat(),
+        },
+        'metric': metric,
+        'limit': limit,
+        'summary': {
+            'total_requests': total_requests,
+            'total_failures': total_failures,
+            'overall_failure_rate': overall_failure_rate,
+            'overall_avg_response_time_ms': round(summary.get('overall_avg_response_time_ms') or 0.0, 2),
+        },
+        'results': top_rows,
+    }, status=200)
     
     
     
@@ -9888,12 +10015,12 @@ def search_request_logs(request):
     if include_payload:
         logs_qs = logs_qs.values(
              'request_url', 'request_type',
-            'response_type', 'error_code',  'incoming_data'
+            'response_type', 'response_time_ms', 'error_code',  'incoming_data'
         )
     else:
         logs_qs = logs_qs.values(
              'request_url', 'request_type',
-            'response_type', 'error_code'
+            'response_type', 'response_time_ms', 'error_code'
         )
 
     # Paginate the results

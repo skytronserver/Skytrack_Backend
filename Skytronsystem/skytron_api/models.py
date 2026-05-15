@@ -124,6 +124,7 @@ class RequestLog(models.Model):
     headers = models.TextField()
     incoming_data = models.TextField()
     response_type = models.CharField(max_length=100)
+    response_time_ms = models.PositiveIntegerField(null=True, blank=True)
     error_code = models.IntegerField(null=True, blank=True)
     def __str__(self):
         return self.ip_address
