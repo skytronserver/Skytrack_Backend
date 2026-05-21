@@ -4,6 +4,7 @@ from .views import create_trip, get_trip, update_trip, end_trip, cancel_trip
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from .mqtt_auth_views import prepare_mqtt_auth, prepare_mqtt_auth_with_token, mqtt_dual_auth
 from .mqtt_validate_views import mqtt_validate_connection, mqtt_validate_acl
+from .dev_views import dev_get_token, dev_list_users
 from django.urls import path
 
  
@@ -545,6 +546,10 @@ urlpatterns = [
     # IMEI Comparison Tool (public)
     path('imei-comparison/', imei_comparison_page, name='imei_comparison_page'),
     path('imei-comparison/data/', imei_comparison_data, name='imei_comparison_data'),
+
+    # DEV-ONLY endpoints (return 403 in production when DEBUG=False)
+    path('dev/token/', dev_get_token, name='dev_get_token'),
+    path('dev/users/', dev_list_users, name='dev_list_users'),
 ]  
 
 

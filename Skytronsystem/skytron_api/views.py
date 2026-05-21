@@ -2268,9 +2268,13 @@ def _gps_scope_by_role(request, queryset):
         dto_rtos = dto_rto.objects.filter(users=request.user)
         if not dto_rtos.exists():
             return None, JsonResponse({'error': 'No DTO/RTO record found for this user.'}, status=400)
-        district_names = [dr.district for dr in dto_rtos if dr.district]
-        if district_names:
-            return queryset.filter(device_tag__district__district__in=district_names), None
+        district_codes = [dr.district for dr in dto_rtos if dr.district]
+        if district_codes:
+            # dto_rto.district stores district codes (e.g. 'AS01').
+            # Look up the Settings_District IDs via district_code, then filter DeviceTag by FK.
+            district_ids = list(Settings_District.objects.filter(district_code__in=district_codes).values_list('id', flat=True))
+            if district_ids:
+                return queryset.filter(device_tag__district_id__in=district_ids), None
         fallback_states = [dr.state_id for dr in dto_rtos]
         if fallback_states:
             return queryset.filter(device_tag__district__state__id__in=fallback_states), None
@@ -3210,6 +3214,8 @@ def gps_track_lite_api(request):
     district_id   = _norm(request.GET.get('district_id'))
     district_text = _norm(request.GET.get('district'))
     state_text    = _norm(request.GET.get('state'))
+    road_text     = _norm(request.GET.get('road'))
+    poi_t_text    = _norm(request.GET.get('poi_t'))
 
     try:
         page = int(request.GET.get('page', 0))
@@ -3237,9 +3243,21 @@ def gps_track_lite_api(request):
         except (ValueError, TypeError):
             pass
     if district_text:
-        base_qs = base_qs.filter(device_tag__district__district__icontains=district_text)
+        # Support both configured district names and live reverse-geocoded district text.
+        base_qs = base_qs.filter(
+            Q(device_tag__district__district__icontains=district_text) |
+            Q(district__icontains=district_text)
+        )
     if state_text:
         base_qs = base_qs.filter(device_tag__district__state__state__icontains=state_text)
+    if road_text:
+        base_qs = base_qs.filter(road__icontains=road_text)
+    elif poi_t_text:
+        # Keep compatibility with gps_track_data_api behavior for poi_t.
+        base_qs = base_qs.filter(
+            Q(road__icontains=poi_t_text) |
+            Q(city__icontains=poi_t_text)
+        )
 
     # Role-based scope
     base_qs, _err = _gps_scope_by_role(request, base_qs)
@@ -10946,15 +10964,18 @@ def Tag_ownerlist(request ):
                 elif user_role == 'dtorto':
                     # Get districts from DTO/RTO relationship
                     dto_rtos = dto_rto.objects.filter(users=request.user)#, status='UserVerified')
-                    user_district_names = [dr.district for dr in dto_rtos if dr.district]
+                    district_codes = [dr.district for dr in dto_rtos if dr.district]
                     
-                    if user_district_names:
-                        # Filter devices based on the district field in DeviceTag model
-                        # Get district objects that match the district names from dto_rto
-                        user_districts = Settings_District.objects.filter(district__in=user_district_names)
-                        devices = devices.filter(district__in=user_districts)
+                    if district_codes:
+                        # dto_rto.district stores district codes (e.g. 'AS01').
+                        # Look up Settings_District IDs via district_code, then filter DeviceTag by FK.
+                        district_ids = list(Settings_District.objects.filter(district_code__in=district_codes).values_list('id', flat=True))
+                        if district_ids:
+                            devices = devices.filter(district_id__in=district_ids)
+                        else:
+                            devices = DeviceTag.objects.none()
                     else:
-                        # If no districts found, return empty queryset
+                        # If no district codes found, return empty queryset
                         devices = DeviceTag.objects.none()
                 
                 # Handle state-based filtering for other roles

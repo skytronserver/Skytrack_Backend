@@ -1,0 +1,189 @@
+{
+  "id": "skytrack-env-local",
+  "name": "Skytrack · Local Dev",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "enabled": true,
+      "description": "Change to your server address (e.g. https://api.skytron.in)"
+    },
+    {
+      "key": "login_username",
+      "value": "9999999999",
+      "enabled": true,
+      "description": "Mobile number of the test account"
+    },
+    {
+      "key": "login_password",
+      "value": "YourPlainTextPassword",
+      "enabled": true,
+      "description": "Plain-text password — only sent to the DEV bypass endpoint"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "enabled": true,
+      "description": "Set automatically by the collection pre-request script"
+    },
+    {
+      "key": "mqtt_token",
+      "value": "",
+      "enabled": true,
+      "description": "MQTT auth token — set after successful OTP validation"
+    },
+    {
+      "key": "session_token",
+      "value": "",
+      "enabled": true,
+      "description": "Intermediate session token from Stage-1 login (before OTP)"
+    },
+    {
+      "key": "captcha_key",
+      "value": "",
+      "enabled": true,
+      "description": "UUID key returned by /api/generate-captcha/"
+    },
+    {
+      "key": "encrypted_password",
+      "value": "",
+      "enabled": true,
+      "description": "RSA-OAEP(public_key.pem) encrypted password — required for production login"
+    },
+    {
+      "key": "encrypted_otp",
+      "value": "",
+      "enabled": true,
+      "description": "RSA-OAEP(public_key.pem) encrypted OTP — required for /api/validate_otp/"
+    },
+    {
+      "key": "manufacturer_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "device_model_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "dealer_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "esim_provider_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "owner_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "state_admin_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "state_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "district_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "tag_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "device_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "imei",
+      "value": "123456789012345",
+      "enabled": true
+    },
+    {
+      "key": "vehicle_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "call_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "exec_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "team_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "onboarding_request_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "cop_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "route_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "poi_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "bus_stand_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "notice_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "alert_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "trip_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "user_email",
+      "value": "test@skytrack.in",
+      "enabled": true
+    },
+    {
+      "key": "sos_exec_username",
+      "value": "9000000002",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "info": {
+    "description": "Local development environment for Skytrack Backend. Import this alongside Skytrack_API_Collection.json."
+  }
+}
