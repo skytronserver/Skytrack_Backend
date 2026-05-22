@@ -219,6 +219,7 @@ class pointofinterests(models.Model):
             ( 'PoliceStation',  'PoliceStation'), 
             ( 'BusStop',  'BusStop'),  
             ( 'NoParking',  'NoParking'),  
+            ( 'Prohibited_Area',  'Prohibited_Area'),  
             ( 'RailwayStation',  'RailwayStation'), 
             ( 'Airport',  'Airport'), 
             ( 'FuelStation',  'FuelStation'), 
@@ -2076,6 +2077,8 @@ class AlertsLog(models.Model):
         ('HarshBreak', 'HarshBreak'),
         ('HarshTurn', 'HarshTurn'),
         ('HarshAcceleration', 'HarshAccileration'), 
+        ('UnauthorizedParking', 'UnauthorizedParking'),
+        ('Prohibited_Area', 'Prohibited_Area'),
     ]
     status_CHOICES = [
         ('in', 'in'), 

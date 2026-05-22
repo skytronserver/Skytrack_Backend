@@ -8,7 +8,7 @@ import json
 import time
 import string
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pytz
 from django.db import close_old_connections
 from django.db.models import Max
@@ -19,6 +19,7 @@ from skytron_api.models import (
     GPSData, GPSDataLog, DeviceTag, DeviceStock, Route, AlertsLog,
     EMGPSLocation, GPSemDataLog, User, BleKey,
     gpsdata_populate_location_and_consecutive_time,
+    pointofinterests,
 )
 
 # Timezone setup
@@ -399,7 +400,7 @@ def process_em_data(data_str):
         return None
 
 
-def create_alert(alert_type, status, loc_id, device_tag):
+def create_alert(alert_type, status, loc_id, device_tag, poi_ref=None):
     """Create an alert entry"""
     try:
         AlertsLog.objects.create(
@@ -408,7 +409,9 @@ def create_alert(alert_type, status, loc_id, device_tag):
             timestamp=datetime.now(),
             gps_ref_id=loc_id,
             deviceTag=device_tag,
-            state=device_tag.device.dealer.manufacturer.state
+            state=device_tag.device.dealer.manufacturer.state,
+            poi_ref=poi_ref,
+            alert_details='',
         )
     except Exception as e:
         print(f"Error creating alert: {e}", flush=True)
@@ -457,6 +460,14 @@ def process_alerts(gps_data, loc_id):
             if not al or al.status == "out":
                 create_alert(alert_type, "in", loc_id, device_tag)
 
+            # Close any open UnauthorizedParking when engine starts
+            try:
+                up_last = lastnormal_alerts.filter(type='UnauthorizedParking').last()
+                if up_last and (up_last.status or '') == 'in':
+                    create_alert('UnauthorizedParking', 'out', loc_id, device_tag)
+            except Exception as _e:
+                print(f"UnauthorizedParking close error: {_e}", flush=True)
+
             # Overtime: trigger along with Eng 'in' when outside working hours
             try:
                 cat = getattr(device_tag, "category", None)
@@ -490,6 +501,23 @@ def process_alerts(gps_data, loc_id):
                     create_alert("Overtime", "out", loc_id, device_tag)
             except Exception as _e:
                 print(f"Overtime close error: {_e}", flush=True)
+
+            # UnauthorizedParking: fire when ignition off within 50m of a NoParking POI
+            try:
+                noparking_pois = pointofinterests.objects.filter(
+                    use_type='NoParking',
+                    status='Active',
+                    lat__isnull=False,
+                    lon__isnull=False,
+                    lat__range=(lat - 0.001, lat + 0.001),
+                    lon__range=(lon - 0.001, lon + 0.001),
+                )
+                for _poi in noparking_pois:
+                    if geodesic((lat, lon), (_poi.lat, _poi.lon)).meters <= 50:
+                        create_alert('UnauthorizedParking', 'in', loc_id, device_tag, poi_ref=_poi)
+                        break
+            except Exception as _e:
+                print(f"UnauthorizedParking check error: {_e}", flush=True)
 
         # Speed Alerts
         if gps_data["speed"] > 80:
@@ -637,6 +665,62 @@ def process_alerts(gps_data, loc_id):
                         create_alert('city_border_cross', 'in', loc_id, device_tag)
         except Exception as _e:
             print(f"Border-cross alert error: {_e}", flush=True)
+
+        # Prohibited_Area: alert when vehicle is within 100m of a Prohibited_Area POI
+        try:
+            prohibited_pois = pointofinterests.objects.filter(
+                use_type='Prohibited_Area',
+                status='Active',
+                lat__isnull=False,
+                lon__isnull=False,
+                lat__range=(lat - 0.002, lat + 0.002),
+                lon__range=(lon - 0.002, lon + 0.002),
+            )
+            _prohibited_in_range = None
+            for _poi in prohibited_pois:
+                if geodesic((lat, lon), (_poi.lat, _poi.lon)).meters <= 100:
+                    _prohibited_in_range = _poi
+                    break
+            _pa_last = lastnormal_alerts.filter(type='Prohibited_Area').last()
+            if _prohibited_in_range is not None:
+                if not _pa_last or (_pa_last.status or '') == 'out':
+                    create_alert('Prohibited_Area', 'in', loc_id, device_tag, poi_ref=_prohibited_in_range)
+            else:
+                if _pa_last and (_pa_last.status or '') == 'in':
+                    create_alert('Prohibited_Area', 'out', loc_id, device_tag)
+        except Exception as _e:
+            print(f"Prohibited_Area check error: {_e}", flush=True)
+
+        # Permit_3day: alert when vehicle has been outside its home district for 3+ days
+        try:
+            _home_district_obj = getattr(device_tag, 'district', None)
+            if _home_district_obj is not None:
+                _home_district_name = (_home_district_obj.district or '').strip().casefold()
+                if _home_district_name:
+                    _three_days_ago = django_timezone.now() - timedelta(days=3)
+                    # Skip if a Permit_3day alert was already fired within the last 3 days
+                    _recent_permit = AlertsLog.objects.filter(
+                        deviceTag=device_tag,
+                        type='Permit_3day',
+                        timestamp__gte=_three_days_ago,
+                    ).exists()
+                    if not _recent_permit:
+                        # Check if any GPS record in the last 3 days shows the home district
+                        _gps_in_home = GPSData.objects.filter(
+                            device_tag=device_tag,
+                            entry_time__gte=_three_days_ago,
+                            district__iexact=_home_district_name,
+                        ).exists()
+                        # Only fire if there is actually GPS data in the period (device is sending)
+                        _gps_any = GPSData.objects.filter(
+                            device_tag=device_tag,
+                            entry_time__gte=_three_days_ago,
+                            district__isnull=False,
+                        ).exclude(district='').exists()
+                        if _gps_any and not _gps_in_home:
+                            create_alert('Permit_3day', 'in', loc_id, device_tag)
+        except Exception as _e:
+            print(f"Permit_3day check error: {_e}", flush=True)
 
         # Route Alerts
         process_route_alerts(gps_data, loc_id, device_tag, lat, lon)
