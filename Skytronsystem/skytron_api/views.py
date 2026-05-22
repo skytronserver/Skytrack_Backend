@@ -22915,9 +22915,14 @@ def filter_alert_log(request):
             dto_rtos = dto_rto.objects.filter(users=user)
             if not dto_rtos.exists():
                 return Response({'status': 'error', 'message': 'No DTO/RTO record found for this user.'}, status=status.HTTP_403_FORBIDDEN)
-            district_names = [dr.district for dr in dto_rtos if dr.district]
-            if district_names:
-                query = query.filter(deviceTag__district__district__in=district_names)
+            district_codes = [dr.district for dr in dto_rtos if dr.district]
+            if district_codes:
+                district_ids = list(Settings_District.objects.filter(district_code__in=district_codes).values_list('id', flat=True))
+                if district_ids:
+                    query = query.filter(deviceTag__district_id__in=district_ids)
+                else:
+                    fallback_states = [dr.state_id for dr in dto_rtos]
+                    query = query.filter(state_id__in=fallback_states)
             else:
                 fallback_states = [dr.state_id for dr in dto_rtos]
                 query = query.filter(state_id__in=fallback_states)
