@@ -3197,11 +3197,81 @@ def gps_track_data_api_pub(request ):
 #          imei, last_seen, emergency_status, speed, latitude, longitude,
 #          gps_status, district, state, city
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _dt_scope_by_role(request, dt_queryset):
+    """Apply role-based scoping to a DeviceTag queryset.
+    Returns (scoped_queryset, error_response_or_None).
+    """
+    if not (request.user and request.user.is_authenticated):
+        return None, JsonResponse({'error': 'User not authenticated.'}, status=401)
+    user_role = getattr(request.user, 'role', None)
+    if not user_role:
+        return None, JsonResponse({'error': 'User role not found.'}, status=400)
+
+    if user_role == 'superadmin':
+        return dt_queryset, None
+
+    elif user_role == 'dtorto':
+        dto_rtos = dto_rto.objects.filter(users=request.user)
+        if not dto_rtos.exists():
+            return None, JsonResponse({'error': 'No DTO/RTO record found for this user.'}, status=400)
+        district_codes = [dr.district for dr in dto_rtos if dr.district]
+        if district_codes:
+            district_ids = list(Settings_District.objects.filter(district_code__in=district_codes).values_list('id', flat=True))
+            if district_ids:
+                return dt_queryset.filter(district_id__in=district_ids), None
+        fallback_states = [dr.state_id for dr in dto_rtos]
+        if fallback_states:
+            return dt_queryset.filter(district__state__id__in=fallback_states), None
+        return None, JsonResponse({'error': 'No district or state found for this DTO/RTO user.'}, status=400)
+
+    elif user_role == 'stateadmin':
+        user_states = list(StateAdmin.objects.filter(users=request.user).values_list('state_id', flat=True))
+        if not user_states:
+            return None, JsonResponse({'error': 'No state found for this state admin.'}, status=400)
+        return dt_queryset.filter(district__state__id__in=user_states), None
+
+    elif user_role == 'sosadmin':
+        user_states = list(EM_admin.objects.filter(users=request.user).values_list('state_id', flat=True))
+        if not user_states:
+            return None, JsonResponse({'error': 'No state found for this SOS admin.'}, status=400)
+        return dt_queryset.filter(district__state__id__in=user_states), None
+
+    elif user_role == 'sosexecutive':
+        user_states = list(EM_ex.objects.filter(users=request.user).values_list('state_id', flat=True))
+        if not user_states:
+            return None, JsonResponse({'error': 'No state found for this SOS executive.'}, status=400)
+        return dt_queryset.filter(district__state__id__in=user_states), None
+
+    elif user_role == 'dealer':
+        dlrs = Dealer.objects.filter(users=request.user)
+        if not dlrs.exists():
+            return None, JsonResponse({'error': 'No dealer record found for this user.'}, status=400)
+        dealer_user_ids = list(dlrs.values_list('users', flat=True))
+        return dt_queryset.filter(tagged_by__in=dealer_user_ids), None
+
+    elif user_role == 'owner':
+        vehicle_owners = VehicleOwner.objects.filter(users=request.user)
+        if not vehicle_owners.exists():
+            return None, JsonResponse({'error': 'User is not linked to any vehicles.'}, status=400)
+        return dt_queryset.filter(vehicle_owner__in=vehicle_owners), None
+
+    else:
+        return None, JsonResponse({'error': 'User not Authorised for this api.'}, status=400)
+
+
 @csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def gps_track_lite_api(request):
-    """Lightweight GPS tracking API – returns only essential vehicle fields."""
+    """Lightweight GPS tracking API – returns only essential vehicle fields.
+
+    Performance strategy: query DeviceTag first (small table), then use a
+    correlated subquery to fetch only the single latest GPS row per device via
+    the existing (device_tag_id, entry_time DESC, id DESC) index.  This avoids
+    DISTINCT ON over the full 9M-row history table which caused 60-second
+    timeouts and disk-sort spills.
+    """
     def _norm(v):
         if v is None:
             return None
@@ -3215,6 +3285,7 @@ def gps_track_lite_api(request):
     district_text = _norm(request.GET.get('district'))
     state_text    = _norm(request.GET.get('state'))
     road_text     = _norm(request.GET.get('road'))
+    city_text     = _norm(request.GET.get('city'))
     poi_t_text    = _norm(request.GET.get('poi_t'))
 
     try:
@@ -3228,89 +3299,90 @@ def gps_track_lite_api(request):
     except (ValueError, TypeError):
         page_length = 100
 
-    base_qs = GPSData.objects.exclude(device_tag=None).filter(
-        gps_status=1, device_tag__status='Owner_Final_OTP_Verified'
-    )
+    # ── Step 1: DeviceTag queryset with device-tag-level filters ─────────────
+    dt_qs = DeviceTag.objects.filter(status='Owner_Final_OTP_Verified').select_related(
+        'device',
+        'vehicle_owner',
+        'district',
+        'district__state',
+    ).prefetch_related('vehicle_owner__users')
 
-    # Optional filters
     if imei:
-        base_qs = base_qs.filter(device_tag__device__imei__icontains=imei)
+        dt_qs = dt_qs.filter(device__imei__icontains=imei)
     if regno:
-        base_qs = base_qs.filter(device_tag__vehicle_reg_no__icontains=regno)
+        dt_qs = dt_qs.filter(vehicle_reg_no__icontains=regno)
     if district_id:
         try:
-            base_qs = base_qs.filter(device_tag__district__id=int(district_id))
+            dt_qs = dt_qs.filter(district__id=int(district_id))
         except (ValueError, TypeError):
             pass
     if district_text:
-        # Support both configured district names and live reverse-geocoded district text.
-        base_qs = base_qs.filter(
-            Q(device_tag__district__district__icontains=district_text) |
-            Q(district__icontains=district_text)
-        )
+        dt_qs = dt_qs.filter(district__district__icontains=district_text)
     if state_text:
-        base_qs = base_qs.filter(device_tag__district__state__state__icontains=state_text)
-    if road_text:
-        base_qs = base_qs.filter(road__icontains=road_text)
-    elif poi_t_text:
-        # Keep compatibility with gps_track_data_api behavior for poi_t.
-        base_qs = base_qs.filter(
-            Q(road__icontains=poi_t_text) |
-            Q(city__icontains=poi_t_text)
-        )
+        dt_qs = dt_qs.filter(district__state__state__icontains=state_text)
 
-    # Role-based scope
-    base_qs, _err = _gps_scope_by_role(request, base_qs)
+    # ── Step 2: Role-based scope on DeviceTag ─────────────────────────────────
+    dt_qs, _err = _dt_scope_by_role(request, dt_qs)
     if _err:
         return _err
 
-    # Latest entry per device_tag via DISTINCT ON (PostgreSQL).
-    # count=false skips the extra COUNT query (saves ~50% DB time when caller
-    # only needs data, e.g. map rendering or streaming updates).
+    # ── Step 3: Annotate with latest GPS record ID per device_tag ─────────────
+    # Uses gpsdata_tag_time_id_idx (device_tag_id, entry_time DESC, id DESC)
+    # — one fast index seek per device_tag, no full-table sort.
+    latest_gps_id_sq = GPSData.objects.filter(
+        device_tag_id=OuterRef('id'),
+        gps_status=1,
+    ).order_by('-entry_time', '-id').values('id')[:1]
+
+    dt_qs = dt_qs.annotate(latest_gps_id=Subquery(latest_gps_id_sq)).exclude(latest_gps_id=None)
+
     want_count = request.GET.get('count', 'true').lower() != 'false'
+    total = dt_qs.count() if want_count else None
 
-    # Base DISTINCT ON queryset — no slice yet so count() can reuse it.
-    latest_qs = (
-        _gps_annotate_effective_datetime(base_qs)
-        .order_by('device_tag', '-effective_datetime', '-id')
-        .distinct('device_tag')
-        .select_related(
-            'device_tag',
-            'device_tag__device',
-            'device_tag__vehicle_owner',
-            'device_tag__district',
-            'device_tag__district__state',
-        )
-        .prefetch_related('device_tag__vehicle_owner__users')
-    )
-
-    # COUNT is optional — skip it to save a full-scan query on large tables.
-    total = latest_qs.count() if want_count else None
     start = page * page_length
-    # Slicing produces the data query with LIMIT/OFFSET; prefetch fires here.
-    page_qs = list(latest_qs[start: start + page_length])
+    dt_page = list(dt_qs[start: start + page_length])
+
+    gps_ids = [dt.latest_gps_id for dt in dt_page if dt.latest_gps_id]
+    if not gps_ids:
+        return JsonResponse({
+            'data': [],
+            'pagination': {
+                'total': total,
+                'page': page,
+                'page_length': page_length,
+                'total_pages': math.ceil(total / page_length) if (total is not None and page_length > 0) else None,
+            },
+        })
+
+    # ── Step 4: Fetch those GPS rows; apply GPS-side filters (road, city) ─────
+    gps_qs = GPSData.objects.filter(id__in=gps_ids)
+    if road_text:
+        gps_qs = gps_qs.filter(road__icontains=road_text)
+    elif city_text:
+        gps_qs = gps_qs.filter(city__icontains=city_text)
+    elif poi_t_text:
+        gps_qs = gps_qs.filter(Q(road__icontains=poi_t_text) | Q(city__icontains=poi_t_text))
+
+    gps_map = {g.device_tag_id: g for g in gps_qs}
 
     data = []
-    for g in page_qs:
-        dt = g.device_tag
+    for dt in dt_page:
+        g = gps_map.get(dt.id)
+        if g is None:
+            continue  # filtered out by road/city/poi_t
         owner_name = ''
         owner_id = None
-        if dt and dt.vehicle_owner:
+        if dt.vehicle_owner:
             owner_id = dt.vehicle_owner.id
-            # Access the prefetch_related cache directly — avoids N+1.
-            # Django stores it in _prefetched_objects_cache after evaluation.
             cached_users = getattr(dt.vehicle_owner, '_prefetched_objects_cache', {}).get('users')
-            if cached_users is not None:
-                users = list(cached_users)
-            else:
-                users = list(dt.vehicle_owner.users.all())
+            users = list(cached_users) if cached_users is not None else list(dt.vehicle_owner.users.all())
             if users:
                 owner_name = getattr(users[0], 'name', '') or getattr(users[0], 'username', '')
         data.append({
-            'device_tag_id':    dt.id if dt else None,
-            'vehicle_reg_no':   dt.vehicle_reg_no if dt else None,
-            'device_stock_id':  dt.device_id if dt else None,
-            'imei':             dt.device.imei if (dt and dt.device) else None,
+            'device_tag_id':    dt.id,
+            'vehicle_reg_no':   dt.vehicle_reg_no,
+            'device_stock_id':  dt.device_id,
+            'imei':             dt.device.imei if dt.device else None,
             'owner_name':       owner_name,
             'owner_id':         owner_id,
             'last_seen':        g.entry_time.isoformat() if g.entry_time else None,
@@ -3320,15 +3392,15 @@ def gps_track_lite_api(request):
             'latitude':         g.latitude,
             'longitude':        g.longitude,
             'gps_status':       g.gps_status,
-            'district':         g.district or (dt.district.district if (dt and dt.district) else None),
-            'state':            g.state or (dt.district.state.state if (dt and dt.district and dt.district.state) else None),
+            'district':         g.district or (dt.district.district if dt.district else None),
+            'state':            g.state or (dt.district.state.state if (dt.district and dt.district.state) else None),
             'city':             g.city,
         })
 
     return JsonResponse({
         'data': data,
         'pagination': {
-            'total':       total,   # null when count=false was passed
+            'total':       total,
             'page':        page,
             'page_length': page_length,
             'total_pages': math.ceil(total / page_length) if (total is not None and page_length > 0) else None,
