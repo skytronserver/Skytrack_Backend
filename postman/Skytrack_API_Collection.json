@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "638fdeb3fd3743a6bd0eadf9",
     "name": "Skytrack Backend API",
-    "description": "Comprehensive API collection for the Skytrack vehicle tracking & SOS emergency response system.\n\n## Quick Start\n1. Set `base_url`, `login_username`, `login_password` in collection variables.\n2. The **collection-level pre-request script** auto-fetches a JWT via `POST /api/dev/token/` (DEBUG mode only) before the first request.\n3. All authenticated requests automatically include `Authorization: Bearer {{auth_token}}`.\n\n## Two-Stage Login (Production Flow)\n```\n1. POST /api/generate-captcha/  → get captcha_key + base64 image\n2. POST /api/user_login/         → RSA-encrypt password + submit captcha → get session_token\n3. POST /api/validate_otp/       → RSA-encrypt OTP → get auth_token (JWT)\n```\n\n## Dev / Automated Testing\n```\nPOST /api/dev/token/  { username, password (plain-text) }  → auth_token\n```\n(Returns 403 in production when DEBUG=False)\n\n## User Roles\nsuperadmin | stateadmin | devicemanufacture | dealer | owner | esimprovider | filment | sosadmin | teamleader | sosexecutive | schooladmin | parentuser",
+    "description": "Comprehensive API collection for the Skytrack vehicle tracking & SOS emergency response system.\n\n## Quick Start\n1. Set `base_url`, `login_username`, `login_password` in collection variables.\n2. The **collection-level pre-request script** auto-fetches a JWT via `POST /api/dev/token/` (DEBUG mode only) before the first request.\n3. All authenticated requests automatically include `Authorization: Bearer {{auth_token}}`.\n\n## Two-Stage Login (Production Flow)\n```\n1. POST /api/generate-captcha/  \u2192 get captcha_key + base64 image\n2. POST /api/user_login/         \u2192 RSA-encrypt password + submit captcha \u2192 get session_token\n3. POST /api/validate_otp/       \u2192 RSA-encrypt OTP \u2192 get auth_token (JWT)\n```\n\n## Dev / Automated Testing\n```\nPOST /api/dev/token/  { username, password (plain-text) }  \u2192 auth_token\n```\n(Returns 403 in production when DEBUG=False)\n\n## User Roles\nsuperadmin | stateadmin | devicemanufacture | dealer | owner | esimprovider | filment | sosadmin | teamleader | sosexecutive | schooladmin | parentuser",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -11,7 +11,7 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "// ── Auto-login via DEV bypass endpoint ───────────────────────────────────",
+          "// \u2500\u2500 Auto-login via DEV bypass endpoint \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
           "const token     = pm.collectionVariables.get('auth_token');",
           "const expiresAt = parseInt(pm.collectionVariables.get('token_expires_at') || '0', 10);",
           "const now       = Date.now();",
@@ -59,19 +59,19 @@
       "key": "login_password",
       "value": "YourPlainTextPassword",
       "type": "string",
-      "description": "Plain-text password — used only by DEV bypass endpoint"
+      "description": "Plain-text password \u2014 used only by DEV bypass endpoint"
     },
     {
       "key": "encrypted_password",
       "value": "",
       "type": "string",
-      "description": "RSA-OAEP encrypted password — required for real login flow"
+      "description": "RSA-OAEP encrypted password \u2014 required for real login flow"
     },
     {
       "key": "encrypted_otp",
       "value": "",
       "type": "string",
-      "description": "RSA-OAEP encrypted OTP — required for validate_otp"
+      "description": "RSA-OAEP encrypted OTP \u2014 required for validate_otp"
     },
     {
       "key": "auth_token",
@@ -276,12 +276,12 @@
   ],
   "item": [
     {
-      "name": "01 · Authentication",
+      "name": "01 \u00b7 Authentication",
       "item": [
         {
           "name": "Generate Captcha",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
               {
                 "key": "Content-Type",
@@ -298,15 +298,6 @@
                 "api",
                 "generate-captcha"
               ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             },
             "description": "Returns base64 captcha image + captcha_key. Use key + answer in login."
           },
@@ -362,7 +353,7 @@
           "_postman_id": "3cbe1cbb005b416a84061b40"
         },
         {
-          "name": "Step 1 · User Login (captcha+password)",
+          "name": "Step 1 \u00b7 User Login (captcha+password)",
           "request": {
             "method": "POST",
             "header": [
@@ -391,7 +382,7 @@
                 }
               }
             },
-            "description": "Stage-1 login. Requires RSA-OAEP encrypted password and a valid captcha.\n\n**For dev / automated tests use POST /api/dev/token/ instead** — the collection pre-request script does this automatically.\n\nOn success returns `token` (session token) + `status: otpsent`."
+            "description": "Stage-1 login. Requires RSA-OAEP encrypted password and a valid captcha.\n\n**For dev / automated tests use POST /api/dev/token/ instead** \u2014 the collection pre-request script does this automatically.\n\nOn success returns `token` (session token) + `status: otpsent`."
           },
           "_postman_id": "8049469135ed4da4b261bc7b",
           "event": [
@@ -409,7 +400,7 @@
           ]
         },
         {
-          "name": "Step 2 · Validate OTP",
+          "name": "Step 2 \u00b7 Validate OTP",
           "request": {
             "method": "POST",
             "header": [
@@ -459,7 +450,7 @@
           ]
         },
         {
-          "name": "DEV · Get Token (plain-text, no captcha/OTP)",
+          "name": "DEV \u00b7 Get Token (plain-text, no captcha/OTP)",
           "request": {
             "method": "POST",
             "header": [
@@ -509,7 +500,7 @@
           ]
         },
         {
-          "name": "DEV · List Test Users",
+          "name": "DEV \u00b7 List Test Users",
           "request": {
             "method": "GET",
             "header": [
@@ -960,7 +951,7 @@
       "_postman_id": "6cc8e17af51242f7a65b9dcd"
     },
     {
-      "name": "02 · Temp / Emergency User Login",
+      "name": "02 \u00b7 Temp / Emergency User Login",
       "item": [
         {
           "name": "Temp User Login",
@@ -1227,7 +1218,7 @@
       "_postman_id": "e3593b67ea94457eaf4ac1af"
     },
     {
-      "name": "03 · Email / SMS Confirmation",
+      "name": "03 \u00b7 Email / SMS Confirmation",
       "item": [
         {
           "name": "Send Email Confirmation",
@@ -1461,7 +1452,7 @@
       "_postman_id": "5412367ed04149bebbe39ccc"
     },
     {
-      "name": "04 · Manufacturer",
+      "name": "04 \u00b7 Manufacturer",
       "item": [
         {
           "name": "Create Manufacturer (authenticated)",
@@ -1746,7 +1737,7 @@
       "_postman_id": "ba902ee5d55c4316998e3323"
     },
     {
-      "name": "05 · Device Model",
+      "name": "05 \u00b7 Device Model",
       "item": [
         {
           "name": "Technical Onboarding",
@@ -2488,7 +2479,7 @@
       "_postman_id": "e74d80b374a8415d81b495ea"
     },
     {
-      "name": "06 · Dealer",
+      "name": "06 \u00b7 Dealer",
       "item": [
         {
           "name": "Create Dealer",
@@ -2700,7 +2691,7 @@
       "_postman_id": "e16d937538224e16b127053f"
     },
     {
-      "name": "07 · eSIM Provider",
+      "name": "07 \u00b7 eSIM Provider",
       "item": [
         {
           "name": "Create eSIM Provider (auth)",
@@ -2931,7 +2922,7 @@
       "_postman_id": "88e33dbc09ab481894ea4d4e"
     },
     {
-      "name": "08 · Device Stock",
+      "name": "08 \u00b7 Device Stock",
       "item": [
         {
           "name": "Create Device Stock (single)",
@@ -3212,7 +3203,7 @@
       "_postman_id": "3c0aefda3c5c41089e4ac1ec"
     },
     {
-      "name": "09 · Device Tagging",
+      "name": "09 \u00b7 Device Tagging",
       "item": [
         {
           "name": "Tag Device to Vehicle",
@@ -4204,7 +4195,7 @@
       "_postman_id": "ec90f325b7df4839808f8df4"
     },
     {
-      "name": "10 · Vehicle Owner",
+      "name": "10 \u00b7 Vehicle Owner",
       "item": [
         {
           "name": "Create Vehicle Owner",
@@ -4415,7 +4406,7 @@
       "_postman_id": "73ccc96b72d942179a4fcaa8"
     },
     {
-      "name": "11 · State & District Admin",
+      "name": "11 \u00b7 State & District Admin",
       "item": [
         {
           "name": "Create State Admin",
@@ -4757,7 +4748,7 @@
       "_postman_id": "bf62be9380bf4cde91b907e2"
     },
     {
-      "name": "12 · SOS / Emergency",
+      "name": "12 \u00b7 SOS / Emergency",
       "item": [
         {
           "name": "Admin & Users",
@@ -6331,7 +6322,7 @@
       "_postman_id": "e697302f32714aaaaf8c9b57"
     },
     {
-      "name": "13 · GPS & Live Tracking",
+      "name": "13 \u00b7 GPS & Live Tracking",
       "item": [
         {
           "name": "GPS Track Data (full)",
@@ -6455,7 +6446,7 @@
                 }
               }
             },
-            "description": "Lightweight tracking — only requested fields."
+            "description": "Lightweight tracking \u2014 only requested fields."
           },
           "_postman_id": "0a78206cde484fe38cc3210b",
           "event": [
@@ -7048,7 +7039,7 @@
       "_postman_id": "b61037f112d34d1bb550ae72"
     },
     {
-      "name": "14 · Dashboard & Reports",
+      "name": "14 \u00b7 Dashboard & Reports",
       "item": [
         {
           "name": "Vehicle Monitoring Dashboard",
@@ -8031,7 +8022,7 @@
       "_postman_id": "490cdf659f2e4dff824720ae"
     },
     {
-      "name": "15 · MQTT",
+      "name": "15 \u00b7 MQTT",
       "item": [
         {
           "name": "Prepare MQTT Auth",
@@ -8257,7 +8248,7 @@
       "_postman_id": "1e47f47d18064199a34efdab"
     },
     {
-      "name": "16 · Settings & Configuration",
+      "name": "16 \u00b7 Settings & Configuration",
       "item": [
         {
           "name": "Get Login Settings",
@@ -8970,7 +8961,7 @@
       "_postman_id": "b87f93d836284a10b2ecb801"
     },
     {
-      "name": "17 · Notices & Alerts",
+      "name": "17 \u00b7 Notices & Alerts",
       "item": [
         {
           "name": "Create Notice",
@@ -9474,7 +9465,7 @@
       "_postman_id": "14c9adcf2bae41f38c66c91f"
     },
     {
-      "name": "18 · Miscellaneous",
+      "name": "18 \u00b7 Miscellaneous",
       "item": [
         {
           "name": "POI (Points of Interest)",
@@ -10310,7 +10301,7 @@
           "name": "Geocoding",
           "item": [
             {
-              "name": "Geocode (Address → LatLng)",
+              "name": "Geocode (Address \u2192 LatLng)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -10360,7 +10351,7 @@
               ]
             },
             {
-              "name": "Reverse Geocode (LatLng → Address)",
+              "name": "Reverse Geocode (LatLng \u2192 Address)",
               "request": {
                 "method": "POST",
                 "header": [

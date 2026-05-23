@@ -5880,14 +5880,18 @@ def create_dealer(request ):
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    role="superadmin"
     user=request.user
-    uo=get_user_object(user,role)
-    if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
-    man=Manufacturer.objects.filter(id=request.data.get('manufacturer')).last()
-    if not man:
-        return Response({"error":"Manufacturer not found."}, status=status.HTTP_400_BAD_REQUEST)
+    superadmin_obj=get_user_object(user,"superadmin")
+    manufacturer_obj=get_user_object(user,"devicemanufacture")
+
+    if superadmin_obj:
+        man=Manufacturer.objects.filter(id=request.data.get('manufacturer')).last()
+        if not man:
+            return Response({"error":"Manufacturer not found."}, status=status.HTTP_400_BAD_REQUEST)
+    elif manufacturer_obj:
+        man=manufacturer_obj
+    else:
+        return Response({"error":"Request must be from superadmin or manufacturer."}, status=status.HTTP_400_BAD_REQUEST)
     
     try: 
         company_name = request.data.get('company_name')

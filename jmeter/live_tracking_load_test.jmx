@@ -23,11 +23,15 @@
         <collectionProp name="Arguments.arguments">
           <elementProp name="TARGET_HOST" elementType="Argument">
             <stringProp name="Argument.name">TARGET_HOST</stringProp>
-            <stringProp name="Argument.value">localhost</stringProp>
+            <stringProp name="Argument.value">${__P(TARGET_HOST,localhost)}</stringProp>
           </elementProp>
           <elementProp name="TARGET_PORT" elementType="Argument">
             <stringProp name="Argument.name">TARGET_PORT</stringProp>
-            <stringProp name="Argument.value">8000</stringProp>
+            <stringProp name="Argument.value">${__P(TARGET_PORT,8000)}</stringProp>
+          </elementProp>
+          <elementProp name="TARGET_PROTOCOL" elementType="Argument">
+            <stringProp name="Argument.name">TARGET_PROTOCOL</stringProp>
+            <stringProp name="Argument.value">${__P(TARGET_PROTOCOL,http)}</stringProp>
           </elementProp>
           <elementProp name="LOGIN_USERNAME" elementType="Argument">
             <stringProp name="Argument.name">LOGIN_USERNAME</stringProp>
@@ -73,8 +77,11 @@
                          testname="HTTP Request Defaults" enabled="true">
         <stringProp name="HTTPSampler.domain">${TARGET_HOST}</stringProp>
         <stringProp name="HTTPSampler.port">${TARGET_PORT}</stringProp>
-        <stringProp name="HTTPSampler.protocol">http</stringProp>
+        <stringProp name="HTTPSampler.protocol">${TARGET_PROTOCOL}</stringProp>
         <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
       </ConfigTestElement>
       <hashTree/>
 
@@ -131,13 +138,15 @@
           </ResponseAssertion>
           <hashTree/>
 
-          <JSONPathExtractor guiclass="JSONPathExtractorGui"
-                             testclass="JSONPathExtractor"
-                             testname="Extract JWT token" enabled="true">
-            <stringProp name="JSONPathExtractor.referenceName">JWT_TOKEN</stringProp>
-            <stringProp name="JSONPathExtractor.jsonPathExpr">$.token</stringProp>
-            <stringProp name="JSONPathExtractor.defaultValue">TOKEN_NOT_FOUND</stringProp>
-          </JSONPathExtractor>
+          <RegexExtractor guiclass="RegexExtractorGui" testclass="RegexExtractor"
+                          testname="Extract JWT token" enabled="true">
+            <stringProp name="RegexExtractor.useHeaders">false</stringProp>
+            <stringProp name="RegexExtractor.refname">JWT_TOKEN</stringProp>
+            <stringProp name="RegexExtractor.regex">"token"\s*:\s*"([^"]+)"</stringProp>
+            <stringProp name="RegexExtractor.template">$1$</stringProp>
+            <stringProp name="RegexExtractor.default">TOKEN_NOT_FOUND</stringProp>
+            <stringProp name="RegexExtractor.match_no">1</stringProp>
+          </RegexExtractor>
           <hashTree/>
 
           <!-- Store token in JMeter property so all threads can share it -->
@@ -167,10 +176,10 @@ log.info("JWT stored: " + vars.get("JWT_TOKEN").substring(0, Math.min(20, vars.g
           <boolProp name="LoopController.continue_forever">false</boolProp>
           <intProp name="LoopController.loops">-1</intProp>
         </elementProp>
-        <stringProp name="ThreadGroup.num_threads">${THREADS}</stringProp>
-        <stringProp name="ThreadGroup.ramp_time">${RAMP_UP}</stringProp>
+        <stringProp name="ThreadGroup.num_threads">30</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">60</stringProp>
         <boolProp name="ThreadGroup.scheduler">true</boolProp>
-        <stringProp name="ThreadGroup.duration">${DURATION}</stringProp>
+        <stringProp name="ThreadGroup.duration">180</stringProp>
         <stringProp name="ThreadGroup.delay">2</stringProp>
       </ThreadGroup>
       <hashTree>

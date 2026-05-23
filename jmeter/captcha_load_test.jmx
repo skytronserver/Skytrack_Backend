@@ -19,11 +19,15 @@
         <collectionProp name="Arguments.arguments">
           <elementProp name="TARGET_HOST" elementType="Argument">
             <stringProp name="Argument.name">TARGET_HOST</stringProp>
-            <stringProp name="Argument.value">localhost</stringProp>
+            <stringProp name="Argument.value">${__P(TARGET_HOST,localhost)}</stringProp>
           </elementProp>
           <elementProp name="TARGET_PORT" elementType="Argument">
             <stringProp name="Argument.name">TARGET_PORT</stringProp>
-            <stringProp name="Argument.value">8000</stringProp>
+            <stringProp name="Argument.value">${__P(TARGET_PORT,8000)}</stringProp>
+          </elementProp>
+          <elementProp name="TARGET_PROTOCOL" elementType="Argument">
+            <stringProp name="Argument.name">TARGET_PROTOCOL</stringProp>
+            <stringProp name="Argument.value">${__P(TARGET_PROTOCOL,http)}</stringProp>
           </elementProp>
           <elementProp name="THREADS" elementType="Argument">
             <stringProp name="Argument.name">THREADS</stringProp>
@@ -45,10 +49,13 @@
       <!-- ─── HTTP Request Defaults (shared) ─────────────────────────── -->
       <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement"
                          testname="HTTP Request Defaults" enabled="true">
-        <stringProp name="HTTPSampler.domain">${TARGET_HOST}</stringProp>
-        <stringProp name="HTTPSampler.port">${TARGET_PORT}</stringProp>
-        <stringProp name="HTTPSampler.protocol">http</stringProp>
+        <stringProp name="HTTPSampler.domain">api.gromed.in</stringProp>
+        <stringProp name="HTTPSampler.port">443</stringProp>
+        <stringProp name="HTTPSampler.protocol">https</stringProp>
         <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
       </ConfigTestElement>
       <hashTree/>
 
@@ -73,28 +80,22 @@
           <boolProp name="LoopController.continue_forever">false</boolProp>
           <intProp name="LoopController.loops">-1</intProp>
         </elementProp>
-        <stringProp name="ThreadGroup.num_threads">${THREADS}</stringProp>
-        <stringProp name="ThreadGroup.ramp_time">${RAMP_UP}</stringProp>
+        <stringProp name="ThreadGroup.num_threads">50</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">30</stringProp>
         <boolProp name="ThreadGroup.scheduler">true</boolProp>
-        <stringProp name="ThreadGroup.duration">${DURATION}</stringProp>
+        <stringProp name="ThreadGroup.duration">120</stringProp>
         <stringProp name="ThreadGroup.delay">0</stringProp>
       </ThreadGroup>
       <hashTree>
 
         <!-- ── POST /api/generate-captcha/ ──────────────────────────── -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
-                          testname="POST /api/generate-captcha/" enabled="true">
+                          testname="GET /api/generate-captcha/" enabled="true">
           <stringProp name="HTTPSampler.path">/api/generate-captcha/</stringProp>
-          <stringProp name="HTTPSampler.method">POST</stringProp>
-          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
-            <collectionProp name="Arguments.arguments">
-              <elementProp name="" elementType="HTTPArgument">
-                <boolProp name="HTTPArgument.always_encode">false</boolProp>
-                <stringProp name="Argument.value">{}</stringProp>
-                <stringProp name="Argument.metadata">=</stringProp>
-              </elementProp>
-            </collectionProp>
+            <collectionProp name="Arguments.arguments"/>
           </elementProp>
           <stringProp name="HTTPSampler.connect_timeout">5000</stringProp>
           <stringProp name="HTTPSampler.response_timeout">10000</stringProp>
@@ -139,13 +140,15 @@
           <hashTree/>
 
           <!-- ── Extract captcha_key for chaining (optional) ────── -->
-          <JSONPathExtractor guiclass="JSONPathExtractorGui"
-                             testclass="JSONPathExtractor"
-                             testname="Extract captcha_key" enabled="true">
-            <stringProp name="JSONPathExtractor.referenceName">captcha_key</stringProp>
-            <stringProp name="JSONPathExtractor.jsonPathExpr">$.key</stringProp>
-            <stringProp name="JSONPathExtractor.defaultValue">NOT_FOUND</stringProp>
-          </JSONPathExtractor>
+          <RegexExtractor guiclass="RegexExtractorGui" testclass="RegexExtractor"
+                          testname="Extract captcha_key" enabled="true">
+            <stringProp name="RegexExtractor.useHeaders">false</stringProp>
+            <stringProp name="RegexExtractor.refname">captcha_key</stringProp>
+            <stringProp name="RegexExtractor.regex">"key"\s*:\s*"([^"]+)"</stringProp>
+            <stringProp name="RegexExtractor.template">$1$</stringProp>
+            <stringProp name="RegexExtractor.default">NOT_FOUND</stringProp>
+            <stringProp name="RegexExtractor.match_no">1</stringProp>
+          </RegexExtractor>
           <hashTree/>
 
           <!-- ── Duration Assertion (SLA: <2 s) ────────────────── -->
