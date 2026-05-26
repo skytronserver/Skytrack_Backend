@@ -176,7 +176,7 @@ ENV ALLOWALLDEVMQTT=${ALLOWALLDEVMQTT}
 # - keep-alive=75: Prevent connection issues with slow clients
 # - max-requests=1000: Reload workers periodically to prevent memory leaks
 # - max-requests-jitter=100: Stagger reloads to avoid thundering herd
-CMD ["gunicorn", "--workers=4", "--worker-class=gthread", "--threads=8", "--timeout=60", "--keep-alive=75", "--max-requests=1000", "--max-requests-jitter=100", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]
+CMD ["gunicorn", "--workers=40", "--worker-class=gthread", "--threads=80", "--timeout=60", "--keep-alive=75", "--max-requests=5000", "--max-requests-jitter=500", "-b", "0.0.0.0:2000", "Skytronsystem.wsgi:application"]
 
 
 #CMD ["python", "manage.py", "runserver", "0.0.0.0:2000"]
