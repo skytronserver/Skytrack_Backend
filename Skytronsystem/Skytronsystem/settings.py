@@ -256,7 +256,10 @@ CORS_ALLOWED_ORIGINS = ["https://www.skytrack.tech",
                         # "https://yourfrontenddomain.com",
                         # to allow all origins
                         ]
-CORS_ALLOW_ALL_ORIGINS = True
+# VAPT: Do NOT allow all origins — use the explicit CORS_ALLOWED_ORIGINS list above
+CORS_ALLOW_ALL_ORIGINS = False
+# Cache preflight responses for 24 h so browsers don't re-issue OPTIONS frequently
+CORS_PREFLIGHT_MAX_AGE = 86400
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 

@@ -7027,14 +7027,73 @@ def resend_usercreation_otp(request):
         return Response({"error": "Failed to send OTP. Please try again later."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     return Response({"message": "User creation OTP sent successfully."}, status=status.HTTP_200_OK)
-    
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([UserRateThrottle])
+def resend_parent_activation_otp(request):
+    """Resend the account activation link to a parent user.
+
+    Caller must be a schooladmin. The target parent must belong to the
+    same school as the requesting schooladmin.
+
+    Input: {"user_id": <int>}
+    """
+    errors = {}
+
+    requester = request.user
+    if requester.role != "schooladmin":
+        return Response({"error": "Request must be from a schooladmin."}, status=status.HTTP_400_BAD_REQUEST)
+
+    admin_school = School.objects.filter(users=requester).last()
+    if not admin_school:
+        return Response({"error": "No school associated with this schooladmin."}, status=status.HTTP_400_BAD_REQUEST)
+
+    user_id = request.data.get("user_id")
+    if user_id in [None, ""]:
+        errors["user_id"] = "user_id is required."
+    else:
+        try:
+            user_id = int(user_id)
+            if user_id <= 0:
+                errors["user_id"] = "user_id must be a positive integer."
+        except Exception:
+            errors["user_id"] = "user_id must be a valid integer."
+
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    parent_profile = ParentProfile.objects.filter(id=user_id, school=admin_school).select_related("user").last()
+    if not parent_profile:
+        return Response({"error": "Parent profile not found in your school."}, status=status.HTTP_404_NOT_FOUND)
+
+    target_user = parent_profile.user
+
+    token = getattr(target_user, "password", None)
+    if not token:
+        return Response({"error": "User activation token not available."}, status=status.HTTP_400_BAD_REQUEST)
+
+    token_str = str(token)
+    if token_str.startswith("pbkdf2_") or "$" in token_str:
+        token_str = ''.join(secrets.choice('0123456789') for _ in range(30))
+        target_user.password = token_str
+        target_user.save(update_fields=["password"])
+
+    try:
+        send_usercreation_otp(target_user, token_str, "Parent User")
+    except Exception:
+        return Response({"error": "Failed to send activation link. Please try again later."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    return Response({"message": "Parent activation link sent successfully."}, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
-def create_StateAdmin(request ): 
+def create_StateAdmin(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -12707,6 +12766,17 @@ def deviceStockCreate(request ):
     if not man:
         return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
     mod=DeviceModel.objects.filter(id=request.data['model'],)
+    if not mod.exists():
+        return Response({"error": "Device model not found."}, status=status.HTTP_400_BAD_REQUEST)
+    approved = DeviceModelTechnicalOnboardingRequest.objects.filter(
+        device_model_id=request.data['model'],
+        status='StateAdminApproved'
+    ).exists()
+    if not approved:
+        return Response(
+            {"error": "Device model does not have an approved technical onboarding (StateAdminApproved required)."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
     # Deserialize the input data
     data = request.data.copy()
     data['created'] = timezone.now()   
