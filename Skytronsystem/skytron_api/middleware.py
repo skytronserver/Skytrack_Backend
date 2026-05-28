@@ -58,6 +58,13 @@ class RequestLoggerMiddleware(MiddlewareMixin):
         '/api/mqtt/validate-acl/',
     )
 
+    @staticmethod
+    def _get_client_ip(request):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            return x_forwarded_for.split(',')[0].strip()
+        return request.META.get('HTTP_X_REAL_IP') or request.META.get('REMOTE_ADDR')
+
     def process_request(self, request):
         request._skip_request_log = any(
             request.path.startswith(prefix) for prefix in self._SKIP_PATH_PREFIXES
@@ -66,7 +73,7 @@ class RequestLoggerMiddleware(MiddlewareMixin):
         # Store request data in request object for later use
         request.start_time = datetime.now()
         request.log_data = {
-            'ip_address': request.META.get('REMOTE_ADDR'),
+            'ip_address': self._get_client_ip(request),
             'system_info': request.META.get('HTTP_USER_AGENT', 'unknown'),
             'request_url': request.build_absolute_uri(),
             'request_type': request.method,
