@@ -3316,10 +3316,6 @@ def gps_track_lite_api(request):
             dt_qs = dt_qs.filter(district__id=int(district_id))
         except (ValueError, TypeError):
             pass
-    if district_text:
-        dt_qs = dt_qs.filter(district__district__icontains=district_text)
-    if state_text:
-        dt_qs = dt_qs.filter(district__state__state__icontains=state_text)
 
     # ── Step 2: Role-based scope on DeviceTag ─────────────────────────────────
     dt_qs, _err = _dt_scope_by_role(request, dt_qs)
@@ -3335,6 +3331,24 @@ def gps_track_lite_api(request):
     ).order_by('-entry_time', '-id').values('id')[:1]
 
     dt_qs = dt_qs.annotate(latest_gps_id=Subquery(latest_gps_id_sq)).exclude(latest_gps_id=None)
+
+    # ── Step 3b: Apply GPS-level location filters BEFORE pagination ───────────
+    # district, state, road, city all come from reverse-geocoded GPSData fields.
+    # Using Exists() so pagination totals are correct and every matching record
+    # appears regardless of which DeviceTag page it falls on.
+    if any([district_text, state_text, road_text, city_text, poi_t_text]):
+        geo_q = Q(id=OuterRef('latest_gps_id'))
+        if district_text:
+            geo_q &= Q(district__icontains=district_text)
+        if state_text:
+            geo_q &= Q(state__icontains=state_text)
+        if road_text:
+            geo_q &= Q(road__icontains=road_text)
+        elif city_text:
+            geo_q &= Q(city__icontains=city_text)
+        elif poi_t_text:
+            geo_q &= Q(Q(road__icontains=poi_t_text) | Q(city__icontains=poi_t_text))
+        dt_qs = dt_qs.filter(Exists(GPSData.objects.filter(geo_q)))
 
     want_count = request.GET.get('count', 'true').lower() != 'false'
     total = dt_qs.count() if want_count else None
@@ -3354,14 +3368,8 @@ def gps_track_lite_api(request):
             },
         })
 
-    # ── Step 4: Fetch those GPS rows; apply GPS-side filters (road, city) ─────
+    # ── Step 4: Fetch those GPS rows (location filters already applied above) ──
     gps_qs = GPSData.objects.filter(id__in=gps_ids)
-    if road_text:
-        gps_qs = gps_qs.filter(road__icontains=road_text)
-    elif city_text:
-        gps_qs = gps_qs.filter(city__icontains=city_text)
-    elif poi_t_text:
-        gps_qs = gps_qs.filter(Q(road__icontains=poi_t_text) | Q(city__icontains=poi_t_text))
 
     gps_map = {g.device_tag_id: g for g in gps_qs}
 
@@ -3405,6 +3413,49 @@ def gps_track_lite_api(request):
             'page_length': page_length,
             'total_pages': math.ceil(total / page_length) if (total is not None and page_length > 0) else None,
         },
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GPS Track Lite filter options API
+# GET /api/gps_track_lite_options/
+# Returns distinct state / district / city / road values available in the
+# latest GPS records visible to the calling user.
+# ─────────────────────────────────────────────────────────────────────────────
+@csrf_exempt
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def gps_track_lite_options_api(request):
+    """Return distinct location values (state, district, city, road) from live GPS data."""
+    dt_qs = DeviceTag.objects.filter(status='Owner_Final_OTP_Verified').only('id')
+    dt_qs, _err = _dt_scope_by_role(request, dt_qs)
+    if _err:
+        return _err
+
+    latest_gps_id_sq = GPSData.objects.filter(
+        device_tag_id=OuterRef('id'),
+        gps_status=1,
+    ).order_by('-entry_time', '-id').values('id')[:1]
+
+    gps_ids = list(
+        dt_qs.annotate(latest_gps_id=Subquery(latest_gps_id_sq))
+             .exclude(latest_gps_id=None)
+             .values_list('latest_gps_id', flat=True)
+    )
+
+    gps_qs = GPSData.objects.filter(id__in=gps_ids)
+
+    def _distinct_sorted(field):
+        return sorted(
+            gps_qs.exclude(**{field: None}).exclude(**{field: ''})
+                  .values_list(field, flat=True).distinct()
+        )
+
+    return JsonResponse({
+        'states':    _distinct_sorted('state'),
+        'districts': _distinct_sorted('district'),
+        'cities':    _distinct_sorted('city'),
+        'roads':     _distinct_sorted('road'),
     })
 
 
