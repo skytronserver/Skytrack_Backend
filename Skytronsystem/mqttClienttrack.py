@@ -346,7 +346,7 @@ def Process_Device_Data(msg):
 def Process_EM_Data(msg):
     """Process emergency data using common processor."""
     data_str = str(msg.payload.decode())
-    process_emergency_data(data_str, source="MQTT")
+    process_emergency_data(data_str, source="MQTT", publish_callback=client.publish)
 
 
 def on_message(client, userdata, msg):

@@ -204,7 +204,7 @@ def process_gps_data(data_str):
         return None
 
 
-def process_em_data(data_str):
+def process_em_data(data_str, publish_callback=None):
     """
     Process Emergency (EM) data from devices
     Supports new EPB format: $,EPB,EMR,860269065287047,NM,24102025051128,A,26.193007,N,91.752815,E,90.6,0.0,0.000,G,DL01AB1234,9401633421,*,04
@@ -336,14 +336,26 @@ def process_em_data(data_str):
                         #print(f"#{imei}# -> Device: {device}", flush=True)
                         print(f"[EM][Perf] device_lookup={(_t_em1-_t_em0)*1000:.1f}ms imei={imei}", flush=True)
                         
+                        def _send_sos_stop(reason):
+                            if publish_callback:
+                                try:
+                                    publish_callback(f"deviceResponse/{imei}", json.dumps({"keys": "@SETSOSDIS-1*"}), qos=1)
+                                    print(f"[EM] SOS stop sent to device {imei} ({reason})", flush=True)
+                                except Exception as _pe:
+                                    print(f"[EM] Failed to send SOS stop to {imei}: {_pe}", flush=True)
+
                         device_tag = None
                         if device:
                             device_tag = DeviceTag.objects.filter(device=device,status = 'Owner_Final_OTP_Verified').last()
                             _t_em2 = time.perf_counter()
                             print(f"[EM][Perf] device_tag_lookup={(_t_em2-_t_em1)*1000:.1f}ms", flush=True)
-                            #print(f"Device tag found: {device_tag}", flush=True)
+                            if device_tag is None:
+                                print(f"[EM] Device {imei} has no Owner_Final_OTP_Verified tag — rejecting EM packet", flush=True)
+                                _send_sos_stop("no verified device tag")
+                                return None
                         else:
-                            #print(f"No device found for IMEI: {imei}", flush=True)
+                            print(f"[EM] Device {imei} not found in DeviceStock — rejecting EM packet", flush=True)
+                            _send_sos_stop("unregistered device")
                             return None
                         
                         # Create EMGPSLocation directly
@@ -901,7 +913,7 @@ def process_device_tracking_data(data_str, source="unknown"):
     print(f"[Tracking][Perf] TOTAL process_device_tracking_data={( time.perf_counter()-_t_total_start)*1000:.1f}ms source={source}", flush=True)
 
 
-def process_emergency_data(data_str, source="unknown"):
+def process_emergency_data(data_str, source="unknown", publish_callback=None):
     """
     Main function to process emergency data
     Used by both EM server and MQTT deviceEM topic
@@ -964,7 +976,7 @@ def process_emergency_data(data_str, source="unknown"):
                     #print(f"[{source}] EM data list:", data_list, flush=True)
                     
                     # Use the new EM data processor instead of create_from_string
-                    location = process_em_data(formatted_data)
+                    location = process_em_data(formatted_data, publish_callback=publish_callback)
                     
                     if location is not None:
                         # location is already saved in process_em_data
