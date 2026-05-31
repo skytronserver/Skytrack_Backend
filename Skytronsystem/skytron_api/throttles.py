@@ -3,10 +3,26 @@ Custom throttle classes for Skytrack API
 """
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from django.core.cache import cache
+from django.conf import settings
 import time
 
 
-class AuthRateThrottle(AnonRateThrottle):
+class LoadTestBypassMixin:
+    """Skip throttle when the request carries a valid load-test token.
+
+    Set LOAD_TEST_SECRET (non-empty) in the environment to activate.
+    JMeter requests must include: X-Load-Test-Token: <secret>
+    """
+
+    def allow_request(self, request, view):
+        secret = getattr(settings, 'LOAD_TEST_SECRET', '')
+        if secret and request.META.get('HTTP_X_LOAD_TEST_TOKEN') == secret:
+            self.num_requests = None  # prevents wait() from being called
+            return True
+        return super().allow_request(request, view)
+
+
+class AuthRateThrottle(LoadTestBypassMixin, AnonRateThrottle):
     """
     Throttle for authentication endpoints - 5 requests per minute
     After 5 requests in 1 minute, block for 5 minutes
@@ -45,7 +61,7 @@ class AuthRateThrottle(AnonRateThrottle):
         return True
 
 
-class LoginRateThrottle(AnonRateThrottle):
+class LoginRateThrottle(LoadTestBypassMixin, AnonRateThrottle):
     """
     Throttle for login endpoints - 5 requests per minute
     """
@@ -78,7 +94,7 @@ class LoginRateThrottle(AnonRateThrottle):
         return True
 
 
-class OTPRateThrottle(AnonRateThrottle):
+class OTPRateThrottle(LoadTestBypassMixin, AnonRateThrottle):
     """
     Throttle for OTP endpoints - 5 requests per minute
     """
@@ -111,7 +127,7 @@ class OTPRateThrottle(AnonRateThrottle):
         return True
 
 
-class PasswordResetRateThrottle(AnonRateThrottle):
+class PasswordResetRateThrottle(LoadTestBypassMixin, AnonRateThrottle):
     """
     Throttle for password reset endpoints - 3 requests per minute (stricter)
     """

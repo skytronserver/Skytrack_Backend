@@ -1,189 +1,346 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMEI Continuity Analysis</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 24px; }
-  h1 { font-size: 1.5rem; font-weight: 700; color: #38bdf8; margin-bottom: 20px; letter-spacing: .03em; }
-  h2 { font-size: 1.1rem; font-weight: 600; color: #7dd3fc; margin-bottom: 14px; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IMEI Continuity Analysis</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script
+    src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-  /* Form */
-  .form-card {
-    background: #1e293b; border: 1px solid #334155; border-radius: 12px;
-    padding: 24px; margin-bottom: 28px;
-    display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;
-  }
-  .field { display: flex; flex-direction: column; gap: 6px; }
-  label { font-size: .8rem; color: #94a3b8; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
-  input[type="text"], input[type="datetime-local"] {
-    background: #0f172a; border: 1px solid #475569; border-radius: 8px;
-    color: #f1f5f9; padding: 9px 14px; font-size: .95rem; outline: none;
-    transition: border-color .2s;
-  }
-  input[type="text"]:focus, input[type="datetime-local"]:focus { border-color: #38bdf8; }
-  input[type="text"] { width: 200px; }
-  input[type="datetime-local"] { width: 220px; }
-  button {
-    background: #0284c7; color: #fff; border: none; border-radius: 8px;
-    padding: 10px 24px; font-size: .95rem; font-weight: 600; cursor: pointer;
-    transition: background .2s; white-space: nowrap;
-  }
-  button:hover { background: #0369a1; }
-  button:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 24px;
+    }
 
-  /* Alerts */
-  #error-box {
-    background: #450a0a; border: 1px solid #b91c1c; border-radius: 8px;
-    padding: 12px 16px; margin-bottom: 20px; color: #fca5a5; display: none;
-  }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 20px;
+      letter-spacing: .03em;
+    }
 
-  /* Section */
-  .section { margin-bottom: 36px; }
-  .section-title {
-    font-size: 1rem; font-weight: 700; color: #e2e8f0;
-    background: #1e293b; border: 1px solid #334155; border-radius: 10px 10px 0 0;
-    padding: 12px 20px; letter-spacing: .02em;
-  }
-  .section-body {
-    background: #1e293b; border: 1px solid #334155; border-top: none;
-    border-radius: 0 0 10px 10px; padding: 20px;
-  }
+    h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #7dd3fc;
+      margin-bottom: 14px;
+    }
 
-  /* Stat cards */
-  .stats-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 12px; margin-bottom: 24px;
-  }
-  .stat-card {
-    background: #0f172a; border: 1px solid #334155; border-radius: 10px;
-    padding: 14px 16px;
-  }
-  .stat-label { font-size: .75rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
-  .stat-value { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; word-break: break-all; }
-  .stat-value.highlight { color: #34d399; }
-  .stat-value.warn { color: #fb923c; }
-  .stat-value.danger { color: #f87171; }
-  .stat-value.muted { color: #64748b; font-size: .9rem; font-weight: 400; }
+    /* Form */
+    .form-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 28px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: flex-end;
+    }
 
-  /* Chart */
-  .chart-wrap { position: relative; height: 280px; }
-  .no-data { color: #475569; font-size: .9rem; padding: 40px 0; text-align: center; }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
 
-  /* Loading spinner */
-  #loading { display: none; text-align: center; padding: 40px; color: #38bdf8; font-size: .95rem; }
-  .spinner {
-    display: inline-block; width: 28px; height: 28px;
-    border: 3px solid #334155; border-top-color: #38bdf8;
-    border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 10px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-</style>
+    label {
+      font-size: .8rem;
+      color: #94a3b8;
+      font-weight: 500;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    input[type="text"],
+    input[type="datetime-local"] {
+      background: #0f172a;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      color: #f1f5f9;
+      padding: 9px 14px;
+      font-size: .95rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    input[type="text"]:focus,
+    input[type="datetime-local"]:focus {
+      border-color: #38bdf8;
+    }
+
+    input[type="text"] {
+      width: 200px;
+    }
+
+    input[type="datetime-local"] {
+      width: 220px;
+    }
+
+    button {
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 24px;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      background: #0369a1;
+    }
+
+    button:disabled {
+      background: #334155;
+      color: #64748b;
+      cursor: not-allowed;
+    }
+
+    /* Alerts */
+    #error-box {
+      background: #450a0a;
+      border: 1px solid #b91c1c;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      color: #fca5a5;
+      display: none;
+    }
+
+    /* Section */
+    .section {
+      margin-bottom: 36px;
+    }
+
+    .section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px 10px 0 0;
+      padding: 12px 20px;
+      letter-spacing: .02em;
+    }
+
+    .section-body {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-top: none;
+      border-radius: 0 0 10px 10px;
+      padding: 20px;
+    }
+
+    /* Stat cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+
+    .stat-label {
+      font-size: .75rem;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: 6px;
+    }
+
+    .stat-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      word-break: break-all;
+    }
+
+    .stat-value.highlight {
+      color: #34d399;
+    }
+
+    .stat-value.warn {
+      color: #fb923c;
+    }
+
+    .stat-value.danger {
+      color: #f87171;
+    }
+
+    .stat-value.muted {
+      color: #64748b;
+      font-size: .9rem;
+      font-weight: 400;
+    }
+
+    /* Chart */
+    .chart-wrap {
+      position: relative;
+      height: 280px;
+    }
+
+    .no-data {
+      color: #475569;
+      font-size: .9rem;
+      padding: 40px 0;
+      text-align: center;
+    }
+
+    /* Loading spinner */
+    #loading {
+      display: none;
+      text-align: center;
+      padding: 40px;
+      color: #38bdf8;
+      font-size: .95rem;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      border: 3px solid #334155;
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      margin-bottom: 10px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
 </head>
+
 <body>
 
-<h1>IMEI Packet Continuity Analysis</h1>
+  <h1>IMEI Packet Continuity Analysis</h1>
 
-<div class="form-card">
-  <div class="field">
-    <label>IMEI (15 digits)</label>
-    <input type="text" id="imei" placeholder="e.g. 359884073045540" maxlength="15">
+  <div class="form-card">
+    <div class="field">
+      <label>IMEI (15 digits)</label>
+      <input type="text" id="imei" placeholder="e.g. 359884073045540" maxlength="15">
+    </div>
+    <div class="field">
+      <label>Start Date &amp; Time</label>
+      <input type="datetime-local" id="start_dt">
+    </div>
+    <div class="field">
+      <label>End Date &amp; Time</label>
+      <input type="datetime-local" id="end_dt">
+    </div>
+    <button id="analyseBtn" onclick="runAnalysis()">Analyse</button>
   </div>
-  <div class="field">
-    <label>Start Date &amp; Time</label>
-    <input type="datetime-local" id="start_dt">
-  </div>
-  <div class="field">
-    <label>End Date &amp; Time</label>
-    <input type="datetime-local" id="end_dt">
-  </div>
-  <button id="analyseBtn" onclick="runAnalysis()">Analyse</button>
-</div>
 
-<div id="error-box"></div>
-<div id="loading"><div class="spinner"></div><br>Scanning data…</div>
+  <div id="error-box"></div>
+  <div id="loading">
+    <div class="spinner"></div><br>Scanning data…
+  </div>
 
-<div id="results" style="display:none">
-  <!-- GPSDataLog -->
-  <div class="section">
-    <div class="section-title">GPSDataLog</div>
-    <div class="section-body">
-      <div class="stats-grid" id="gps-stats"></div>
-      <div class="chart-wrap"><canvas id="gps-chart"></canvas></div>
-      <div class="no-data" id="gps-nodata" style="display:none">No matching packets found in this range.</div>
+  <div id="results" style="display:none">
+    <!-- VLTD Data Log -->
+    <div class="section">
+      <div class="section-title">VLTD Data Log</div>
+      <div class="section-body">
+        <div class="stats-grid" id="gps-stats"></div>
+        <div class="chart-wrap"><canvas id="gps-chart"></canvas></div>
+        <div class="no-data" id="gps-nodata" style="display:none">No matching packets found in this range.</div>
+      </div>
+    </div>
+
+    <!-- VLTD SOS Data Log -->
+    <div class="section">
+      <div class="section-title">VLTD SOS Data Log</div>
+      <div class="section-body">
+        <div class="stats-grid" id="gpse-stats"></div>
+        <div class="chart-wrap"><canvas id="gpse-chart"></canvas></div>
+        <div class="no-data" id="gpse-nodata" style="display:none">No matching packets found in this range.</div>
+      </div>
     </div>
   </div>
 
-  <!-- GPSemDataLog -->
-  <div class="section">
-    <div class="section-title">GPSemDataLog</div>
-    <div class="section-body">
-      <div class="stats-grid" id="gpse-stats"></div>
-      <div class="chart-wrap"><canvas id="gpse-chart"></canvas></div>
-      <div class="no-data" id="gpse-nodata" style="display:none">No matching packets found in this range.</div>
-    </div>
-  </div>
-</div>
+  <script>
+    // All datetimes are fixed to IST (UTC+05:30)
+    const IST_OFFSET_MS = 5.5 * 3600 * 1000;
 
-<script>
-// All datetimes are fixed to IST (UTC+05:30)
-const IST_OFFSET_MS = 5.5 * 3600 * 1000;
+    function toISTInputValue(d) {
+      // Format a Date as "YYYY-MM-DDTHH:MM" in IST for datetime-local inputs
+      const ist = new Date(d.getTime() + IST_OFFSET_MS);
+      return ist.toISOString().slice(0, 16);
+    }
 
-function toISTInputValue(d) {
-  // Format a Date as "YYYY-MM-DDTHH:MM" in IST for datetime-local inputs
-  const ist = new Date(d.getTime() + IST_OFFSET_MS);
-  return ist.toISOString().slice(0, 16);
-}
+    // Set default datetimes: start = now - 24h (IST), end = now (IST)
+    (function () {
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 24 * 3600 * 1000);
+      document.getElementById('end_dt').value = toISTInputValue(now);
+      document.getElementById('start_dt').value = toISTInputValue(yesterday);
+    })();
 
-// Set default datetimes: start = now - 24h (IST), end = now (IST)
-(function () {
-  const now = new Date();
-  const yesterday = new Date(now.getTime() - 24 * 3600 * 1000);
-  document.getElementById('end_dt').value = toISTInputValue(now);
-  document.getElementById('start_dt').value = toISTInputValue(yesterday);
-})();
+    let gpsChart = null, gpseChart = null;
 
-let gpsChart = null, gpseChart = null;
+    function showError(msg) {
+      const box = document.getElementById('error-box');
+      box.textContent = msg;
+      box.style.display = 'block';
+    }
 
-function showError(msg) {
-  const box = document.getElementById('error-box');
-  box.textContent = msg;
-  box.style.display = 'block';
-}
+    function clearError() {
+      const box = document.getElementById('error-box');
+      box.style.display = 'none';
+      box.textContent = '';
+    }
 
-function clearError() {
-  const box = document.getElementById('error-box');
-  box.style.display = 'none';
-  box.textContent = '';
-}
+    function fmtSec(v) {
+      if (v === null || v === undefined) return '—';
+      if (v < 60) return v.toFixed(2) + ' s';
+      const m = Math.floor(v / 60), s = (v % 60).toFixed(0);
+      return `${m}m ${s}s`;
+    }
 
-function fmtSec(v) {
-  if (v === null || v === undefined) return '—';
-  if (v < 60) return v.toFixed(2) + ' s';
-  const m = Math.floor(v / 60), s = (v % 60).toFixed(0);
-  return `${m}m ${s}s`;
-}
+    function fmtDt(iso) {
+      if (!iso) return '—';
+      // Convert any UTC/offset datetime to IST for display
+      const d = new Date(iso);
+      const ist = new Date(d.getTime() + IST_OFFSET_MS);
+      return ist.toISOString().slice(0, 19).replace('T', ' ') + ' IST';
+    }
 
-function fmtDt(iso) {
-  if (!iso) return '—';
-  // Convert any UTC/offset datetime to IST for display
-  const d = new Date(iso);
-  const ist = new Date(d.getTime() + IST_OFFSET_MS);
-  return ist.toISOString().slice(0, 19).replace('T', ' ') + ' IST';
-}
+    function renderStats(containerId, s) {
+      const el = document.getElementById(containerId);
+      if (!s || s.total_packets === 0) { el.innerHTML = ''; return; }
 
-function renderStats(containerId, s) {
-  const el = document.getElementById(containerId);
-  if (!s || s.total_packets === 0) { el.innerHTML = ''; return; }
+      const avgClass = s.avg_gap_s <= 6 ? 'highlight' : s.avg_gap_s <= 15 ? 'warn' : 'danger';
+      const maxClass = s.max_gap_s <= 10 ? 'highlight' : s.max_gap_s <= 30 ? 'warn' : 'danger';
 
-  const avgClass = s.avg_gap_s <= 6 ? 'highlight' : s.avg_gap_s <= 15 ? 'warn' : 'danger';
-  const maxClass = s.max_gap_s <= 10 ? 'highlight' : s.max_gap_s <= 30 ? 'warn' : 'danger';
-
-  el.innerHTML = `
+      el.innerHTML = `
     <div class="stat-card">
       <div class="stat-label">Total Packets</div>
       <div class="stat-value highlight">${s.total_packets.toLocaleString()}</div>
@@ -208,147 +365,148 @@ function renderStats(containerId, s) {
       <div class="stat-label">Max Gap</div>
       <div class="stat-value ${maxClass}">${fmtSec(s.max_gap_s)}</div>
     </div>`;
-}
+    }
 
-function renderChart(canvasId, nodataId, chartRef, s) {
-  const canvas = document.getElementById(canvasId);
-  const nodata = document.getElementById(nodataId);
+    function renderChart(canvasId, nodataId, chartRef, s) {
+      const canvas = document.getElementById(canvasId);
+      const nodata = document.getElementById(nodataId);
 
-  if (chartRef) { chartRef.destroy(); }
+      if (chartRef) { chartRef.destroy(); }
 
-  if (!s || !s.chart_data || s.chart_data.length === 0) {
-    canvas.style.display = 'none';
-    nodata.style.display = 'block';
-    return null;
-  }
-  canvas.style.display = 'block';
-  nodata.style.display = 'none';
+      if (!s || !s.chart_data || s.chart_data.length === 0) {
+        canvas.style.display = 'none';
+        nodata.style.display = 'block';
+        return null;
+      }
+      canvas.style.display = 'block';
+      nodata.style.display = 'none';
 
-  // Convert to IST strings without timezone offset so Chart.js renders them as-is
-  function toISTLabel(isoStr) {
-    const ist = new Date(new Date(isoStr).getTime() + IST_OFFSET_MS);
-    return ist.toISOString().slice(0, 19); // "YYYY-MM-DDTHH:MM:SS" — no offset
-  }
-  const labels = s.chart_data.map(p => toISTLabel(p.t));
-  const values = s.chart_data.map(p => p.gap);
+      // Convert to IST strings without timezone offset so Chart.js renders them as-is
+      function toISTLabel(isoStr) {
+        const ist = new Date(new Date(isoStr).getTime() + IST_OFFSET_MS);
+        return ist.toISOString().slice(0, 19); // "YYYY-MM-DDTHH:MM:SS" — no offset
+      }
+      const labels = s.chart_data.map(p => toISTLabel(p.t));
+      const values = s.chart_data.map(p => p.gap);
 
-  const maxGap = Math.max(...values);
-  // Annotation line at 5s (expected interval) — drawn via dataset
-  const expectedLine = values.map(() => 5);
+      const maxGap = Math.max(...values);
+      // Annotation line at 5s (expected interval) — drawn via dataset
+      const expectedLine = values.map(() => 5);
 
-  const chart = new Chart(canvas, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Gap (s)',
-          data: values,
-          borderColor: '#38bdf8',
-          backgroundColor: 'rgba(56,189,248,0.08)',
-          borderWidth: 1.5,
-          pointRadius: values.length > 200 ? 0 : 2,
-          pointHoverRadius: 4,
-          fill: true,
-          tension: 0,
+      const chart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Gap (s)',
+              data: values,
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56,189,248,0.08)',
+              borderWidth: 1.5,
+              pointRadius: values.length > 200 ? 0 : 2,
+              pointHoverRadius: 4,
+              fill: true,
+              tension: 0,
+            },
+            {
+              label: 'Expected (5 s)',
+              data: expectedLine,
+              borderColor: '#22c55e',
+              borderWidth: 1,
+              borderDash: [6, 4],
+              pointRadius: 0,
+              fill: false,
+            }
+          ]
         },
-        {
-          label: 'Expected (5 s)',
-          data: expectedLine,
-          borderColor: '#22c55e',
-          borderWidth: 1,
-          borderDash: [6, 4],
-          pointRadius: 0,
-          fill: false,
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { labels: { color: '#94a3b8', font: { size: 12 } } },
-        tooltip: {
-          callbacks: {
-            label: ctx => ` ${ctx.dataset.label}: ${fmtSec(ctx.parsed.y)}`
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#94a3b8', font: { size: 12 } } },
+            tooltip: {
+              callbacks: {
+                label: ctx => ` ${ctx.dataset.label}: ${fmtSec(ctx.parsed.y)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'time',
+              time: { tooltipFormat: 'yyyy-MM-dd HH:mm:ss', displayFormats: { minute: 'HH:mm', hour: 'MMM d HH:mm', day: 'MMM d' } },
+              ticks: { color: '#64748b', maxTicksLimit: 10 },
+              grid: { color: '#1e293b' }
+            },
+            y: {
+              title: { display: true, text: 'Gap (seconds)', color: '#64748b' },
+              ticks: { color: '#64748b' },
+              grid: { color: '#1e293b' },
+              min: 0,
+              suggestedMax: Math.max(maxGap * 1.1, 10),
+            }
           }
         }
-      },
-      scales: {
-        x: {
-          type: 'time',
-          time: { tooltipFormat: 'yyyy-MM-dd HH:mm:ss', displayFormats: { minute: 'HH:mm', hour: 'MMM d HH:mm', day: 'MMM d' } },
-          ticks: { color: '#64748b', maxTicksLimit: 10 },
-          grid: { color: '#1e293b' }
-        },
-        y: {
-          title: { display: true, text: 'Gap (seconds)', color: '#64748b' },
-          ticks: { color: '#64748b' },
-          grid: { color: '#1e293b' },
-          min: 0,
-          suggestedMax: Math.max(maxGap * 1.1, 10),
+      });
+      return chart;
+    }
+
+    async function runAnalysis() {
+      clearError();
+      document.getElementById('results').style.display = 'none';
+
+      const imei = document.getElementById('imei').value.trim();
+      const startDt = document.getElementById('start_dt').value;
+      const endDt = document.getElementById('end_dt').value;
+
+      if (!/^\d{15}$/.test(imei)) { showError('IMEI must be exactly 15 digits.'); return; }
+      if (!startDt || !endDt) { showError('Both start and end date/time are required.'); return; }
+      // Parse input values as IST (subtract IST offset to get UTC ms for comparison)
+      const startMs = new Date(startDt).getTime() - IST_OFFSET_MS;
+      const endMs = new Date(endDt).getTime() - IST_OFFSET_MS;
+      if (startMs >= endMs) { showError('Start must be before End.'); return; }
+      const rangeDays = (endMs - startMs) / 86400000;
+      if (rangeDays > 4) { showError('Time range cannot exceed 4 days.'); return; }
+
+      const btn = document.getElementById('analyseBtn');
+      btn.disabled = true;
+      document.getElementById('loading').style.display = 'block';
+
+      // Treat datetime-local input as IST and produce ISO string with +05:30
+      function toISO(val) {
+        // val is "YYYY-MM-DDTHH:MM" interpreted as IST
+        return val + ':00+05:30';
+      }
+
+      try {
+        const params = new URLSearchParams({ imei, start_dt: toISO(startDt), end_dt: toISO(endDt) });
+        const res = await fetch(`/api/vltddata/imei-continuity/?${params}`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+
+        if (!res.ok || data.status === 'error') {
+          showError((data.errors || [data.detail || 'Request failed.']).join(' '));
+          return;
         }
+
+        renderStats('gps-stats', data.gps_data_log);
+        renderStats('gpse-stats', data.gps_em_data_log);
+        gpsChart = renderChart('gps-chart', 'gps-nodata', gpsChart, data.gps_data_log);
+        gpseChart = renderChart('gpse-chart', 'gpse-nodata', gpseChart, data.gps_em_data_log);
+
+        document.getElementById('results').style.display = 'block';
+      } catch (e) {
+        showError('Network error: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        document.getElementById('loading').style.display = 'none';
       }
     }
-  });
-  return chart;
-}
 
-async function runAnalysis() {
-  clearError();
-  document.getElementById('results').style.display = 'none';
-
-  const imei = document.getElementById('imei').value.trim();
-  const startDt = document.getElementById('start_dt').value;
-  const endDt = document.getElementById('end_dt').value;
-
-  if (!/^\d{15}$/.test(imei)) { showError('IMEI must be exactly 15 digits.'); return; }
-  if (!startDt || !endDt) { showError('Both start and end date/time are required.'); return; }
-  // Parse input values as IST (subtract IST offset to get UTC ms for comparison)
-  const startMs = new Date(startDt).getTime() - IST_OFFSET_MS;
-  const endMs   = new Date(endDt).getTime()   - IST_OFFSET_MS;
-  if (startMs >= endMs) { showError('Start must be before End.'); return; }
-  const rangeDays = (endMs - startMs) / 86400000;
-  if (rangeDays > 4) { showError('Time range cannot exceed 4 days.'); return; }
-
-  const btn = document.getElementById('analyseBtn');
-  btn.disabled = true;
-  document.getElementById('loading').style.display = 'block';
-
-  // Treat datetime-local input as IST and produce ISO string with +05:30
-  function toISO(val) {
-    // val is "YYYY-MM-DDTHH:MM" interpreted as IST
-    return val + ':00+05:30';
-  }
-
-  try {
-    const params = new URLSearchParams({ imei, start_dt: toISO(startDt), end_dt: toISO(endDt) });
-    const res = await fetch(`/api/gpsdata/imei-continuity/?${params}`, {
-      headers: { 'X-Requested-With': 'XMLHttpRequest' }
-    });
-    const data = await res.json();
-
-    if (!res.ok || data.status === 'error') {
-      showError((data.errors || [data.detail || 'Request failed.']).join(' '));
-      return;
-    }
-
-    renderStats('gps-stats', data.gps_data_log);
-    renderStats('gpse-stats', data.gps_em_data_log);
-    gpsChart  = renderChart('gps-chart',  'gps-nodata',  gpsChart,  data.gps_data_log);
-    gpseChart = renderChart('gpse-chart', 'gpse-nodata', gpseChart, data.gps_em_data_log);
-
-    document.getElementById('results').style.display = 'block';
-  } catch (e) {
-    showError('Network error: ' + e.message);
-  } finally {
-    btn.disabled = false;
-    document.getElementById('loading').style.display = 'none';
-  }
-}
-
-document.addEventListener('keydown', e => { if (e.key === 'Enter') runAnalysis(); });
-</script>
+    document.addEventListener('keydown', e => { if (e.key === 'Enter') runAnalysis(); });
+  </script>
 </body>
+
 </html>

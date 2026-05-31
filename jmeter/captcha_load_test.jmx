@@ -41,6 +41,10 @@
             <stringProp name="Argument.name">DURATION</stringProp>
             <stringProp name="Argument.value">120</stringProp>
           </elementProp>
+          <elementProp name="LOAD_TEST_SECRET" elementType="Argument">
+            <stringProp name="Argument.name">LOAD_TEST_SECRET</stringProp>
+            <stringProp name="Argument.value">${__P(LOAD_TEST_SECRET,skytrack-load-test-secret-2024)}</stringProp>
+          </elementProp>
         </collectionProp>
       </elementProp>
     </TestPlan>
@@ -66,6 +70,10 @@
           <elementProp name="Content-Type" elementType="Header">
             <stringProp name="Header.name">Content-Type</stringProp>
             <stringProp name="Header.value">application/json</stringProp>
+          </elementProp>
+          <elementProp name="X-Load-Test-Token" elementType="Header">
+            <stringProp name="Header.name">X-Load-Test-Token</stringProp>
+            <stringProp name="Header.value">${LOAD_TEST_SECRET}</stringProp>
           </elementProp>
         </collectionProp>
       </HeaderManager>

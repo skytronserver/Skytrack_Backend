@@ -32,6 +32,10 @@ JWT_PRIVATE_KEY_PATH = os.path.join(BASE_DIR, 'keys', 'jwt_private_key.pem')
 JWT_PUBLIC_KEY_PATH = os.path.join(BASE_DIR, 'keys', 'jwt_public_key.pem')
 
 # MQTT Broker Configuration
+# Set to a non-empty secret to enable throttle bypass via X-Load-Test-Token header.
+# Used exclusively for JMeter / load-test runs. Leave blank (or unset) in production.
+LOAD_TEST_SECRET = os.environ.get('LOAD_TEST_SECRET', '')
+
 MQTT_HOST = os.environ.get('MQTT_HOST', '127.0.0.1')
 MQTT_PORT = os.environ.get('MQTT_PORT', '8883')
 MQTT_ADMIN_USER = os.environ.get('MQTT_ADMIN_USER', '')

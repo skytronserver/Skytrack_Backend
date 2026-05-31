@@ -18,6 +18,7 @@ from django.db.models import Q
 from django.shortcuts import render
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from django.views.decorators.http import require_http_methods
+from django.conf import settings
 
 import logging
 
@@ -35,10 +36,18 @@ except Exception:  # pragma: no cover
     RedisConnectionError = ()  # type: ignore
 
 
+def _is_load_test_request(request):
+    """Return True when the request carries a valid load-test bypass token."""
+    secret = getattr(settings, 'LOAD_TEST_SECRET', '')
+    return bool(secret and request.META.get('HTTP_X_LOAD_TEST_TOKEN') == secret)
+
+
 class SafeAnonRateThrottle(AnonRateThrottle):
     """Like DRF's AnonRateThrottle, but doesn't 500 if cache backend is down."""
 
     def allow_request(self, request, view):
+        if _is_load_test_request(request):
+            return True
         try:
             return super().allow_request(request, view)
         except (ConnectionInterrupted, RedisConnectionError, OSError) as exc:
@@ -50,6 +59,8 @@ class SafeUserRateThrottle(UserRateThrottle):
     """Like DRF's UserRateThrottle, but doesn't 500 if cache backend is down."""
 
     def allow_request(self, request, view):
+        if _is_load_test_request(request):
+            return True
         try:
             return super().allow_request(request, view)
         except (ConnectionInterrupted, RedisConnectionError, OSError) as exc:

@@ -102,6 +102,7 @@ docker build -t skytron-backend-api -f Skytronsystem/dockerfile.api \
   --build-arg MINIO_BUCKET="$MINIO_BUCKET" \
   --build-arg MINIO_SECURE="$MINIO_SECURE" \
   --build-arg ALLOWALLDEVMQTT="$ALLOWALLDEVMQTT" \
+  --build-arg LOAD_TEST_SECRET="$LOAD_TEST_SECRET" \
   Skytronsystem/
  
 # Stop any running container with the same name
