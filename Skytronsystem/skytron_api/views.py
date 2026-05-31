@@ -26142,3 +26142,166 @@ def imei_comparison_data(request):
         result[imei] = data
 
     return Response(result)
+
+
+# ---- IMEI Continuity Analysis ----
+
+_CONTINUITY_MAX_CHART_POINTS = 1000
+
+
+def _compute_continuity_stats(queryset, imei):
+    """
+    Scan queryset (GPSDataLog or GPSemDataLog) for records whose raw_data
+    contains the given IMEI, compute continuity stats, and return chart data.
+    Uses iterator to keep memory low over large time ranges.
+    """
+    timestamps = []
+
+    for row in (
+        queryset
+        .only('timestamp', 'raw_data')
+        .order_by('timestamp')
+        .iterator(chunk_size=2000)
+    ):
+        raw = row.raw_data or ''
+        # Quick substring pre-check before regex
+        if imei not in raw:
+            continue
+        m = IMEI_PATTERN.search(raw)
+        if m and m.group(1) == imei:
+            timestamps.append(row.timestamp)
+
+    if not timestamps:
+        return {
+            'total_packets': 0,
+            'first_packet': None,
+            'last_packet': None,
+            'avg_gap_s': None,
+            'min_gap_s': None,
+            'max_gap_s': None,
+            'chart_data': [],
+        }
+
+    n = len(timestamps)
+
+    gaps = []  # list of (timestamp_of_second_packet, gap_seconds)
+    for i in range(1, n):
+        gap = (timestamps[i] - timestamps[i - 1]).total_seconds()
+        if gap >= 0:
+            gaps.append((timestamps[i], gap))
+
+    if not gaps:
+        return {
+            'total_packets': n,
+            'first_packet': timestamps[0].isoformat(),
+            'last_packet': timestamps[-1].isoformat(),
+            'avg_gap_s': None,
+            'min_gap_s': None,
+            'max_gap_s': None,
+            'chart_data': [],
+        }
+
+    gap_values = [g for _, g in gaps]
+    avg_gap = round(sum(gap_values) / len(gap_values), 2)
+    min_gap = round(min(gap_values), 2)
+    max_gap_val = round(max(gap_values), 2)
+
+    # Build chart series — preserve spikes by keeping max gap per bucket
+    if len(gaps) <= _CONTINUITY_MAX_CHART_POINTS:
+        chart_data = [{'t': ts.isoformat(), 'gap': round(g, 2)} for ts, g in gaps]
+    else:
+        bucket_size = max(1, len(gaps) // _CONTINUITY_MAX_CHART_POINTS)
+        chart_data = []
+        for i in range(0, len(gaps), bucket_size):
+            bucket = gaps[i: i + bucket_size]
+            if bucket:
+                spike_ts, spike_g = max(bucket, key=lambda x: x[1])
+                chart_data.append({'t': spike_ts.isoformat(), 'gap': round(spike_g, 2)})
+
+    return {
+        'total_packets': n,
+        'first_packet': timestamps[0].isoformat(),
+        'last_packet': timestamps[-1].isoformat(),
+        'avg_gap_s': avg_gap,
+        'min_gap_s': min_gap,
+        'max_gap_s': max_gap_val,
+        'chart_data': chart_data,
+    }
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def gps_imei_continuity_api(request):
+    """
+    Analyse packet continuity for a single IMEI in both GPSDataLog and GPSemDataLog.
+
+    Params (GET query-string or POST JSON):
+        imei      – 15-digit device IMEI
+        start_dt  – ISO-8601 datetime (e.g. 2025-01-01T00:00:00 or with offset)
+        end_dt    – ISO-8601 datetime
+    Max range: 4 days.
+    """
+    from django.utils.dateparse import parse_datetime
+
+    params = request.data if request.method == 'POST' else request.GET
+
+    imei = str(params.get('imei', '')).strip()
+    start_dt_str = str(params.get('start_dt', '')).strip()
+    end_dt_str = str(params.get('end_dt', '')).strip()
+
+    errors = []
+
+    if not re.fullmatch(r'\d{15}', imei):
+        errors.append('imei must be exactly 15 digits.')
+
+    start_dt = parse_datetime(start_dt_str) if start_dt_str else None
+    end_dt = parse_datetime(end_dt_str) if end_dt_str else None
+
+    if not start_dt:
+        errors.append('start_dt is required (ISO-8601 datetime).')
+    if not end_dt:
+        errors.append('end_dt is required (ISO-8601 datetime).')
+
+    if errors:
+        return Response({'status': 'error', 'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Ensure timezone-aware
+    if timezone.is_naive(start_dt):
+        start_dt = timezone.make_aware(start_dt)
+    if timezone.is_naive(end_dt):
+        end_dt = timezone.make_aware(end_dt)
+
+    if start_dt >= end_dt:
+        return Response(
+            {'status': 'error', 'errors': ['start_dt must be before end_dt.']},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if (end_dt - start_dt) > timedelta(days=4):
+        return Response(
+            {'status': 'error', 'errors': ['Time range cannot exceed 4 days.']},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    base_filter = {
+        'timestamp__gte': start_dt,
+        'timestamp__lte': end_dt,
+        'raw_data__contains': imei,
+    }
+
+    gps_stats = _compute_continuity_stats(GPSDataLog.objects.filter(**base_filter), imei)
+    gpse_stats = _compute_continuity_stats(GPSemDataLog.objects.filter(**base_filter), imei)
+
+    return Response({
+        'status': 'ok',
+        'imei': imei,
+        'start_dt': start_dt.isoformat(),
+        'end_dt': end_dt.isoformat(),
+        'gps_data_log': gps_stats,
+        'gps_em_data_log': gpse_stats,
+    })
+
+
+@require_http_methods(['GET'])
+def gps_imei_continuity_page(request):
+    return render(request, 'gps_imei_continuity.html')

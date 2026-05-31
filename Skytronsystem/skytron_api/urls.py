@@ -513,6 +513,10 @@ urlpatterns = [
     path('gpsdata/archive/', archive_gps_data_log, name='archive_gps_data_log'),
     path('gpsdata/restore/', restore_gps_data_log, name='restore_gps_data_log'),
     path('gpsdata/archives/list/', list_gps_data_archives, name='list_gps_data_archives'),
+
+    # IMEI Continuity Analysis
+    path('gpsdata/imei-continuity/', gps_imei_continuity_api, name='gps_imei_continuity_api'),
+    path('gpsdata/imei-continuity/view/', gps_imei_continuity_page, name='gps_imei_continuity_page'),
     
     # Cell Tower Information API
     path('gpsdata/agps-info/', get_cell_tower_info, name='get_cell_tower_info'),
