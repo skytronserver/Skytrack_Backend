@@ -1,87 +1,76 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
-    <!-- ================================================================== -->
-    <!--  Skytrack · Live Tracking Load Test                                -->
-    <!--  Scenario: Authenticate → Poll GPS Track Data repeatedly           -->
-    <!--  Endpoints:                                                         -->
-    <!--    POST /api/dev/token/           (once per user, setup)           -->
-    <!--    POST /api/gps_track_data_api/  (main polling loop)              -->
-    <!--    POST /api/gps_track_lite/      (lightweight alternative)        -->
-    <!-- ================================================================== -->
+
     <TestPlan guiclass="TestPlanGui" testclass="TestPlan"
               testname="Skytrack Live Tracking Load Test" enabled="true">
       <stringProp name="TestPlan.comments">
-        Simulates N concurrent dashboard users polling live GPS data every few seconds.
-        Uses the DEV token endpoint for authentication — ensure DEBUG=True on test server.
-        Adjust user variables below before running.
+        Simulates N concurrent dashboard users authenticating and polling live GPS data.
+        Server-side throttling is disabled via DISABLE_THROTTLE=true — no bypass header needed.
+
+        BEFORE RUNNING: set LOGIN_USERNAME and LOGIN_PASSWORD to a valid test account.
+        Override via CLI: -JTHREADS=100 -JRAMP_UP=60 -JDURATION=300
+                          -JLOGIN_USERNAME=9999999999 -JLOGIN_PASSWORD=yourpassword
       </stringProp>
       <boolProp name="TestPlan.functional_mode">false</boolProp>
       <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
       <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
-      <elementProp name="TestPlan.arguments" elementType="Arguments">
+      <elementProp name="TestPlan.arguments" elementType="Arguments" guiclass="ArgumentsPanel">
         <collectionProp name="Arguments.arguments">
-          <elementProp name="TARGET_HOST" elementType="Argument">
-            <stringProp name="Argument.name">TARGET_HOST</stringProp>
-            <stringProp name="Argument.value">${__P(TARGET_HOST,localhost)}</stringProp>
-          </elementProp>
-          <elementProp name="TARGET_PORT" elementType="Argument">
-            <stringProp name="Argument.name">TARGET_PORT</stringProp>
-            <stringProp name="Argument.value">${__P(TARGET_PORT,8000)}</stringProp>
-          </elementProp>
-          <elementProp name="TARGET_PROTOCOL" elementType="Argument">
-            <stringProp name="Argument.name">TARGET_PROTOCOL</stringProp>
-            <stringProp name="Argument.value">${__P(TARGET_PROTOCOL,http)}</stringProp>
-          </elementProp>
+
           <elementProp name="LOGIN_USERNAME" elementType="Argument">
             <stringProp name="Argument.name">LOGIN_USERNAME</stringProp>
-            <stringProp name="Argument.value">9999999999</stringProp>
+            <stringProp name="Argument.value">${__P(LOGIN_USERNAME,9999999999)}</stringProp>
             <stringProp name="Argument.desc">Mobile number of test account</stringProp>
           </elementProp>
+
           <elementProp name="LOGIN_PASSWORD" elementType="Argument">
             <stringProp name="Argument.name">LOGIN_PASSWORD</stringProp>
-            <stringProp name="Argument.value">YourPlainTextPassword</stringProp>
-            <stringProp name="Argument.desc">Plain-text password for DEV endpoint</stringProp>
+            <stringProp name="Argument.value">${__P(LOGIN_PASSWORD,YourPlainTextPassword)}</stringProp>
+            <stringProp name="Argument.desc">Plain-text password for DEV token endpoint</stringProp>
           </elementProp>
+
           <elementProp name="THREADS" elementType="Argument">
             <stringProp name="Argument.name">THREADS</stringProp>
-            <stringProp name="Argument.value">30</stringProp>
+            <stringProp name="Argument.value">${__P(THREADS,30)}</stringProp>
             <stringProp name="Argument.desc">Concurrent simulated users</stringProp>
           </elementProp>
+
           <elementProp name="RAMP_UP" elementType="Argument">
             <stringProp name="Argument.name">RAMP_UP</stringProp>
-            <stringProp name="Argument.value">60</stringProp>
-            <stringProp name="Argument.desc">Ramp-up seconds</stringProp>
+            <stringProp name="Argument.value">${__P(RAMP_UP,60)}</stringProp>
+            <stringProp name="Argument.desc">Ramp-up period in seconds</stringProp>
           </elementProp>
+
           <elementProp name="DURATION" elementType="Argument">
             <stringProp name="Argument.name">DURATION</stringProp>
-            <stringProp name="Argument.value">180</stringProp>
+            <stringProp name="Argument.value">${__P(DURATION,180)}</stringProp>
             <stringProp name="Argument.desc">Test duration in seconds</stringProp>
           </elementProp>
+
           <elementProp name="POLL_INTERVAL_MS" elementType="Argument">
             <stringProp name="Argument.name">POLL_INTERVAL_MS</stringProp>
-            <stringProp name="Argument.value">3000</stringProp>
-            <stringProp name="Argument.desc">ms between GPS poll requests (simulates dashboard refresh)</stringProp>
+            <stringProp name="Argument.value">${__P(POLL_INTERVAL_MS,3000)}</stringProp>
+            <stringProp name="Argument.desc">ms between GPS polls per thread (simulates dashboard refresh)</stringProp>
           </elementProp>
+
           <elementProp name="PAGE_SIZE" elementType="Argument">
             <stringProp name="Argument.name">PAGE_SIZE</stringProp>
-            <stringProp name="Argument.value">50</stringProp>
+            <stringProp name="Argument.value">${__P(PAGE_SIZE,50)}</stringProp>
+            <stringProp name="Argument.desc">Number of vehicle records per page</stringProp>
           </elementProp>
-          <elementProp name="LOAD_TEST_SECRET" elementType="Argument">
-            <stringProp name="Argument.name">LOAD_TEST_SECRET</stringProp>
-            <stringProp name="Argument.value">${__P(LOAD_TEST_SECRET,skytrack-load-test-secret-2024)}</stringProp>
-          </elementProp>
+
         </collectionProp>
       </elementProp>
     </TestPlan>
     <hashTree>
 
-      <!-- ─── HTTP Request Defaults ────────────────────────────────────── -->
+      <!-- ─── HTTP Request Defaults ─────────────────────────────────────── -->
       <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement"
                          testname="HTTP Request Defaults" enabled="true">
-        <stringProp name="HTTPSampler.domain">${TARGET_HOST}</stringProp>
-        <stringProp name="HTTPSampler.port">${TARGET_PORT}</stringProp>
-        <stringProp name="HTTPSampler.protocol">${TARGET_PROTOCOL}</stringProp>
+        <stringProp name="HTTPSampler.domain">api.gromed.in</stringProp>
+        <stringProp name="HTTPSampler.port">443</stringProp>
+        <stringProp name="HTTPSampler.protocol">https</stringProp>
         <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
         <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
           <collectionProp name="Arguments.arguments"/>
@@ -89,7 +78,9 @@
       </ConfigTestElement>
       <hashTree/>
 
-      <!-- ─── SETUP Thread Group: obtain one JWT per test plan ─────────── -->
+      <!-- ═══════════════════════════════════════════════════════════════════
+           SETUP: Obtain one JWT token (runs once before main threads start)
+           ═══════════════════════════════════════════════════════════════════ -->
       <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup"
                         testname="SETUP · Obtain JWT token" enabled="true">
         <stringProp name="ThreadGroup.on_sample_error">stoptest</stringProp>
@@ -104,22 +95,19 @@
       <hashTree>
 
         <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
-                       testname="JSON Content-Type Header" enabled="true">
+                       testname="JSON Content-Type" enabled="true">
           <collectionProp name="HeaderManager.headers">
             <elementProp name="Content-Type" elementType="Header">
               <stringProp name="Header.name">Content-Type</stringProp>
               <stringProp name="Header.value">application/json</stringProp>
             </elementProp>
-            <elementProp name="X-Load-Test-Token" elementType="Header">
-              <stringProp name="Header.name">X-Load-Test-Token</stringProp>
-              <stringProp name="Header.value">${LOAD_TEST_SECRET}</stringProp>
-            </elementProp>
           </collectionProp>
         </HeaderManager>
         <hashTree/>
 
+        <!-- POST /api/dev/token/ — plain login, no captcha/OTP needed -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
-                          testname="POST /api/dev/token/ (setup)" enabled="true">
+                          testname="POST /api/dev/token/" enabled="true">
           <stringProp name="HTTPSampler.path">/api/dev/token/</stringProp>
           <stringProp name="HTTPSampler.method">POST</stringProp>
           <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
@@ -127,7 +115,7 @@
             <collectionProp name="Arguments.arguments">
               <elementProp name="" elementType="HTTPArgument">
                 <boolProp name="HTTPArgument.always_encode">false</boolProp>
-                <stringProp name="Argument.value">{"username": "${LOGIN_USERNAME}", "password": "${LOGIN_PASSWORD}"}</stringProp>
+                <stringProp name="Argument.value">{"username": "${__P(LOGIN_USERNAME,9999999999)}", "password": "${__P(LOGIN_PASSWORD,YourPlainTextPassword)}"}</stringProp>
                 <stringProp name="Argument.metadata">=</stringProp>
               </elementProp>
             </collectionProp>
@@ -136,16 +124,20 @@
           <stringProp name="HTTPSampler.response_timeout">10000</stringProp>
         </HTTPSamplerProxy>
         <hashTree>
+
           <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
-                             testname="Assert HTTP 200 on login" enabled="true">
-            <collectionProp name="Asserion.test_strings"><stringProp name="200">200</stringProp></collectionProp>
-            <stringProp name="Assertion.custom_message">DEV token endpoint must return 200</stringProp>
+                             testname="Assert login HTTP 200" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="200">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">DEV token endpoint must return 200 — check LOGIN_USERNAME and LOGIN_PASSWORD</stringProp>
             <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
             <boolProp name="Assertion.assume_success">false</boolProp>
             <intProp name="Assertion.test_type">2</intProp>
           </ResponseAssertion>
           <hashTree/>
 
+          <!-- Extract JWT from response body -->
           <RegexExtractor guiclass="RegexExtractorGui" testclass="RegexExtractor"
                           testname="Extract JWT token" enabled="true">
             <stringProp name="RegexExtractor.useHeaders">false</stringProp>
@@ -157,42 +149,49 @@
           </RegexExtractor>
           <hashTree/>
 
-          <!-- Store token in JMeter property so all threads can share it -->
+          <!-- Share JWT across all main threads via JMeter property -->
           <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor"
-                               testname="Store token as shared property" enabled="true">
+                               testname="Share JWT token with all threads" enabled="true">
             <stringProp name="cacheKey">true</stringProp>
             <stringProp name="filename"></stringProp>
             <stringProp name="parameters"></stringProp>
             <stringProp name="script">
-props.put("SHARED_JWT_TOKEN", vars.get("JWT_TOKEN"))
-log.info("JWT stored: " + vars.get("JWT_TOKEN").substring(0, Math.min(20, vars.get("JWT_TOKEN").length())) + "...")
+def token = vars.get("JWT_TOKEN")
+if (token == null || token == "TOKEN_NOT_FOUND") {
+    log.error("JWT token not extracted — stopping test")
+    ctx.getEngine().stopTest()
+} else {
+    props.put("SHARED_JWT_TOKEN", token)
+    log.info("JWT token stored successfully")
+}
             </stringProp>
             <stringProp name="scriptLanguage">groovy</stringProp>
           </JSR223PostProcessor>
           <hashTree/>
+
         </hashTree>
-
       </hashTree>
-      <!-- end SETUP hashTree -->
+      <!-- end SETUP -->
 
-      <!-- ─── MAIN Thread Group: GPS poll loop ─────────────────────────── -->
+      <!-- ═══════════════════════════════════════════════════════════════════
+           MAIN: Concurrent users polling live GPS data
+           ═══════════════════════════════════════════════════════════════════ -->
       <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup"
-                   testname="Live Tracking · ${THREADS} concurrent users"
-                   enabled="true">
+                   testname="Live Tracking · concurrent users" enabled="true">
         <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
         <elementProp name="ThreadGroup.main_controller" elementType="LoopController">
           <boolProp name="LoopController.continue_forever">false</boolProp>
           <intProp name="LoopController.loops">-1</intProp>
         </elementProp>
-        <stringProp name="ThreadGroup.num_threads">30</stringProp>
-        <stringProp name="ThreadGroup.ramp_time">60</stringProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(THREADS,30)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(RAMP_UP,60)}</stringProp>
         <boolProp name="ThreadGroup.scheduler">true</boolProp>
-        <stringProp name="ThreadGroup.duration">180</stringProp>
+        <stringProp name="ThreadGroup.duration">${__P(DURATION,180)}</stringProp>
         <stringProp name="ThreadGroup.delay">2</stringProp>
       </ThreadGroup>
       <hashTree>
 
-        <!-- Read shared JWT into thread-local variable -->
+        <!-- Load shared JWT into thread-local variable -->
         <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor"
                             testname="Restore JWT from shared property" enabled="true">
           <stringProp name="cacheKey">true</stringProp>
@@ -205,7 +204,7 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
         </JSR223PreProcessor>
         <hashTree/>
 
-        <!-- Auth header with JWT -->
+        <!-- Auth + JSON headers for all GPS samplers -->
         <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
                        testname="Auth + JSON Headers" enabled="true">
           <collectionProp name="HeaderManager.headers">
@@ -217,15 +216,11 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
               <stringProp name="Header.name">Content-Type</stringProp>
               <stringProp name="Header.value">application/json</stringProp>
             </elementProp>
-            <elementProp name="X-Load-Test-Token" elementType="Header">
-              <stringProp name="Header.name">X-Load-Test-Token</stringProp>
-              <stringProp name="Header.value">${LOAD_TEST_SECRET}</stringProp>
-            </elementProp>
           </collectionProp>
         </HeaderManager>
         <hashTree/>
 
-        <!-- ── Sampler 1: Full GPS Track Data ───────────────────────── -->
+        <!-- ── Sampler 1: Full GPS Track Data ──────────────────────────── -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
                           testname="POST /api/gps_track_data_api/" enabled="true">
           <stringProp name="HTTPSampler.path">/api/gps_track_data_api/</stringProp>
@@ -235,7 +230,7 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
             <collectionProp name="Arguments.arguments">
               <elementProp name="" elementType="HTTPArgument">
                 <boolProp name="HTTPArgument.always_encode">false</boolProp>
-                <stringProp name="Argument.value">{"page": 1, "page_size": ${PAGE_SIZE}}</stringProp>
+                <stringProp name="Argument.value">{"page": 1, "page_size": ${__P(PAGE_SIZE,50)}}</stringProp>
                 <stringProp name="Argument.metadata">=</stringProp>
               </elementProp>
             </collectionProp>
@@ -246,28 +241,29 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
         <hashTree>
           <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
                              testname="Assert HTTP 200" enabled="true">
-            <collectionProp name="Asserion.test_strings"><stringProp name="200">200</stringProp></collectionProp>
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="200">200</stringProp>
+            </collectionProp>
             <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
             <boolProp name="Assertion.assume_success">false</boolProp>
             <intProp name="Assertion.test_type">2</intProp>
           </ResponseAssertion>
           <hashTree/>
-          <DurationAssertion guiclass="DurationAssertionGui"
-                             testclass="DurationAssertion"
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
                              testname="SLA: GPS data under 3000 ms" enabled="true">
             <stringProp name="DurationAssertion.duration">3000</stringProp>
           </DurationAssertion>
           <hashTree/>
         </hashTree>
 
-        <!-- ── Think time between polls (simulates dashboard refresh) ── -->
+        <!-- Think time between polls (simulates dashboard refresh rate) -->
         <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer"
-                       testname="Poll interval (${POLL_INTERVAL_MS} ms)" enabled="true">
-          <stringProp name="ConstantTimer.delay">${POLL_INTERVAL_MS}</stringProp>
+                       testname="Poll interval" enabled="true">
+          <stringProp name="ConstantTimer.delay">${__P(POLL_INTERVAL_MS,3000)}</stringProp>
         </ConstantTimer>
         <hashTree/>
 
-        <!-- ── Sampler 2: GPS Track Lite (lightweight) ──────────────── -->
+        <!-- ── Sampler 2: GPS Track Lite (lightweight) ─────────────────── -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
                           testname="POST /api/gps_track_lite/" enabled="true">
           <stringProp name="HTTPSampler.path">/api/gps_track_lite/</stringProp>
@@ -277,7 +273,7 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
             <collectionProp name="Arguments.arguments">
               <elementProp name="" elementType="HTTPArgument">
                 <boolProp name="HTTPArgument.always_encode">false</boolProp>
-                <stringProp name="Argument.value">{"fields": ["latitude","longitude","speed","entry_time"], "page_size": ${PAGE_SIZE}}</stringProp>
+                <stringProp name="Argument.value">{"fields": ["latitude","longitude","speed","entry_time"], "page_size": ${__P(PAGE_SIZE,50)}}</stringProp>
                 <stringProp name="Argument.metadata">=</stringProp>
               </elementProp>
             </collectionProp>
@@ -288,21 +284,22 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
         <hashTree>
           <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
                              testname="Assert HTTP 200" enabled="true">
-            <collectionProp name="Asserion.test_strings"><stringProp name="200">200</stringProp></collectionProp>
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="200">200</stringProp>
+            </collectionProp>
             <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
             <boolProp name="Assertion.assume_success">false</boolProp>
             <intProp name="Assertion.test_type">2</intProp>
           </ResponseAssertion>
           <hashTree/>
-          <DurationAssertion guiclass="DurationAssertionGui"
-                             testclass="DurationAssertion"
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
                              testname="SLA: lite track under 2000 ms" enabled="true">
             <stringProp name="DurationAssertion.duration">2000</stringProp>
           </DurationAssertion>
           <hashTree/>
         </hashTree>
 
-        <!-- ── Sampler 3: GPS Cluster (map overview) ─────────────────── -->
+        <!-- ── Sampler 3: GPS Cluster (map overview) ───────────────────── -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
                           testname="POST /api/gps_cluster/" enabled="true">
           <stringProp name="HTTPSampler.path">/api/gps_cluster/</stringProp>
@@ -312,7 +309,7 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
             <collectionProp name="Arguments.arguments">
               <elementProp name="" elementType="HTTPArgument">
                 <boolProp name="HTTPArgument.always_encode">false</boolProp>
-                <stringProp name="Argument.value">{"bounds":{"north":28.0,"south":8.0,"east":90.0,"west":68.0},"zoom":8}</stringProp>
+                <stringProp name="Argument.value">{"bounds": {"north": 28.0, "south": 8.0, "east": 90.0, "west": 68.0}, "zoom": 8}</stringProp>
                 <stringProp name="Argument.metadata">=</stringProp>
               </elementProp>
             </collectionProp>
@@ -323,21 +320,22 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
         <hashTree>
           <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
                              testname="Assert HTTP 200" enabled="true">
-            <collectionProp name="Asserion.test_strings"><stringProp name="200">200</stringProp></collectionProp>
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="200">200</stringProp>
+            </collectionProp>
             <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
             <boolProp name="Assertion.assume_success">false</boolProp>
             <intProp name="Assertion.test_type">2</intProp>
           </ResponseAssertion>
           <hashTree/>
-          <DurationAssertion guiclass="DurationAssertionGui"
-                             testclass="DurationAssertion"
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion"
                              testname="SLA: cluster under 3000 ms" enabled="true">
             <stringProp name="DurationAssertion.duration">3000</stringProp>
           </DurationAssertion>
           <hashTree/>
         </hashTree>
 
-        <!-- inter-request think time -->
+        <!-- Short pause between the three samplers in each loop -->
         <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer"
                        testname="Think Time 200 ms" enabled="true">
           <stringProp name="ConstantTimer.delay">200</stringProp>
@@ -345,7 +343,7 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
         <hashTree/>
 
       </hashTree>
-      <!-- end MAIN ThreadGroup hashTree -->
+      <!-- end MAIN ThreadGroup -->
 
       <!-- ─── Listeners ─────────────────────────────────────────────────── -->
       <ResultCollector guiclass="SummaryReport" testclass="ResultCollector"
@@ -377,7 +375,8 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
       <ResultCollector guiclass="StatVisualizer" testclass="ResultCollector"
                        testname="Aggregate Report" enabled="true">
         <boolProp name="ResultCollector.error_logging">false</boolProp>
-        <objProp><name>saveConfig</name>
+        <objProp>
+          <name>saveConfig</name>
           <value class="SampleSaveConfiguration">
             <time>true</time><latency>true</latency>
           </value>
@@ -389,7 +388,8 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
       <ResultCollector guiclass="RespTimeGraphVisualizer" testclass="ResultCollector"
                        testname="Response Time Graph" enabled="true">
         <boolProp name="ResultCollector.error_logging">false</boolProp>
-        <objProp><name>saveConfig</name>
+        <objProp>
+          <name>saveConfig</name>
           <value class="SampleSaveConfiguration">
             <time>true</time><latency>true</latency>
           </value>
@@ -399,6 +399,5 @@ vars.put("AUTH_BEARER", "Bearer " + props.get("SHARED_JWT_TOKEN"))
       <hashTree/>
 
     </hashTree>
-    <!-- end TestPlan hashTree -->
   </hashTree>
 </jmeterTestPlan>
