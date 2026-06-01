@@ -1330,6 +1330,7 @@ DEPLOY_URL = "skytron.in" #os.getenv("ROOT_URL", "skytron.in")
 EMAIL_ACTIVE=False
 
 REMOVE_OTP_CAP=False #True
+DIRECT_LOGIN_BYPASS=True  # TEMPORARY: skip captcha+OTP, return final auth token directly
 
 from django.core.serializers import serialize
 from django.core.paginator import Paginator
@@ -17770,33 +17771,33 @@ def user_login(request ):
         
         
         
-        if not REMOVE_OTP_CAP:
+        if not REMOVE_OTP_CAP and not DIRECT_LOGIN_BYPASS:
             try:
-                password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)  
+                password = decrypt_field(request.data.get('password', None),PRIVATE_KEY)
             except:
                 return JsonResponse({'success': False, 'error': 'Invalid Password'}, status=status.HTTP_400_BAD_REQUEST)
 
             if not password:
                 return JsonResponse({'success': False, 'error': 'Invalid Password'}, status=status.HTTP_400_BAD_REQUEST)
-        
+
             captchaSuccess=False
             try:
                 user_input=int(user_input)
             except:
                 return JsonResponse({'success': False, 'error': 'Invalid Captcha Input. Only integers allowed'})
             try:
-                captcha = Captcha.objects.filter(key=key).last() 
+                captcha = Captcha.objects.filter(key=key).last()
                 if not captcha.is_valid():
                     captcha.delete()  # Optionally, delete the expired captcha
-                    return JsonResponse({'success': False, 'error': 'Captcha expired'}) 
+                    return JsonResponse({'success': False, 'error': 'Captcha expired'})
                 if int(user_input) == int(captcha.answer):
                     captcha.delete()  # Optionally, delete the captcha after successful verification
                     captchaSuccess=True
                 else:
                     return JsonResponse({'success': False, 'error': 'Invalid captcha'})
-            except Captcha.DoesNotExist: 
+            except Captcha.DoesNotExist:
                 return JsonResponse({'success': False, 'error': 'Captcha not found'})
-            except Exception as e: #Captcha.DoesNotExist: 
+            except Exception as e: #Captcha.DoesNotExist:
                 print('error',e)
                 return JsonResponse({'success': False, 'error': 'Captcha not found'})
             
@@ -17833,13 +17834,59 @@ def user_login(request ):
         session_expiry_mins = get_session_expiry_minutes(user.role)
         # ===== END LOGIN SETTINGS VALIDATION =====
 
+        # ===== DIRECT LOGIN BYPASS (TEMPORARY - skip captcha+OTP for testing) =====
+        if DIRECT_LOGIN_BYPASS:
+            from .login_settings_cache import add_active_session
+            user.is_active = True
+            user.login = True
+            user.save()
+            Token.objects.filter(user=user).delete()
+            jwt_token = generate_jwt_token(
+                user_id=user.id,
+                user_mobile=user.mobile,
+                session_data={"login_type": "otp_validated", "status": "authenticated",
+                              "login_time": timezone.now().isoformat(), "role": user.role},
+                expiry_minutes=session_expiry_mins
+            )
+            token_value = jwt_token if jwt_token else str(Token.objects.create(user=user).key)
+            bypass_session_data = {
+                'user': user.id,
+                'token': token_value,
+                'otp': 0,
+                'status': 'login',
+                'loginTime': timezone.now(),
+            }
+            bypass_serializer = SessionSerializer(data=bypass_session_data)
+            if bypass_serializer.is_valid():
+                bypass_serializer.save()
+                add_active_session(user.id, token_value, session_expiry_mins)
+                try:
+                    timenow = timezone.now()
+                    user.last_login = timenow
+                    user.last_activity = timenow
+                    user.save()
+                    uu = get_user_object(user, user.role)
+                    if uu:
+                        uu = recursive_model_to_dict(uu, ["users", "esim_provider"])
+                    try:
+                        create_mqtt_user(user.mobile, token_value)
+                    except Exception as e:
+                        print(f"MQTT user creation failed (bypass): {e}")
+                    return Response({'status': 'Login Successful', 'token': token_value, 'token2': token_value,
+                                     'user': UserSerializer2(user).data, 'info': uu}, status=status.HTTP_200_OK)
+                except Exception as e:
+                    return Response({'error': 'Failed to complete login: ' + str(e)}, status=400)
+            else:
+                return Response({'error': 'Failed to create session', 'details': bypass_serializer.errors}, status=400)
+        # ===== END DIRECT LOGIN BYPASS =====
+
         user.is_active=True
         user.login=True
         user.save()
         existing_session = Session.objects.filter(user=user.id, status='login').last()
         #if existing_session:
         #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
-        
+
         if STATIC_OTP_CAP:
                 otp  = str(685472)
         else:
