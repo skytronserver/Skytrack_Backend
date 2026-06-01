@@ -37,7 +37,9 @@ except Exception:  # pragma: no cover
 
 
 def _is_load_test_request(request):
-    """Return True when the request carries a valid load-test bypass token."""
+    """Return True when throttle should be bypassed (DISABLE_THROTTLE=true or valid token)."""
+    if getattr(settings, 'DISABLE_THROTTLE', False):
+        return True
     secret = getattr(settings, 'LOAD_TEST_SECRET', '')
     return bool(secret and request.META.get('HTTP_X_LOAD_TEST_TOKEN') == secret)
 
@@ -1432,8 +1434,9 @@ import subprocess
 from tempfile import NamedTemporaryFile
 
 from pathlib import Path
-import os  
-from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+import os
+# AnonRateThrottle and UserRateThrottle are already imported at the top of this file
+# as SafeAnonRateThrottle/SafeUserRateThrottle — do NOT re-import here.
 from .throttles import AuthRateThrottle, LoginRateThrottle, OTPRateThrottle, PasswordResetRateThrottle
 from django.core.cache import cache
 
@@ -16882,10 +16885,24 @@ def superadmin_finalize_technical_onboarding_request(request):
     if not compatibility_report_path:
         return Response({'error': 'Invalid file.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    technical_status = serializer.validated_data['status']
+
     onboarding_request.compatibility_report_pdf = compatibility_report_path
     onboarding_request.final_comment = serializer.validated_data['final_comment']
-    onboarding_request.status = serializer.validated_data['status']
     onboarding_request.decision_datetime = timezone.now()
+
+    # TEMPORARY: skip state admin approval step for compatible devices only.
+    # TO RESTORE: remove this block and uncomment the original line below.
+    if technical_status == 'technically_compatible':
+        onboarding_request.status = 'StateAdminApproved'
+        manufacturer = onboarding_request.manufacturer
+        manufacturer.status = 'TechnicalOnboardingApproved'
+        manufacturer.save()
+    else:
+        onboarding_request.status = technical_status
+    # ORIGINAL (restore when state admin step is re-enabled):
+    # onboarding_request.status = technical_status
+
     onboarding_request.save(
         update_fields=['compatibility_report_pdf', 'final_comment', 'status', 'decision_datetime']
     )

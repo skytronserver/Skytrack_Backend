@@ -36,6 +36,9 @@ JWT_PUBLIC_KEY_PATH = os.path.join(BASE_DIR, 'keys', 'jwt_public_key.pem')
 # Used exclusively for JMeter / load-test runs. Leave blank (or unset) in production.
 LOAD_TEST_SECRET = os.environ.get('LOAD_TEST_SECRET', '')
 
+# Set DISABLE_THROTTLE=true to turn off ALL throttling (use only during load tests).
+DISABLE_THROTTLE = os.environ.get('DISABLE_THROTTLE', 'false').lower() == 'true'
+
 MQTT_HOST = os.environ.get('MQTT_HOST', '127.0.0.1')
 MQTT_PORT = os.environ.get('MQTT_PORT', '8883')
 MQTT_ADMIN_USER = os.environ.get('MQTT_ADMIN_USER', '')

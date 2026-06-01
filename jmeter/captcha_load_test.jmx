@@ -1,56 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
-    <!-- ================================================================== -->
-    <!--  Skytrack · Captcha Generation Load Test                           -->
-    <!--  Tests: POST /api/generate-captcha/                               -->
-    <!--  Measures throughput and latency under concurrent load             -->
-    <!-- ================================================================== -->
+
     <TestPlan guiclass="TestPlanGui" testclass="TestPlan"
               testname="Skytrack Captcha Generation Load Test" enabled="true">
       <stringProp name="TestPlan.comments">
-        Load test for POST /api/generate-captcha/
-        Adjust TARGET_HOST, TARGET_PORT, THREADS, RAMP_UP, DURATION below.
+        Load test for GET /api/generate-captcha/
+        Server-side throttling is disabled via DISABLE_THROTTLE=true — no bypass header needed.
+        Override thread count via CLI: -JTHREADS=1000 -JRAMP_UP=60 -JDURATION=300
       </stringProp>
       <boolProp name="TestPlan.functional_mode">false</boolProp>
       <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
       <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
-      <elementProp name="TestPlan.arguments" elementType="Arguments">
+      <elementProp name="TestPlan.arguments" elementType="Arguments" guiclass="ArgumentsPanel">
         <collectionProp name="Arguments.arguments">
-          <elementProp name="TARGET_HOST" elementType="Argument">
-            <stringProp name="Argument.name">TARGET_HOST</stringProp>
-            <stringProp name="Argument.value">${__P(TARGET_HOST,localhost)}</stringProp>
-          </elementProp>
-          <elementProp name="TARGET_PORT" elementType="Argument">
-            <stringProp name="Argument.name">TARGET_PORT</stringProp>
-            <stringProp name="Argument.value">${__P(TARGET_PORT,8000)}</stringProp>
-          </elementProp>
-          <elementProp name="TARGET_PROTOCOL" elementType="Argument">
-            <stringProp name="Argument.name">TARGET_PROTOCOL</stringProp>
-            <stringProp name="Argument.value">${__P(TARGET_PROTOCOL,http)}</stringProp>
-          </elementProp>
           <elementProp name="THREADS" elementType="Argument">
             <stringProp name="Argument.name">THREADS</stringProp>
-            <stringProp name="Argument.value">50</stringProp>
+            <stringProp name="Argument.value">${__P(THREADS,50)}</stringProp>
           </elementProp>
           <elementProp name="RAMP_UP" elementType="Argument">
             <stringProp name="Argument.name">RAMP_UP</stringProp>
-            <stringProp name="Argument.value">30</stringProp>
+            <stringProp name="Argument.value">${__P(RAMP_UP,30)}</stringProp>
           </elementProp>
           <elementProp name="DURATION" elementType="Argument">
             <stringProp name="Argument.name">DURATION</stringProp>
-            <stringProp name="Argument.value">120</stringProp>
-          </elementProp>
-          <elementProp name="LOAD_TEST_SECRET" elementType="Argument">
-            <stringProp name="Argument.name">LOAD_TEST_SECRET</stringProp>
-            <stringProp name="Argument.value">${__P(LOAD_TEST_SECRET,skytrack-load-test-secret-2024)}</stringProp>
+            <stringProp name="Argument.value">${__P(DURATION,120)}</stringProp>
           </elementProp>
         </collectionProp>
       </elementProp>
     </TestPlan>
     <hashTree>
 
-      <!-- ─── HTTP Request Defaults (shared) ─────────────────────────── -->
+      <!-- ─── HTTP Request Defaults ─────────────────────────────────────── -->
       <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement"
                          testname="HTTP Request Defaults" enabled="true">
         <stringProp name="HTTPSampler.domain">api.gromed.in</stringProp>
@@ -63,40 +44,35 @@
       </ConfigTestElement>
       <hashTree/>
 
-      <!-- ─── HTTP Header Manager ──────────────────────────────────────── -->
-      <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
-                     testname="HTTP Headers" enabled="true">
-        <collectionProp name="HeaderManager.headers">
-          <elementProp name="Content-Type" elementType="Header">
-            <stringProp name="Header.name">Content-Type</stringProp>
-            <stringProp name="Header.value">application/json</stringProp>
-          </elementProp>
-          <elementProp name="X-Load-Test-Token" elementType="Header">
-            <stringProp name="Header.name">X-Load-Test-Token</stringProp>
-            <stringProp name="Header.value">${LOAD_TEST_SECRET}</stringProp>
-          </elementProp>
-        </collectionProp>
-      </HeaderManager>
-      <hashTree/>
-
-      <!-- ─── Thread Group: Captcha Generation ────────────────────────── -->
+      <!-- ─── Thread Group ──────────────────────────────────────────────── -->
       <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup"
-                   testname="Captcha Generation · ${THREADS} concurrent users"
-                   enabled="true">
+                   testname="Captcha Generation" enabled="true">
         <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
         <elementProp name="ThreadGroup.main_controller" elementType="LoopController">
           <boolProp name="LoopController.continue_forever">false</boolProp>
           <intProp name="LoopController.loops">-1</intProp>
         </elementProp>
-        <stringProp name="ThreadGroup.num_threads">50</stringProp>
-        <stringProp name="ThreadGroup.ramp_time">30</stringProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(THREADS,50)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(RAMP_UP,30)}</stringProp>
         <boolProp name="ThreadGroup.scheduler">true</boolProp>
-        <stringProp name="ThreadGroup.duration">120</stringProp>
+        <stringProp name="ThreadGroup.duration">${__P(DURATION,120)}</stringProp>
         <stringProp name="ThreadGroup.delay">0</stringProp>
       </ThreadGroup>
       <hashTree>
 
-        <!-- ── POST /api/generate-captcha/ ──────────────────────────── -->
+        <!-- ── Headers — inside ThreadGroup so they are applied to every sampler -->
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager"
+                       testname="HTTP Headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="Content-Type" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+
+        <!-- ── GET /api/generate-captcha/ ───────────────────────────────── -->
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy"
                           testname="GET /api/generate-captcha/" enabled="true">
           <stringProp name="HTTPSampler.path">/api/generate-captcha/</stringProp>
@@ -110,7 +86,7 @@
         </HTTPSamplerProxy>
         <hashTree>
 
-          <!-- ── Response Assertions ──────────────────────────────── -->
+          <!-- Assert HTTP 200 -->
           <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
                              testname="Assert HTTP 200" enabled="true">
             <collectionProp name="Asserion.test_strings">
@@ -123,8 +99,9 @@
           </ResponseAssertion>
           <hashTree/>
 
+          <!-- Assert response body contains "key" -->
           <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
-                             testname="Assert body has 'key' field" enabled="true">
+                             testname="Assert body has key field" enabled="true">
             <collectionProp name="Asserion.test_strings">
               <stringProp name="key_field">"key"</stringProp>
             </collectionProp>
@@ -135,8 +112,9 @@
           </ResponseAssertion>
           <hashTree/>
 
+          <!-- Assert response body contains "captcha" -->
           <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion"
-                             testname="Assert body has 'captcha' field" enabled="true">
+                             testname="Assert body has captcha field" enabled="true">
             <collectionProp name="Asserion.test_strings">
               <stringProp name="captcha_field">"captcha"</stringProp>
             </collectionProp>
@@ -147,7 +125,7 @@
           </ResponseAssertion>
           <hashTree/>
 
-          <!-- ── Extract captcha_key for chaining (optional) ────── -->
+          <!-- Extract captcha key for optional chaining to verify-captcha -->
           <RegexExtractor guiclass="RegexExtractorGui" testclass="RegexExtractor"
                           testname="Extract captcha_key" enabled="true">
             <stringProp name="RegexExtractor.useHeaders">false</stringProp>
@@ -159,7 +137,7 @@
           </RegexExtractor>
           <hashTree/>
 
-          <!-- ── Duration Assertion (SLA: <2 s) ────────────────── -->
+          <!-- SLA: each response must arrive within 2 seconds -->
           <DurationAssertion guiclass="DurationAssertionGui"
                              testclass="DurationAssertion"
                              testname="SLA: response under 2000 ms" enabled="true">
@@ -168,9 +146,8 @@
           <hashTree/>
 
         </hashTree>
-        <!-- end HTTPSamplerProxy hashTree -->
 
-        <!-- ── Constant Timer: 100 ms think-time ────────────────────── -->
+        <!-- 100 ms think-time between requests per thread -->
         <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer"
                        testname="Think Time 100 ms" enabled="true">
           <stringProp name="ConstantTimer.delay">100</stringProp>
@@ -178,10 +155,9 @@
         <hashTree/>
 
       </hashTree>
-      <!-- end ThreadGroup hashTree -->
+      <!-- end ThreadGroup -->
 
       <!-- ─── Listeners ─────────────────────────────────────────────────── -->
-
       <ResultCollector guiclass="SummaryReport" testclass="ResultCollector"
                        testname="Summary Report" enabled="true">
         <boolProp name="ResultCollector.error_logging">false</boolProp>
@@ -224,7 +200,8 @@
       <ResultCollector guiclass="RespTimeGraphVisualizer" testclass="ResultCollector"
                        testname="Response Time Graph" enabled="true">
         <boolProp name="ResultCollector.error_logging">false</boolProp>
-        <objProp><name>saveConfig</name>
+        <objProp>
+          <name>saveConfig</name>
           <value class="SampleSaveConfiguration">
             <time>true</time><latency>true</latency>
           </value>
@@ -234,6 +211,5 @@
       <hashTree/>
 
     </hashTree>
-    <!-- end TestPlan hashTree -->
   </hashTree>
 </jmeterTestPlan>

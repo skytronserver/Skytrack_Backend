@@ -15,9 +15,10 @@ class LoadTestBypassMixin:
     """
 
     def allow_request(self, request, view):
+        if getattr(settings, 'DISABLE_THROTTLE', False):
+            return True
         secret = getattr(settings, 'LOAD_TEST_SECRET', '')
         if secret and request.META.get('HTTP_X_LOAD_TEST_TOKEN') == secret:
-            self.num_requests = None  # prevents wait() from being called
             return True
         return super().allow_request(request, view)
 
