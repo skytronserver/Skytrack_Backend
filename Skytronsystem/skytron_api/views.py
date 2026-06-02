@@ -1324,13 +1324,13 @@ logger = logging.getLogger(__name__)
 
 HOST_STORAGE_PATH = os.environ.get('HOST_STORAGE_PATH', '/host_storage')
 e=""
-STATIC_OTP_CAP=False #True
+STATIC_OTP_CAP=False # True => serve static OTP/captcha for all users (for testing, can be set to True to serve same OTP/captcha for all users and bypass validation)
 import os
 DEPLOY_URL = "skytron.in" #os.getenv("ROOT_URL", "skytron.in")   
 EMAIL_ACTIVE=False
 
-REMOVE_OTP_CAP=False #True
-DIRECT_LOGIN_BYPASS=False  # OTP + captcha + password encryption enabled
+REMOVE_OTP_CAP=False # True => remove otp/cap from login response (for testing, can be set to True to remove OTP/cap from response and rely on
+DIRECT_LOGIN_BYPASS=False  # OTP + captcha + password encryption  True=> OFF, False => ON (for testing can be set to True to bypass OTP/captcha/password encryption)
 
 from django.core.serializers import serialize
 from django.core.paginator import Paginator
@@ -13124,15 +13124,18 @@ def COPManufacturerOtpVerify(request  ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
-def list_devicemodel(request ): 
+def list_devicemodel(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-     
-    device_models = DeviceModel.objects.all() 
-    serializer = DeviceModelSerializer_disp(device_models, many=True) 
-    return Response(serializer.data)
+    device_models = DeviceModel.objects.all()
+    serializer = DeviceModelSerializer_disp(device_models, many=True)
+    data = serializer.data
+    if not get_user_object(request.user, "devicemanufacture"):
+        for item in data:
+            item.pop('mqtt_pw', None)
+    return Response(data)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -16977,12 +16980,14 @@ def create_device_model(request ):
                 otp = str(secrets.randbelow(1000000)).zfill(6)
 
     # Create data for the new DeviceModel entry
+    _mqtt_pw = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(71))
     data = {
         'otp_time':timezone.now(),
         'otp': otp,
         'created_by': user_id,
-        'created': timezone.now(),   
+        'created': timezone.now(),
         'status': 'Manufacturer_OTP_Sent',
+        'mqtt_pw': _mqtt_pw,
     }
 
     # Attach the file to the request data

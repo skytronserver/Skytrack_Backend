@@ -34,20 +34,18 @@ from skytron_api.serializers import (  # noqa: F401 – wildcard kept for dynami
 from skytron_api.views import get_user_object
 
 # MQTT Settings - using environment variables for deployment flexibility
-#BROKER_URL = os.getenv("MQTT_BROKER_HOST", "10.192.136.179")  # Default fallback
-BROKER_URL = os.getenv("MQTT_BROKER_HOST", "")  # Default fallback
+BROKER_URL = os.getenv("MQTT_BROKER_HOST", "localhost")
 BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))  # Use SSL/TLS port
 
 # MQTT Authentication - using environment variables
 MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
 
-# Paths to certificates - Docker container path
-# Use root CA certificate for proper chain of trust validation
-ROOT_CA = "/app/keys/ca.crt"  # Root CA for certificate chain validation
-#CLIENT_CERT = "/app/mqttKeys/client.crt"  # Optional: for mutual TLS
-#CLIENT_KEY = "/app/mqttKeys/client.key"    # Optional: for mutual TLS
-#mosquitto_sub -h 'xxx.xxx.xxx.xxx' -p 8883 -t '#' --cafile /app/ca.crt --cert /app/client.crt --key /app/client.key -d
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_CA = os.getenv(
+    "MQTT_CA_CERT",
+    os.path.join(_BASE_DIR, "keys", "ca.crt"),
+)
 
 
 
@@ -250,10 +248,12 @@ def Process_owner_Data(msg, topic_parts):
             role = "owner"
             uo = get_user_object(user, role)
 
+            response_topic = topic_parts[0]+"/"+topic_parts[1]+"/server"
+
             if not uo:
                 error_message = f"Request must be from {role}"
                 print(error_message)
-                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+                client.publish(response_topic, json.dumps({"status": "error", "message": error_message}))
                 return
 
             user.last_activity = timezone.now()
@@ -261,16 +261,35 @@ def Process_owner_Data(msg, topic_parts):
             user.save()
 
             try:
-                alerts = AlertsLog.objects.order_by('-id')[:10]
-                if alerts:
-                    serializer = AlertsLogSerializer(alerts, many=True)
-                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory": serializer.data}))
-                    print("data sent")
-                else:
-                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory": []}))
-                    print("no data")
+                from skytron_api.models import VehicleOwner
+                vehicle_owners = VehicleOwner.objects.filter(users=user)
+                alerts = AlertsLog.objects.filter(
+                    deviceTag__vehicle_owner__in=vehicle_owners
+                ).select_related('gps_ref', 'deviceTag').order_by('-id')[:10]
+                alert_list = []
+                for a in alerts:
+                    try:
+                        gps = a.gps_ref
+                        tag = a.deviceTag
+                        alert_list.append({
+                            "id": a.id,
+                            "type": a.type,
+                            "status": a.status,
+                            "timestamp": str(a.timestamp),
+                            "alert_details": a.alert_details,
+                            "vehicle_reg_no": getattr(tag, 'vehicle_reg_no', ''),
+                            "device_tag_id": tag.id,
+                            "latitude": str(gps.latitude) if gps else None,
+                            "longitude": str(gps.longitude) if gps else None,
+                            "speed": str(gps.speed) if gps else None,
+                        })
+                    except Exception:
+                        pass
+                client.publish(response_topic, json.dumps({"status": "success", "alertHistory": alert_list}))
+                print(f"data sent: {len(alert_list)} alerts")
             except Exception as e:
-                print(e)
+                print(f"[owner] alert query error: {e}")
+                client.publish(response_topic, json.dumps({"status": "error", "message": "Failed to fetch alerts"}))
 
     except Exception as e:
         raise e
