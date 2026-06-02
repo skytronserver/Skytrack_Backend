@@ -1330,7 +1330,7 @@ DEPLOY_URL = "skytron.in" #os.getenv("ROOT_URL", "skytron.in")
 EMAIL_ACTIVE=False
 
 REMOVE_OTP_CAP=False #True
-DIRECT_LOGIN_BYPASS=True  # TEMPORARY: skip captcha+OTP, return final auth token directly
+DIRECT_LOGIN_BYPASS=False  # OTP + captcha + password encryption enabled
 
 from django.core.serializers import serialize
 from django.core.paginator import Paginator
@@ -4462,15 +4462,22 @@ def send_SMS(no,text,tpid):
     } 
 
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()  # Raise error for bad responses (non-200)
+        if not response.text.startswith("Success"):
+            print("Loginotpsend Gateway Error:", response.text)
+            return False, response.text
         print("Message Sent Successfully")
+        return True, response.text
     except requests.exceptions.HTTPError as errh:
         print("Loginotpsend HTTP Error:", errh)
+        return False, str(errh)
     except requests.exceptions.RequestException as err:
         print("Loginotpsend Request Exception:", err)
+        return False, str(err)
     except Exception as e :
         print("Loginotpsend:", e)
+        return False, str(e)
 
 
 
@@ -4490,7 +4497,7 @@ def sms_send(no,text,tpid):
     } 
 
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()  # Raise error for bad responses (non-200)
         print("Message Sent Successfully")
     except requests.exceptions.HTTPError as errh:
@@ -4498,7 +4505,7 @@ def sms_send(no,text,tpid):
     except requests.exceptions.RequestException as err:
         print("Loginotpsend Request Exception:", err)
     except Exception as e :
-        print("Loginotpsend:", err)
+        print("Loginotpsend:", e)
 
 def add_sms_queue(msg,no):
     sms_entry ,error= sms_out.objects.safe_create( sms_text=msg,no=no, status='Queue'  )
@@ -7013,7 +7020,9 @@ def send_usercreation_otp(user, new_password, type):
             'please click at the following link and validate the registration request- '
             'https://' + DEPLOY_URL + '/new/' + str(new_password) +
             '. The link will expire in 24 hours. -SkyTron')
-    send_SMS(user.mobile, text, tpid)
+    ok, msg = send_SMS(user.mobile, text, tpid)
+    if not ok:
+        raise Exception(msg)
 
 
 def _role_to_account_type(role: str) -> str:
@@ -7090,7 +7099,7 @@ def resend_usercreation_otp(request):
     try:
         send_usercreation_otp(target_user, token_str, account_type)
     except Exception as e:
-        return Response({"error": "Failed to send OTP. Please try again later."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"error": "Failed to send OTP.", "sms_error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     return Response({"message": "User creation OTP sent successfully."}, status=status.HTTP_200_OK)
 
@@ -17951,15 +17960,32 @@ def user_login(request ):
 
             text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
-            send_SMS(user.mobile,text,tpid) 
-            send_mail(
-                'Login OTP',
-                "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'noreply@skytron.in',
-                [user.email],
-                fail_silently=False,
-            )  
-            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token_value,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
+            sms_ok, sms_err = send_SMS(user.mobile, text, tpid)
+            email_ok = True
+            email_err = None
+            try:
+                send_mail(
+                    'Login OTP',
+                    "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                    'noreply@skytron.in',
+                    [user.email],
+                    fail_silently=False,
+                )
+            except Exception as mail_exc:
+                email_ok = False
+                email_err = str(mail_exc)
+                print("Loginotpsend Mail Error:", mail_exc)
+            delivery_info = {}
+            if not sms_ok:
+                delivery_info['sms_status'] = 'failed'
+                delivery_info['sms_error'] = sms_err
+            if not email_ok:
+                delivery_info['email_status'] = 'failed'
+                delivery_info['email_error'] = email_err
+            resp = {'status': 'OTP Sent to ' + str(user.email) + '/' + str(user.mobile) + '.', 'token': token_value, 'user': UserSerializer2(user).data}
+            if delivery_info:
+                resp['delivery_warnings'] = delivery_info
+            return Response(resp, status=status.HTTP_200_OK)
         else:
             print("Session validation errors:", session_serializer.errors)
             return Response({'error': 'Failed to create session', 'details': session_serializer.errors}, status=400)
@@ -18538,18 +18564,35 @@ def temp_user_logout(request ):
         } 
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
-            session_serializer.save()         
+            session_serializer.save()
             text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
-            send_SMS(user.mobile,text,tpid) 
-            send_mail(
-                'Login OTP',
-                "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'noreply@skytron.in',
-                [user.email],
-                fail_silently=False,
-            )  
-            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token_value,'user':UserSerializer2(user).data}, status=status.HTTP_200_OK)
+            sms_ok, sms_err = send_SMS(user.mobile, text, tpid)
+            email_ok = True
+            email_err = None
+            try:
+                send_mail(
+                    'Login OTP',
+                    "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                    'noreply@skytron.in',
+                    [user.email],
+                    fail_silently=False,
+                )
+            except Exception as mail_exc:
+                email_ok = False
+                email_err = str(mail_exc)
+                print("Loginotpsend Mail Error:", mail_exc)
+            delivery_info = {}
+            if not sms_ok:
+                delivery_info['sms_status'] = 'failed'
+                delivery_info['sms_error'] = sms_err
+            if not email_ok:
+                delivery_info['email_status'] = 'failed'
+                delivery_info['email_error'] = email_err
+            resp = {'status': 'OTP Sent to ' + str(user.email) + '/' + str(user.mobile) + '.', 'token': token_value, 'user': UserSerializer2(user).data}
+            if delivery_info:
+                resp['delivery_warnings'] = delivery_info
+            return Response(resp, status=status.HTTP_200_OK)
         else:
             print("Session validation errors:", session_serializer.errors)
             return Response({'error': 'Failed to create session', 'details': session_serializer.errors}, status=400)
@@ -18705,18 +18748,35 @@ def user_login_app(request ):
             # Note: Session tracking is done in validate_otp after OTP confirmation
             text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
-            send_SMS(user.mobile,text,tpid) 
-            send_mail(
-                'Login OTP',
-                "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                'noreply@skytron.in',
-                [user.email],
-                fail_silently=False,
-            )  
+            sms_ok, sms_err = send_SMS(user.mobile, text, tpid)
+            email_ok = True
+            email_err = None
+            try:
+                send_mail(
+                    'Login OTP',
+                    "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                    'noreply@skytron.in',
+                    [user.email],
+                    fail_silently=False,
+                )
+            except Exception as mail_exc:
+                email_ok = False
+                email_err = str(mail_exc)
+                print("Loginotpsend Mail Error:", mail_exc)
             uu=get_user_object(user,user.role)
             if uu:
-                uu = recursive_model_to_dict(uu,["users"]) 
-            return Response({'status':'Email and SMS OTP Sent to '+str(user.email)+'/'+str(user.mobile)+'.','token': token_value,'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
+                uu = recursive_model_to_dict(uu,["users"])
+            delivery_info = {}
+            if not sms_ok:
+                delivery_info['sms_status'] = 'failed'
+                delivery_info['sms_error'] = sms_err
+            if not email_ok:
+                delivery_info['email_status'] = 'failed'
+                delivery_info['email_error'] = email_err
+            resp = {'status': 'OTP Sent to ' + str(user.email) + '/' + str(user.mobile) + '.', 'token': token_value, 'user': UserSerializer2(user).data, 'info': uu}
+            if delivery_info:
+                resp['delivery_warnings'] = delivery_info
+            return Response(resp, status=status.HTTP_200_OK)
         else:
             print("Session validation errors:", session_serializer.errors)
             return Response({'error': 'Failed to create session', 'details': session_serializer.errors}, status=400)
@@ -26231,6 +26291,7 @@ def _compute_continuity_stats(queryset, imei):
     Uses iterator to keep memory low over large time ranges.
     """
     timestamps = []
+    raw_data_list = []  # parallel list kept for last-20 extraction
 
     for row in (
         queryset
@@ -26239,12 +26300,12 @@ def _compute_continuity_stats(queryset, imei):
         .iterator(chunk_size=2000)
     ):
         raw = row.raw_data or ''
-        # Quick substring pre-check before regex
         if imei not in raw:
             continue
         m = IMEI_PATTERN.search(raw)
         if m and m.group(1) == imei:
             timestamps.append(row.timestamp)
+            raw_data_list.append(raw)
 
     if not timestamps:
         return {
@@ -26255,9 +26316,16 @@ def _compute_continuity_stats(queryset, imei):
             'min_gap_s': None,
             'max_gap_s': None,
             'chart_data': [],
+            'last_packets': [],
         }
 
     n = len(timestamps)
+
+    # Last 20 packets, most-recent first
+    last_packets = [
+        {'timestamp': timestamps[i].isoformat(), 'raw_data': raw_data_list[i]}
+        for i in range(n - 1, max(n - 21, -1), -1)
+    ]
 
     gaps = []  # list of (timestamp_of_second_packet, gap_seconds)
     for i in range(1, n):
@@ -26274,6 +26342,7 @@ def _compute_continuity_stats(queryset, imei):
             'min_gap_s': None,
             'max_gap_s': None,
             'chart_data': [],
+            'last_packets': last_packets,
         }
 
     gap_values = [g for _, g in gaps]
@@ -26301,6 +26370,7 @@ def _compute_continuity_stats(queryset, imei):
         'min_gap_s': min_gap,
         'max_gap_s': max_gap_val,
         'chart_data': chart_data,
+        'last_packets': last_packets,
     }
 
 

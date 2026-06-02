@@ -6,8 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IMEI Continuity Analysis</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script
-    src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
   <style>
     *,
     *::before,
@@ -199,10 +200,45 @@
     }
 
     /* Chart */
+    .chart-header {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 6px;
+    }
+
+    .btn-reset-zoom {
+      background: #1e3a5f;
+      color: #7dd3fc;
+      border: 1px solid #2563eb;
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-size: .78rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: none;
+      transition: background .15s;
+    }
+
+    .btn-reset-zoom:hover {
+      background: #1d4ed8;
+      color: #fff;
+    }
+
     .chart-wrap {
       position: relative;
       height: 280px;
     }
+
+    /* Last packets table */
+    .packets-section { margin-top: 20px; }
+    .packets-section h3 { font-size: .85rem; color: #94a3b8; font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .05em; }
+    .packets-table-wrap { overflow-x: auto; max-height: 320px; overflow-y: auto; border: 1px solid #334155; border-radius: 8px; }
+    .packets-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    .packets-table th { background: #0f172a; color: #64748b; text-align: left; padding: 8px 10px; position: sticky; top: 0; font-weight: 600; letter-spacing: .04em; border-bottom: 1px solid #334155; }
+    .packets-table td { padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #cbd5e1; vertical-align: top; }
+    .packets-table tr:last-child td { border-bottom: none; }
+    .packets-table tr:hover td { background: #1e293b; }
+    .raw-cell { font-family: 'Courier New', monospace; font-size: .73rem; color: #93c5fd; word-break: break-all; max-width: 600px; }
 
     .no-data {
       color: #475569;
@@ -270,8 +306,12 @@
       <div class="section-title">VLTD Data Log</div>
       <div class="section-body">
         <div class="stats-grid" id="gps-stats"></div>
+        <div class="chart-header">
+          <button class="btn-reset-zoom" id="gps-reset-zoom" onclick="resetZoom('gps')">Reset Zoom</button>
+        </div>
         <div class="chart-wrap"><canvas id="gps-chart"></canvas></div>
         <div class="no-data" id="gps-nodata" style="display:none">No matching packets found in this range.</div>
+        <div id="gps-packets"></div>
       </div>
     </div>
 
@@ -280,8 +320,12 @@
       <div class="section-title">VLTD SOS Data Log</div>
       <div class="section-body">
         <div class="stats-grid" id="gpse-stats"></div>
+        <div class="chart-header">
+          <button class="btn-reset-zoom" id="gpse-reset-zoom" onclick="resetZoom('gpse')">Reset Zoom</button>
+        </div>
         <div class="chart-wrap"><canvas id="gpse-chart"></canvas></div>
         <div class="no-data" id="gpse-nodata" style="display:none">No matching packets found in this range.</div>
+        <div id="gpse-packets"></div>
       </div>
     </div>
   </div>
@@ -306,6 +350,17 @@
 
     let gpsChart = null, gpseChart = null;
 
+    function resetZoom(prefix) {
+      const chart = prefix === 'gps' ? gpsChart : gpseChart;
+      if (chart) {
+        chart.resetZoom();
+        chart.options.scales.y.suggestedMax = chart._origYMax;
+        chart.update('none');
+      }
+      const btn = document.getElementById(prefix + '-reset-zoom');
+      if (btn) btn.style.display = 'none';
+    }
+
     function showError(msg) {
       const box = document.getElementById('error-box');
       box.textContent = msg;
@@ -327,10 +382,25 @@
 
     function fmtDt(iso) {
       if (!iso) return '—';
-      // Convert any UTC/offset datetime to IST for display
       const d = new Date(iso);
       const ist = new Date(d.getTime() + IST_OFFSET_MS);
       return ist.toISOString().slice(0, 19).replace('T', ' ') + ' IST';
+    }
+
+    function timeAgo(iso) {
+      if (!iso) return '';
+      const diffSec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+      if (diffSec < 60) return `${diffSec}s ago`;
+      const m = Math.floor(diffSec / 60);
+      if (m < 60) return `${m}m ${diffSec % 60}s ago`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return `${h}h ${m % 60}m ago`;
+      const d = Math.floor(h / 24);
+      return `${d}d ${h % 24}h ago`;
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     function renderStats(containerId, s) {
@@ -352,6 +422,7 @@
     <div class="stat-card">
       <div class="stat-label">Last Packet</div>
       <div class="stat-value" style="font-size:.85rem">${fmtDt(s.last_packet)}</div>
+      <div style="font-size:.72rem;color:#fb923c;margin-top:4px">${timeAgo(s.last_packet)}</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Avg Gap</div>
@@ -365,6 +436,23 @@
       <div class="stat-label">Max Gap</div>
       <div class="stat-value ${maxClass}">${fmtSec(s.max_gap_s)}</div>
     </div>`;
+    }
+
+    // Recompute visible Y range after zoom/pan and update the Y axis in-place
+    function updateYScale(chart) {
+      const xMin = chart.scales.x.min;
+      const xMax = chart.scales.x.max;
+      const labels = chart.data.labels;
+      const data   = chart.data.datasets[0].data;
+      let visMax = -Infinity;
+      for (let i = 0; i < labels.length; i++) {
+        const t = new Date(labels[i]).getTime();
+        if (t >= xMin && t <= xMax && data[i] > visMax) visMax = data[i];
+      }
+      if (visMax > -Infinity) {
+        chart.options.scales.y.suggestedMax = Math.max(visMax * 1.15, 10);
+        chart.update('none');
+      }
     }
 
     function renderChart(canvasId, nodataId, chartRef, s) {
@@ -381,17 +469,17 @@
       canvas.style.display = 'block';
       nodata.style.display = 'none';
 
-      // Convert to IST strings without timezone offset so Chart.js renders them as-is
       function toISTLabel(isoStr) {
         const ist = new Date(new Date(isoStr).getTime() + IST_OFFSET_MS);
-        return ist.toISOString().slice(0, 19); // "YYYY-MM-DDTHH:MM:SS" — no offset
+        return ist.toISOString().slice(0, 19);
       }
       const labels = s.chart_data.map(p => toISTLabel(p.t));
       const values = s.chart_data.map(p => p.gap);
-
       const maxGap = Math.max(...values);
-      // Annotation line at 5s (expected interval) — drawn via dataset
-      const expectedLine = values.map(() => 5);
+      const origYMax = Math.max(maxGap * 1.1, 10);
+
+      const resetBtnId = canvasId.replace('-chart', '-reset-zoom');
+      const resetBtn = document.getElementById(resetBtnId);
 
       const chart = new Chart(canvas, {
         type: 'line',
@@ -411,7 +499,7 @@
             },
             {
               label: 'Expected (5 s)',
-              data: expectedLine,
+              data: values.map(() => 5),
               borderColor: '#22c55e',
               borderWidth: 1,
               borderDash: [6, 4],
@@ -430,6 +518,26 @@
               callbacks: {
                 label: ctx => ` ${ctx.dataset.label}: ${fmtSec(ctx.parsed.y)}`
               }
+            },
+            zoom: {
+              pan: {
+                enabled: true,
+                mode: 'x',
+                onPanComplete: ({ chart: c }) => {
+                  updateYScale(c);
+                  if (resetBtn) resetBtn.style.display = 'inline-block';
+                },
+              },
+              zoom: {
+                wheel: { enabled: true },
+                pinch: { enabled: true },
+                mode: 'x',
+                onZoomComplete: ({ chart: c }) => {
+                  updateYScale(c);
+                  if (resetBtn) resetBtn.style.display = 'inline-block';
+                },
+              },
+              limits: { x: { min: 'original', max: 'original' } },
             }
           },
           scales: {
@@ -444,17 +552,42 @@
               ticks: { color: '#64748b' },
               grid: { color: '#1e293b' },
               min: 0,
-              suggestedMax: Math.max(maxGap * 1.1, 10),
+              suggestedMax: origYMax,
             }
           }
         }
       });
+
+      chart._origYMax = origYMax;
       return chart;
+    }
+
+    function renderPackets(containerId, packets) {
+      const el = document.getElementById(containerId);
+      if (!packets || packets.length === 0) { el.innerHTML = ''; return; }
+      const rows = packets.map((p, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td style="white-space:nowrap">${fmtDt(p.timestamp)}</td>
+          <td class="raw-cell">${escHtml(p.raw_data)}</td>
+        </tr>`).join('');
+      el.innerHTML = `
+        <div class="packets-section">
+          <h3>Last ${packets.length} Packets (most recent first)</h3>
+          <div class="packets-table-wrap">
+            <table class="packets-table">
+              <thead><tr><th>#</th><th>Timestamp (IST)</th><th>Raw Data</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>`;
     }
 
     async function runAnalysis() {
       clearError();
       document.getElementById('results').style.display = 'none';
+      document.getElementById('gps-reset-zoom').style.display = 'none';
+      document.getElementById('gpse-reset-zoom').style.display = 'none';
 
       const imei = document.getElementById('imei').value.trim();
       const startDt = document.getElementById('start_dt').value;
@@ -495,6 +628,8 @@
         renderStats('gpse-stats', data.gps_em_data_log);
         gpsChart = renderChart('gps-chart', 'gps-nodata', gpsChart, data.gps_data_log);
         gpseChart = renderChart('gpse-chart', 'gpse-nodata', gpseChart, data.gps_em_data_log);
+        renderPackets('gps-packets', data.gps_data_log.last_packets);
+        renderPackets('gpse-packets', data.gps_em_data_log.last_packets);
 
         document.getElementById('results').style.display = 'block';
       } catch (e) {
