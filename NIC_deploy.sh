@@ -8,8 +8,7 @@ export HTTP_PROXY="http://192.0.2.12:8080"
 export HTTPS_PROXY="http://192.0.2.12:8080"
 export ftp_proxy="http://192.0.2.12:8080"
 export FTP_PROXY="http://192.0.2.12:8080"
-
-# Run as current user (no sudo)
+ 
 git pull
 
 # Run with sudo — scripts have their own env/Docker setup
