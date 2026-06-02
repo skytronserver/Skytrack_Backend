@@ -12,5 +12,6 @@ export FTP_PROXY="http://192.0.2.12:8080"
 git pull
 
 # Run with sudo — scripts have their own env/Docker setup
+sudo docker system prune -f
 sudo ./run_with_host_storage.sh
 sudo ./run_mqtt.sh
