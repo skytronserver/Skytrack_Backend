@@ -13130,12 +13130,9 @@ def list_devicemodel(request ):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     device_models = DeviceModel.objects.all()
-    serializer = DeviceModelSerializer_disp(device_models, many=True)
-    data = serializer.data
-    if not get_user_object(request.user, "devicemanufacture"):
-        for item in data:
-            item.pop('mqtt_pw', None)
-    return Response(data)
+    is_manufacturer = get_user_object(request.user, "devicemanufacture") is not None
+    serializer = DeviceModelSerializer_disp(device_models, many=True, context={'show_mqtt_pw': is_manufacturer})
+    return Response(serializer.data)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -13180,7 +13177,7 @@ def filter_devicemodel(request):
     )
     
     # Serialize the data - maintaining original response format
-    serializer = DeviceModelSerializer_disp(device_models, many=True)
+    serializer = DeviceModelSerializer_disp(device_models, many=True, context={'show_mqtt_pw': True})
     data = serializer.data
     # Add COPs for each device model (like in deviceStockFilter)
     model_ids = [dm['id'] for dm in data]

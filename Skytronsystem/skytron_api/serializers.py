@@ -380,7 +380,7 @@ class DeviceModelSerializer_disp(SanitizingModelSerializer):
     def __init__(self, *args, **kwargs):
         # Only include necessary fields based on context
         super(DeviceModelSerializer_disp, self).__init__(*args, **kwargs)
-        
+
         # Optional optimization: If a fields parameter is passed, only serialize those fields
         request = self.context.get('request')
         if request and request.query_params.get('fields'):
@@ -389,7 +389,13 @@ class DeviceModelSerializer_disp(SanitizingModelSerializer):
             existing = set(self.fields)
             for field_name in existing - allowed:
                 self.fields.pop(field_name)
-                
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not self.context.get('show_mqtt_pw'):
+            data.pop('mqtt_pw', None)
+        return data
+
 
 class Settings_hp_freqSerializer(SanitizingModelSerializer):
     devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
