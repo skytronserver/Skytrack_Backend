@@ -1,0 +1,59 @@
+================================================================================
+SKYTRACK BACKEND - SMS FORMATS & TPID LIST
+Generated: 2026-06-02 
+================================================================================
+
+
+--------------------------------------------------------------------------------
+TPID: 1007536593942813283
+PURPOSE: Login OTP
+USED IN: Login flow (send_sms_otp, LoginOTPSend, temp user login, temp user resend OTP)
+FORMAT : Dear user, Your Login OTP for SkyTron portal is {OTP}. DO NOT disclose it to anyone. Warm Regards, SkyTron.
+
+
+--------------------------------------------------------------------------------
+TPID: 1007515117119518623
+PURPOSE: User Registration / Email Confirmation Link
+USED IN: send_usercreation_otp (line 7018), send_sms_confirmation  
+FORMAT : Dear user, to confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://{DEPLOY_URL}/new/{TOKEN}. The link will expire in 24 hours. -SkyTron
+
+ 
+ 
+
+--------------------------------------------------------------------------------
+TPID: 1007201930295888818
+PURPOSE: VLTD Dealer / Manufacturer Device Tagging OTP
+USED IN: Device tag OTP send flows
+FORMAT : Dear VLTD Dealer/ Manufacturer, we have received request for tagging and activation of following device and vehicle-Vehicle Reg No:{REG_NO}, Device IMEI No:{IMEI}. To confirm, please enter the OTP {OTP}.- SkyTron
+ 
+
+
+--------------------------------------------------------------------------------
+TPID: 1007937055979875563
+PURPOSE: Vehicle Owner VLTD Tagging OTP
+USED IN: Owner OTP send (initial and final confirmation)
+FORMAT : Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {OTP} will expire in 24 hours. Please do NOT share.-SkyTron
+
+
+--------------------------------------------------------------------------------
+TPID: 1007967997984175182
+PURPOSE: COP (Certificate of Conformity) Creation / Update OTP
+USED IN: COP file upload, State Admin COP OTP send
+FORMAT : Dear user, your OTP to validate COP creation/update in SkyTron portal is {OTP}. Please DO NOT disclose it to anyone. -SkyTron
+
+
+--------------------------------------------------------------------------------
+TPID: 1007338577423920274
+PURPOSE: VLTD Model Creation OTP
+USED IN: Device model creation OTP send
+FORMAT : Dear user, confirmation OTP for VLTD Model Creation at SkyTron portal is {OTP}. DO NOT disclose it to anyone. Warm Regards, SkyTron
+ 
+
+
+--------------------------------------------------------------------------------
+TPID: 1007407542374862466
+PURPOSE: Password Reset Link
+USED IN: Forgot password / password reset flow
+FORMAT : Dear user, to reset your password for SkyTron platform, please click at the following link and validate the password re-set request- {DEPLOY_URL}/reset-password/{TOKEN}. The link will expire in 24 hours. -SkyTron
+
+ 

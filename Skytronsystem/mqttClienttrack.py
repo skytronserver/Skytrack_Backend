@@ -10,6 +10,7 @@ from typing import Optional, Tuple
 # Third-party
 import django
 import paho.mqtt.client as mqtt
+from geopy.distance import geodesic
 from rest_framework.exceptions import AuthenticationFailed
 
 # Django setup must happen before any app imports
@@ -212,9 +213,24 @@ def Process_sosEx_Data(msg, topic_parts):
                     client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "update", "logseq": "2", "message": str(e)}))
                     return
 
-            # No assignment_id — send pending broadcast list for this user type
-            ee_qs = EMCallBroadcast.objects.filter(type=uo.user_type, status="pending").order_by('-id')[:1]
-            ee_list = list(ee_qs)
+            # No assignment_id — send pending broadcasts within 10 km of this executive.
+            PROXIMITY_KM = 10.0
+            candidate_qs = EMCallBroadcast.objects.filter(
+                type=uo.user_type, status="pending"
+            ).select_related("call__device").order_by('-id')[:50]
+
+            ee_list = []
+            for bc in candidate_qs:
+                try:
+                    gps = GPSData.objects.filter(
+                        device_tag=bc.call.device, gps_status='1'
+                    ).order_by('-id').values('latitude', 'longitude').first()
+                    if gps and gps['latitude'] and gps['longitude']:
+                        dist_km = geodesic((em_lat, em_lon), (gps['latitude'], gps['longitude'])).km
+                        if dist_km <= PROXIMITY_KM:
+                            ee_list.append(bc)
+                except Exception as _dist_err:
+                    print(f"[sosEx] distance filter error for broadcast {bc.id}: {_dist_err}", flush=True)
 
             if ee_list:
                 dat = {"status": "success", "broadcast": EMCallBroadcastSerializer(ee_list, many=True).data, "message": success_message}

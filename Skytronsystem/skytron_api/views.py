@@ -17148,7 +17148,7 @@ def send_email_confirmation(request ):
     email_confirmation_serializer = ConfirmationSerializer(data=email_confirmation_data)
     if email_confirmation_serializer.is_valid():
         email_confirmation_serializer.save()
-        url=f"https://{DEPLOY_URL}/{confirmation_token}"
+        url=f"https://{DEPLOY_URL}/new/{confirmation_token}"
         tpid ="1007515117119518623"
         text=f"Dear user, to confirm your registration in SkyTron platform, please click at the following link and validate the registration request-{url} The link will expire in 24 hours.-SkyTron"
 
