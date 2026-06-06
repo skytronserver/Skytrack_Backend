@@ -80,10 +80,9 @@ class Migration(migrations.Migration):
                 ('state', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='public_bus_stops', to='skytron_api.settings_state')),
             ],
         ),
-        migrations.AddField(
-            model_name='requestlog',
-            name='response_time_ms',
-            field=models.PositiveIntegerField(blank=True, null=True),
+        migrations.RunSQL(
+            sql="ALTER TABLE skytron_api_requestlog ADD COLUMN IF NOT EXISTS response_time_ms integer NULL;",
+            reverse_sql="ALTER TABLE skytron_api_requestlog DROP COLUMN IF EXISTS response_time_ms;",
         ),
         migrations.AlterField(
             model_name='alertslog',

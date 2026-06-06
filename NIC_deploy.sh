@@ -29,4 +29,6 @@ sudo truncate -s 0 /var/log/aide
 
 sudo docker system prune -f
 sudo ./run_with_host_storage.sh
+sudo docker exec skytron-backend-api-container python manage.py migrate
 sudo ./run_mqtt.sh
+
