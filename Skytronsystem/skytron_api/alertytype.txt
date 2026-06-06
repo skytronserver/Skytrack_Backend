@@ -1,0 +1,80 @@
+UnauthorizedParking 
+Eng 
+NetworkLoss 
+OverSpeed 
+Em 
+GPSLoss	 
+city_border_cross 
+Route	 
+BoxTemp	 
+district_border_cross	 
+LowExtBat 
+ExtBatDiscnt	 
+state_border_cross	 
+Overtime 
+LowIntBat	 
+HarshAcceleration 
+HarshBreak	 
+HarshTurn 
+EmTemp	 
+Tilt	 
+Permit_3day	 
+Prohibited_Area	 
+UnauthorizedSkip	 
+Route_overspeed 
+UnauthorizedStop	
+
+
+UnauthorizedParking | Unauthorized Parking | Vehicle stopped or parked at NoParking zone
+Eng | Engine Status | Engine turned on or off — ignition event detected by the device
+NetworkLoss | Network Loss | Device lost network connectivity with server
+OverSpeed | Over Speed | Vehicle exceeded the maximum allowed speed limit for its category
+Em | Emergency SOS | Emergency or SOS alert triggered by the device 
+GPSLoss | GPS Loss | Device lost GPS signal — location data unavailable
+city_border_cross | City Border Cross | Vehicle crossed the boundary of a city 
+Route | Route Deviation | Vehicle deviated from or violated its assigned route
+BoxTemp | Box Temperature | Device box Opened
+district_border_cross | District Border Cross | Vehicle crossed from one district into another
+LowExtBat | Low External Battery | External or vehicle battery voltage dropped below safe threshold
+ExtBatDiscnt | External Battery Disconnected | External battery or vehicle power supply disconnected from device
+state_border_cross | State Border Cross | Vehicle crossed from one state into another
+Overtime | Overtime | Vehicle operated beyond its permitted working hours
+LowIntBat | Low Internal Battery | Internal backup battery of the GPS device is running low
+HarshAcceleration | Harsh Acceleration | Sudden aggressive acceleration detected — driver behaviour alert
+HarshBreak | Harsh Braking | Sudden hard braking detected — driver behaviour alert
+HarshTurn | Harsh Turn | Abrupt sharp turn detected — driver behaviour alert
+EmTemp | Emergency Temperature | Tempering with emergency cable detected.
+Tilt | Tilt | Device or vehicle tilted beyond normal angle — possible accident or tampering
+Permit_3day | Permit Expiring Soon | Vehicle in in non permeted district for morethan 3 days 
+Prohibited_Area | Prohibited Area | Vehicle entered a restricted or prohibited geographic zone
+UnauthorizedSkip | Unauthorized Skip | Vehicle skipped a mandatory stop or checkpoint without halting like Bustop
+Route_overspeed | Route Overspeed | Vehicle exceeded the speed limit specific to its assigned route
+UnauthorizedStop | Unauthorized Stop | Vehicle stopped at a location not part of its approved schedule
+
+
+
+UnauthorizedParking	Vehicle stopped/parked at a location that is not a designated/authorized stop point
+Eng	Engine status alert — engine turned on or off (ignition event)
+NetworkLoss	Device lost GSM/cellular network connectivity
+OverSpeed	Vehicle exceeded the maximum allowed speed limit for its category
+Em	Emergency/SOS alert triggered by the device or driver
+GPSLoss	Device lost GPS signal — location data unavailable
+city_border_cross	Vehicle crossed the boundary of a city/urban zone
+Route	Vehicle deviated from or violated its assigned route
+BoxTemp	Device box temperature exceeded threshold (hardware overheating)
+district_border_cross	Vehicle crossed from one district into another
+LowExtBat	External/vehicle battery voltage dropped below safe threshold
+ExtBatDiscnt	External battery (vehicle power supply) disconnected from device
+state_border_cross	Vehicle crossed from one state into another
+Overtime	Vehicle operated beyond its permitted working hours
+LowIntBat	Internal/backup battery of the GPS device is running low
+HarshAcceleration	Sudden aggressive acceleration detected (driver behaviour)
+HarshBreak	Sudden hard braking detected (driver behaviour)
+HarshTurn	Abrupt sharp turn detected (driver behaviour)
+EmTemp	Emergency temperature alert — ambient/cargo temperature out of range
+Tilt	Device or vehicle tilted beyond normal angle (possible accident or tampering)
+Permit_3day	Vehicle's permit is expiring within 3 days
+Prohibited_Area	Vehicle entered a restricted/prohibited geographic zone
+UnauthorizedSkip	Vehicle skipped a mandatory stop/checkpoint without stopping
+Route_overspeed	Vehicle exceeded the speed limit specific to its assigned route
+UnauthorizedStop	Vehicle stopped at a location that is not part of its approved schedule

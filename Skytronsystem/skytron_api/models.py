@@ -2076,7 +2076,7 @@ class AlertsLog(models.Model):
         ('Tilt', 'Tilt'), 
         ('HarshBreak', 'HarshBreak'),
         ('HarshTurn', 'HarshTurn'),
-        ('HarshAcceleration', 'HarshAccileration'), 
+        ('HarshAcceleration', 'HarshAcceleration'), 
         ('UnauthorizedParking', 'UnauthorizedParking'),
         ('Prohibited_Area', 'Prohibited_Area'),
     ]
@@ -3142,3 +3142,398 @@ class BusAlert(models.Model):
 
 
 
+
+
+
+
+
+
+
+
+
+####################################################################################
+######################## Permit Enforcement ########################################
+####################################################################################
+
+class PermitCondition(models.Model):
+
+    STATUS_CREATED    = 'created'
+    STATUS_ACTIVE     = 'active'
+    STATUS_DEACTIVE   = 'deactive'
+
+    STATUS_CHOICES = [
+        (STATUS_CREATED,  'Created'),
+        (STATUS_ACTIVE,   'Active'),
+        (STATUS_DEACTIVE, 'Deactive'),
+    ]
+
+    # All alert types from AlertsLog
+    PERMIT_VIOLATION_CHOICES = [
+        ('Route', 'Route'),
+        ('Geofence', 'Geofence'),
+        ('Idling', 'Idling'),
+        ('OfflineDevice', 'OfflineDevice'),
+        ('Overtime', 'Overtime'), 
+        ('UnauthorizedStop', 'UnauthorizedStop'), 
+        ('UnauthorizedSkip', 'UnauthorizedSkip'), 
+        ('NetworkLoss', 'NetworkLoss'), 
+        ('GPSLoss', 'GPSLoss'), 
+        ('Permit', 'Permit'), 
+        ('Permit_3day', 'Permit_3day'), 
+        ('Route_overspeed', 'Route_overspeed'),
+        ('state_border_cross', 'state_border_cross'),
+        ('district_border_cross', 'district_border_cross'),
+        ('city_border_cross', 'city_border_cross'),
+        ('Incident', 'Incident'), 
+        ('Em', 'Em'), 
+        ('EmPublicApp', 'EmPublicApp'), 
+        ('EmRegisteredApp', 'EmRegisteredApp'), 
+        ('EmMonitorTripSOS', 'EmMonitorTripSOS'), 
+        ('EmMonitorTripInvalidPw', 'EmMonitorTripInvalidPw'), 
+        ('EmMonitorTripBLEDisconnect', 'EmMonitorTripBLEDisconnect'), 
+        ('EmMonitorTripDeviated', 'EmMonitorTripDeviated'), 
+        ('Eng', 'Eng'), 
+        ('OverSpeed', 'OverSpeed'), 
+        ('LowIntBat', 'LowIntBat'), 
+        ('LowExtBat', 'LowExtBat'), 
+        ('ExtBatDiscnt', 'ExtBatDiscnt'), 
+        ('BoxTemp', 'BoxTemp'), 
+        ('EmTemp', 'EmTemp'), 
+        ('Tilt', 'Tilt'), 
+        ('HarshBreak', 'HarshBreak'),
+        ('HarshTurn', 'HarshTurn'),
+        ('HarshAcceleration', 'HarshAcceleration'), 
+        ('UnauthorizedParking', 'UnauthorizedParking'),
+        ('Prohibited_Area', 'Prohibited_Area'),
+    ]
+    
+    permit_name = models.CharField(max_length=255)
+    vehicle_category = models.ForeignKey('Settings_VehicleCategory',on_delete=models.PROTECT, related_name='permit_conditions')
+    violation_type = models.CharField(max_length=250,choices=PERMIT_VIOLATION_CHOICES)
+    rule_details = models.TextField(help_text="Rule details as per Motor Vehicle Act")
+    penalty = models.CharField(max_length=250, help_text="Penalty details as per Motor Vehicle Act")
+    penalty_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    challan_code= models.CharField(max_length=100, blank=True, null=True)
+
+    status = models.CharField(max_length=20,choices=STATUS_CHOICES,default=STATUS_CREATED)
+
+    activation_datetime = models.DateTimeField(null=True, blank=True)
+    deactivation_datetime = models.DateTimeField(null=True, blank=True)
+    created_datetime = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey('User',on_delete=models.PROTECT,related_name='permit_conditions_created')
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['violation_type']),
+            models.Index(fields=['vehicle_category']),
+            models.Index(fields=['activation_datetime', 'deactivation_datetime']),
+        ]
+
+    def __str__(self):
+        return f"{self.permit_name} ({self.status})"
+
+
+class ViolationReport(models.Model):
+    """
+    generated when AlertsLog matches an active PermitCondition.
+    """
+    permit_condition  = models.ForeignKey(PermitCondition,on_delete=models.PROTECT,related_name='violations')
+    alert_log = models.ForeignKey('AlertsLog',on_delete=models.PROTECT, related_name='violations')
+    device_tag = models.ForeignKey('DeviceTag',on_delete=models.PROTECT,related_name='violations')
+    penalty_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    violation_datetime = models.DateTimeField()
+
+    state = models.ForeignKey('Settings_State',on_delete=models.SET_NULL,null=True, blank=True)
+    district  = models.ForeignKey('Settings_District',on_delete=models.SET_NULL,null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['device_tag']),
+            models.Index(fields=['violation_datetime']),
+            models.Index(fields=['permit_condition']),
+            models.Index(fields=['state']),
+            models.Index(fields=['district']),
+        ]
+
+    def __str__(self):
+        return f"{self.device_tag.vehicle_reg_no} - {self.permit_condition.permit_name}"
+
+
+@receiver(post_save, sender=AlertsLog)
+def auto_generate_violation(sender, instance, created, **kwargs):
+    if not created:
+        return
+
+    now = instance.timestamp
+
+    try:
+        conditions = PermitCondition.objects.filter(
+            status=PermitCondition.STATUS_ACTIVE,
+            violation_type=instance.type,
+            vehicle_category=instance.deviceTag.category,
+            activation_datetime__lte=now,
+            deactivation_datetime__gte=now,
+        )
+    except Exception as e:
+        print(f"[ViolationSignal] Error fetching conditions: {e}", flush=True)
+        return
+
+    if not conditions.exists():
+        return
+
+    for condition in conditions:
+
+        # Avoid duplicate
+        if ViolationReport.objects.filter(
+            permit_condition=condition,
+            alert_log=instance
+        ).exists():
+            continue
+
+        # imei from DeviceTag → DeviceStock
+        imei = ''
+        try:
+            imei = instance.deviceTag.device.imei
+        except Exception:
+            pass
+
+        district = getattr(instance.deviceTag, 'district', None)
+
+        ViolationReport.objects.create(
+            permit_condition=condition,
+            alert_log=instance,
+            device_tag=instance.deviceTag,
+            penalty_amount=condition.penalty_amount,
+            violation_datetime=instance.timestamp,
+            state=instance.state,
+            district=district,
+        )
+        print(
+            f"[ViolationSignal] Violation created for "
+            f"{instance.deviceTag.vehicle_reg_no} "
+            f"under condition '{condition.permit_name}'",
+            flush=True
+        )
+        
+        
+        
+        
+####################################################################################
+######################## Passenger Information System ##############################
+####################################################################################
+
+
+class PublicBusStop(models.Model):
+    """
+    Bus stops for public bus routes.
+    """
+    STATUS_ACTIVE      = 'active'
+    STATUS_DEACTIVATED = 'deactivated'
+
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE,      'Active'),
+        (STATUS_DEACTIVATED, 'Deactivated'),
+    ]
+
+    name  = models.CharField(max_length=255)
+    address = models.TextField(blank=True, null=True)
+    latitude  = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    state = models.ForeignKey('Settings_State',on_delete=models.PROTECT,related_name='public_bus_stops')
+    district = models.ForeignKey('Settings_District',on_delete=models.PROTECT,related_name='public_bus_stops')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+
+    # Activation / deactivation tracking
+    last_activation_date   = models.DateTimeField(null=True, blank=True)
+    last_deactivation_date = models.DateTimeField(null=True, blank=True)
+    deactivation_date      = models.DateTimeField(null=True, blank=True)
+
+    created_by = models.ForeignKey('User',on_delete=models.PROTECT,related_name='public_bus_stops_created')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['state', 'status']),
+            models.Index(fields=['district', 'status']),
+            models.Index(fields=['latitude', 'longitude']),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class PublicBusRoute(models.Model):
+    """
+    A bus route with source, destination and intermediate stops.
+    
+    """
+    STATUS_ACTIVE      = 'active'
+    STATUS_DEACTIVATED = 'deactivated'
+
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE,      'Active'),
+        (STATUS_DEACTIVATED, 'Deactivated'),
+    ]
+
+    name = models.CharField(max_length=255)
+    route_number = models.CharField(max_length=50, unique=True)
+    route_path = models.JSONField(default=list, blank=True, help_text="List of lat/lng coordinates defining the route path")
+
+    source_stop  = models.ForeignKey(PublicBusStop,on_delete=models.PROTECT,related_name='routes_as_source')
+    destination_stop = models.ForeignKey(PublicBusStop,on_delete=models.PROTECT,related_name='routes_as_destination')
+
+    # Intermediate stops via through model PublicRouteStop
+    stops = models.ManyToManyField(PublicBusStop,through='PublicRouteStop',related_name='routes',blank=True)
+
+    state    = models.ForeignKey('Settings_State',on_delete=models.PROTECT,related_name='public_bus_routes')
+    district = models.ForeignKey('Settings_District',on_delete=models.SET_NULL,null=True, blank=True,related_name='public_bus_routes')
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+
+    last_activation_date   = models.DateTimeField(null=True, blank=True)
+    last_deactivation_date = models.DateTimeField(null=True, blank=True)
+    deactivation_date      = models.DateTimeField(null=True, blank=True)
+
+    created_by = models.ForeignKey('User',on_delete=models.PROTECT,related_name='public_bus_routes_created')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['state', 'status']),
+            models.Index(fields=['route_number']),
+        ]
+
+    def __str__(self):
+        return f"{self.route_number} - {self.name}"
+
+
+class PublicRouteStop(models.Model):
+    """
+    Through model for PublicBusRoute ↔ PublicBusStop.
+    Each stop on a route has:
+    - order           : position in route (1, 2, 3 ...)
+    - arrival_time_min  : minutes from route start to arrive at this stop
+    - halt_time_min     : how many minutes bus halts at this stop
+    travel_time to next stop is derived:
+    arrival_time_min(next) - arrival_time_min(current) - halt_time_min(current)
+    """
+    route = models.ForeignKey( PublicBusRoute, on_delete=models.CASCADE, related_name='route_stops')
+    stop  = models.ForeignKey(PublicBusStop,on_delete=models.PROTECT,related_name='route_stops')
+
+    order = models.PositiveIntegerField()
+    arrival_time_min = models.PositiveIntegerField(default=0,help_text="Minutes from route start time to arrive at this stop")
+    halt_time_min = models.PositiveIntegerField(default=0,help_text="Minutes bus halts at this stop")
+  
+
+    class Meta:
+        ordering = ['order']
+        indexes = [
+            models.Index(fields=['route', 'order', 'stop']),
+        ]
+
+    def __str__(self):
+        return f"{self.route.route_number} → Stop {self.order}: {self.stop.name}"
+
+
+class BusSchedule(models.Model):
+    """
+    A bus (DeviceTag) assigned to a route on a specific date/time.
+
+    Once started → actual_start_time is filled
+    Once completed → actual_end_time is filled
+
+    Status flow:
+    created | → started → completed
+            | → canceled
+    """
+    STATUS_CREATED   = 'created'
+    STATUS_CANCELED  = 'canceled'
+    STATUS_STARTED   = 'started'
+    STATUS_COMPLETED = 'completed'
+
+    STATUS_CHOICES = [
+        (STATUS_CREATED,   'Created'),
+        (STATUS_CANCELED,  'Canceled'),
+        (STATUS_STARTED,   'Started'),
+        (STATUS_COMPLETED, 'Completed'),
+    ]
+
+    SERVICE_TYPE_CHOICES = [
+        ('Express',  'Express'),
+        ('Ordinary', 'Ordinary'),
+        ('AC',       'AC'),
+        ('City_Bus',   'City Bus'),
+        ('Sleeper',  'Sleeper'),
+        ('Deluxe',   'Deluxe'),
+    ]
+
+    service_type = models.CharField(max_length=50, choices=SERVICE_TYPE_CHOICES)
+    route = models.ForeignKey(PublicBusRoute,on_delete=models.PROTECT,related_name='schedules')
+    bus = models.ForeignKey('DeviceTag',on_delete=models.PROTECT,related_name='bus_schedules')
+
+    # Scheduled start datetime (entered by admin)
+    start_datetime = models.DateTimeField()
+
+    status = models.CharField(max_length=20,choices=STATUS_CHOICES,default=STATUS_CREATED)
+
+    # Actual times — filled when owner updates trip start/end
+    actual_start_time = models.DateTimeField(null=True, blank=True)
+    actual_end_time   = models.DateTimeField(null=True, blank=True)
+
+    created_by  = models.ForeignKey('User',on_delete=models.PROTECT,related_name='bus_schedules_created')
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['route', 'start_datetime']),
+            models.Index(fields=['bus',   'start_datetime']),
+            models.Index(fields=['status']),
+        ]
+
+    def __str__(self):
+        return f"{self.bus.vehicle_reg_no} on {self.route.route_number} at {self.start_datetime}"
+
+
+class BusScheduleStopETA(models.Model):
+    """
+    Auto-calculated ETA for each stop on a BusSchedule.
+    Generated when schedule is created, based on:
+      scheduled_arrival  = start_datetime + arrival_time_min (from PublicRouteStop)
+      scheduled_departure = scheduled_arrival + halt_time_min
+
+    actual_arrival and actual_departure are filled in real time
+    as bus reaches each stop.
+    """
+    schedule   = models.ForeignKey(BusSchedule,on_delete=models.CASCADE,related_name='stop_etas')
+    route_stop = models.ForeignKey(PublicRouteStop,on_delete=models.PROTECT,related_name='stop_etas')
+
+    order = models.PositiveIntegerField()
+
+    # Calculated at schedule creation time
+    scheduled_arrival   = models.DateTimeField()
+    scheduled_departure = models.DateTimeField()
+
+    # Filled in real time
+    actual_arrival   = models.DateTimeField(null=True, blank=True)
+    actual_departure = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('schedule', 'route_stop')
+        ordering        = ['order']
+        indexes = [
+            models.Index(fields=['schedule', 'order']),
+        ]
+
+    def __str__(self):
+        return f"Schedule {self.schedule_id} → Stop {self.order}"
+    
+    
+    
+    
+    
