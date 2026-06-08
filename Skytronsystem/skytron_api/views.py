@@ -4603,48 +4603,41 @@ def esim_provider_list(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-@transaction.atomic
-@require_http_methods(['GET', 'POST'])
-def get_live_vehicle_no(request ): 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def get_live_vehicle_no(request):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    
     try:
-        if request.method == 'POST':
-            vehicle_no = request.data.get('vehicle_no') or request.data.get('regno') or request.data.get('vehicle_reg_no')
-            if isinstance(vehicle_no, str):
-                vehicle_no = vehicle_no.strip()
-            if not vehicle_no:
-                vehicle_no = None
+        vehicle_no = request.data.get('vehicle_no') or request.data.get('regno') or request.data.get('vehicle_reg_no')
+        if isinstance(vehicle_no, str):
+            vehicle_no = vehicle_no.strip()
+        if not vehicle_no:
+            vehicle_no = None
 
-            # Fetch distinct vehicle registration numbers with a single DB query.
-            # If the requester is a vehicle owner, restrict to their devices only.
-            owner = get_user_object(request.user, "owner")
+        # If the requester is a vehicle owner, restrict to their devices only.
+        owner = get_user_object(request.user, "owner")
 
-            gps_qs = GPSData.objects.all()
-            if owner:
-                gps_qs = gps_qs.filter(device_tag__vehicle_owner=owner)
+        gps_qs = GPSData.objects.all()
+        if owner:
+            gps_qs = gps_qs.filter(device_tag__vehicle_owner=owner)
 
-            if vehicle_no is not None:
-                gps_qs = gps_qs.filter(device_tag__vehicle_reg_no__icontains=vehicle_no)
+        if vehicle_no is not None:
+            gps_qs = gps_qs.filter(device_tag__vehicle_reg_no__icontains=vehicle_no)
 
-            vehicle_list = list(
-                gps_qs
-                .exclude(device_tag__isnull=True)
-                .exclude(device_tag__vehicle_reg_no__isnull=True)
-                .exclude(device_tag__vehicle_reg_no='')
-                .order_by('device_tag__vehicle_reg_no')
-                .values_list('device_tag__vehicle_reg_no', flat=True)
-                .distinct()
-            )
-            return Response(vehicle_list)
-        else:
-            return Response({'error': "POST request only"}, status=400)
+        vehicle_list = list(
+            gps_qs
+            .exclude(device_tag__isnull=True)
+            .exclude(device_tag__vehicle_reg_no__isnull=True)
+            .exclude(device_tag__vehicle_reg_no='')
+            .order_by('device_tag__vehicle_reg_no')
+            .values_list('device_tag__vehicle_reg_no', flat=True)
+            .distinct()
+        )
+        return Response(vehicle_list)
     except Exception as e:
-        return Response({'error': "get_live_vehicle_no"}, status=400)
+        return Response({'error': str(e)}, status=400)
  
     
 @api_view(['POST'])
