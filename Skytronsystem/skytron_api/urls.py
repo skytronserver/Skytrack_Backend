@@ -5,6 +5,16 @@ from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from .mqtt_auth_views import prepare_mqtt_auth, prepare_mqtt_auth_with_token, mqtt_dual_auth
 from .mqtt_validate_views import mqtt_validate_connection, mqtt_validate_acl
 from .dev_views import dev_get_token, dev_list_users
+from .complaint_views import (
+    create_ticket,
+    list_tickets,
+    ticket_detail,
+    update_ticket_status,
+    submit_final_report,
+    add_comment,
+    ticket_activity_log,
+    public_track_ticket,
+)
 from django.urls import path
 
  
@@ -572,6 +582,16 @@ urlpatterns = [
     # DEV-ONLY endpoints (return 403 in production when DEBUG=False)
     path('dev/token/', dev_get_token, name='dev_get_token'),
     path('dev/users/', dev_list_users, name='dev_list_users'),
+
+    # Complaint Management
+    path('complaint/create/', create_ticket, name='complaint_create'),
+    path('complaint/list/', list_tickets, name='complaint_list'),
+    path('complaint/track/<str:ticket_ref>/', public_track_ticket, name='complaint_public_track'),
+    path('complaint/<int:pk>/', ticket_detail, name='complaint_detail'),
+    path('complaint/<int:pk>/update-status/', update_ticket_status, name='complaint_update_status'),
+    path('complaint/<int:pk>/final-report/', submit_final_report, name='complaint_final_report'),
+    path('complaint/<int:pk>/comment/', add_comment, name='complaint_add_comment'),
+    path('complaint/<int:pk>/activity/', ticket_activity_log, name='complaint_activity_log'),
 ]  
 
 

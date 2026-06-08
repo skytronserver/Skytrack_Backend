@@ -380,7 +380,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     #username = models.EmailField(unique=True, verbose_name="Username")
     email = models.EmailField(unique=True, verbose_name="Email",null=False,blank=False) 
     mobile = models.CharField(max_length=25, unique=True, verbose_name="Mobile",null=False,blank=False)
-    role = models.CharField(max_length=20,null=False,blank=False, choices=[("superadmin", "Super Admin"), ("stateadmin", "State Admin"), ("devicemanufacture", "Device Manufacture"), ("dealer", "Dealer"), ("owner", "Owner"), ("esimprovider", "eSimProvider"), ("filment", "Filment"), ("sosadmin", "SOS Admin"), ("teamleader", "Team Leader"), ("sosexecutive", "SOS Executive"),("schooladmin", "School Admin"),("parentuser", "Parent User")], verbose_name="Role")
+    role = models.CharField(max_length=20,null=False,blank=False, choices=[("superadmin", "Super Admin"), ("stateadmin", "State Admin"), ("devicemanufacture", "Device Manufacture"), ("dealer", "Dealer"), ("owner", "Owner"), ("esimprovider", "eSimProvider"), ("filment", "Filment"), ("sosadmin", "SOS Admin"), ("teamleader", "Team Leader"), ("sosexecutive", "SOS Executive"),("schooladmin", "School Admin"),("parentuser", "Parent User"),("helpdesk", "Help Desk")], verbose_name="Role")
     usertype = models.CharField(max_length=10, default='main', verbose_name="User Type")
     createdby = models.CharField(max_length=255, verbose_name="Created By")
     date_joined = models.DateTimeField(default=timezone.now)
@@ -3666,6 +3666,126 @@ def _invalidate_rbac_cache(sender, instance, **kwargs):
         cache.delete(f"rbac:role:{instance.role.code}")
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Complaint Management
+# ---------------------------------------------------------------------------
+
+class ComplaintTicket(models.Model):
+    objects = SafeCreateManager()
+
+    STATUS_CREATED   = 'created'
+    STATUS_IN_REVIEW = 'in_review'
+    STATUS_PENDING   = 'pending'
+    STATUS_CLOSED    = 'closed'
+    STATUS_CANCELED  = 'canceled'
+
+    STATUS_CHOICES = [
+        (STATUS_CREATED,   'Created'),
+        (STATUS_IN_REVIEW, 'In Review'),
+        (STATUS_PENDING,   'Pending'),
+        (STATUS_CLOSED,    'Closed'),
+        (STATUS_CANCELED,  'Canceled'),
+    ]
+
+    SOURCE_CHOICES = [
+        ('helpdesk_call',  'HelpDesk Call'),
+        ('helpdesk_email', 'HelpDesk Email'),
+        ('public_app',     'Public App'),
+    ]
+
+    ticket_ref       = models.CharField(max_length=20, unique=True, editable=False, db_index=True)
+    applicant_name   = models.CharField(max_length=255)
+    applicant_phone  = models.CharField(max_length=25)
+    applicant_email  = models.EmailField(blank=True, null=True)
+    title            = models.CharField(max_length=500)
+    details          = models.TextField()
+    status           = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_CREATED, db_index=True)
+    source           = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='public_app')
+    solution         = models.TextField(blank=True, null=True)
+    final_report_file = models.CharField(max_length=500, blank=True, null=True)
+    created_by       = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='created_complaint_tickets',
+    )
+    entry_date  = models.DateField(auto_now_add=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Complaint Ticket'
+        verbose_name_plural = 'Complaint Tickets'
+
+    def __str__(self):
+        return f"{self.ticket_ref} – {self.title}"
+
+    def save(self, *args, **kwargs):
+        if not self.ticket_ref:
+            self.ticket_ref = self._generate_ref()
+        super().save(*args, **kwargs)
+
+    def _generate_ref(self):
+        from django.utils import timezone as tz
+        year = tz.now().year
+        count = ComplaintTicket.objects.filter(created_at__year=year).count()
+        return f"TKT-{year}-{str(count + 1).zfill(5)}"
+
+
+class TicketAttachment(models.Model):
+    objects = SafeCreateManager()
+
+    ticket      = models.ForeignKey(ComplaintTicket, on_delete=models.CASCADE, related_name='attachments')
+    file_path   = models.CharField(max_length=500)
+    file_name   = models.CharField(max_length=255)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    uploaded_by = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='ticket_attachments',
+    )
+
+    class Meta:
+        ordering = ['uploaded_at']
+
+    def __str__(self):
+        return f"{self.ticket.ticket_ref} – {self.file_name}"
+
+
+class TicketActivity(models.Model):
+    objects = SafeCreateManager()
+
+    ACTION_CREATED       = 'created'
+    ACTION_STATUS_CHANGE = 'status_change'
+    ACTION_COMMENT       = 'comment'
+    ACTION_FINAL_REPORT  = 'final_report'
+    ACTION_ATTACHMENT    = 'attachment'
+
+    ACTION_CHOICES = [
+        (ACTION_CREATED,       'Ticket Created'),
+        (ACTION_STATUS_CHANGE, 'Status Changed'),
+        (ACTION_COMMENT,       'Comment Added'),
+        (ACTION_FINAL_REPORT,  'Final Report Submitted'),
+        (ACTION_ATTACHMENT,    'Attachment Added'),
+    ]
+
+    ticket     = models.ForeignKey(ComplaintTicket, on_delete=models.CASCADE, related_name='activities')
+    actor      = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='ticket_activities',
+    )
+    actor_name  = models.CharField(max_length=255, blank=True)
+    action_type = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    old_value   = models.CharField(max_length=255, blank=True, null=True)
+    new_value   = models.CharField(max_length=255, blank=True, null=True)
+    comment     = models.TextField(blank=True, null=True)
+    timestamp   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['timestamp']
+
+    def __str__(self):
+        return f"{self.ticket.ticket_ref} – {self.action_type} at {self.timestamp}"
     
     
     
