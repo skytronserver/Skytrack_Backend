@@ -486,7 +486,22 @@ urlpatterns = [
     # Module access check
     path('check-module-access/', check_module_access, name='check_module_access'),
     path('check-user-access/', check_user_type, name='check_user_type'),
-    
+
+    # RBAC management (superadmin only)
+    path('rbac/roles/', rbac_list_roles, name='rbac_list_roles'),
+    path('rbac/roles/active/', rbac_active_roles, name='rbac_active_roles'),
+    path('rbac/roles/create/', rbac_create_custom_role, name='rbac_create_custom_role'),
+    path('rbac/roles/update/', rbac_update_role, name='rbac_update_role'),
+    path('rbac/roles/permissions/', rbac_get_role_permissions, name='rbac_get_role_permissions'),
+    path('rbac/roles/permissions/update/', rbac_update_role_permissions, name='rbac_update_role_permissions'),
+    path('rbac/roles/deactivate/', rbac_deactivate_role, name='rbac_deactivate_role'),
+
+    # RBAC user management (superadmin only, except active roles list)
+    path('rbac/users/', rbac_list_users, name='rbac_list_users'),
+    path('rbac/users/create/', rbac_create_user, name='rbac_create_user'),
+    path('rbac/users/update/', rbac_update_user, name='rbac_update_user'),
+    path('rbac/users/assign-role/', rbac_assign_role, name='rbac_assign_role'),
+
     # Bus Stand APIs
     path('busstand/set/', set_bus_stand, name='set_bus_stand'),
     path('busstand/activate-deactivate/', activate_deactivate_bus_stand, name='activate_deactivate_bus_stand'),

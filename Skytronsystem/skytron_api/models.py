@@ -20,7 +20,7 @@ from datetime import datetime , timedelta
 
 
 # SkytronServer/gps_api/models.py
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 
@@ -411,11 +411,14 @@ class User(AbstractBaseUser, PermissionsMixin):
         verbose_name="Notification Frequency Per Day",
         help_text="Number of times per day notifications can be sent (0-1440)",
     )
+    id_card_name = models.CharField(max_length=255, blank=True, null=True, verbose_name="ID Card Name")
+    id_card = models.CharField(max_length=500, blank=True, null=True, verbose_name="ID Card File Path")
+    authorisation_letter = models.CharField(max_length=500, blank=True, null=True, verbose_name="Authorisation Letter File Path")
     objects = CustomUserManager()
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['name' ]
-    
+
     objects = SafeCreateManager()
 
     def __str__(self):
@@ -3532,6 +3535,137 @@ class BusScheduleStopETA(models.Model):
 
     def __str__(self):
         return f"Schedule {self.schedule_id} → Stop {self.order}"
+
+
+# ─── Dynamic RBAC ────────────────────────────────────────────────────────────
+
+
+class UserRoleType(models.Model):
+    """
+    Registry of all user role types — both the built-in primary roles and any
+    custom roles a super-admin creates.  The `code` value must match the string
+    stored in User.role so the two systems stay in sync during the incremental
+    migration.
+    """
+    objects = SafeCreateManager()
+
+    BUILTIN_CODES = [
+        'superadmin', 'stateadmin', 'devicemanufacture', 'dealer', 'owner',
+        'esimprovider', 'filment', 'sosadmin', 'teamleader', 'sosexecutive',
+        'schooladmin', 'parentuser', 'dtorto',
+    ]
+
+    code         = models.CharField(max_length=50, unique=True)
+    display_name = models.CharField(max_length=100)
+    description  = models.TextField(blank=True, null=True)
+    is_builtin   = models.BooleanField(default=False)
+    is_active    = models.BooleanField(default=True)
+    created_by   = models.ForeignKey(
+        'User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='created_role_types',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'User Role Type'
+        verbose_name_plural = 'User Role Types'
+        ordering = ['display_name']
+
+    def __str__(self):
+        return f"{self.display_name} ({self.code})"
+
+
+class RolePermissionConfig(models.Model):
+    """
+    Maps a UserRoleType to a system module with fine-grained permission flags
+    and a data-hierarchy scope tier.
+
+    One row = one role's complete access policy for one module.
+    Super-admin can edit any row at runtime; the RBAC engine caches results in
+    Redis and invalidates on save/delete via the post_save signal below.
+    """
+    objects = SafeCreateManager()
+
+    DATA_SCOPE_CHOICES = [
+        ('national',     'National — all data'),
+        ('state',        'State — assigned state(s) only'),
+        ('manufacturer', 'Manufacturer — own company\'s devices only'),
+        ('district',     'District — assigned district(s) only'),
+        ('dealer',       'Dealer — own handled devices only'),
+        ('owner',        'Owner — own vehicles only'),
+        ('self',         'Self — own records only'),
+        ('none',         'None — no data access'),
+    ]
+
+    MODULE_CHOICES = [
+        ('dashboard',               'Dashboard'),
+        ('gps_tracking',            'GPS Live Tracking'),
+        ('gps_history',             'GPS History'),
+        ('gps_clustering',          'GPS Cluster / Grid'),
+        ('device_management',       'Device Model Management'),
+        ('device_stock',            'Device Stock & Inventory'),
+        ('vehicle_tagging',         'Vehicle Tagging'),
+        ('driver_management',       'Driver Management'),
+        ('owner_management',        'Vehicle Owner Management'),
+        ('manufacturer_management', 'Manufacturer Management'),
+        ('dealer_management',       'Dealer Management'),
+        ('stateadmin_management',   'State Admin Management'),
+        ('esim_management',         'eSIM Provider Management'),
+        ('emergency_management',    'Emergency (SOS) Management'),
+        ('emergency_teams',         'Emergency Teams'),
+        ('poi_management',          'Points of Interest'),
+        ('route_management',        'Route Management'),
+        ('alerts',                  'Alerts & Notifications'),
+        ('reports',                 'Reports'),
+        ('user_management',         'User Management'),
+        ('notice_management',       'Notices'),
+        ('trip_management',         'Trip Management'),
+        ('settings_management',     'System Settings'),
+    ]
+
+    role   = models.ForeignKey(
+        UserRoleType, on_delete=models.CASCADE,
+        related_name='module_permissions',
+    )
+    module = models.CharField(max_length=50, choices=MODULE_CHOICES)
+
+    can_view   = models.BooleanField(default=False)
+    can_create = models.BooleanField(default=False)
+    can_update = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)
+    can_filter = models.BooleanField(default=False)
+    show_in_menu = models.BooleanField(default=False)
+
+    data_scope = models.CharField(
+        max_length=20, choices=DATA_SCOPE_CHOICES, default='none',
+    )
+
+    updated_by = models.ForeignKey(
+        'User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='rbac_configs_updated',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [('role', 'module')]
+        verbose_name = 'Role Permission Config'
+        verbose_name_plural = 'Role Permission Configs'
+        ordering = ['role', 'module']
+
+    def __str__(self):
+        return f"{self.role.code} → {self.module}"
+
+
+@receiver([post_save, post_delete], sender=RolePermissionConfig,
+          dispatch_uid='rbac_cache_invalidate')
+def _invalidate_rbac_cache(sender, instance, **kwargs):
+    """Clear the Redis permission cache whenever a config row changes."""
+    try:
+        from django.core.cache import cache
+        cache.delete(f"rbac:role:{instance.role.code}")
+    except Exception:
+        pass
     
     
     

@@ -4,7 +4,7 @@ import paho.mqtt.client as mqtt
 from rest_framework.pagination import PageNumberPagination
 from math import radians, sin, cos, sqrt, asin
 # --- API: Get latest EMUserLocation for all unique field executives ---
-from django.db.models import OuterRef, Subquery, Max
+from django.db.models import OuterRef, Subquery, Max, Count
 from django.db import transaction
 
 from .models import Trip
@@ -19,6 +19,7 @@ from django.shortcuts import render
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
+from .rbac import require_permission, check_permission, get_all_module_permissions
 
 import logging
 
@@ -2265,72 +2266,24 @@ from itertools import chain
 # which is already imported from django.forms.models
 
 
-def _gps_scope_by_role(request, queryset):
-    """Apply role-based scoping to a GPS queryset.
-    Returns (scoped_queryset, error_response_or_None).
-    On error the queryset is None and a ready-to-return JsonResponse is provided.
+def _gps_scope_by_role(request, queryset, module='gps_tracking'):
+    """Apply role-based scoping to a GPSData queryset via the RBAC engine.
+
+    Returns (scoped_queryset, None) on success, or
+            (None, JsonResponse)  on error/no-access.
+
+    The optional *module* parameter lets callers declare which permission
+    module to look up (defaults to 'gps_tracking' so all existing call
+    sites remain unchanged without modification).
     """
     if not (request.user and request.user.is_authenticated):
         return None, JsonResponse({'error': 'User not authenticated.'}, status=401)
-    user_role = getattr(request.user, 'role', None)
-    if not user_role:
-        return None, JsonResponse({'error': 'User role not found.'}, status=400)
 
-    if user_role == 'superadmin':
-        return queryset, None
-
-    elif user_role == 'dtorto':
-        dto_rtos = dto_rto.objects.filter(users=request.user)
-        if not dto_rtos.exists():
-            return None, JsonResponse({'error': 'No DTO/RTO record found for this user.'}, status=400)
-        district_codes = [dr.district for dr in dto_rtos if dr.district]
-        if district_codes:
-            # dto_rto.district stores district codes (e.g. 'AS01').
-            # Look up the Settings_District IDs via district_code, then filter DeviceTag by FK.
-            district_ids = list(Settings_District.objects.filter(district_code__in=district_codes).values_list('id', flat=True))
-            if district_ids:
-                return queryset.filter(device_tag__district_id__in=district_ids), None
-        fallback_states = [dr.state_id for dr in dto_rtos]
-        if fallback_states:
-            return queryset.filter(device_tag__district__state__id__in=fallback_states), None
-        return None, JsonResponse({'error': 'No district or state found for this DTO/RTO user.'}, status=400)
-
-    elif user_role == 'stateadmin':
-        user_states = list(StateAdmin.objects.filter(users=request.user).values_list('state_id', flat=True))
-        if not user_states:
-            return None, JsonResponse({'error': 'No state found for this state admin.'}, status=400)
-        return queryset.filter(device_tag__district__state__id__in=user_states), None
-
-    elif user_role == 'sosadmin':
-        user_states = list(EM_admin.objects.filter(users=request.user).values_list('state_id', flat=True))
-        if not user_states:
-            return None, JsonResponse({'error': 'No state found for this SOS admin.'}, status=400)
-        return queryset.filter(device_tag__district__state__id__in=user_states), None
-
-    elif user_role == 'sosexecutive':
-        user_states = list(EM_ex.objects.filter(users=request.user).values_list('state_id', flat=True))
-        if not user_states:
-            return None, JsonResponse({'error': 'No state found for this SOS executive.'}, status=400)
-        return queryset.filter(device_tag__district__state__id__in=user_states), None
-
-    elif user_role == 'dealer':
-        dlrs = Dealer.objects.filter(users=request.user)
-        if not dlrs.exists():
-            return None, JsonResponse({'error': 'No dealer record found for this user.'}, status=400)
-        dealer_user_ids = list(dlrs.values_list('users', flat=True))
-        return queryset.filter(device_tag__tagged_by__in=dealer_user_ids), None
-
-    elif user_role == 'owner':
-        vehicle_owners = VehicleOwner.objects.filter(users=request.user)
-        if not vehicle_owners.exists():
-            return None, JsonResponse({'error': 'User is not linked to any vehicles.'}, status=400)
-        owned_tags = DeviceTag.objects.filter(
-            vehicle_owner__in=vehicle_owners, status='Owner_Final_OTP_Verified'
-        )
-        return queryset.filter(device_tag__in=owned_tags), None
-
-    else:
-        return None, JsonResponse({'error': 'User not Authorised for this api.'}, status=400)
+    from .rbac import apply_gps_scope
+    qs, err = apply_gps_scope(request.user, module, queryset)
+    if err:
+        return None, JsonResponse(err, status=400)
+    return qs, None
 
 
 @csrf_exempt   
@@ -3213,66 +3166,24 @@ def gps_track_data_api_pub(request ):
 #          gps_status, district, state, city
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _dt_scope_by_role(request, dt_queryset):
-    """Apply role-based scoping to a DeviceTag queryset.
-    Returns (scoped_queryset, error_response_or_None).
+def _dt_scope_by_role(request, dt_queryset, module='gps_tracking'):
+    """Apply role-based scoping to a DeviceTag queryset via the RBAC engine.
+
+    Returns (scoped_queryset, None) on success, or
+            (None, JsonResponse)  on error/no-access.
+
+    The optional *module* parameter lets callers declare which permission
+    module to look up (defaults to 'gps_tracking' so all existing call
+    sites remain unchanged without modification).
     """
     if not (request.user and request.user.is_authenticated):
         return None, JsonResponse({'error': 'User not authenticated.'}, status=401)
-    user_role = getattr(request.user, 'role', None)
-    if not user_role:
-        return None, JsonResponse({'error': 'User role not found.'}, status=400)
 
-    if user_role == 'superadmin':
-        return dt_queryset, None
-
-    elif user_role == 'dtorto':
-        dto_rtos = dto_rto.objects.filter(users=request.user)
-        if not dto_rtos.exists():
-            return None, JsonResponse({'error': 'No DTO/RTO record found for this user.'}, status=400)
-        district_codes = [dr.district for dr in dto_rtos if dr.district]
-        if district_codes:
-            district_ids = list(Settings_District.objects.filter(district_code__in=district_codes).values_list('id', flat=True))
-            if district_ids:
-                return dt_queryset.filter(district_id__in=district_ids), None
-        fallback_states = [dr.state_id for dr in dto_rtos]
-        if fallback_states:
-            return dt_queryset.filter(district__state__id__in=fallback_states), None
-        return None, JsonResponse({'error': 'No district or state found for this DTO/RTO user.'}, status=400)
-
-    elif user_role == 'stateadmin':
-        user_states = list(StateAdmin.objects.filter(users=request.user).values_list('state_id', flat=True))
-        if not user_states:
-            return None, JsonResponse({'error': 'No state found for this state admin.'}, status=400)
-        return dt_queryset.filter(district__state__id__in=user_states), None
-
-    elif user_role == 'sosadmin':
-        user_states = list(EM_admin.objects.filter(users=request.user).values_list('state_id', flat=True))
-        if not user_states:
-            return None, JsonResponse({'error': 'No state found for this SOS admin.'}, status=400)
-        return dt_queryset.filter(district__state__id__in=user_states), None
-
-    elif user_role == 'sosexecutive':
-        user_states = list(EM_ex.objects.filter(users=request.user).values_list('state_id', flat=True))
-        if not user_states:
-            return None, JsonResponse({'error': 'No state found for this SOS executive.'}, status=400)
-        return dt_queryset.filter(district__state__id__in=user_states), None
-
-    elif user_role == 'dealer':
-        dlrs = Dealer.objects.filter(users=request.user)
-        if not dlrs.exists():
-            return None, JsonResponse({'error': 'No dealer record found for this user.'}, status=400)
-        dealer_user_ids = list(dlrs.values_list('users', flat=True))
-        return dt_queryset.filter(tagged_by__in=dealer_user_ids), None
-
-    elif user_role == 'owner':
-        vehicle_owners = VehicleOwner.objects.filter(users=request.user)
-        if not vehicle_owners.exists():
-            return None, JsonResponse({'error': 'User is not linked to any vehicles.'}, status=400)
-        return dt_queryset.filter(vehicle_owner__in=vehicle_owners), None
-
-    else:
-        return None, JsonResponse({'error': 'User not Authorised for this api.'}, status=400)
+    from .rbac import apply_dt_scope
+    qs, err = apply_dt_scope(request.user, module, dt_queryset)
+    if err:
+        return None, JsonResponse(err, status=400)
+    return qs, None
 
 
 @csrf_exempt
@@ -14616,21 +14527,15 @@ def homepage_alart(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
-def alart_list(request ): 
+@require_permission('alerts', 'view')
+def alart_list(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    
-    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     user = request.user
-    allowed_roles = ["owner", "dtorto", "superadmin", "stateadmin", "sosadmin", "sosexecutive"]
-    
-    # Check if user has any of the allowed roles
-    if user.role not in allowed_roles:
-        return Response({"error":"Request must be from one of these roles: " + ", ".join(allowed_roles) + '.'}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
         # For owner, filter by their vehicles only
@@ -17916,7 +17821,8 @@ def user_login(request ):
                     except Exception as e:
                         print(f"MQTT user creation failed (bypass): {e}")
                     return Response({'status': 'Login Successful', 'token': token_value, 'token2': token_value,
-                                     'user': UserSerializer2(user).data, 'info': uu}, status=status.HTTP_200_OK)
+                                     'user': UserSerializer2(user).data, 'info': uu,
+                                     'permissions': get_all_module_permissions(user)}, status=status.HTTP_200_OK)
                 except Exception as e:
                     return Response({'error': 'Failed to complete login: ' + str(e)}, status=400)
             else:
@@ -18157,6 +18063,7 @@ def user_login_sosexecutive_direct(request):
                     'token2': token_value,
                     'user': UserSerializer2(user).data,
                     'info': uu,
+                    'permissions': get_all_module_permissions(user),
                 },
                 status=status.HTTP_200_OK,
             )
@@ -18861,7 +18768,9 @@ def validate_otp(request ):
                 print(f"MQTT user creation failed for existing session: {e}")
             mqtt_token = session.token
             
-            return Response({'status':'Login Successful','token': session.token,'token2': mqtt_token,'user':UserSerializer2(session.user).data}, status=status.HTTP_200_OK)
+            return Response({'status':'Login Successful','token': session.token,'token2': mqtt_token,
+                             'user':UserSerializer2(session.user).data,
+                             'permissions': get_all_module_permissions(session.user)}, status=status.HTTP_200_OK)
 
         
         time_difference = timezone.now() - session.loginTime
@@ -18936,7 +18845,9 @@ def validate_otp(request ):
                     print(f"MQTT user creation failed for OTP validation: {e}")
                 mqtt_token = session.token
 
-                return Response({'status':'Login Successful','token': session.token,'token2': mqtt_token,'user':UserSerializer2(session.user).data,"info":uu}, status=status.HTTP_200_OK)
+                return Response({'status':'Login Successful','token': session.token,'token2': mqtt_token,
+                                 'user':UserSerializer2(session.user).data,"info":uu,
+                                 'permissions': get_all_module_permissions(session.user)}, status=status.HTTP_200_OK)
             except Exception as e:
                 return Response({'error': "Unable to process request."+str(e)}, status=400)
         else:
@@ -20107,6 +20018,7 @@ def StateAdmin_view_all_tagging(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['POST'])
+@require_permission('alerts', 'view')
 def get_device_tag_alerts(request):
     """
     Get alerts for specific device tags with user-based filtering:
@@ -20160,10 +20072,6 @@ def get_device_tag_alerts(request):
                 deviceTag__vehicle_owner__address__icontains=dto_rto_obj.district
             )
             
-        else:
-            return Response({"error": "Unauthorized role. Only superadmin, stateadmin, and dtorto can access this endpoint."}, 
-                          status=status.HTTP_403_FORBIDDEN)
-        
         # Apply additional filters based on request parameters
         if vehicle_reg_no:
             alerts_queryset = alerts_queryset.filter(
@@ -20268,6 +20176,7 @@ def get_device_tag_alerts(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['POST'])
+@require_permission('vehicle_tagging', 'view')
 def get_device_tags(request):
     """
     Get device tags with search functionality and user-based filtering:
@@ -20331,10 +20240,6 @@ def get_device_tags(request):
                 vehicle_owner__users__address__icontains=dto_rto_obj.district
             )
             
-        else:
-            return Response({"error": "Unauthorized role. Only superadmin, stateadmin, and dtorto can access this endpoint."}, 
-                          status=status.HTTP_403_FORBIDDEN)
-        
         # Apply search filters
         if vehicle_reg_no:
             device_tags_queryset = device_tags_queryset.filter(
@@ -20534,10 +20439,11 @@ def get_device_tags(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'view')
 def activated_device_list(request):
     """
     Get list of activated devices with comprehensive information for super admin, state admin, and DTO users.
-    Returns: FITMENT DATE, fitment status, eSIM validity, reg no, DTO district code, 
+    Returns: FITMENT DATE, fitment status, eSIM validity, reg no, DTO district code,
     vehicle owner, device model number, manufacturer, dealer
     """
     errors = validate_inputs(request)
@@ -20546,13 +20452,6 @@ def activated_device_list(request):
 
     try:
         user = request.user
-        
-        # Check user role and permissions
-        allowed_roles = ['superadmin', 'stateadmin', 'dtorto']
-        if user.role not in allowed_roles:
-            return Response({
-                "error": f"Access denied. This endpoint is only accessible by {', '.join(allowed_roles)}."
-            }, status=status.HTTP_403_FORBIDDEN)
 
         # Base query for activated devices (multiple active statuses)
         # Include multiple status values that indicate an active/working device
@@ -21101,6 +21000,7 @@ def homepage_esimProvider(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('reports', 'view')
 def state_admin_approved_models_report(request):
     """
     API for state admin to get report of approved device models.
@@ -21112,12 +21012,6 @@ def state_admin_approved_models_report(request):
 
     try:
         user = request.user
-        
-        # Check if user is a state admin or superadmin
-        if user.role not in ['stateadmin', 'superadmin']:
-            return Response({
-                "error": "Access denied. This endpoint is only accessible by state admins or superadmins."
-            }, status=status.HTTP_403_FORBIDDEN)
 
         # Get requester profile based on role
         state_admin = get_user_object(user, "stateadmin") if user.role == 'stateadmin' else None
@@ -21296,6 +21190,7 @@ def state_admin_approved_models_report(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('reports', 'view')
 def state_admin_approved_cops_report(request):
     """
     API for state admin to get report of approved COPs (Certificate of Performance).
@@ -21307,12 +21202,6 @@ def state_admin_approved_cops_report(request):
 
     try:
         user = request.user
-        
-        # Check if user is a state admin or superadmin
-        if user.role not in ['stateadmin', 'superadmin']:
-            return Response({
-                "error": "Access denied. This endpoint is only accessible by state admins or superadmins."
-            }, status=status.HTTP_403_FORBIDDEN)
 
         # Get requester profile based on role
         state_admin = get_user_object(user, "stateadmin") if user.role == 'stateadmin' else None
@@ -21540,6 +21429,7 @@ def state_admin_approved_cops_report(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('reports', 'view')
 def state_admin_combined_approval_report(request):
     """
     API for state admin to get combined report of approved device models and COPs.
@@ -21551,12 +21441,6 @@ def state_admin_combined_approval_report(request):
 
     try:
         user = request.user
-        
-        # Check if user is a state admin
-        if user.role != 'stateadmin':
-            return Response({
-                "error": "Access denied. This endpoint is only accessible by state admins."
-            }, status=status.HTTP_403_FORBIDDEN)
 
         # Get state admin profile
         state_admin = get_user_object(user, "stateadmin")
@@ -22010,6 +21894,7 @@ def get_device_trip_details(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@require_permission('vehicle_tagging', 'view')
 def get_device_health_status(request):
     """
     API to get health status of devices with filtering options
@@ -22322,123 +22207,744 @@ def get_device_health_status(request):
 @permission_classes([IsAuthenticated])
 def check_module_access(request):
     """
-    API endpoint to check module access.
-    Takes only one POST parameter: 'module'
-    Returns: {access: allow}
+    Check RBAC access for one module or a batch of modules.
+
+    Single-module request
+    ---------------------
+    POST body: { "module": "gps_tracking" }
+    Response:
+        {
+            "access": "allow" | "deny",
+            "permissions": {
+                "view": true, "create": false, "update": false,
+                "delete": false, "filter": true, "menu": true,
+                "data_scope": "dealer"
+            }
+        }
+
+    Batch request
+    -------------
+    POST body: { "modules": ["gps_tracking", "vehicle_tagging", "reports"] }
+    Response:
+        {
+            "modules": {
+                "gps_tracking":  { "access": "allow", "permissions": { ... } },
+                "vehicle_tagging": { "access": "allow", "permissions": { ... } },
+                "reports":       { "access": "deny",  "permissions": null }
+            }
+        }
     """
+    from .rbac import get_module_permission
+
     try:
+        # ── Batch path ──────────────────────────────────────────────────
+        modules_list = request.data.get('modules')
+        if modules_list is not None:
+            if not isinstance(modules_list, list) or not modules_list:
+                return Response(
+                    {'error': 'modules must be a non-empty list'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            result = {}
+            for mod in modules_list:
+                perm = get_module_permission(request.user, str(mod))
+                if perm and perm.get('view'):
+                    result[mod] = {'access': 'allow', 'permissions': perm}
+                else:
+                    result[mod] = {'access': 'deny', 'permissions': perm}
+            return Response({'modules': result}, status=status.HTTP_200_OK)
+
+        # ── Single-module path ──────────────────────────────────────────
         module = request.data.get('module')
-        
         if not module:
-            return Response({
-                'status': 'error',
-                'message': 'module parameter is required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # For now, return access allow for all modules
-        return Response({
-            'access': 'allow'
-        }, status=status.HTTP_200_OK)
-        
+            return Response(
+                {'error': 'module or modules parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        perm = get_module_permission(request.user, module)
+        if perm and perm.get('view'):
+            return Response(
+                {'access': 'allow', 'permissions': perm},
+                status=status.HTTP_200_OK,
+            )
+        return Response(
+            {'access': 'deny', 'permissions': perm},
+            status=status.HTTP_200_OK,
+        )
+
     except Exception as e:
-        return Response({
-            'status': 'error',
-            'message': f'An error occurred: {str(e)}'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {'error': f'An error occurred: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def check_user_type(request):
     """
-    API endpoint to check user type and return permissions for all user roles.
-    No POST data required - uses authenticated user.
-    Returns: {
-        superadmin: true/false,
-        stateadmin: true/false,
-        devicemanufacture: true/false,
-        dealer: true/false,
-        owner: true/false,
-        esimprovider: true/false,
-        filment: true/false,
-        sosadmin: true/false,
-        teamleader: true/false,
-        sosexecutive: true/false,
-        police: true/false,
-        ambulance: true/false,
-        guest: true/false
-    }
+    Return the authenticated user's role identity and full RBAC module permissions.
+
+    Legacy boolean flags (backward-compatible — existing clients keep working):
+        superadmin, stateadmin, devicemanufacture, dealer, owner,
+        esimprovider, filment, sosadmin, teamleader, sosexecutive,
+        police, ambulance, dtorto, guest
+
+    New fields added alongside the legacy flags:
+        role        — raw role code string (e.g. "dealer")
+        role_label  — human-readable display name (e.g. "Dealer")
+        modules     — full permission map for every module the role can access:
+                      {
+                        "gps_tracking": {
+                          "view": true, "create": false, "update": false,
+                          "delete": false, "filter": true, "menu": true,
+                          "data_scope": "dealer"
+                        },
+                        ...
+                      }
     """
+    from .rbac import get_all_module_permissions
+    from .models import UserRoleType
+
     try:
         user = request.user
-        
-        # Initialize all permissions as False
-        response_data = {
-            'superadmin': False,
-            'stateadmin': False,
+
+        # ── Legacy boolean flags (preserved for backward compatibility) ──────
+        flags = {
+            'superadmin':        False,
+            'stateadmin':        False,
             'devicemanufacture': False,
-            'dealer': False,
-            'owner': False,
-            'esimprovider': False,
-            'filment': False,
-            'sosadmin': False,
-            'teamleader': False,
-            'sosexecutive': False,
-            'police': False,
-            'ambulance': False,
-            'dtorto': False,
-            'guest': False
+            'dealer':            False,
+            'owner':             False,
+            'esimprovider':      False,
+            'filment':           False,
+            'sosadmin':          False,
+            'teamleader':        False,
+            'sosexecutive':      False,
+            'police':            False,
+            'ambulance':         False,
+            'dtorto':            False,
+            'guest':             False,
         }
-        
-        # Check user role and set corresponding flag
-        if user.role == 'superadmin':
-            response_data['superadmin'] = True
-        elif user.role == 'stateadmin':
-            response_data['stateadmin'] = True
-        elif user.role == 'devicemanufacture':
-            response_data['devicemanufacture'] = True
-        elif user.role == 'dealer':
-            response_data['dealer'] = True
-        elif user.role == 'owner':
-            response_data['owner'] = True
-        elif user.role == 'dtorto':
-            response_data['dtorto'] = True
-        elif user.role == 'esimprovider':
-            response_data['esimprovider'] = True
-        elif user.role == 'filment':
-            response_data['filment'] = True
-        elif user.role == 'sosadmin':
-            response_data['sosadmin'] = True
-        elif user.role == 'teamleader':
-            response_data['teamleader'] = True
-        elif user.role == 'sosexecutive':
-            response_data['sosexecutive'] = True
-            
-            # Check if sosexecutive is police or ambulance type
+
+        role_code = getattr(user, 'role', None) or ''
+        if role_code in flags:
+            flags[role_code] = True
+
+        if role_code == 'sosexecutive':
             try:
                 em_ex = EM_ex.objects.filter(users=user).first()
                 if em_ex:
                     if em_ex.user_type == 'police_ex':
-                        response_data['police'] = True
+                        flags['police'] = True
                     elif em_ex.user_type == 'ambulance_ex':
-                        response_data['ambulance'] = True
-            except Exception as e:
+                        flags['ambulance'] = True
+            except Exception:
                 pass
-        else:
-            # Unknown role or no role, treat as guest
-            response_data['guest'] = True
-        
-        # If no role was matched, set guest to True
-        if not any(response_data.values()):
-            response_data['guest'] = True
-        
-        return Response(response_data, status=status.HTTP_200_OK)
-        
+
+        if not any(flags.values()):
+            flags['guest'] = True
+
+        # ── Role display name ─────────────────────────────────────────────────
+        role_label = role_code
+        try:
+            rt = UserRoleType.objects.filter(code=role_code).only('display_name').first()
+            if rt:
+                role_label = rt.display_name
+        except Exception:
+            pass
+
+        # ── Full RBAC module permission map ───────────────────────────────────
+        modules = get_all_module_permissions(user)
+
+        return Response(
+            {**flags, 'role': role_code, 'role_label': role_label, 'modules': modules},
+            status=status.HTTP_200_OK,
+        )
+
     except Exception as e:
-        return Response({
-            'status': 'error',
-            'message': f'An error occurred: {str(e)}'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {'error': f'An error occurred: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+# ================================
+# RBAC Management APIs  (superadmin only)
+# ================================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_list_roles(request):
+    """
+    GET /rbac/roles/
+    List all role types (builtin + custom) with module counts and active status.
+    Any authenticated superadmin may call this.
+    """
+    from .models import UserRoleType, RolePermissionConfig
+    if request.user.role != 'superadmin':
+        return Response({'error': 'Superadmin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    roles = UserRoleType.objects.all().order_by('display_name')
+    module_counts = {
+        row['role_id']: row['cnt']
+        for row in RolePermissionConfig.objects.values('role_id').annotate(cnt=Count('id'))
+    }
+    data = []
+    for r in roles:
+        data.append({
+            'id': r.id,
+            'code': r.code,
+            'display_name': r.display_name,
+            'description': r.description,
+            'is_builtin': r.is_builtin,
+            'is_active': r.is_active,
+            'module_count': module_counts.get(r.id, 0),
+            'created_at': r.created_at.isoformat() if r.created_at else None,
+        })
+    return Response({'status': 'ok', 'roles': data}, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_create_custom_role(request):
+    """
+    POST /rbac/roles/create/
+    Body: { "code": "...", "display_name": "...", "description": "..." }
+    Creates a new custom (non-builtin) role type.
+    """
+    from .models import UserRoleType
+    if request.user.role != 'superadmin':
+        return Response({'error': 'Superadmin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    code = (request.data.get('code') or '').strip().lower()
+    display_name = (request.data.get('display_name') or '').strip()
+    description = (request.data.get('description') or '').strip()
+
+    if not code or not display_name:
+        return Response({'error': 'code and display_name are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if UserRoleType.objects.filter(code=code).exists():
+        return Response({'error': f"Role code '{code}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+    role = UserRoleType.objects.create(
+        code=code,
+        display_name=display_name,
+        description=description,
+        is_builtin=False,
+        is_active=True,
+        created_by=request.user,
+    )
+    return Response({
+        'status': 'ok',
+        'message': f"Custom role '{code}' created.",
+        'role': {'id': role.id, 'code': role.code, 'display_name': role.display_name},
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_get_role_permissions(request):
+    """
+    GET /rbac/roles/permissions/?role_code=<code>
+    Returns all module-level permission rows for the given role.
+    """
+    from .models import UserRoleType, RolePermissionConfig
+    if request.user.role != 'superadmin':
+        return Response({'error': 'Superadmin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    role_code = request.query_params.get('role_code', '').strip()
+    if not role_code:
+        return Response({'error': 'role_code query param is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        role = UserRoleType.objects.get(code=role_code)
+    except UserRoleType.DoesNotExist:
+        return Response({'error': f"Role '{role_code}' not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    configs = RolePermissionConfig.objects.filter(role=role).order_by('module')
+    permissions = []
+    for cfg in configs:
+        permissions.append({
+            'module': cfg.module,
+            'can_view': cfg.can_view,
+            'can_create': cfg.can_create,
+            'can_update': cfg.can_update,
+            'can_delete': cfg.can_delete,
+            'can_filter': cfg.can_filter,
+            'show_in_menu': cfg.show_in_menu,
+            'data_scope': cfg.data_scope,
+        })
+    return Response({
+        'status': 'ok',
+        'role': {'code': role.code, 'display_name': role.display_name, 'is_builtin': role.is_builtin},
+        'permissions': permissions,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_update_role_permissions(request):
+    """
+    POST /rbac/roles/permissions/update/
+    Body:
+    {
+      "role_code": "dealer",
+      "permissions": [
+        {
+          "module": "gps_tracking",
+          "can_view": true, "can_create": false, "can_update": false,
+          "can_delete": false, "can_filter": true, "show_in_menu": true,
+          "data_scope": "dealer"
+        },
+        ...
+      ]
+    }
+    Creates or updates the RolePermissionConfig rows for the role, then
+    invalidates the Redis cache so changes take effect immediately.
+    """
+    from .models import UserRoleType, RolePermissionConfig
+    from . import rbac as _rbac
+    if request.user.role != 'superadmin':
+        return Response({'error': 'Superadmin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    role_code = (request.data.get('role_code') or '').strip()
+    permissions = request.data.get('permissions')
+
+    if not role_code:
+        return Response({'error': 'role_code is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not isinstance(permissions, list) or not permissions:
+        return Response({'error': 'permissions must be a non-empty list.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        role = UserRoleType.objects.get(code=role_code)
+    except UserRoleType.DoesNotExist:
+        return Response({'error': f"Role '{role_code}' not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    valid_modules = {m for m, _ in RolePermissionConfig.MODULE_CHOICES}
+    valid_scopes = {s for s, _ in RolePermissionConfig.DATA_SCOPE_CHOICES}
+    updated = []
+    errors = []
+
+    for item in permissions:
+        module = (item.get('module') or '').strip()
+        if module not in valid_modules:
+            errors.append(f"Unknown module: '{module}'")
+            continue
+        data_scope = item.get('data_scope', 'none')
+        if data_scope not in valid_scopes:
+            errors.append(f"Unknown data_scope '{data_scope}' for module '{module}'")
+            continue
+
+        cfg, _ = RolePermissionConfig.objects.update_or_create(
+            role=role,
+            module=module,
+            defaults={
+                'can_view':     bool(item.get('can_view', False)),
+                'can_create':   bool(item.get('can_create', False)),
+                'can_update':   bool(item.get('can_update', False)),
+                'can_delete':   bool(item.get('can_delete', False)),
+                'can_filter':   bool(item.get('can_filter', False)),
+                'show_in_menu': bool(item.get('show_in_menu', False)),
+                'data_scope':   data_scope,
+                'updated_by':   request.user,
+            },
+        )
+        updated.append(module)
+
+    _rbac.invalidate_role_cache(role_code)
+
+    response = {'status': 'ok', 'updated_modules': updated}
+    if errors:
+        response['warnings'] = errors
+    return Response(response, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_deactivate_role(request):
+    """
+    POST /rbac/roles/deactivate/
+    Body: { "role_code": "..." }
+    Deactivates a custom role. Built-in roles cannot be deactivated.
+    """
+    from .models import UserRoleType
+    from . import rbac as _rbac
+    if request.user.role != 'superadmin':
+        return Response({'error': 'Superadmin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    role_code = (request.data.get('role_code') or '').strip()
+    if not role_code:
+        return Response({'error': 'role_code is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        role = UserRoleType.objects.get(code=role_code)
+    except UserRoleType.DoesNotExist:
+        return Response({'error': f"Role '{role_code}' not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if role.is_builtin:
+        return Response({'error': 'Built-in roles cannot be deactivated.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    role.is_active = False
+    role.save(update_fields=['is_active', 'updated_at'])
+    _rbac.invalidate_role_cache(role_code)
+
+    return Response({'status': 'ok', 'message': f"Role '{role_code}' deactivated."}, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_update_role(request):
+    """
+    POST /rbac/roles/update/
+    Body: { "role_code": "...", "display_name": "...", "description": "..." }
+    Updates display_name and/or description of a role.
+    Built-in roles' display_name and description can be updated; code is always immutable.
+    """
+    from .models import UserRoleType
+    if request.user.role != 'superadmin':
+        return Response({'error': 'Superadmin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    role_code = (request.data.get('role_code') or '').strip()
+    if not role_code:
+        return Response({'error': 'role_code is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        role = UserRoleType.objects.get(code=role_code)
+    except UserRoleType.DoesNotExist:
+        return Response({'error': f"Role '{role_code}' not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    display_name = (request.data.get('display_name') or '').strip()
+    description = (request.data.get('description') or '').strip()
+
+    if not display_name and not description:
+        return Response({'error': 'At least one of display_name or description is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    update_fields = ['updated_at']
+    if display_name:
+        role.display_name = display_name
+        update_fields.append('display_name')
+    if description:
+        role.description = description
+        update_fields.append('description')
+
+    role.save(update_fields=update_fields)
+    return Response({
+        'status': 'ok',
+        'role': {'code': role.code, 'display_name': role.display_name, 'description': role.description},
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_active_roles(request):
+    """
+    GET /rbac/roles/active/
+    Returns all active role types. Any authenticated user can call this.
+    Used by frontend to populate role dropdowns.
+    """
+    from .models import UserRoleType
+    roles = UserRoleType.objects.filter(is_active=True).order_by('display_name')
+    data = [
+        {
+            'code': r.code,
+            'display_name': r.display_name,
+            'description': r.description,
+            'is_builtin': r.is_builtin,
+        }
+        for r in roles
+    ]
+    return Response({'status': 'ok', 'roles': data}, status=status.HTTP_200_OK)
+
+
+# ================================
+# RBAC User Assignment APIs  (Phase 8)
+# ================================
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_list_users(request):
+    """
+    GET /rbac/users/              — list all users with their role info (paginated, 100/page)
+    GET /rbac/users/?role_code=X  — filter by role code
+    POST /rbac/users/ body {"role_code": "X", "page": 1} — same via POST body
+
+    Superadmin only.
+    """
+    from .models import UserRoleType
+    if request.user.role != 'superadmin':
+        return Response({'error': 'Superadmin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    params = request.data if request.method == 'POST' else request.query_params
+    role_code = (params.get('role_code') or '').strip()
+    page = int(params.get('page', 1))
+    page_size = min(int(params.get('page_size', 100)), 500)
+
+    from .models import User as SkyUser
+    qs = SkyUser.objects.all().order_by('name')
+    if role_code:
+        qs = qs.filter(role=role_code)
+
+    from django.core.paginator import Paginator
+    paginator = Paginator(qs, page_size)
+    page_obj = paginator.get_page(page)
+
+    role_labels = {r.code: r.display_name for r in UserRoleType.objects.all()}
+    users_data = []
+    for u in page_obj:
+        users_data.append({
+            'id': u.id,
+            'name': u.name,
+            'mobile': getattr(u, 'mobile', None),
+            'email': getattr(u, 'email', None),
+            'role': u.role,
+            'role_label': role_labels.get(u.role, u.role),
+            'is_active': u.is_active,
+        })
+
+    return Response({
+        'status': 'ok',
+        'total': paginator.count,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': paginator.num_pages,
+        'users': users_data,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_assign_role(request):
+    """
+    POST /rbac/users/assign-role/
+    Body: { "user_id": 123, "role_code": "custom_role" }
+
+    Changes user.role to the given role_code.
+    - role_code must exist in UserRoleType and be active.
+    - Cannot change own role.
+    - Superadmin only.
+    """
+    from .models import UserRoleType
+    from . import rbac as _rbac
+
+    if request.user.role != 'superadmin':
+        return Response({'error': 'Superadmin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    user_id = request.data.get('user_id')
+    role_code = (request.data.get('role_code') or '').strip()
+
+    if not user_id or not role_code:
+        return Response({'error': 'user_id and role_code are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if int(user_id) == request.user.id:
+        return Response({'error': 'Cannot change your own role.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        role = UserRoleType.objects.get(code=role_code, is_active=True)
+    except UserRoleType.DoesNotExist:
+        return Response({'error': f"Role '{role_code}' not found or inactive."}, status=status.HTTP_404_NOT_FOUND)
+
+    from .models import User as SkyUser
+    try:
+        target_user = SkyUser.objects.get(id=user_id)
+    except SkyUser.DoesNotExist:
+        return Response({'error': f"User {user_id} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    old_role = target_user.role
+    target_user.role = role_code
+    target_user.save(update_fields=['role'])
+
+    _rbac.invalidate_role_cache(old_role)
+    _rbac.invalidate_role_cache(role_code)
+
+    return Response({
+        'status': 'ok',
+        'message': f"User {target_user.name} role changed from '{old_role}' to '{role_code}'.",
+        'user': {'id': target_user.id, 'name': target_user.name, 'role': role_code},
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_create_user(request):
+    """
+    POST /rbac/users/create/
+    Superadmin creates a user of any role type (builtin or custom).
+
+    Required fields (multipart/form-data or JSON):
+      name, email, mobile, dob, role_code
+
+    Optional fields:
+      address, address_pin, address_State,
+      id_card_name (text)
+
+    Optional file uploads (multipart/form-data):
+      id_card          — image or PDF of ID card
+      authorisation_letter — image or PDF of authorisation letter
+    """
+    from .models import UserRoleType, User as SkyUser
+    if request.user.role != 'superadmin':
+        return Response({'error': 'Superadmin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    role_code = (request.data.get('role_code') or '').strip()
+    if not role_code:
+        return Response({'error': 'role_code is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if len(role_code) > 20:
+        return Response({'error': 'role_code must be 20 characters or fewer (User.role field constraint).'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        UserRoleType.objects.get(code=role_code, is_active=True)
+    except UserRoleType.DoesNotExist:
+        return Response({'error': f"Role '{role_code}' not found or inactive."}, status=status.HTTP_404_NOT_FOUND)
+
+    user, err, new_password = create_user(role_code, request)
+    if err:
+        return Response(err, status=status.HTTP_400_BAD_REQUEST)
+
+    update_fields = []
+    id_card_name = (request.data.get('id_card_name') or '').strip()
+    if id_card_name:
+        user.id_card_name = id_card_name
+        update_fields.append('id_card_name')
+
+    address_state = (request.data.get('address_State') or '').strip()
+    if address_state:
+        user.address_State = address_state
+        update_fields.append('address_State')
+
+    id_card_path = save_file(request, 'id_card', f'users/{user.id}/id_card')
+    if id_card_path:
+        user.id_card = id_card_path
+        update_fields.append('id_card')
+
+    auth_letter_path = save_file(request, 'authorisation_letter', f'users/{user.id}/auth_letter')
+    if auth_letter_path:
+        user.authorisation_letter = auth_letter_path
+        update_fields.append('authorisation_letter')
+
+    if update_fields:
+        user.save(update_fields=update_fields)
+
+    return Response({
+        'status': 'ok',
+        'message': f"User '{user.name}' created with role '{role_code}'.",
+        'user': {
+            'id': user.id,
+            'name': user.name,
+            'email': user.email,
+            'mobile': user.mobile,
+            'role': user.role,
+            'id_card_name': user.id_card_name,
+            'id_card': user.id_card,
+            'authorisation_letter': user.authorisation_letter,
+        },
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_update_user(request):
+    """
+    POST /rbac/users/update/
+    Superadmin updates any user's profile fields and/or uploads new ID/authorisation files.
+
+    Required:
+      user_id
+
+    Updatable fields (all optional — only provided fields are changed):
+      name, address, address_pin, address_State, dob, id_card_name, role_code
+
+    Optional file uploads (multipart/form-data):
+      id_card              — replaces existing ID card file
+      authorisation_letter — replaces existing authorisation letter file
+    """
+    from .models import UserRoleType, User as SkyUser
+    from . import rbac as _rbac
+    if request.user.role != 'superadmin':
+        return Response({'error': 'Superadmin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    user_id = request.data.get('user_id')
+    if not user_id:
+        return Response({'error': 'user_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        target = SkyUser.objects.get(id=user_id)
+    except SkyUser.DoesNotExist:
+        return Response({'error': f"User {user_id} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    update_fields = []
+
+    for field in ('name', 'address', 'address_pin', 'address_State', 'dob'):
+        val = (request.data.get(field) or '').strip()
+        if val:
+            setattr(target, field, val)
+            update_fields.append(field)
+
+    id_card_name = (request.data.get('id_card_name') or '').strip()
+    if id_card_name:
+        target.id_card_name = id_card_name
+        update_fields.append('id_card_name')
+
+    role_code = (request.data.get('role_code') or '').strip()
+    if role_code:
+        if len(role_code) > 20:
+            return Response({'error': 'role_code must be 20 characters or fewer.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            UserRoleType.objects.get(code=role_code, is_active=True)
+        except UserRoleType.DoesNotExist:
+            return Response({'error': f"Role '{role_code}' not found or inactive."}, status=status.HTTP_404_NOT_FOUND)
+        old_role = target.role
+        target.role = role_code
+        update_fields.append('role')
+        _rbac.invalidate_role_cache(old_role)
+        _rbac.invalidate_role_cache(role_code)
+
+    id_card_path = save_file(request, 'id_card', f'users/{target.id}/id_card')
+    if id_card_path:
+        target.id_card = id_card_path
+        update_fields.append('id_card')
+
+    auth_letter_path = save_file(request, 'authorisation_letter', f'users/{target.id}/auth_letter')
+    if auth_letter_path:
+        target.authorisation_letter = auth_letter_path
+        update_fields.append('authorisation_letter')
+
+    if not update_fields:
+        return Response({'error': 'No fields to update.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    target.save(update_fields=update_fields)
+
+    return Response({
+        'status': 'ok',
+        'message': f"User '{target.name}' updated.",
+        'user': {
+            'id': target.id,
+            'name': target.name,
+            'email': target.email,
+            'mobile': target.mobile,
+            'role': target.role,
+            'address': target.address,
+            'address_pin': target.address_pin,
+            'address_State': target.address_State,
+            'dob': target.dob,
+            'id_card_name': target.id_card_name,
+            'id_card': target.id_card,
+            'authorisation_letter': target.authorisation_letter,
+        },
+    }, status=status.HTTP_200_OK)
 
 
 # ================================
@@ -24530,6 +25036,7 @@ def public_contact_form(request):
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'view')
 def list_logged_in_users(request):
     """
     API to get list of logged-in users with filtering and pagination.
@@ -24537,12 +25044,6 @@ def list_logged_in_users(request):
     Pagination: default 100 per page
     """
     try:
-        # Only allow superadmin and stateadmin to access this API
-        if request.user.role not in ['superadmin', 'stateadmin']:
-            return Response({
-                'status': 'error',
-                'message': 'Access denied. Only superadmin and stateadmin can view logged-in users.'
-            }, status=status.HTTP_403_FORBIDDEN)
         
         # Get pagination parameters
         page = int(request.data.get('page', 1)) if request.method == 'POST' else int(request.GET.get('page', 1))
