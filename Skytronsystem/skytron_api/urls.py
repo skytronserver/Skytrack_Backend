@@ -102,6 +102,7 @@ urlpatterns = [
     path('poi/update/', update_poi, name='update_poi'),
     path('poi/delete/', delete_poi, name='delete_poi'),
     path('poi/list/', list_pois, name='list_pois'),
+    path('poi/types/', list_poi_types, name='list_poi_types'),
     path('mqtt/send_command/', send_mqtt_command, name='send_mqtt_command'),
 
     

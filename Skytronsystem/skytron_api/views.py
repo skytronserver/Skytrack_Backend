@@ -10019,12 +10019,51 @@ def delete_poi(request):
 def list_pois(request):
     try:
         pois = pointofinterests.objects.all()
+
+        name = request.GET.get('name', '').strip()
+        use_type = request.GET.get('use_type', '').strip()
+        mark_type = request.GET.get('mark_type', '').strip()
+        status = request.GET.get('status', '').strip()
+        city = request.GET.get('city', '').strip()
+        state = request.GET.get('state', '').strip()
+        alert_type = request.GET.get('alert_type', '').strip()
+
+        if name:
+            pois = pois.filter(name__icontains=name)
+        if use_type:
+            pois = pois.filter(use_type__iexact=use_type)
+        if mark_type:
+            pois = pois.filter(mark_type__iexact=mark_type)
+        if status:
+            pois = pois.filter(status__iexact=status)
+        if city:
+            pois = pois.filter(city__icontains=city)
+        if state:
+            pois = pois.filter(state__icontains=state)
+        if alert_type:
+            pois = pois.filter(alert_type__iexact=alert_type)
+
         data = list(pois.values())
-        # Add alert_type and speed_limit to output if not present
         for d, poi in zip(data, pois):
             d['alert_type'] = poi.alert_type
             d['speed_limit'] = poi.speed_limit
-        return Response({'data': data}, status=200)
+        return Response({'data': data, 'count': len(data)}, status=200)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def list_poi_types(request):
+    try:
+        types = (
+            pointofinterests.objects
+            .values_list('use_type', flat=True)
+            .distinct()
+            .order_by('use_type')
+        )
+        return Response({'data': list(types), 'count': len(types)}, status=200)
     except Exception as e:
         return Response({'error': str(e)}, status=400)
 
