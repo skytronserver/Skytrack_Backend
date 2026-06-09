@@ -206,7 +206,7 @@ class pointofinterests(models.Model):
             ('Circle', 'Circle'), 
             ('Polygon', 'Polygon'), 
         ]
-    mark_type = models.CharField(max_length=20, choices=mark_type_choices)
+    mark_type = models.CharField(max_length=40, choices=mark_type_choices)
     use_type_choices = [
             ('StateBoundary', 'StateBoundary'),
             ( 'DistrictBoundary', 'DistrictBoundary'),
@@ -228,7 +228,7 @@ class pointofinterests(models.Model):
             ( 'Personal',  'Personal'),
             
         ]
-    use_type = models.CharField(max_length=20, choices=use_type_choices)
+    use_type = models.CharField(max_length=40, choices=use_type_choices)
     location = models.TextField()
     lat = models.FloatField(blank=True, null=True)
     lon = models.FloatField(blank=True, null=True)
