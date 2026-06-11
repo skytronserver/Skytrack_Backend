@@ -1045,6 +1045,18 @@ class DeviceStock(models.Model):
     shipping_remark = models.TextField(null=True,blank=True)
     stock_status = models.CharField(max_length=55, choices=STATUS_CHOICES)
     esim_status = models.CharField(max_length=55, choices=STATUS_CHOICES)
+
+    # KYC fields — updated directly by the eSimProvider
+    KYC_STATUS_CHOICES = [
+        ('active',   'Active'),
+        ('inactive', 'Inactive'),
+    ]
+    kyc_status     = models.CharField(max_length=10, choices=KYC_STATUS_CHOICES, null=True, blank=True)
+    last_kyc_date  = models.DateTimeField(null=True, blank=True)
+    kyc_updated_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='kyc_updates_made')
+    kyc_updated_at = models.DateTimeField(null=True, blank=True)
+    kyc_remarks    = models.TextField(null=True, blank=True)
+
     def __str__(self):
         return f"{self.model} - ESN: {self.device_esn}"
     
@@ -3884,9 +3896,27 @@ class ActiveWhitelist(models.Model):
         state = 'active' if self.is_active else 'inactive'
         return f"ActiveWhitelist [{state}]: {self.whitelist_type}={self.value} on device {self.device_stock_id}"
 
-    
-    
-    
+
+class DeviceActivationLog(models.Model):
+    """
+    Immutable audit trail of every esim_status / stock_status change on a device.
+    DeviceStock stores only the current state; this model stores the full history
+    so users can see activation dates, deactivation dates, etc.
+    """
+    device_stock  = models.ForeignKey(DeviceStock, on_delete=models.CASCADE, related_name='activation_logs')
+    esim_provider = models.ForeignKey(eSimProvider, on_delete=models.SET_NULL, null=True, blank=True, related_name='activation_logs')
+    status        = models.CharField(max_length=55)
+    changed_by    = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='activation_log_entries')
+    changed_at    = models.DateTimeField(auto_now_add=True)
+    remarks       = models.TextField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-changed_at']
+
+    def __str__(self):
+        return f"ActivationLog #{self.pk}: device {self.device_stock_id} → {self.status}"
+
+
 
     
 class Favorite(models.Model):

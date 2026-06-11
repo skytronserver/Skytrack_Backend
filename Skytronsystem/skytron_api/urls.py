@@ -22,6 +22,9 @@ from .whitelist_views import (
     approve_whitelist_request,
     deny_whitelist_request,
     list_active_whitelist,
+    update_device_kyc,
+    device_dashboard,
+    device_detail,
 )
 from django.urls import path
 
@@ -608,6 +611,11 @@ urlpatterns = [
     path('whitelist/request/<int:pk>/approve/', approve_whitelist_request, name='whitelist_request_approve'),
     path('whitelist/request/<int:pk>/deny/', deny_whitelist_request, name='whitelist_request_deny'),
     path('whitelist/active/list/', list_active_whitelist, name='whitelist_active_list'),
+
+    # Device Dashboard, KYC, and Detail
+    path('whitelist/device/dashboard/', device_dashboard, name='whitelist_device_dashboard'),
+    path('whitelist/device/<int:pk>/detail/', device_detail, name='whitelist_device_detail'),
+    path('whitelist/device/<int:pk>/kyc/update/', update_device_kyc, name='whitelist_device_kyc_update'),
 ]  
 
 

@@ -17,9 +17,11 @@ from rest_framework.decorators import api_view, permission_classes, authenticati
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from django.db.models import Prefetch
+
 from .jwt_authentication import JWTAuthentication
 from .models import (
-    ActiveWhitelist, Dealer, DeviceStock, Manufacturer,
+    ActiveWhitelist, Dealer, DeviceActivationLog, DeviceStock, Manufacturer,
     WhitelistEntry, WhitelistRequest, WhitelistRequestReview, eSimProvider,
 )
 
@@ -467,3 +469,412 @@ def list_active_whitelist(request):
         for w in qs
     ]
     return Response({'active_whitelists': data, 'count': len(data)})
+
+
+# ===========================================================================
+# Device Dashboard, KYC Update, and Device Detail
+# ===========================================================================
+
+# Valid DeviceStock STATUS_CHOICES values (mirrors model)
+_VALID_ACTIVATION_STATUSES = {
+    'NotAssigned', 'In_transit_to_dealer', 'Available_for_fitting', 'Fitted',
+    'ESIM_Active_Req_Sent', 'ESIM_Active_Confirmed', 'ESIM_Active_Rejected',
+    'IP_PORT_Configured', 'SOS_GATEWAY_NO_Configured', 'SMS_GATEWAY_NO_Configured',
+    'Device_Defective', 'Returned_to_manufacturer', 'Device_Untagged',
+}
+
+# Maps sort_by query param → ORM field name
+_SORT_FIELDS = {
+    'imei':          'imei',
+    'esn':           'device_esn',
+    'iccid':         'iccid',
+    'esim_status':   'esim_status',
+    'stock_status':  'stock_status',
+    'kyc_status':    'kyc_status',
+    'kyc_updated':   'kyc_updated_at',
+    'created':       'created',
+    'assigned':      'assigned',
+    'esim_validity': 'esim_validity',
+}
+
+
+def _get_scoped_stock_qs(user):
+    """
+    Return (queryset, None) scoped to the user's access level,
+    or (None, Response) on access/config error.
+    """
+    role = getattr(user, 'role', None)
+    if role == 'devicemanufacture':
+        mfr = _get_manufacturer(user)
+        if not mfr:
+            return None, Response({'error': 'No manufacturer record found for this user.'}, status=400)
+        return DeviceStock.objects.filter(dealer__manufacturer=mfr), None
+    if role == 'dealer':
+        dealer = _get_dealer(user)
+        if not dealer:
+            return None, Response({'error': 'No dealer record found for this user.'}, status=400)
+        return DeviceStock.objects.filter(dealer=dealer), None
+    if role == _ESIM_ROLE:
+        provider = _get_esim_provider(user)
+        if not provider:
+            return None, Response({'error': 'No eSimProvider record found for this user.'}, status=400)
+        return DeviceStock.objects.filter(esim_provider=provider), None
+    if role in _ADMIN_ROLES:
+        return DeviceStock.objects.all(), None
+    return None, Response({'error': 'Access denied.'}, status=403)
+
+
+def _paginate(qs, params):
+    """Return (page_slice, pagination_meta)."""
+    try:
+        page = max(1, int(params.get('page', 1)))
+        page_size = min(100, max(1, int(params.get('page_size', 20))))
+    except (ValueError, TypeError):
+        page, page_size = 1, 20
+    total = qs.count()
+    start = (page - 1) * page_size
+    return qs[start:start + page_size], {
+        'total': total,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': max(1, (total + page_size - 1) // page_size),
+    }
+
+
+def _group_whitelists(active_wl_qs):
+    """Group active whitelist entries by type for a device."""
+    grouped = {'ip': [], 'url': [], 'phone': [], 'apn': []}
+    for w in active_wl_qs:
+        grouped.setdefault(w.whitelist_type, []).append({
+            'id': w.id,
+            'value': w.value,
+            'source_request_id': w.source_request_id,
+            'activated_at': w.activated_at,
+        })
+    return grouped
+
+
+def _serialize_stock(stock, include_logs=False):
+    """Serialize a DeviceStock instance with KYC, whitelist, and optional activation log."""
+    # eSIM providers
+    providers = [
+        {'id': p.id, 'name': p.company_name}
+        for p in stock.esim_provider.all()
+    ]
+
+    # Active whitelists (already prefetched as stock.prefetched_whitelists)
+    wl_qs = getattr(stock, 'prefetched_whitelists', stock.active_whitelists.filter(is_active=True))
+    whitelist = _group_whitelists(wl_qs)
+
+    # Dealer / manufacturer info
+    dealer_id = stock.dealer_id
+    dealer_name = stock.dealer.company_name if stock.dealer_id else ''
+    mfr_id = stock.dealer.manufacturer_id if stock.dealer_id else None
+    mfr_name = stock.dealer.manufacturer.company_name if (stock.dealer_id and stock.dealer.manufacturer_id) else ''
+
+    data = {
+        'id': stock.id,
+        'device_esn': stock.device_esn,
+        'imei': stock.imei,
+        'iccid': stock.iccid,
+        'iccid2': stock.iccid2,
+        'msisdn1': stock.msisdn1,
+        'msisdn2': stock.msisdn2,
+        'telecom_provider1': stock.telecom_provider1,
+        'telecom_provider2': stock.telecom_provider2,
+        'esim_status': stock.esim_status,
+        'stock_status': stock.stock_status,
+        'esim_validity': stock.esim_validity,
+        'created': stock.created,
+        'assigned': stock.assigned,
+        'dealer_id': dealer_id,
+        'dealer_name': dealer_name,
+        'manufacturer_id': mfr_id,
+        'manufacturer_name': mfr_name,
+        'esim_providers': providers,
+        # KYC
+        'kyc_status': stock.kyc_status,
+        'last_kyc_date': stock.last_kyc_date,
+        'kyc_updated_at': stock.kyc_updated_at,
+        'kyc_updated_by_id': stock.kyc_updated_by_id,
+        'kyc_updated_by_name': getattr(stock.kyc_updated_by, 'name', '') if stock.kyc_updated_by_id else '',
+        'kyc_remarks': stock.kyc_remarks,
+        # Whitelist summary
+        'active_whitelist_count': sum(len(v) for v in whitelist.values()),
+        'active_whitelists': whitelist,
+    }
+
+    if include_logs:
+        logs_qs = getattr(stock, 'prefetched_logs', stock.activation_logs.all())
+        data['activation_logs'] = [
+            {
+                'id': log.id,
+                'status': log.status,
+                'changed_by_id': log.changed_by_id,
+                'changed_by_name': getattr(log.changed_by, 'name', '') if log.changed_by_id else '',
+                'esim_provider_id': log.esim_provider_id,
+                'changed_at': log.changed_at,
+                'remarks': log.remarks,
+            }
+            for log in logs_qs
+        ]
+
+    return data
+
+
+# ---------------------------------------------------------------------------
+# 1. KYC Update (eSimProvider)
+# ---------------------------------------------------------------------------
+
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def update_device_kyc(request, pk):
+    """
+    M2M provider updates KYC status and/or logs a new activation status for a device.
+
+    Body (JSON) — at least one of the two groups must be present:
+
+    KYC group (all optional individually):
+      kyc_status            – "active" | "inactive"
+      last_kyc_date         – ISO 8601 datetime
+      kyc_remarks           – str
+
+    Activation log group (optional):
+      new_activation_status – one of the DeviceStock STATUS_CHOICES values
+      activation_remarks    – str (optional note for the log)
+    """
+    user = request.user
+    if getattr(user, 'role', None) != _ESIM_ROLE:
+        return Response({'error': 'Only eSimProvider users can update KYC status.'}, status=403)
+
+    provider = _get_esim_provider(user)
+    if not provider:
+        return Response({'error': 'No eSimProvider record found for this user.'}, status=400)
+
+    try:
+        stock = DeviceStock.objects.select_related('kyc_updated_by').get(id=pk, esim_provider=provider)
+    except DeviceStock.DoesNotExist:
+        return Response({'error': 'Device stock not found or not linked to your provider.'}, status=404)
+
+    data = request.data
+    kyc_status          = data.get('kyc_status')
+    last_kyc_date       = data.get('last_kyc_date')
+    kyc_remarks         = data.get('kyc_remarks')
+    new_activation_status = data.get('new_activation_status')
+    activation_remarks  = data.get('activation_remarks', '')
+
+    has_kyc_update = any(v is not None for v in [kyc_status, last_kyc_date, kyc_remarks])
+    has_activation = new_activation_status is not None
+
+    if not has_kyc_update and not has_activation:
+        return Response({'error': 'Provide at least one of: kyc_status, last_kyc_date, kyc_remarks, new_activation_status.'}, status=400)
+
+    kyc_fields_changed = []
+
+    if has_kyc_update:
+        if kyc_status is not None:
+            if kyc_status not in ('active', 'inactive'):
+                return Response({'error': 'kyc_status must be "active" or "inactive".'}, status=400)
+            stock.kyc_status = kyc_status
+            kyc_fields_changed.append('kyc_status')
+
+        if last_kyc_date is not None:
+            stock.last_kyc_date = last_kyc_date
+            kyc_fields_changed.append('last_kyc_date')
+
+        if kyc_remarks is not None:
+            stock.kyc_remarks = kyc_remarks
+            kyc_fields_changed.append('kyc_remarks')
+
+        stock.kyc_updated_by = user
+        stock.kyc_updated_at = timezone.now()
+        kyc_fields_changed += ['kyc_updated_by', 'kyc_updated_at']
+        stock.save(update_fields=kyc_fields_changed)
+
+    activation_log = None
+    if has_activation:
+        if new_activation_status not in _VALID_ACTIVATION_STATUSES:
+            return Response(
+                {'error': f'Invalid new_activation_status. Valid values: {sorted(_VALID_ACTIVATION_STATUSES)}'},
+                status=400,
+            )
+        # Update esim_status on the device and log the change
+        stock.esim_status = new_activation_status
+        stock.save(update_fields=['esim_status'])
+
+        activation_log = DeviceActivationLog.objects.create(
+            device_stock=stock,
+            esim_provider=provider,
+            status=new_activation_status,
+            changed_by=user,
+            remarks=activation_remarks,
+        )
+
+    # Refresh for serialization
+    stock.refresh_from_db()
+    response_data = {
+        'message': 'Device updated successfully.',
+        'device': _serialize_stock(stock, include_logs=False),
+    }
+    if activation_log:
+        response_data['activation_log_created'] = {
+            'id': activation_log.id,
+            'status': activation_log.status,
+            'changed_at': activation_log.changed_at,
+        }
+    return Response(response_data)
+
+
+# ---------------------------------------------------------------------------
+# 2. Device Dashboard — paginated, filterable, sortable
+# ---------------------------------------------------------------------------
+
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def device_dashboard(request):
+    """
+    Paginated device list with activation status, KYC status, and whitelist summary.
+    Results are scoped to the caller's access level.
+
+    Query params:
+      Filters:
+        imei             – partial match
+        esn              – partial match
+        iccid            – partial match
+        msisdn           – partial match on msisdn1 or msisdn2
+        esim_status      – exact match
+        stock_status     – exact match
+        kyc_status       – exact match (active | inactive)
+        esim_provider_id – exact match
+
+      Sorting:
+        sort_by    – imei | esn | iccid | esim_status | stock_status |
+                     kyc_status | kyc_updated | created | assigned | esim_validity
+        sort_order – asc | desc  (default: desc)
+
+      Pagination:
+        page       – default 1
+        page_size  – default 20, max 100
+    """
+    user = request.user
+    qs, err = _get_scoped_stock_qs(user)
+    if err:
+        return err
+
+    p = request.query_params
+
+    # --- Filters ---
+    if imei := p.get('imei'):
+        qs = qs.filter(imei__icontains=imei)
+    if esn := p.get('esn'):
+        qs = qs.filter(device_esn__icontains=esn)
+    if iccid := p.get('iccid'):
+        qs = qs.filter(iccid__icontains=iccid)
+    if msisdn := p.get('msisdn'):
+        from django.db.models import Q
+        qs = qs.filter(Q(msisdn1__icontains=msisdn) | Q(msisdn2__icontains=msisdn))
+    if esim_status := p.get('esim_status'):
+        qs = qs.filter(esim_status=esim_status)
+    if stock_status := p.get('stock_status'):
+        qs = qs.filter(stock_status=stock_status)
+    if kyc_status := p.get('kyc_status'):
+        qs = qs.filter(kyc_status=kyc_status)
+    if esim_pid := p.get('esim_provider_id'):
+        qs = qs.filter(esim_provider__id=esim_pid)
+
+    # --- Sorting ---
+    sort_by = _SORT_FIELDS.get(p.get('sort_by', ''), 'created')
+    if p.get('sort_order', 'desc').lower() == 'asc':
+        qs = qs.order_by(sort_by)
+    else:
+        qs = qs.order_by(f'-{sort_by}')
+
+    # --- Eager loading ---
+    qs = qs.select_related(
+        'model', 'dealer', 'dealer__manufacturer', 'kyc_updated_by',
+    ).prefetch_related(
+        'esim_provider',
+        Prefetch(
+            'active_whitelists',
+            queryset=ActiveWhitelist.objects.filter(is_active=True),
+            to_attr='prefetched_whitelists',
+        ),
+    )
+
+    page_qs, meta = _paginate(qs, p)
+
+    results = []
+    for stock in page_qs:
+        results.append(_serialize_stock(stock, include_logs=False))
+
+    return Response({'pagination': meta, 'devices': results})
+
+
+# ---------------------------------------------------------------------------
+# 3. Single Device Detail
+# ---------------------------------------------------------------------------
+
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def device_detail(request, pk):
+    """
+    Full detail for a single device: activation status, KYC, whitelists,
+    full activation log history, and all whitelist requests for this device.
+    Access is scoped to the caller's role.
+    """
+    user = request.user
+    qs, err = _get_scoped_stock_qs(user)
+    if err:
+        return err
+
+    try:
+        stock = (
+            qs
+            .select_related('model', 'dealer', 'dealer__manufacturer', 'kyc_updated_by')
+            .prefetch_related(
+                'esim_provider',
+                Prefetch(
+                    'active_whitelists',
+                    queryset=ActiveWhitelist.objects.filter(is_active=True).select_related('esim_provider'),
+                    to_attr='prefetched_whitelists',
+                ),
+                Prefetch(
+                    'activation_logs',
+                    queryset=DeviceActivationLog.objects.select_related('changed_by', 'esim_provider'),
+                    to_attr='prefetched_logs',
+                ),
+            )
+            .get(id=pk)
+        )
+    except DeviceStock.DoesNotExist:
+        return Response({'error': 'Device not found or not accessible.'}, status=404)
+
+    # Full whitelist request history for this device
+    wl_requests = (
+        WhitelistRequest.objects
+        .filter(device_stocks=stock)
+        .select_related('requested_by', 'esim_provider')
+        .prefetch_related('entries')
+        .order_by('-created_at')
+    )
+    wl_request_list = [
+        {
+            'id': r.id,
+            'request_type': r.request_type,
+            'status': r.status,
+            'requester_type': r.requester_type,
+            'requested_by_name': getattr(r.requested_by, 'name', ''),
+            'esim_provider_name': r.esim_provider.company_name if r.esim_provider_id else '',
+            'entries': list(r.entries.values('whitelist_type', 'value')),
+            'created_at': r.created_at,
+        }
+        for r in wl_requests
+    ]
+
+    device_data = _serialize_stock(stock, include_logs=True)
+    device_data['whitelist_request_history'] = wl_request_list
+
+    return Response({'device': device_data})
