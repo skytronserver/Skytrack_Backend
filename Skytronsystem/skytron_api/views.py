@@ -10496,6 +10496,19 @@ def TagDevice2Vehicle(request ):
                     _stall.save(update_fields=['chassis_no'])
                 elif DeviceTag.objects.filter(chassis_no=chassis_no).exists():
                     return Response({"error": "chassis_no already exists"}, status=status.HTTP_400_BAD_REQUEST)
+            # Resolve optional category_code FK
+            cat_code_input = request.data.get('category_code') or request.data.get('category_code_id')
+            cat_code_obj = None
+            if cat_code_input is not None:
+                try:
+                    from .models import Settings_VehicleCategoryCode
+                    cat_code_obj = Settings_VehicleCategoryCode.objects.filter(id=int(str(cat_code_input)), is_active=True).first()
+                    if not cat_code_obj:
+                        cat_code_obj = Settings_VehicleCategoryCode.objects.filter(category_code=str(cat_code_input), is_active=True).first()
+                except (TypeError, ValueError):
+                    cat_code_obj = None
+                if not cat_code_obj:
+                    return Response({"error": "Invalid category_code. Provide a valid Settings_VehicleCategoryCode id or code."}, status=status.HTTP_400_BAD_REQUEST)
             otp = str(secrets.randbelow(1000000)).zfill(6)
             device_tag ,error= DeviceTag.objects.safe_create(
             device_id=device_id,
@@ -10505,7 +10518,8 @@ def TagDevice2Vehicle(request ):
             chassis_no=chassis_no,
             vehicle_make=request.data['vehicle_make'],
             vehicle_model=request.data['vehicle_model'],
-            category_id=category_obj.id, 
+            category_id=category_obj.id,
+            category_code=cat_code_obj,
             district_id=district.id,
             rc_file=relative_file_path,
             receipt_file_or='',
@@ -10514,7 +10528,7 @@ def TagDevice2Vehicle(request ):
             tagged_by=user,
             tagged=current_datetime,
             otp= otp ,
-            otp_time=timezone.now() 
+            otp_time=timezone.now()
             )
             if error:   # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
@@ -26985,3 +26999,104 @@ def gps_imei_continuity_api(request):
 @require_http_methods(['GET'])
 def gps_imei_continuity_page(request):
     return render(request, 'gps_imei_continuity.html')
+
+
+# ─── Settings_VehicleCategoryCode ────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
+@require_http_methods(['GET'])
+def pub_list_vehicle_category_code(request):
+    """Public: list only active vehicle category codes."""
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        from .serializers import Settings_VehicleCategoryCodeSerializer
+        from .models import Settings_VehicleCategoryCode
+        qs = Settings_VehicleCategoryCode.objects.filter(is_active=True).order_by('category_code')
+        serializer = Settings_VehicleCategoryCodeSerializer(qs, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def create_vehicle_category_code(request):
+    """Superadmin: create a vehicle category code."""
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    if not get_user_object(user, 'superadmin'):
+        return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        from .serializers import Settings_VehicleCategoryCodeSerializer
+        data = request.data.copy()
+        data['created_by'] = user.id
+        data['updated_by'] = user.id
+        serializer = Settings_VehicleCategoryCodeSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def edit_vehicle_category_code(request):
+    """Superadmin: edit a vehicle category code. Pass id in request body."""
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    if not get_user_object(user, 'superadmin'):
+        return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        from .serializers import Settings_VehicleCategoryCodeSerializer
+        from .models import Settings_VehicleCategoryCode
+        rec_id = request.data.get('id')
+        if not rec_id:
+            return Response({'error': 'id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        instance = Settings_VehicleCategoryCode.objects.filter(id=rec_id).first()
+        if not instance:
+            return Response({'error': 'Record not found.'}, status=status.HTTP_404_NOT_FOUND)
+        data = request.data.copy()
+        data['updated_by'] = user.id
+        serializer = Settings_VehicleCategoryCodeSerializer(instance, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+def list_all_vehicle_category_code(request):
+    """Superadmin: list all vehicle category codes (active and inactive)."""
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    if not get_user_object(user, 'superadmin'):
+        return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        from .serializers import Settings_VehicleCategoryCodeSerializer
+        from .models import Settings_VehicleCategoryCode
+        qs = Settings_VehicleCategoryCode.objects.all().order_by('category_code')
+        serializer = Settings_VehicleCategoryCodeSerializer(qs, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': 'Unable to process request.' + str(e)}, status=400)

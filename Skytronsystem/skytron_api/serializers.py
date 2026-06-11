@@ -70,19 +70,29 @@ class DeviceStockSerializer(SanitizingModelSerializer):
 
 class DeviceTagSerializer(SanitizingModelSerializer):
     category_info = serializers.SerializerMethodField()
+    category_code_info = serializers.SerializerMethodField()
+
     def get_category_info(self, obj):
-        # Map DeviceTag.category (assumed to be an ID) to Settings_VehicleCategory
         try:
-            # Use the FK instance directly to avoid unnecessary queries
             cat_obj = obj.category
             if cat_obj:
                 return Settings_VehicleCategorySerializer(cat_obj).data
         except Exception:
             pass
         return None
+
+    def get_category_code_info(self, obj):
+        try:
+            cc_obj = obj.category_code
+            if cc_obj:
+                return Settings_VehicleCategoryCodeSerializer(cc_obj).data
+        except Exception:
+            pass
+        return None
+
     class Meta:
-        model =DeviceTag        
-        exclude = ['otp','otp_time'] 
+        model = DeviceTag
+        exclude = ['otp', 'otp_time']
 
 class MediaFileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -437,6 +447,12 @@ class Settings_VehicleCategorySerializer(SanitizingModelSerializer):
 
 
     
+class Settings_VehicleCategoryCodeSerializer(SanitizingModelSerializer):
+    class Meta:
+        model = Settings_VehicleCategoryCode
+        fields = '__all__'
+
+
 class Settings_ipSerializer(SanitizingModelSerializer):
     state_info = Settings_StateSerializer(source='state', read_only=True)
     devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
@@ -674,8 +690,8 @@ class DeviceTagSerializer2(SanitizingModelSerializer):
     device = DeviceStockSerializer2(many=False, read_only=True)
     vehicle_owner = VehicleOwnerSerializer(many=False, read_only=True)
     drivers = DriverSerializer(many=True, read_only=True)
-    # Return full category details instead of just the FK id
     category = Settings_VehicleCategorySerializer(many=False, read_only=True)
+    category_code = Settings_VehicleCategoryCodeSerializer(many=False, read_only=True)
     deviceloc = serializers.SerializerMethodField()
 
     class Meta:

@@ -175,6 +175,11 @@ urlpatterns = [
     path('Settings/create_settings_VehicleCategory/', create_Settings_VehicleCategory, name='create_settings_VehicleCategory'),
     path('Settings/filter_settings_VehicleCategory/', filter_Settings_VehicleCategory, name='filter_settings_VehicleCategory'),
 
+    path('pub/Settings/vehicle_category_code/', pub_list_vehicle_category_code, name='pub_list_vehicle_category_code'),
+    path('Settings/vehicle_category_code/create/', create_vehicle_category_code, name='create_vehicle_category_code'),
+    path('Settings/vehicle_category_code/edit/', edit_vehicle_category_code, name='edit_vehicle_category_code'),
+    path('Settings/vehicle_category_code/list/', list_all_vehicle_category_code, name='list_all_vehicle_category_code'),
+
     path('Statistics/manufacturer_model_stock_statistics/', manufacturer_model_stock_statistics, name='manufacturer_model_stock_statistics'),
     path('Statistics/user_statistics/', user_statistics, name='user_statistics'),
     path('Statistics/vehicle_alert_statistics/', vehicle_alert_statistics, name='vehicle_alert_statistics'),

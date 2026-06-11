@@ -793,7 +793,21 @@ class Settings_VehicleCategory(models.Model):
     working_hour_end_time=models.TimeField(null=True, blank=True)
      
 
-class Settings_District(models.Model):  
+class Settings_VehicleCategoryCode(models.Model):
+    objects = SafeCreateManager()
+    category_code = models.CharField(max_length=50, unique=True)
+    details = models.TextField(blank=True, null=True)
+    created_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='vcc_created')
+    updated_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='vcc_updated')
+    created_date = models.DateTimeField(auto_now_add=True)
+    updated_date = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.category_code
+
+
+class Settings_District(models.Model):
     objects = SafeCreateManager()
     state = models.ForeignKey('Settings_State', on_delete=models.CASCADE)
     district =models.CharField(max_length=50,unique=True)  
@@ -1159,6 +1173,7 @@ class DeviceTag(models.Model):
         default='withinstate'
     )
     category = models.ForeignKey(Settings_VehicleCategory, on_delete=models.CASCADE)
+    category_code = models.ForeignKey('Settings_VehicleCategoryCode', on_delete=models.SET_NULL, null=True, blank=True, related_name='device_tags')
     rc_file = models.CharField(max_length=255)
     receipt_file_or = models.CharField(max_length=255)
     receipt_file_ul = models.CharField(max_length=255)
