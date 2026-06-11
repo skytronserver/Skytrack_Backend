@@ -4049,3 +4049,416 @@ class Favorite(models.Model):
             self.route is None and
             self.bus_stop is None
         )
+
+
+
+
+
+ 
+
+####################################################################################
+######################## Custom Alert Rules ########################################
+####################################################################################
+ 
+ 
+class CustomAlertRule(models.Model):
+    """
+    An alert rule defined by a superadmin or state admin.
+    A rule can have up to 4 subrules combined with AND / OR logic.
+ 
+    Evaluation:
+    - Triggered by post_save on GPSData (see signal at bottom of this section).
+    - Rule-level time window (time_from / time_to): if set, the rule only
+      evaluates when the GPS packet's local time falls within the window.
+    - Scope: superadmin rules apply globally; state admin rules are scoped
+      to their state (matched via GPSData.device_tag.district.state).
+    """
+ 
+    SUBRULE_LOGIC_AND = 'AND'
+    SUBRULE_LOGIC_OR  = 'OR'
+    SUBRULE_LOGIC_CHOICES = [
+        (SUBRULE_LOGIC_AND, 'AND — all subrules must match'),
+        (SUBRULE_LOGIC_OR,  'OR  — any subrule must match'),
+    ]
+ 
+    STATUS_ACTIVE   = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE,   'Active'),
+        (STATUS_INACTIVE, 'Inactive'),
+    ]
+ 
+    name           = models.CharField(max_length=255)
+    description    = models.TextField(blank=True)
+    status         = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
+    subrule_logic  = models.CharField(max_length=3, choices=SUBRULE_LOGIC_CHOICES, default=SUBRULE_LOGIC_AND)
+ 
+    # Optional rule-level time window (IST, 24-hour)
+    time_from = models.TimeField(null=True, blank=True, help_text="Rule only evaluates after this time (IST)")
+    time_to   = models.TimeField(null=True, blank=True, help_text="Rule only evaluates before this time (IST)")
+ 
+    # Scope — NULL means global (superadmin). Filled for state admin rules.
+    state = models.ForeignKey(
+        'Settings_State', on_delete=models.CASCADE,
+        null=True, blank=True,
+        related_name='custom_alert_rules',
+        help_text="Leave blank for global scope (superadmin). State admins auto-set this."
+    )
+ 
+    created_by = models.ForeignKey(
+        'User', on_delete=models.CASCADE,
+        related_name='created_custom_alert_rules',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['state', 'status']),
+        ]
+        ordering = ['-created_at']
+ 
+    def __str__(self):
+        return f"{self.name} ({self.status})"
+ 
+ 
+class CustomAlertSubrule(models.Model):
+    """
+    One condition within a CustomAlertRule. Maximum 4 per rule (enforced by serializer).
+ 
+    Supported GPSData parameters (all field names on the GPSData model):
+        Numeric : speed, altitude, satellites, pdop, hdop, heading, odometer,
+                  main_input_voltage, internal_battery_voltage, frame_number
+        Text    : packet_type, alert_id, packet_status, gps_status,
+                  ignition_status, main_power_status, emergency_status,
+                  box_tamper_alert, network_operator, gsm_signal_strength
+        Datetime: packet_datetime, entry_time
+ 
+    Operator semantics by field type:
+        Numeric / Datetime : ==  !=  >  >=  <  <=  in_range
+        Text               : ==  !=  contains  not_contains
+ 
+    For in_range, value_start and value_end must be supplied.
+    For all other operators, value is used.
+    """
+ 
+    OPERATOR_EQ            = '=='
+    OPERATOR_NEQ           = '!='
+    OPERATOR_GT            = '>'
+    OPERATOR_GTE           = '>='
+    OPERATOR_LT            = '<'
+    OPERATOR_LTE           = '<='
+    OPERATOR_IN_RANGE      = 'in_range'
+    OPERATOR_CONTAINS      = 'contains'
+    OPERATOR_NOT_CONTAINS  = 'not_contains'
+ 
+    OPERATOR_CHOICES = [
+        (OPERATOR_EQ,           'Equal to (==)'),
+        (OPERATOR_NEQ,          'Not equal to (!=)'),
+        (OPERATOR_GT,           'Greater than (>)'),
+        (OPERATOR_GTE,          'Greater than or equal to (>=)'),
+        (OPERATOR_LT,           'Less than (<)'),
+        (OPERATOR_LTE,          'Less than or equal to (<=)'),
+        (OPERATOR_IN_RANGE,     'In range (start–end)'),
+        (OPERATOR_CONTAINS,     'Contains (text)'),
+        (OPERATOR_NOT_CONTAINS, 'Does not contain (text)'),
+    ]
+ 
+    # All GPSData fields available as alert parameters
+    PARAMETER_CHOICES = [
+        # Numeric
+        ('speed',                    'Speed'),
+        ('altitude',                 'Altitude'),
+        ('satellites',               'Satellites'),
+        ('pdop',                     'PDOP'),
+        ('hdop',                     'HDOP'),
+        ('heading',                  'Heading'),
+        ('odometer',                 'Odometer'),
+        ('main_input_voltage',       'Main Input Voltage'),
+        ('internal_battery_voltage', 'Internal Battery Voltage'),
+        ('frame_number',             'Frame Number'),
+        # Text
+        ('packet_type',              'Packet Type'),
+        ('alert_id',                 'Alert ID'),
+        ('packet_status',            'Packet Status'),
+        ('gps_status',               'GPS Status'),
+        ('ignition_status',          'Ignition Status'),
+        ('main_power_status',        'Main Power Status'),
+        ('emergency_status',         'Emergency Status'),
+        ('box_tamper_alert',         'Box Tamper Alert'),
+        ('network_operator',         'Network Operator'),
+        ('gsm_signal_strength',      'GSM Signal Strength'),
+        ('digital_input_status',     'Digital Input Status'),
+        ('digital_output_status',    'Digital Output Status'),
+    ]
+ 
+    # Text parameters — used for operator validation
+    TEXT_PARAMETERS = {
+        'packet_type', 'alert_id', 'packet_status', 'gps_status',
+        'ignition_status', 'main_power_status', 'emergency_status',
+        'box_tamper_alert', 'network_operator', 'gsm_signal_strength',
+        'digital_input_status', 'digital_output_status',
+    }
+ 
+    rule      = models.ForeignKey(CustomAlertRule, on_delete=models.CASCADE, related_name='subrules')
+    order     = models.PositiveSmallIntegerField(default=1, help_text="Display order 1–4")
+    parameter = models.CharField(max_length=50, choices=PARAMETER_CHOICES)
+    operator  = models.CharField(max_length=15, choices=OPERATOR_CHOICES)
+ 
+    # Value fields
+    value       = models.CharField(max_length=255, blank=True, help_text="Single comparison value")
+    value_start = models.CharField(max_length=255, blank=True, help_text="Range start (in_range only)")
+    value_end   = models.CharField(max_length=255, blank=True, help_text="Range end (in_range only)")
+ 
+    # Optional subrule-level time window (narrows when THIS condition is checked)
+    time_from = models.TimeField(null=True, blank=True)
+    time_to   = models.TimeField(null=True, blank=True)
+ 
+    class Meta:
+        ordering = ['order']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['rule', 'order'],
+                name='unique_subrule_order_per_rule'
+            )
+        ]
+ 
+    def __str__(self):
+        return f"Subrule {self.order}: {self.parameter} {self.operator} {self.value or f'{self.value_start}–{self.value_end}'}"
+ 
+ 
+class CustomAlertLog(models.Model):
+    """
+    Fired when a CustomAlertRule evaluates True against a GPSData packet.
+    Kept separate from AlertsLog to avoid polluting the hardcoded alert stream.
+    """
+    rule       = models.ForeignKey(CustomAlertRule, on_delete=models.CASCADE, related_name='logs')
+    device_tag = models.ForeignKey('DeviceTag', on_delete=models.CASCADE, related_name='custom_alert_logs')
+    gps_ref    = models.ForeignKey('GPSData', on_delete=models.CASCADE, related_name='custom_alert_logs')
+    state      = models.ForeignKey('Settings_State', on_delete=models.SET_NULL, null=True, blank=True)
+    fired_at   = models.DateTimeField(auto_now_add=True, db_index=True)
+    details    = models.TextField(blank=True, help_text="Human-readable summary of which subrules matched")
+ 
+    class Meta:
+        indexes = [
+            models.Index(fields=['rule', 'fired_at']),
+            models.Index(fields=['device_tag', 'fired_at']),
+            models.Index(fields=['state', 'fired_at']),
+        ]
+        ordering = ['-fired_at']
+ 
+    def __str__(self):
+        return f"CustomAlertLog rule={self.rule_id} device={self.device_tag_id} at {self.fired_at}"
+
+
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Custom Alert Rule evaluation engine
+# Triggered by GPSData post_save → writes into BOTH AlertsLog and CustomAlertLog
+# ──────────────────────────────────────────────────────────────────────────────
+
+CUSTOM_ALERT_COOLDOWN_MINUTES = 30
+
+
+def _time_in_window(t, t_from, t_to):
+    """True if time t is within [t_from, t_to]. Handles midnight wrap."""
+    if t_from <= t_to:
+        return t_from <= t <= t_to
+    return t >= t_from or t <= t_to
+
+
+def _evaluate_subrule(sr, gps, now_time):
+    """
+    Evaluate one CustomAlertSubrule against a GPSData record.
+    Returns True if the condition is met, False otherwise.
+    """
+    if sr.time_from and sr.time_to:
+        if not _time_in_window(now_time, sr.time_from, sr.time_to):
+            return False
+
+    raw_value = getattr(gps, sr.parameter, None)
+    if raw_value is None:
+        return False
+
+    op      = sr.operator
+    is_text = sr.parameter in CustomAlertSubrule.TEXT_PARAMETERS
+
+    try:
+        if op == CustomAlertSubrule.OPERATOR_CONTAINS:
+            return str(sr.value).lower() in str(raw_value).lower()
+
+        if op == CustomAlertSubrule.OPERATOR_NOT_CONTAINS:
+            return str(sr.value).lower() not in str(raw_value).lower()
+
+        if op == CustomAlertSubrule.OPERATOR_EQ:
+            if is_text:
+                return str(raw_value).strip().lower() == str(sr.value).strip().lower()
+            return float(raw_value) == float(sr.value)
+
+        if op == CustomAlertSubrule.OPERATOR_NEQ:
+            if is_text:
+                return str(raw_value).strip().lower() != str(sr.value).strip().lower()
+            return float(raw_value) != float(sr.value)
+
+        rv = float(raw_value)
+
+        if op == CustomAlertSubrule.OPERATOR_GT:       return rv >  float(sr.value)
+        if op == CustomAlertSubrule.OPERATOR_GTE:      return rv >= float(sr.value)
+        if op == CustomAlertSubrule.OPERATOR_LT:       return rv <  float(sr.value)
+        if op == CustomAlertSubrule.OPERATOR_LTE:      return rv <= float(sr.value)
+        if op == CustomAlertSubrule.OPERATOR_IN_RANGE:
+            return float(sr.value_start) <= rv <= float(sr.value_end)
+
+    except (ValueError, TypeError):
+        return False
+
+    return False
+
+
+def _is_in_cooldown(rule_id, device_tag_id):
+    """
+    Returns True if the same rule already fired for this device
+    within the last CUSTOM_ALERT_COOLDOWN_MINUTES minutes.
+    Queries CustomAlertLog which is written atomically with AlertsLog.
+    """
+    cutoff = timezone.now() - timedelta(minutes=CUSTOM_ALERT_COOLDOWN_MINUTES)
+    return CustomAlertLog.objects.filter(
+        rule_id=rule_id,
+        device_tag_id=device_tag_id,
+        fired_at__gte=cutoff,
+    ).exists()
+
+
+def _evaluate_custom_alert_rules(gps_instance):
+    """
+    Evaluate all active CustomAlertRules against a freshly saved GPSData record.
+    Called inside transaction.on_commit so it never delays GPS ingestion.
+    All exceptions are caught and printed — never raises.
+    """
+    device_tag = gps_instance.device_tag
+    if not device_tag:
+        return
+
+    try:
+        device_state = device_tag.district.state if device_tag.district else None
+    except Exception:
+        device_state = None
+
+    if not device_state:
+        print(
+            f"[CustomAlert] Skipping gps_id={gps_instance.id} — "
+            f"cannot resolve state for device_tag {device_tag.id}",
+            flush=True,
+        )
+        return
+
+    now_time = timezone.localtime(gps_instance.entry_time).time()
+
+    rules_qs = (
+        CustomAlertRule.objects
+        .filter(status=CustomAlertRule.STATUS_ACTIVE)
+        .filter(
+            Q(state__isnull=True) | Q(state=device_state)
+        )
+        .prefetch_related('subrules')
+    )
+
+    for rule in rules_qs:
+        try:
+            _fire_rule_if_matches(rule, gps_instance, now_time, device_state)
+        except Exception as e:
+            print(
+                f"[CustomAlert] Error evaluating rule {rule.id} "
+                f"against gps {gps_instance.id}: {e}",
+                flush=True,
+            )
+
+
+def _fire_rule_if_matches(rule, gps, now_time, device_state):
+    """
+    Check one rule. If it fires and is not in cooldown,
+    write into AlertsLog AND CustomAlertLog.
+    """
+    if rule.time_from and rule.time_to:
+        if not _time_in_window(now_time, rule.time_from, rule.time_to):
+            return
+
+    subrules = list(rule.subrules.all())
+    if not subrules:
+        return
+
+    results      = []
+    match_labels = []
+
+    for sr in subrules:
+        matched = _evaluate_subrule(sr, gps, now_time)
+        results.append(matched)
+        if matched:
+            value_repr = (
+                f"{sr.value_start}–{sr.value_end}"
+                if sr.operator == CustomAlertSubrule.OPERATOR_IN_RANGE
+                else sr.value
+            )
+            match_labels.append(
+                f"[{sr.order}] {sr.parameter} {sr.operator} {value_repr}"
+            )
+
+    if rule.subrule_logic == CustomAlertRule.SUBRULE_LOGIC_AND:
+        fired = all(results)
+    else:
+        fired = any(results)
+
+    if not fired:
+        return
+
+    # ── Cooldown check ────────────────────────────────────────────────────────
+    if _is_in_cooldown(rule.id, gps.device_tag_id):
+        print(
+            f"[CustomAlert] Rule '{rule.name}' (id={rule.id}) suppressed "
+            f"for device {gps.device_tag.vehicle_reg_no} "
+            f"— within {CUSTOM_ALERT_COOLDOWN_MINUTES}min cooldown",
+            flush=True,
+        )
+        return
+
+    details_text       = "; ".join(match_labels) if match_labels else "Rule matched"
+    alert_details_text = f"Custom Rule: {rule.name} | {details_text}"
+
+    # ── Write into AlertsLog ──────────────────────────────────────────────────
+    AlertsLog.objects.create(
+        type          = 'Custom',
+        status        = '',
+        gps_ref       = gps,
+        route_ref     = None,
+        poi_ref       = None,
+        em_ref        = None,
+        alert_details = alert_details_text,
+        deviceTag     = gps.device_tag,
+        state         = device_state,
+    )
+
+    # ── Write into CustomAlertLog ─────────────────────────────────────────────
+    CustomAlertLog.objects.create(
+        rule       = rule,
+        device_tag = gps.device_tag,
+        gps_ref    = gps,
+        state      = device_state,
+        details    = details_text,
+    )
+
+    print(
+        f"[CustomAlert] Rule '{rule.name}' (id={rule.id}) fired "
+        f"for device {gps.device_tag.vehicle_reg_no} "
+        f"gps_id={gps.id}",
+        flush=True,
+    )
+
+
+@receiver(post_save, sender=GPSData, dispatch_uid="gpsdata_evaluate_custom_alert_rules")
+def gpsdata_evaluate_custom_alert_rules(sender, instance, created, **kwargs):
+    if not created:
+        return
+    from django.db import transaction
+    transaction.on_commit(lambda: _evaluate_custom_alert_rules(instance))
