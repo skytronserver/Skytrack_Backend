@@ -15,6 +15,14 @@ from .complaint_views import (
     ticket_activity_log,
     public_track_ticket,
 )
+from .whitelist_views import (
+    create_whitelist_request,
+    list_whitelist_requests,
+    esim_list_whitelist_requests,
+    approve_whitelist_request,
+    deny_whitelist_request,
+    list_active_whitelist,
+)
 from django.urls import path
 
  
@@ -592,6 +600,14 @@ urlpatterns = [
     path('complaint/<int:pk>/final-report/', submit_final_report, name='complaint_final_report'),
     path('complaint/<int:pk>/comment/', add_comment, name='complaint_add_comment'),
     path('complaint/<int:pk>/activity/', ticket_activity_log, name='complaint_activity_log'),
+
+    # Whitelist Request Management
+    path('whitelist/request/create/', create_whitelist_request, name='whitelist_request_create'),
+    path('whitelist/request/list/', list_whitelist_requests, name='whitelist_request_list'),
+    path('whitelist/request/esim/all/', esim_list_whitelist_requests, name='whitelist_esim_list'),
+    path('whitelist/request/<int:pk>/approve/', approve_whitelist_request, name='whitelist_request_approve'),
+    path('whitelist/request/<int:pk>/deny/', deny_whitelist_request, name='whitelist_request_deny'),
+    path('whitelist/active/list/', list_active_whitelist, name='whitelist_active_list'),
 ]  
 
 

@@ -1,5 +1,6 @@
 # skytronapp/models.py
 from django.db import models
+from django.db.models import CheckConstraint, UniqueConstraint, Q
 from django.db.models.functions import Coalesce
 import hashlib
 from django.utils import timezone  # Add this line
@@ -3786,8 +3787,220 @@ class TicketActivity(models.Model):
 
     def __str__(self):
         return f"{self.ticket.ticket_ref} – {self.action_type} at {self.timestamp}"
+
+
+# ---------------------------------------------------------------------------
+# Whitelist Request Management
+# ---------------------------------------------------------------------------
+
+class WhitelistRequest(models.Model):
+    REQUEST_TYPE_CHOICES = [
+        ('add', 'Add Whitelist'),
+        ('remove', 'Remove Whitelist'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('denied', 'Denied'),
+    ]
+    REQUESTER_TYPE_CHOICES = [
+        ('manufacturer', 'Manufacturer'),
+        ('dealer', 'Dealer'),
+    ]
+
+    request_type   = models.CharField(max_length=10, choices=REQUEST_TYPE_CHOICES)
+    device_stocks  = models.ManyToManyField(DeviceStock, related_name='whitelist_requests')
+    esim_provider  = models.ForeignKey(eSimProvider, on_delete=models.CASCADE, related_name='whitelist_requests_received')
+    requested_by   = models.ForeignKey('User', on_delete=models.CASCADE, related_name='whitelist_requests_sent')
+    requester_type = models.CharField(max_length=15, choices=REQUESTER_TYPE_CHOICES)
+    manufacturer   = models.ForeignKey(Manufacturer, on_delete=models.SET_NULL, null=True, blank=True, related_name='whitelist_requests')
+    dealer         = models.ForeignKey(Dealer, on_delete=models.SET_NULL, null=True, blank=True, related_name='whitelist_requests')
+    status         = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    requester_remarks = models.TextField(blank=True, null=True)
+    created_at     = models.DateTimeField(auto_now_add=True)
+    updated_at     = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"WhitelistRequest #{self.pk} ({self.request_type}) – {self.status}"
+
+
+class WhitelistEntry(models.Model):
+    WHITELIST_TYPE_CHOICES = [
+        ('ip',    'IP Address'),
+        ('url',   'URL'),
+        ('phone', 'Phone Number'),
+        ('apn',   'APN'),
+    ]
+
+    request        = models.ForeignKey(WhitelistRequest, on_delete=models.CASCADE, related_name='entries')
+    whitelist_type = models.CharField(max_length=10, choices=WHITELIST_TYPE_CHOICES)
+    value          = models.CharField(max_length=500)
+
+    def __str__(self):
+        return f"{self.whitelist_type}: {self.value}"
+
+
+class WhitelistRequestReview(models.Model):
+    ACTION_CHOICES = [
+        ('approved', 'Approved'),
+        ('denied',   'Denied'),
+    ]
+
+    request     = models.OneToOneField(WhitelistRequest, on_delete=models.CASCADE, related_name='review')
+    reviewed_by = models.ForeignKey('User', on_delete=models.CASCADE, related_name='whitelist_reviews_given')
+    esim_provider = models.ForeignKey(eSimProvider, on_delete=models.CASCADE, related_name='whitelist_reviews')
+    action      = models.CharField(max_length=10, choices=ACTION_CHOICES)
+    reason      = models.TextField(blank=True)
+    reviewed_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Review for Request #{self.request_id}: {self.action}"
+
+
+class ActiveWhitelist(models.Model):
+    WHITELIST_TYPE_CHOICES = [
+        ('ip',    'IP Address'),
+        ('url',   'URL'),
+        ('phone', 'Phone Number'),
+        ('apn',   'APN'),
+    ]
+
+    device_stock    = models.ForeignKey(DeviceStock, on_delete=models.CASCADE, related_name='active_whitelists')
+    esim_provider   = models.ForeignKey(eSimProvider, on_delete=models.CASCADE, related_name='active_whitelists')
+    whitelist_type  = models.CharField(max_length=10, choices=WHITELIST_TYPE_CHOICES)
+    value           = models.CharField(max_length=500)
+    source_request  = models.ForeignKey(WhitelistRequest, on_delete=models.SET_NULL, null=True, related_name='activated_entries')
+    is_active       = models.BooleanField(default=True)
+    activated_at    = models.DateTimeField(auto_now_add=True)
+    deactivated_at  = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-activated_at']
+
+    def __str__(self):
+        state = 'active' if self.is_active else 'inactive'
+        return f"ActiveWhitelist [{state}]: {self.whitelist_type}={self.value} on device {self.device_stock_id}"
+
     
     
     
+
     
-    
+class Favorite(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="favorites",
+        db_index=True,
+    )
+
+    bus = models.ForeignKey(
+        "skytron_api.DeviceTag",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="favorited_by",
+    )
+
+    route = models.ForeignKey(
+        "skytron_api.PublicBusRoute",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="favorited_by",
+    )
+
+    bus_stop = models.ForeignKey(
+        "skytron_api.PublicBusStop",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="favorited_by",
+    )
+
+    label = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Optional nickname for this favorite",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
+
+    class Meta:
+        db_table = "favorites_favorite"
+
+        ordering = ["-created_at"]
+
+        verbose_name = "Favorite"
+        verbose_name_plural = "Favorites"
+
+        constraints = [
+            CheckConstraint(
+                check=(
+                    Q(bus__isnull=False) |
+                    Q(route__isnull=False) |
+                    Q(bus_stop__isnull=False)
+                ),
+                name="favorite_at_least_one_reference"
+            ),
+
+            UniqueConstraint(
+                fields=["user", "bus"],
+                condition=Q(bus__isnull=False),
+                name="unique_user_bus_favorite"
+            ),
+
+            UniqueConstraint(
+                fields=["user", "route"],
+                condition=Q(route__isnull=False),
+                name="unique_user_route_favorite"
+            ),
+
+            UniqueConstraint(
+                fields=["user", "bus_stop"],
+                condition=Q(bus_stop__isnull=False),
+                name="unique_user_busstop_favorite"
+            ),
+        ]
+
+        indexes = [
+            models.Index(fields=["user"]),
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["bus"]),
+            models.Index(fields=["route"]),
+            models.Index(fields=["bus_stop"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"Favorite("
+            f"user={self.user_id}, "
+            f"bus={self.bus_id}, "
+            f"route={self.route_id}, "
+            f"bus_stop={self.bus_stop_id}"
+            f")"
+        )
+
+    @property
+    def is_orphaned(self):
+        return (
+            self.bus is None and
+            self.route is None and
+            self.bus_stop is None
+        )
