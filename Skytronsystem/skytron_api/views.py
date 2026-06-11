@@ -3964,12 +3964,14 @@ def delRoute(request ):
         man=get_user_object(user,role)
         role1="superadmin"
         sa=get_user_object(user,role1)
-        if not man and not sa:
-            return Response({"error":"Request must be from  "+role+' or '+role1+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        role2="stateadmin"
+        sa2=get_user_object(user,role2)
+        if not man and not sa and not sa2:
+            return Response({"error":"Request must be from  "+role+' or '+role1+' or '+role2+'.'}, status=status.HTTP_400_BAD_REQUEST)
 
         data =json.loads( request.body )
         try:
-            id=data['id']  
+            id=data['id']
             device =  DeviceStock.objects.get(id=data['device_id'])
             if id:
                 route = Route.objects.filter(id=int(id),device=device,status="Active", createdby=user.id).last()
@@ -4106,16 +4108,20 @@ def get_routePath(request):
             headers={"Content-Type": "application/json"}
         )
         
-        response.raise_for_status()  
+        response.raise_for_status()
         json_output = response.json()
-        
+
+        # Catch upstream API errors (e.g. expired token) before schema validation
+        if isinstance(json_output, dict) and "error" in json_output:
+            return Response({"error": "Routing service is temporarily unavailable. Please try again later."}, status=503)
+
         # Convert JSON output to string and sanitize it
         json_output_str = json.dumps(json_output)
         sanitized_json_output_str = bleach.clean(json_output_str)
-        
+
         # Convert sanitized string back to JSON
         sanitized_json_output = json.loads(sanitized_json_output_str)
-        
+
         is_valid, message = validate_bhuvan_response(sanitized_json_output)
         if not is_valid:
             return Response({"error": "Incoming path data is invalid." }, status=400)
@@ -14345,19 +14351,35 @@ def vehicle_alert_statistics(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
-def homepage(request ): 
+def homepage(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    
+
     try:
-        from datetime import timedelta
+        from datetime import timedelta, datetime as dt_datetime
         from django.utils import timezone
 
         # Alerts (match `homepage_alart` semantics)
         current_date = now().date()
         current_month_start = current_date.replace(day=1)
+
+        # Date range filter from query params
+        start_date_str = request.query_params.get('start_date')
+        end_date_str = request.query_params.get('end_date')
+        dr_start = None
+        dr_end = None
+        if start_date_str:
+            try:
+                dr_start = dt_datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({'error': 'Invalid start_date format. Use YYYY-MM-DD'}, status=400)
+        if end_date_str:
+            try:
+                dr_end = dt_datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, status=400)
 
         total_alerts = AlertsLog.objects.filter(status="in").count()
         total_alerts_month = AlertsLog.objects.filter(status="in", timestamp__gte=current_month_start).count()
@@ -14497,6 +14519,19 @@ def homepage(request ):
             'ActiveUsers_sos_deskexecutive': active_sos_deskexecutive_users,
 
         }
+        if dr_start and dr_end:
+            emergency_types_hp = [
+                'Em', 'EmPublicApp', 'EmRegisteredApp', 'EmMonitorTripSOS',
+                'EmMonitorTripInvalidPw', 'EmMonitorTripBLEDisconnect', 'EmMonitorTripDeviated', 'Incident',
+            ]
+            count_dict['date_range'] = {
+                'start_date': str(dr_start),
+                'end_date': str(dr_end),
+                'TotalAlerts': AlertsLog.objects.filter(status='in', timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                'SpeedAlerts': AlertsLog.objects.filter(type='OverSpeed', status='in', timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                'EmergencyAlerts': AlertsLog.objects.filter(type__in=emergency_types_hp, status='in', timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                'TemperatureAlerts': AlertsLog.objects.filter(type__in=['BoxTemp', 'EmTemp'], status='in', timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+            }
         # Return the serialized data as JSON response
         return Response(count_dict)
 
@@ -14507,7 +14542,7 @@ def homepage(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 def homepage_state(request ): 
     errors = validate_inputs(request)
@@ -14898,13 +14933,29 @@ def homepage_DTO(request ):
             from django.db.models import OuterRef, Subquery
             from datetime import datetime, timedelta
             from django.utils import timezone
-            
+
             # Current time for calculations
             now = timezone.now()
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             week_ago = now - timedelta(days=7)
-            
+
+            # Date range filter from query params
+            start_date_str = request.query_params.get('start_date')
+            end_date_str = request.query_params.get('end_date')
+            dr_start = None
+            dr_end = None
+            if start_date_str:
+                try:
+                    dr_start = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    return Response({'error': 'Invalid start_date format. Use YYYY-MM-DD'}, status=400)
+            if end_date_str:
+                try:
+                    dr_end = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, status=400)
+
             # Get all devices in DTO's jurisdiction (state/district)
             # For DTO, we filter by devices in their state and optionally district.
             # NOTE: dto_rto.district is stored as a string and in production is typically a district_code (e.g. 'AS01').
@@ -15020,6 +15071,17 @@ def homepage_DTO(request ):
                 'Genuine_calls': genuine_sos,
                 'Fake_calls': fake_sos
             }
+            if dr_start and dr_end:
+                count_dict['date_range'] = {
+                    'start_date': str(dr_start),
+                    'end_date': str(dr_end),
+                    'Alert': AlertsLog.objects.filter(deviceTag__in=devices_in_state, timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                    'Activations': devices_in_state.filter(
+                        status__in=['Device_Active', 'RegNo_Configuration_Confirmed', 'Live_Location_Confirmed', 'SOS_Confirmed'],
+                        tagged__date__gte=dr_start, tagged__date__lte=dr_end
+                    ).count(),
+                    'SOS_calls': EMCall.objects.filter(device__in=devices_in_state, start_time__date__gte=dr_start, start_time__date__lte=dr_end).count(),
+                }
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
@@ -15032,7 +15094,7 @@ def homepage_DTO(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 def homepage_VehicleOwner(request ): 
     errors = validate_inputs(request)
@@ -15055,9 +15117,25 @@ def homepage_VehicleOwner(request ):
             from django.db.models import Sum, Q, Count, Avg
             from datetime import datetime, timedelta
             from django.utils import timezone
-            
+
+            # Date range filter from query params
+            start_date_str = request.query_params.get('start_date')
+            end_date_str = request.query_params.get('end_date')
+            dr_start = None
+            dr_end = None
+            if start_date_str:
+                try:
+                    dr_start = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    return Response({'error': 'Invalid start_date format. Use YYYY-MM-DD'}, status=400)
+            if end_date_str:
+                try:
+                    dr_end = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, status=400)
+
             # Get all devices owned by this vehicle owner
-            owned_devices = DeviceTag.objects.filter(vehicle_owner=profile,status = 'Owner_Final_OTP_Verified')
+            owned_devices = DeviceTag.objects.filter(vehicle_owner=profile, status='Owner_Final_OTP_Verified')
             # Support multiple activation-like statuses; optional override via request 
 
             active_statuses = [
@@ -15204,6 +15282,16 @@ def homepage_VehicleOwner(request ):
                 'Fake_calls': fake_sos,
                 'Alert_list': alert_list
             }
+            if dr_start and dr_end:
+                count_dict['date_range'] = {
+                    'start_date': str(dr_start),
+                    'end_date': str(dr_end),
+                    'Total_Alert': AlertsLog.objects.filter(deviceTag__in=owned_devices, timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                    'SpeedAlerts': AlertsLog.objects.filter(deviceTag__in=owned_devices, type='OverSpeed', timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                    'HarshBraking': AlertsLog.objects.filter(deviceTag__in=owned_devices, type='HarshBreak', timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                    'SuddenTurn': AlertsLog.objects.filter(deviceTag__in=owned_devices, type='HarshTurn', timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                    'Total_SOS_calls': EMCall.objects.filter(device__in=owned_devices, start_time__date__gte=dr_start, start_time__date__lte=dr_end).count(),
+                }
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
@@ -16065,13 +16153,29 @@ def homepage_stateAdmin(request ):
             # Get current datetime for filtering
             from datetime import datetime, timedelta
             from django.utils import timezone
-            
+
             now = timezone.now()
             today = now.date()
             seven_days_ago = now - timedelta(days=7)
             thirty_days_ago = now - timedelta(days=30)
             current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             current_month_start_date = current_month_start.date()
+
+            # Date range filter from query params
+            start_date_str = request.query_params.get('start_date')
+            end_date_str = request.query_params.get('end_date')
+            dr_start = None
+            dr_end = None
+            if start_date_str:
+                try:
+                    dr_start = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    return Response({'error': 'Invalid start_date format. Use YYYY-MM-DD'}, status=400)
+            if end_date_str:
+                try:
+                    dr_end = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, status=400)
             
             # Filter data by state admin's state
             state_filter = profile.state
@@ -16316,8 +16420,19 @@ def homepage_stateAdmin(request ):
                 'ActiveUsers_sosexecutive': active_sosexecutive_users,
                 'ActiveUsers_sos_teamlead': active_sos_teamlead_users,
                 'ActiveUsers_sos_deskexecutive': active_sos_deskexecutive_users,
-             
+
             }
+            if dr_start and dr_end:
+                sa_filter = {'deviceTag__device__dealer__manufacturer__state': state_filter}
+                count_dict['date_range'] = {
+                    'start_date': str(dr_start),
+                    'end_date': str(dr_end),
+                    'OverspeedAlerts': AlertsLog.objects.filter(**sa_filter, type='OverSpeed', status='in', timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                    'EmergencyAlerts': AlertsLog.objects.filter(**sa_filter, type__in=emergency_types, status='in', timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                    'SuddenTurnAlerts': AlertsLog.objects.filter(**sa_filter, type='HarshTurn', status='in', timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                    'HarshBrakeAlerts': AlertsLog.objects.filter(**sa_filter, type='HarshBreak', status='in', timestamp__date__gte=dr_start, timestamp__date__lte=dr_end).count(),
+                    'Device_Activations': device_tags_in_state.filter(status='Device_Active', tagged__date__gte=dr_start, tagged__date__lte=dr_end).count(),
+                }
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
@@ -16330,7 +16445,7 @@ def homepage_stateAdmin(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 def homepage_user1(request ): 
     errors = validate_inputs(request)
@@ -16340,7 +16455,24 @@ def homepage_user1(request ):
     
     try:
         from django.contrib.auth import get_user_model
+        from datetime import datetime as dt_datetime
         UserModel = get_user_model()
+
+        # Date range filter from query params
+        start_date_str = request.query_params.get('start_date')
+        end_date_str = request.query_params.get('end_date')
+        dr_start = None
+        dr_end = None
+        if start_date_str:
+            try:
+                dr_start = dt_datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({'error': 'Invalid start_date format. Use YYYY-MM-DD'}, status=400)
+        if end_date_str:
+            try:
+                dr_end = dt_datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, status=400)
 
         # User counts should be based on actual user accounts by role
         if True:
@@ -16356,6 +16488,22 @@ def homepage_user1(request ):
             'SOS_user': UserModel.objects.filter(role='teamleader', status='active').count(),
             'SOS_admin': UserModel.objects.filter(role='sosadmin', status='active').count(),
         }
+        if dr_start and dr_end:
+            dr_qs = UserModel.objects.filter(date_joined__date__gte=dr_start, date_joined__date__lte=dr_end)
+            count_dict['date_range'] = {
+                'start_date': str(dr_start),
+                'end_date': str(dr_end),
+                'total_registered': dr_qs.count(),
+                'state_admin': dr_qs.filter(role='stateadmin').count(),
+                'manufacturer_admin': dr_qs.filter(role='devicemanufacture').count(),
+                'dtorto_admin': dr_qs.filter(role='dtorto').count(),
+                'eSimProvider': dr_qs.filter(role='esimprovider').count(),
+                'Dealer': dr_qs.filter(role='dealer').count(),
+                'VehicleOwner': dr_qs.filter(role='owner').count(),
+                'SOS_ex': dr_qs.filter(role='sosexecutive').count(),
+                'SOS_user': dr_qs.filter(role='teamleader').count(),
+                'SOS_admin': dr_qs.filter(role='sosadmin').count(),
+            }
         # Return the serialized data as JSON response
         return Response(count_dict)
 
