@@ -14151,7 +14151,23 @@ def vehicle_alert_statistics(request):
         week_threshold = now - timedelta(days=7)
         month_threshold = now - timedelta(days=30)
         year_threshold = now - timedelta(days=365)
-        
+
+        # Date range filter from query params
+        start_date_str = request.query_params.get('start_date')
+        end_date_str = request.query_params.get('end_date')
+        date_range_start = None
+        date_range_end = None
+        if start_date_str:
+            try:
+                date_range_start = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({'error': 'Invalid start_date format. Use YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
+        if end_date_str:
+            try:
+                date_range_end = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
+
         # ===== VEHICLE STATISTICS =====
         # Total tagged vehicles (active device tags)
         total_tagged_vehicles = DeviceTag.objects.filter(
@@ -14239,14 +14255,44 @@ def vehicle_alert_statistics(request):
         alert_types = AlertsLog.objects.values('type').annotate(count=Count('type'))
         for alert_data in alert_types:
             alerts_by_type[alert_data['type']] = alert_data['count']
-        
+
         # ===== ADDITIONAL STATISTICS =====
         # SOS calls by status
         sos_calls_by_status = {}
         sos_status = EMCall.objects.values('status').annotate(count=Count('status'))
         for status_data in sos_status:
             sos_calls_by_status[status_data['status']] = status_data['count']
-        
+
+        # ===== DATE RANGE STATISTICS =====
+        date_range_data = None
+        if date_range_start and date_range_end:
+            dr_sos = EMCall.objects.filter(start_time__date__gte=date_range_start, start_time__date__lte=date_range_end)
+            dr_broadcasts = EMCallBroadcast.objects.filter(created_at__date__gte=date_range_start, created_at__date__lte=date_range_end)
+            dr_alerts = AlertsLog.objects.filter(timestamp__date__gte=date_range_start, timestamp__date__lte=date_range_end)
+            dr_alerts_by_type = {}
+            for alert_data in dr_alerts.values('type').annotate(count=Count('type')):
+                dr_alerts_by_type[alert_data['type']] = alert_data['count']
+            dr_sos_by_status = {}
+            for status_data in dr_sos.values('status').annotate(count=Count('status')):
+                dr_sos_by_status[status_data['status']] = status_data['count']
+            date_range_data = {
+                'start_date': str(date_range_start),
+                'end_date': str(date_range_end),
+                'sos_calls': {
+                    'total': dr_sos.count(),
+                    'by_status': dr_sos_by_status,
+                },
+                'broadcasts': {
+                    'total': dr_broadcasts.count(),
+                    'closed': dr_broadcasts.filter(status__in=['accepted', 'canceled']).count(),
+                    'pending': dr_broadcasts.filter(status='pending').count(),
+                },
+                'alerts': {
+                    'total': dr_alerts.count(),
+                    'by_type': dr_alerts_by_type,
+                },
+            }
+
         response_data = {
             # Vehicle statistics
             'vehicles': {
@@ -14254,7 +14300,7 @@ def vehicle_alert_statistics(request):
                 'online_vehicles': online_vehicles,
                 'offline_vehicles': total_tagged_vehicles - online_vehicles
             },
-            
+
             # SOS Calls statistics
             'sos_calls': {
                 'total': total_sos_calls,
@@ -14264,7 +14310,7 @@ def vehicle_alert_statistics(request):
                 'yearly': sos_calls_yearly,
                 'by_status': sos_calls_by_status
             },
-            
+
             # Broadcasts statistics
             'broadcasts': {
                 'total': total_broadcasts,
@@ -14275,7 +14321,7 @@ def vehicle_alert_statistics(request):
                 'closed_yearly': broadcasts_closed_yearly,
                 'pending': total_broadcasts - total_broadcasts_closed
             },
-            
+
             # Alerts statistics
             'alerts': {
                 'total': total_alerts,
@@ -14286,6 +14332,8 @@ def vehicle_alert_statistics(request):
                 'by_type': alerts_by_type
             }
         }
+        if date_range_data:
+            response_data['date_range'] = date_range_data
         
         return Response(response_data, status=status.HTTP_200_OK)
         
@@ -15491,7 +15539,7 @@ def SOS_adminreport2(request ):
 
 
         if True:
-            from datetime import timedelta
+            from datetime import timedelta, datetime as dt_datetime
             from django.utils import timezone
 
             now = timezone.now()
@@ -15500,6 +15548,22 @@ def SOS_adminreport2(request ):
             week_start = today_start - timedelta(days=today_start.weekday())
             month_start = today_start.replace(day=1)
             online_threshold = now - timedelta(minutes=30)
+
+            # Date range filter from query params
+            start_date_str = request.query_params.get('start_date')
+            end_date_str = request.query_params.get('end_date')
+            dr_start = None
+            dr_end = None
+            if start_date_str:
+                try:
+                    dr_start = dt_datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    return Response({'error': 'Invalid start_date format. Use YYYY-MM-DD'}, status=400)
+            if end_date_str:
+                try:
+                    dr_end = dt_datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, status=400)
 
             teamlead_qs = EM_ex.objects.filter(user_type='teamlead')
             desk_ex_qs = EM_ex.objects.filter(user_type='desk_ex')
@@ -15585,8 +15649,21 @@ def SOS_adminreport2(request ):
                 'Broadcast_Currently_Pending': broadcast_qs.filter(status='pending').count(),
 
 
-             
+
             }
+
+            if dr_start and dr_end:
+                count_dict['date_range'] = {
+                    'start_date': str(dr_start),
+                    'end_date': str(dr_end),
+                    'Total_Incoming_Calls': calls_qs.filter(start_time__date__gte=dr_start, start_time__date__lte=dr_end).count(),
+                    'Total_Closed_Calls': closed_calls_qs.filter(end_time__date__gte=dr_start, end_time__date__lte=dr_end).count(),
+                    'Total_Fake_Calls': fake_calls_qs.filter(end_time__date__gte=dr_start, end_time__date__lte=dr_end).count(),
+                    'Total_Rejected_Assignment': rejected_assignments_qs.filter(reject_time__date__gte=dr_start, reject_time__date__lte=dr_end).count(),
+                    'Broadcast_Total': broadcast_qs.filter(created_at__date__gte=dr_start, created_at__date__lte=dr_end).count(),
+                    'Broadcast_Closed': broadcast_qs.exclude(status='pending').filter(created_at__date__gte=dr_start, created_at__date__lte=dr_end).count(),
+                }
+
             # Return the serialized data as JSON response
             return Response(count_dict)
         else:
