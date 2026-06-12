@@ -4838,9 +4838,9 @@ def create_superuser(request):
 
 
 
-@api_view(['DELETE'])
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_permission('manufacturer_management', 'delete')
 def delete_manufacturer(request, manufacturer_id):
     
@@ -4869,9 +4869,9 @@ def delete_manufacturer(request, manufacturer_id):
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
 
-@api_view(['DELETE'])
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_permission('dealer_management', 'delete')
 def delete_dealer(request, dealer_id):
     
@@ -4900,9 +4900,9 @@ def delete_dealer(request, dealer_id):
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
 
-@api_view(['DELETE'])
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_permission('esim_management', 'delete')
 def delete_eSimProvider(request, esimProvider_id):
     
@@ -4930,9 +4930,9 @@ def delete_eSimProvider(request, esimProvider_id):
 
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
-@api_view(['DELETE'])
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_permission('owner_management', 'delete')
 def delete_VehicleOwner(request, vo_id):
     
@@ -12346,9 +12346,9 @@ def ConfigureSMSGateway(request ):
     return JsonResponse({'data': serializer.data, 'message': 'SMS Gateway Configured successfully.'}, status=200)
 
 
-@api_view(['PATCH'])
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 @require_permission('device_management', 'update')
 def MarkDeviceDefective(request ): 
@@ -12379,9 +12379,9 @@ def MarkDeviceDefective(request ):
     return JsonResponse({'data': serializer.data, 'message': 'Device Marked as Defective successfully.'}, status=200)
 
 
-@api_view(['PATCH'])
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 @require_permission('device_management', 'update')
 def ReturnToDeviceManufacturer(request ): 

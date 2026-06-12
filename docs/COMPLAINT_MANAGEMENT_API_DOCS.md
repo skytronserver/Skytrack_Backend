@@ -1,6 +1,6 @@
 # Complaint Management System — Full API Documentation
 
-> **Version:** 2.0 | **Base path:** `/api/` | **Date:** 2026-06-12
+> **Version:** 2.1 | **Base path:** `/api/` | **Date:** 2026-06-12
 > This document is intended for the frontend development team.
 > All endpoints live under the same base URL as the rest of the Skytrack backend API.
 
@@ -323,7 +323,7 @@ Returns the full ticket with all fields and attachments.
 ### 7.5 Update Status
 
 ```
-PATCH /api/complaint/<id>/update-status/
+POST /api/complaint/<id>/update-status/
 Auth: Required (Bearer token)
 Roles: helpdesk, teamleader, sosexecutive, stateadmin, superadmin
 Content-Type: application/json
@@ -361,7 +361,7 @@ Changes the status of a ticket, subject to allowed transitions.
 ### 7.6 Escalate Ticket
 
 ```
-PATCH /api/complaint/<id>/escalate/
+POST /api/complaint/<id>/escalate/
 Auth: Required (Bearer token)
 Roles: helpdesk, teamleader, sosexecutive, stateadmin, superadmin
 Content-Type: application/json
@@ -557,8 +557,8 @@ Standard HTTP status codes used:
 | `GET /complaint/list/` | ❌ | ✅ all | ✅ all | ✅ all | ✅ all | ✅ all | ✅ scoped* |
 | `GET /complaint/device-imei/` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `GET /complaint/<id>/` | ❌ | ✅ any | ✅ any | ✅ any | ✅ any | ✅ any | ✅ scoped* |
-| `PATCH /complaint/<id>/update-status/` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `PATCH /complaint/<id>/escalate/` | ❌ | ✅ limited** | ✅ limited** | ✅ limited** | ✅ | ✅ | ❌ |
+| `POST /complaint/<id>/update-status/` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `POST /complaint/<id>/escalate/` | ❌ | ✅ limited** | ✅ limited** | ✅ limited** | ✅ | ✅ | ❌ |
 | `POST /complaint/<id>/final-report/` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `POST /complaint/<id>/comment/` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `GET /complaint/<id>/activity/` | ❌ | ✅ any | ✅ any | ✅ any | ✅ any | ✅ any | ✅ scoped* |
@@ -666,12 +666,12 @@ Standard HTTP status codes used:
 5. **Solution / Final Report** — solution text, final report file download
 6. **Activity Timeline** — full audit trail from `GET /api/complaint/<id>/activity/`
 7. **Action Panel:**
-   - **Update Status** → `PATCH /api/complaint/<id>/update-status/`
+   - **Update Status** → `POST /api/complaint/<id>/update-status/`
    - **Escalate** (staff only, not manufacturer) → opens a modal:
      - Dropdown: Escalate to `teamlead` / `sosadmin` / `manufacturer`
      - If `manufacturer`: manufacturer search/select dropdown + populated from system
      - Comment field
-     - Submit → `PATCH /api/complaint/<id>/escalate/`
+     - Submit → `POST /api/complaint/<id>/escalate/`
    - **Add Comment** → `POST /api/complaint/<id>/comment/`
    - **Submit Final Report** → `POST /api/complaint/<id>/final-report/`
 

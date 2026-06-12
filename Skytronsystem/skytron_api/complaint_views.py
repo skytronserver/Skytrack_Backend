@@ -439,7 +439,7 @@ def ticket_detail(request, pk):
     return Response(_serialize_ticket(ticket))
 
 
-@api_view(['PATCH'])
+@api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def update_ticket_status(request, pk):
@@ -486,7 +486,7 @@ def update_ticket_status(request, pk):
     return Response({'message': 'Status updated', 'status': ticket.status})
 
 
-@api_view(['PATCH'])
+@api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def escalate_ticket(request, pk):
