@@ -3725,6 +3725,12 @@ class ComplaintTicket(models.Model):
         ('public_app',     'Public App'),
     ]
 
+    ESCALATION_CHOICES = [
+        ('teamlead',     'Team Lead'),
+        ('sosadmin',     'SOS Admin'),
+        ('manufacturer', 'Manufacturer'),
+    ]
+
     ticket_ref       = models.CharField(max_length=20, unique=True, editable=False, db_index=True)
     applicant_name   = models.CharField(max_length=255)
     applicant_phone  = models.CharField(max_length=25)
@@ -3733,6 +3739,17 @@ class ComplaintTicket(models.Model):
     details          = models.TextField()
     status           = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_CREATED, db_index=True)
     source           = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='public_app')
+    escalated_to     = models.CharField(
+        max_length=20, choices=ESCALATION_CHOICES, null=True, blank=True, db_index=True,
+    )
+    escalated_to_manufacturer = models.ForeignKey(
+        'Manufacturer', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='escalated_complaint_tickets',
+    )
+    device_stock     = models.ForeignKey(
+        'DeviceStock', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='complaint_tickets',
+    )
     solution         = models.TextField(blank=True, null=True)
     final_report_file = models.CharField(max_length=500, blank=True, null=True)
     created_by       = models.ForeignKey(
@@ -3790,6 +3807,7 @@ class TicketActivity(models.Model):
     ACTION_COMMENT       = 'comment'
     ACTION_FINAL_REPORT  = 'final_report'
     ACTION_ATTACHMENT    = 'attachment'
+    ACTION_ESCALATION    = 'escalation'
 
     ACTION_CHOICES = [
         (ACTION_CREATED,       'Ticket Created'),
@@ -3797,6 +3815,7 @@ class TicketActivity(models.Model):
         (ACTION_COMMENT,       'Comment Added'),
         (ACTION_FINAL_REPORT,  'Final Report Submitted'),
         (ACTION_ATTACHMENT,    'Attachment Added'),
+        (ACTION_ESCALATION,    'Ticket Escalated'),
     ]
 
     ticket     = models.ForeignKey(ComplaintTicket, on_delete=models.CASCADE, related_name='activities')

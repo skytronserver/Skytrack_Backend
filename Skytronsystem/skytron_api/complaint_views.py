@@ -3,18 +3,21 @@ Complaint Management System — API views.
 
 Endpoints
 ---------
-POST   /api/complaint/create/                   – Create ticket (anon or authenticated)
-GET    /api/complaint/list/                     – List all tickets (staff roles)
-GET    /api/complaint/<int:pk>/                 – Ticket detail (staff roles)
-PATCH  /api/complaint/<int:pk>/update-status/   – Change ticket status (staff roles)
-POST   /api/complaint/<int:pk>/final-report/    – Upload final report + text (staff roles)
-POST   /api/complaint/<int:pk>/comment/         – Add comment to audit trail (staff roles)
-GET    /api/complaint/<int:pk>/activity/        – Full activity log (staff roles)
-GET    /api/complaint/track/<str:ticket_ref>/   – Public status lookup (no auth)
+POST   /api/complaint/create/                    – Create ticket (anon or authenticated)
+GET    /api/complaint/list/                      – List all tickets (staff + manufacturer roles)
+GET    /api/complaint/device-imei/               – Search DeviceStock by IMEI (staff roles)
+GET    /api/complaint/<int:pk>/                  – Ticket detail (staff + manufacturer roles)
+PATCH  /api/complaint/<int:pk>/update-status/    – Change ticket status (staff roles)
+PATCH  /api/complaint/<int:pk>/escalate/         – Escalate ticket (staff roles)
+POST   /api/complaint/<int:pk>/final-report/     – Upload final report + text (staff roles)
+POST   /api/complaint/<int:pk>/comment/          – Add comment to audit trail (staff roles)
+GET    /api/complaint/<int:pk>/activity/         – Full activity log (staff + manufacturer roles)
+GET    /api/complaint/track/<str:ticket_ref>/    – Public status lookup (no auth)
 """
 
 import secrets
 
+from django.db.models import Case, IntegerField, Q, Value, When
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import (
@@ -26,10 +29,19 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .jwt_authentication import JWTAuthentication
-from .models import ComplaintTicket, TicketActivity, TicketAttachment
+from .models import ComplaintTicket, DeviceStock, Manufacturer, TicketActivity, TicketAttachment
 
-# Roles that may view and manage tickets
+# Roles that may view and manage tickets (internal staff)
 _STAFF_ROLES = {'helpdesk', 'teamleader', 'sosexecutive', 'stateadmin', 'superadmin'}
+
+# Manufacturer role code — can only see tickets explicitly escalated to their manufacturer
+_MANUFACTURER_ROLE = 'devicemanufacture'
+
+# All roles that have any access to complaint APIs
+_ALL_ALLOWED_ROLES = _STAFF_ROLES | {_MANUFACTURER_ROLE}
+
+# Roles that can see all tickets (not scoped to escalation target)
+_ELEVATED_ROLES = {'teamleader', 'sosexecutive', 'stateadmin', 'superadmin'}
 
 ALLOWED_TRANSITIONS = {
     ComplaintTicket.STATUS_CREATED:   {ComplaintTicket.STATUS_IN_REVIEW, ComplaintTicket.STATUS_CANCELED},
@@ -46,6 +58,14 @@ ALLOWED_TRANSITIONS = {
 
 def _is_staff(user):
     return hasattr(user, 'role') and user.role in _STAFF_ROLES
+
+
+def _is_manufacturer(user):
+    return hasattr(user, 'role') and user.role == _MANUFACTURER_ROLE
+
+
+def _has_complaint_access(user):
+    return hasattr(user, 'role') and user.role in _ALL_ALLOWED_ROLES
 
 
 def _actor_name(user):
@@ -142,6 +162,31 @@ def _serialize_ticket(ticket, include_activities=False):
         }
         for a in ticket.attachments.all()
     ]
+
+    manufacturer_info = None
+    if ticket.escalated_to_manufacturer_id:
+        try:
+            mfr = ticket.escalated_to_manufacturer
+            manufacturer_info = {
+                'id': mfr.id,
+                'company_name': mfr.company_name,
+            }
+        except Exception:
+            manufacturer_info = {'id': ticket.escalated_to_manufacturer_id}
+
+    device_stock_info = None
+    if ticket.device_stock_id:
+        try:
+            ds = ticket.device_stock
+            device_stock_info = {
+                'id': ds.id,
+                'imei': ds.imei,
+                'device_esn': ds.device_esn,
+                'model_name': ds.model.model_name if ds.model_id else None,
+            }
+        except Exception:
+            device_stock_info = {'id': ticket.device_stock_id}
+
     data = {
         'id': ticket.id,
         'ticket_ref': ticket.ticket_ref,
@@ -152,6 +197,9 @@ def _serialize_ticket(ticket, include_activities=False):
         'details': ticket.details,
         'status': ticket.status,
         'source': ticket.source,
+        'escalated_to': ticket.escalated_to,
+        'escalated_to_manufacturer': manufacturer_info,
+        'device_stock': device_stock_info,
         'solution': ticket.solution,
         'final_report_file': ticket.final_report_file,
         'entry_date': ticket.entry_date,
@@ -180,6 +228,11 @@ def _serialize_activities(ticket):
     ]
 
 
+def _get_manufacturer_ids_for_user(user):
+    """Return list of Manufacturer PKs this user belongs to."""
+    return list(Manufacturer.objects.filter(users=user).values_list('id', flat=True))
+
+
 # ---------------------------------------------------------------------------
 # Views
 # ---------------------------------------------------------------------------
@@ -193,6 +246,7 @@ def create_ticket(request):
     Anonymous callers must not send an Authorization header (or send one with a valid token).
     Source is inferred: authenticated helpdesk users set it via `source` field;
     all others default to public_app.
+    Optional: device_imei — links the ticket to a DeviceStock record.
     """
     data = request.data
 
@@ -202,6 +256,7 @@ def create_ticket(request):
     title           = (data.get('title') or '').strip()
     details         = (data.get('details') or '').strip()
     source          = (data.get('source') or 'public_app').strip()
+    device_imei     = (data.get('device_imei') or '').strip() or None
 
     if not applicant_name:
         return Response({'error': 'applicant_name is required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -223,6 +278,19 @@ def create_ticket(request):
     if creator and getattr(creator, 'role', '') not in _STAFF_ROLES:
         source = 'public_app'
 
+    # Resolve device_imei → DeviceStock (only allowed for staff)
+    device_stock_obj = None
+    if device_imei:
+        if creator and getattr(creator, 'role', '') in _STAFF_ROLES:
+            try:
+                device_stock_obj = DeviceStock.objects.get(imei=device_imei)
+            except DeviceStock.DoesNotExist:
+                return Response(
+                    {'error': f'No device found with IMEI {device_imei}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        # Silently ignore device_imei for non-staff callers
+
     ticket = ComplaintTicket.objects.create(
         applicant_name=applicant_name,
         applicant_phone=applicant_phone,
@@ -231,6 +299,7 @@ def create_ticket(request):
         details=details,
         source=source,
         created_by=creator,
+        device_stock=device_stock_obj,
     )
 
     # Handle multiple file attachments: file_0, file_1, … or file (single)
@@ -253,11 +322,48 @@ def create_ticket(request):
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def list_tickets(request):
-    """List all tickets. Supports optional query filters: status, source, search (ref/name/phone)."""
-    if not _is_staff(request.user):
+    """
+    List tickets.
+
+    Staff roles (helpdesk, teamleader, sosexecutive, stateadmin, superadmin):
+      - See ALL tickets.
+      - Default ordering: active tickets (created/pending) first, then newest-first overall.
+
+    Manufacturer role (devicemanufacture):
+      - Sees ONLY tickets where escalated_to='manufacturer' AND
+        escalated_to_manufacturer belongs to one of their manufacturers.
+
+    Query params:
+      status            – filter by exact status value
+      source            – filter by source
+      escalated_to      – filter by escalation target (teamlead/sosadmin/manufacturer)
+      search            – full-text search on ref/name/phone/email/title
+      page              – page number (default 1)
+      page_size         – results per page (default 20, max 100)
+    """
+    user = request.user
+
+    if not _has_complaint_access(user):
         return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
 
-    qs = ComplaintTicket.objects.prefetch_related('attachments').all()
+    qs = ComplaintTicket.objects.prefetch_related('attachments').select_related(
+        'escalated_to_manufacturer', 'device_stock', 'device_stock__model'
+    )
+
+    # Manufacturer role: scope to their own escalated tickets only
+    if _is_manufacturer(user):
+        mfr_ids = _get_manufacturer_ids_for_user(user)
+        if not mfr_ids:
+            return Response({'total': 0, 'page': 1, 'page_size': 20, 'results': []})
+        qs = qs.filter(escalated_to='manufacturer', escalated_to_manufacturer_id__in=mfr_ids)
+    else:
+        # Apply optional escalated_to filter for staff
+        filter_escalated_to = request.GET.get('escalated_to')
+        if filter_escalated_to:
+            if filter_escalated_to == 'none':
+                qs = qs.filter(escalated_to__isnull=True)
+            else:
+                qs = qs.filter(escalated_to=filter_escalated_to)
 
     filter_status = request.GET.get('status')
     if filter_status:
@@ -269,7 +375,6 @@ def list_tickets(request):
 
     search = (request.GET.get('search') or '').strip()
     if search:
-        from django.db.models import Q
         qs = qs.filter(
             Q(ticket_ref__icontains=search)
             | Q(applicant_name__icontains=search)
@@ -278,7 +383,15 @@ def list_tickets(request):
             | Q(title__icontains=search)
         )
 
-    # Simple pagination
+    # Ordering: pending/created tickets bubble up (active first), then newest-first
+    qs = qs.annotate(
+        _priority=Case(
+            When(status__in=[ComplaintTicket.STATUS_PENDING, ComplaintTicket.STATUS_CREATED], then=Value(0)),
+            default=Value(1),
+            output_field=IntegerField(),
+        )
+    ).order_by('_priority', '-created_at')
+
     try:
         page      = max(1, int(request.GET.get('page', 1)))
         page_size = min(100, max(1, int(request.GET.get('page_size', 20))))
@@ -301,14 +414,27 @@ def list_tickets(request):
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def ticket_detail(request, pk):
-    """Full ticket detail including attachments."""
-    if not _is_staff(request.user):
+    """
+    Full ticket detail including attachments.
+    Staff roles: any ticket.
+    Manufacturer role: only tickets escalated to their manufacturer.
+    """
+    user = request.user
+
+    if not _has_complaint_access(user):
         return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
 
     try:
-        ticket = ComplaintTicket.objects.prefetch_related('attachments').get(pk=pk)
+        ticket = ComplaintTicket.objects.prefetch_related('attachments').select_related(
+            'escalated_to_manufacturer', 'device_stock', 'device_stock__model'
+        ).get(pk=pk)
     except ComplaintTicket.DoesNotExist:
         return Response({'error': 'Ticket not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if _is_manufacturer(user):
+        mfr_ids = _get_manufacturer_ids_for_user(user)
+        if ticket.escalated_to != 'manufacturer' or ticket.escalated_to_manufacturer_id not in mfr_ids:
+            return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
 
     return Response(_serialize_ticket(ticket))
 
@@ -317,7 +443,7 @@ def ticket_detail(request, pk):
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def update_ticket_status(request, pk):
-    """Change the status of a ticket. Enforces allowed transitions."""
+    """Change the status of a ticket. Enforces allowed transitions. Staff roles only."""
     if not _is_staff(request.user):
         return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -358,6 +484,90 @@ def update_ticket_status(request, pk):
          old_value=old_status, new_value=new_status, comment=comment)
 
     return Response({'message': 'Status updated', 'status': ticket.status})
+
+
+@api_view(['PATCH'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def escalate_ticket(request, pk):
+    """
+    Escalate a ticket to a higher level or to a manufacturer.
+
+    Body:
+      escalate_to      (required) – "teamlead" | "sosadmin" | "manufacturer"
+      manufacturer_id  (required when escalate_to="manufacturer")
+      comment          (optional) – reason for escalation
+
+    Role permissions:
+      helpdesk            → can escalate to teamlead, sosadmin
+      teamleader          → can escalate to sosadmin, manufacturer
+      sosexecutive        → can escalate to manufacturer
+      stateadmin          → can escalate to any level
+      superadmin          → can escalate to any level
+    """
+    if not _is_staff(request.user):
+        return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        ticket = ComplaintTicket.objects.get(pk=pk)
+    except ComplaintTicket.DoesNotExist:
+        return Response({'error': 'Ticket not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    escalate_to = (request.data.get('escalate_to') or '').strip()
+    valid_levels = {c[0] for c in ComplaintTicket.ESCALATION_CHOICES}
+    if escalate_to not in valid_levels:
+        return Response(
+            {'error': f'Invalid escalate_to. Choices: {sorted(valid_levels)}'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Role-based escalation permission check
+    role = getattr(request.user, 'role', '')
+    role_allowed = {
+        'helpdesk':     {'teamlead', 'sosadmin'},
+        'teamleader':   {'sosadmin', 'manufacturer'},
+        'sosexecutive': {'manufacturer'},
+        'stateadmin':   valid_levels,
+        'superadmin':   valid_levels,
+    }
+    permitted = role_allowed.get(role, set())
+    if escalate_to not in permitted:
+        return Response(
+            {'error': f'Your role ({role}) is not permitted to escalate to "{escalate_to}".'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    manufacturer_obj = None
+    if escalate_to == 'manufacturer':
+        manufacturer_id = request.data.get('manufacturer_id')
+        if not manufacturer_id:
+            return Response(
+                {'error': 'manufacturer_id is required when escalating to manufacturer.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            manufacturer_obj = Manufacturer.objects.get(pk=int(manufacturer_id))
+        except (Manufacturer.DoesNotExist, (TypeError, ValueError)):
+            return Response({'error': 'Manufacturer not found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    old_escalation = ticket.escalated_to or 'none'
+    ticket.escalated_to = escalate_to
+    ticket.escalated_to_manufacturer = manufacturer_obj
+    ticket.save(update_fields=['escalated_to', 'escalated_to_manufacturer', 'updated_at'])
+
+    comment = (request.data.get('comment') or '').strip() or None
+    _log(
+        ticket, request.user, TicketActivity.ACTION_ESCALATION,
+        old_value=old_escalation,
+        new_value=escalate_to + (f':{manufacturer_obj.company_name}' if manufacturer_obj else ''),
+        comment=comment,
+    )
+
+    return Response({
+        'message': 'Ticket escalated',
+        'escalated_to': ticket.escalated_to,
+        'manufacturer_id': manufacturer_obj.id if manufacturer_obj else None,
+    })
 
 
 @api_view(['POST'])
@@ -423,8 +633,14 @@ def add_comment(request, pk):
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def ticket_activity_log(request, pk):
-    """Return the full activity trail for a ticket."""
-    if not _is_staff(request.user):
+    """
+    Return the full activity trail for a ticket.
+    Staff roles: any ticket.
+    Manufacturer role: only tickets escalated to their manufacturer.
+    """
+    user = request.user
+
+    if not _has_complaint_access(user):
         return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
 
     try:
@@ -432,7 +648,48 @@ def ticket_activity_log(request, pk):
     except ComplaintTicket.DoesNotExist:
         return Response({'error': 'Ticket not found'}, status=status.HTTP_404_NOT_FOUND)
 
+    if _is_manufacturer(user):
+        mfr_ids = _get_manufacturer_ids_for_user(user)
+        if ticket.escalated_to != 'manufacturer' or ticket.escalated_to_manufacturer_id not in mfr_ids:
+            return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
+
     return Response({'ticket_ref': ticket.ticket_ref, 'activities': _serialize_activities(ticket)})
+
+
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def device_imei_lookup(request):
+    """
+    Search DeviceStock by partial IMEI for use when creating or escalating a ticket.
+    Staff roles only.
+    Query param: q (min 4 chars)
+    Returns up to 20 matching devices.
+    """
+    if not _is_staff(request.user):
+        return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+    q = (request.GET.get('q') or '').strip()
+    if len(q) < 4:
+        return Response({'error': 'Query must be at least 4 characters.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    devices = (
+        DeviceStock.objects
+        .filter(imei__icontains=q)
+        .select_related('model')[:20]
+    )
+
+    results = []
+    for ds in devices:
+        results.append({
+            'id': ds.id,
+            'imei': ds.imei,
+            'device_esn': ds.device_esn,
+            'model_name': ds.model.model_name if ds.model_id else None,
+            'stock_status': ds.stock_status,
+        })
+
+    return Response({'results': results})
 
 
 @api_view(['GET'])
