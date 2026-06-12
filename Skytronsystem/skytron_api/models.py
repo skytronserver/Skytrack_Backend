@@ -3652,6 +3652,7 @@ class RolePermissionConfig(models.Model):
         ('notice_management',       'Notices'),
         ('trip_management',         'Trip Management'),
         ('settings_management',     'System Settings'),
+        ('complaint',               'Complaint Management'),
     ]
 
     role   = models.ForeignKey(

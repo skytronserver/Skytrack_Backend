@@ -516,6 +516,7 @@ urlpatterns = [
     path('check-user-access/', check_user_type, name='check_user_type'),
 
     # RBAC management (superadmin only)
+    path('rbac/modules/', rbac_list_modules, name='rbac_list_modules'),
     path('rbac/roles/', rbac_list_roles, name='rbac_list_roles'),
     path('rbac/roles/active/', rbac_active_roles, name='rbac_active_roles'),
     path('rbac/roles/create/', rbac_create_custom_role, name='rbac_create_custom_role'),

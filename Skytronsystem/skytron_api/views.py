@@ -22628,6 +22628,26 @@ def check_user_type(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+def rbac_list_modules(request):
+    """
+    GET /rbac/modules/
+    Returns the full list of system modules that can be configured in RBAC.
+    Superadmin only — used by the permissions editor to populate the module dropdown.
+    """
+    from .models import RolePermissionConfig
+    if request.user.role != 'superadmin':
+        return Response({'error': 'Superadmin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    modules = [
+        {'code': code, 'label': label}
+        for code, label in RolePermissionConfig.MODULE_CHOICES
+    ]
+    return Response({'modules': modules}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 def rbac_list_roles(request):
     """
     GET /rbac/roles/
