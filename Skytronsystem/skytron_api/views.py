@@ -4425,11 +4425,11 @@ def sms_send(no,text,tpid):
         response.raise_for_status()  # Raise error for bad responses (non-200)
         #print("Message Sent Successfully")
     except requests.exceptions.HTTPError as errh:
-        #print("Loginotpsend HTTP Error:", errh)
+        pass
     except requests.exceptions.RequestException as err:
-        #print("Loginotpsend Request Exception:", err)
-    except Exception as e :
-        #print("Loginotpsend:", e)
+        pass
+    except Exception as e:
+        pass
 
 def add_sms_queue(msg,no):
     sms_entry ,error= sms_out.objects.safe_create( sms_text=msg,no=no, status='Queue'  )
