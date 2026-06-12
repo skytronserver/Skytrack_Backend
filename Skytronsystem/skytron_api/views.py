@@ -329,6 +329,7 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET'])
+@require_permission('reports', 'view')
 def SOS_detailed_report(request):
     """SOS report (one row per emergency call).
 
@@ -1102,6 +1103,7 @@ logger = logging.getLogger(__name__)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@require_permission('settings_management', 'update')
 def set_login_settings(request):
     """
     API to create or update login settings for a user role.
@@ -1240,6 +1242,7 @@ def set_login_settings(request):
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
+@require_permission('settings_management', 'view')
 def get_login_settings(request):
     """
     API to retrieve login settings from Redis cache.
@@ -1449,6 +1452,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@require_permission('emergency_management', 'view')
 def get_latest_emuser_locations(request):
     """
     Returns the latest EMUserLocation for each unique field executive, with filters:
@@ -2151,6 +2155,7 @@ except Exception:
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])  # Apply throttling here
 @require_http_methods(['GET', 'POST'])
+@require_permission('gps_history', 'view')
 def downloadfile(request): 
     errors = validate_inputs(request)
     if errors:
@@ -2289,6 +2294,7 @@ def _gps_scope_by_role(request, queryset, module='gps_tracking'):
 @csrf_exempt   
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
+@require_permission('gps_tracking', 'view')
 def gps_track_data_api(request ):  
     
     if request.method == 'GET':
@@ -3196,6 +3202,7 @@ def _dt_scope_by_role(request, dt_queryset, module='gps_tracking'):
 @csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@require_permission('gps_tracking', 'view')
 def gps_track_lite_api(request):
     """Lightweight GPS tracking API – returns only essential vehicle fields.
 
@@ -3358,6 +3365,7 @@ def gps_track_lite_api(request):
 @csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@require_permission('gps_tracking', 'view')
 def gps_track_lite_options_api(request):
     """Return distinct location values (state, district, city, road) from live GPS data."""
     dt_qs = DeviceTag.objects.filter(status='Owner_Final_OTP_Verified').only('id')
@@ -3408,6 +3416,7 @@ def gps_track_lite_options_api(request):
 @csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@require_permission('gps_clustering', 'view')
 def gps_cluster_api(request):
     """Cluster summary – aggregated vehicle counts by district/state/city/road."""
     from django.db.models import Count, Avg, Case, When, IntegerField, Value, Subquery
@@ -3562,6 +3571,7 @@ def gps_cluster_api(request):
 @csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@require_permission('gps_clustering', 'view')
 def gps_grid_cluster_api(request):
     """Grid-based cluster summary – aggregated counts per geographic grid cell."""
     from django.db.models import Count, Avg, Case, When, IntegerField, FloatField, Subquery
@@ -3786,6 +3796,7 @@ def get_size(obj, seen=None):
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 @require_http_methods(['GET', 'POST'])
+@require_permission('gps_history', 'view')
 def gps_history_map_data(request ): 
     mapdata = []
     try:
@@ -3958,6 +3969,7 @@ def gps_history_map_data(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])   
 @require_http_methods(['GET', 'POST'])
+@require_permission('route_management', 'delete')
 def delRoute(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -4150,6 +4162,7 @@ def get_routePath(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])   
 @require_http_methods(['GET', 'POST'])
+@require_permission('route_management', 'create')
 def saveRoute(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -4248,6 +4261,7 @@ def saveRoute(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])   
 @require_http_methods(['GET', 'POST'])
+@require_permission('route_management', 'view')
 def getRoute(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -4313,6 +4327,7 @@ def getRoute(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])   
 @require_http_methods(['GET', 'POST'])
+@require_permission('route_management', 'view')
 def getRoutelist(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -4528,6 +4543,7 @@ def esim_provider_list(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('gps_tracking', 'view')
 def get_live_vehicle_no(request):
     errors = validate_inputs(request)
     if errors:
@@ -4569,6 +4585,7 @@ def get_live_vehicle_no(request):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('owner_management', 'update')
 def update_VehicleOwner(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -4643,6 +4660,7 @@ def update_VehicleOwner(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('owner_management', 'create')
 def create_VehicleOwner(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -4713,6 +4731,7 @@ def create_VehicleOwner(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @transaction.atomic
 @require_http_methods(['POST'])
+@require_permission('user_management', 'create')
 def create_superuser(request):
  
     # Validate inputs
@@ -4822,6 +4841,7 @@ def create_superuser(request):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('manufacturer_management', 'delete')
 def delete_manufacturer(request, manufacturer_id):
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4852,6 +4872,7 @@ def delete_manufacturer(request, manufacturer_id):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('dealer_management', 'delete')
 def delete_dealer(request, dealer_id):
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4882,6 +4903,7 @@ def delete_dealer(request, dealer_id):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('esim_management', 'delete')
 def delete_eSimProvider(request, esimProvider_id):
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4911,6 +4933,7 @@ def delete_eSimProvider(request, esimProvider_id):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('owner_management', 'delete')
 def delete_VehicleOwner(request, vo_id):
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4942,6 +4965,7 @@ def delete_VehicleOwner(request, vo_id):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('owner_management', 'filter')
 def filter_VehicleOwner(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -5045,6 +5069,7 @@ def filter_VehicleOwner(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'update')
 def update_manufacturer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -5149,6 +5174,7 @@ def update_manufacturer(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('esim_management', 'update')
 def update_eSimProvider(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -5442,6 +5468,7 @@ def create_eSimProvider_pub(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])  
 @require_http_methods(['GET', 'POST'])
+@require_permission('esim_management', 'create')
 def create_eSimProvider(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -5606,6 +5633,7 @@ def create_eSimProvider(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('esim_management', 'filter')
 def filter_eSimProvider(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -5761,6 +5789,7 @@ def filter_eSimProvider_pub(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('dealer_management', 'update')
 def update_dealer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -5865,6 +5894,7 @@ def update_dealer(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('dealer_management', 'create')
 def create_dealer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -5971,6 +6001,7 @@ def create_dealer(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dealer_management', 'filter')
 def filter_dealer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -6045,6 +6076,7 @@ def filter_dealer(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'update')
 def update_manufacturer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -6374,6 +6406,7 @@ def create_manufacturer_pub(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'create')
 def create_manufacturer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -6599,6 +6632,7 @@ def create_manufacturer(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'filter')
 def filter_manufacturers(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -6678,6 +6712,7 @@ def filter_manufacturers(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'update')
 def approve_manufacturer_tech_onboarding(request):
     errors = validate_inputs(request)
     if errors:
@@ -6742,6 +6777,7 @@ def approve_manufacturer_tech_onboarding(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'filter')
 def filter_TechOnboardmanufacturers(request):
     errors = validate_inputs(request)
     if errors:
@@ -6964,6 +7000,7 @@ def _role_to_account_type(role: str) -> str:
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([UserRateThrottle])
+@require_permission('user_management', 'create')
 def resend_usercreation_otp(request):
     """Resend the user creation OTP/link.
 
@@ -7024,6 +7061,7 @@ def resend_usercreation_otp(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([UserRateThrottle])
+@require_permission('user_management', 'create')
 def resend_parent_activation_otp(request):
     """Resend the account activation link to a parent user.
 
@@ -7085,6 +7123,7 @@ def resend_parent_activation_otp(request):
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('stateadmin_management', 'create')
 def create_StateAdmin(request ):
     errors = validate_inputs(request)
     if errors:
@@ -7161,6 +7200,7 @@ def create_StateAdmin(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('stateadmin_management', 'update')
 def update_StateAdmin(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7236,6 +7276,7 @@ def update_StateAdmin(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('stateadmin_management', 'filter')
 def filter_StateAdmin(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7318,6 +7359,7 @@ def getDistrictList(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('stateadmin_management', 'create')
 def create_DTO_RTO(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7401,6 +7443,7 @@ def create_DTO_RTO(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('stateadmin_management', 'update')
 def update_DTO_RTO(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7491,6 +7534,7 @@ def update_DTO_RTO(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('stateadmin_management', 'filter')
 def filter_DTO_RTO(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7553,6 +7597,7 @@ def filter_DTO_RTO(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('stateadmin_management', 'update')
 def transfer_DTO_RTO(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7603,6 +7648,7 @@ def transfer_DTO_RTO(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'create')
 def create_SOS_user(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7669,6 +7715,7 @@ def create_SOS_user(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'filter')
 def filter_SOS_user(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7772,6 +7819,7 @@ def list_alert_logs(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'create')
 def create_SOS_admin(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7833,6 +7881,7 @@ def create_SOS_admin(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'filter')
 def filter_SOS_admin(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7888,6 +7937,7 @@ def filter_SOS_admin(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_teams', 'view')
 def list_desk_ex(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7924,6 +7974,7 @@ def list_desk_ex(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_teams', 'view')
 def list_team_lead(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -7955,6 +8006,7 @@ def list_team_lead(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_teams', 'create')
 def create_EM_team(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8037,6 +8089,7 @@ def create_EM_team(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_teams', 'update')
 def activate_EM_team(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8067,6 +8120,7 @@ def activate_EM_team(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_teams', 'delete')
 def remove_EM_team(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8097,6 +8151,7 @@ def remove_EM_team(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_teams', 'update')
 def edit_EM_team(request): 
     errors = validate_inputs(request)
     if errors:
@@ -8183,6 +8238,7 @@ def edit_EM_team(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_teams', 'view')
 def get_EM_team(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8209,6 +8265,7 @@ def get_EM_team(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_teams', 'view')
 def list_EM_team(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8321,6 +8378,7 @@ def _auto_reassign_stale_desk_ex_calls(state=None):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def TLEx_getPendingCallList(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8353,6 +8411,7 @@ def TLEx_getPendingCallList(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def DEx_getPendingCallList(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8497,6 +8556,7 @@ def DEx_getPendingCallList(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def DEx_getPendingCallListTL(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8584,6 +8644,7 @@ def DEx_getPendingCallListTL(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def DEx_getCallList(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8656,6 +8717,7 @@ def DEx_getCallList(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def DEx_getLiveCallList(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8688,6 +8750,7 @@ def DEx_getLiveCallList(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'update')
 def DEx_replyCall(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8734,6 +8797,7 @@ def DEx_replyCall(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def CheckLive(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8746,6 +8810,7 @@ def CheckLive(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'create')
 def DEx_broadcast(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8791,6 +8856,7 @@ def DEx_broadcast(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def DEx_broadcastlist(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8825,6 +8891,7 @@ def DEx_broadcastlist(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def FEx_broadcastlist(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8856,6 +8923,7 @@ def FEx_broadcastlist(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'update')
 def TLEx_reassign(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8915,6 +8983,7 @@ def TLEx_reassign(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'update')
 def FEx_broadcastaccept(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -8960,6 +9029,7 @@ def FEx_broadcastaccept(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'update')
 def  DEx_closeCase(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9025,6 +9095,7 @@ def  DEx_closeCase(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'create')
 def DEx_sendMsg(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9065,6 +9136,7 @@ def DEx_sendMsg(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def DEx_rcvMsg(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9100,6 +9172,7 @@ def DEx_rcvMsg(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'create')
 def DEx_commentFE(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9141,6 +9214,7 @@ def DEx_commentFE(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@require_permission('emergency_management', 'view')
 def check_file_paths(request):
     """
     Debugging endpoint to check if a file exists in various potential locations
@@ -9255,6 +9329,7 @@ def upload_media_file(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('emergency_management', 'create')
 def dummy_insert_data(request):
     """
     Dummy API to insert data using GET parameters.
@@ -9297,6 +9372,7 @@ def dummy_insert_data(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('emergency_management', 'view')
 def DEx_getMedia(request):
     if request.method != 'POST':
         return Response({"error": "Invalid request method."}, status=status.HTTP_400_BAD_REQUEST)
@@ -9342,6 +9418,7 @@ def DEx_getMedia(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def  DEx_getloc(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9459,6 +9536,7 @@ def  DEx_getloc(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def  FEx_getloc(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9491,6 +9569,7 @@ def  FEx_getloc(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'update')
 def FEx_updateLoc(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9528,6 +9607,7 @@ def FEx_updateLoc(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'update')
 def FEx_updateStatus(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9567,6 +9647,7 @@ def FEx_updateStatus(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'create')
 def FEx_reqBackup(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9614,6 +9695,7 @@ def FEx_reqBackup(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'update')
 def DEx_acceptBackup(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9664,6 +9746,7 @@ def DEx_acceptBackup(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def DEx_listBackup(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9711,6 +9794,7 @@ def DEx_listBackup(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST']) 
+@require_permission('emergency_management', 'update')
 def accept_EMassignment(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9749,6 +9833,7 @@ def accept_EMassignment(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'update')
 def reject_EMassignment(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9786,6 +9871,7 @@ def reject_EMassignment(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'update')
 def arriving_EMassignment(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -9821,6 +9907,7 @@ def arriving_EMassignment(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('poi_management', 'create')
 def create_poi(request):
     try:
         data = request.data
@@ -9869,6 +9956,7 @@ def create_poi(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('poi_management', 'update')
 def update_poi(request):
     try:
         poi_id = request.data.get('poi_id')
@@ -9918,6 +10006,7 @@ def update_poi(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('poi_management', 'delete')
 def delete_poi(request):
     try:
         poi_id = request.data.get('poi_id')
@@ -9933,6 +10022,7 @@ def delete_poi(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('poi_management', 'view')
 def list_pois(request):
     try:
         pois = pointofinterests.objects.all()
@@ -9972,6 +10062,7 @@ def list_pois(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('poi_management', 'view')
 def list_poi_types(request):
     try:
         types = (
@@ -10116,6 +10207,7 @@ def public_api_log_insights(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('user_management', 'view')
 def search_request_logs(request):
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     
@@ -10229,6 +10321,7 @@ def search_request_logs(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'update')
 def arrived_EMassignment(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -10267,6 +10360,7 @@ def arrived_EMassignment(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'update')
 def close_EMassignment(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -10335,6 +10429,7 @@ def download_static_file(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('vehicle_tagging', 'update')
 def CancelTagDevice2Vehicle(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -10415,6 +10510,7 @@ def CancelTagDevice2Vehicle(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'create')
 def TagDevice2Vehicle(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -10576,6 +10672,7 @@ def TagDevice2Vehicle(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def update_temp_tag_registration(request):
     errors = validate_inputs(request)
     if errors:
@@ -10641,6 +10738,7 @@ def update_temp_tag_registration(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'delete')
 def unTagDevice2Vehicle(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -10700,6 +10798,7 @@ def unTagDevice2Vehicle(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def reTagDevice2Vehicle(request):
     """
     Re-tag endpoint: undo the untag action by restoring terminal status.
@@ -10794,6 +10893,7 @@ def validate_ble(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'delete')
 def deleteTagDevice2Vehicle(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -10832,6 +10932,7 @@ def deleteTagDevice2Vehicle(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'view')
 def download_receiptPDF(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -10913,6 +11014,7 @@ def upload_receiptPDF(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('driver_management', 'delete')
 def driver_remove(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -10962,6 +11064,7 @@ def driver_remove(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('driver_management', 'create')
 def driver_add(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -11034,6 +11137,7 @@ def driver_add(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'view')
 def TagAwaitingActivateTag(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -11059,6 +11163,7 @@ def TagAwaitingActivateTag(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'view')
 def Tag_status(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -11103,6 +11208,7 @@ def Tag_status(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'view')
 def Tag_ownerlist(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -11291,6 +11397,7 @@ def Tag_ownerlist(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'view')
 def TagAwaitingOwnerApproval(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -11315,6 +11422,7 @@ def TagAwaitingOwnerApproval(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'view')
 def TagAwaitingOwnerApprovalFinal(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -11340,6 +11448,7 @@ def TagAwaitingOwnerApprovalFinal(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def TagSendOwnerOtp(request ):  
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -11381,6 +11490,7 @@ def TagSendOwnerOtp(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def TagSendOwnerOtpFinal(request ):  
     user=request.user 
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -11422,6 +11532,7 @@ def TagSendOwnerOtpFinal(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def TagResendOwnerOtpFinal(request):
     user = request.user
     role = "dealer"
@@ -11459,6 +11570,7 @@ def TagResendOwnerOtpFinal(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def TagSendDealerOtp(request ): 
     device_model_id = request.data.get('device_id')
     # Validate current status and update the status
@@ -11581,6 +11693,7 @@ def TagGetVehicle(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'view')
 def GetVahanAPIInfo_totestonly(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -11674,6 +11787,7 @@ response_schema2 = {
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'view')
 def GetVahanAPIInfo(request): 
     errors = validate_inputs(request)
     if errors:
@@ -11813,6 +11927,7 @@ def GetVahanAPIInfo(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def ActivateTag(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -11847,6 +11962,7 @@ def ActivateTag(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def TagVerifyOwnerOtp(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -11887,6 +12003,7 @@ def TagVerifyOwnerOtp(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def TagVerifyOwnerOtpFinal(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -11930,6 +12047,7 @@ def TagVerifyOwnerOtpFinal(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def TagVerifyDealerOtp(request  ): 
     
     user=request.user 
@@ -11988,6 +12106,7 @@ def TagVerifyDealerOtp(request  ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def TagResendDealerOtp(request):
     user = request.user
     role = "dealer"
@@ -12025,6 +12144,7 @@ def TagResendDealerOtp(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def TagResendOwnerOtp(request):
     user = request.user
     role = "dealer"
@@ -12063,6 +12183,7 @@ def TagResendOwnerOtp(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'update')
 def TagVerifyDTOOtp(request  ): 
     try:
         user_id = request.user.id
@@ -12097,6 +12218,7 @@ def TagVerifyDTOOtp(request  ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def ActivateESIMRequest(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12129,6 +12251,7 @@ def ActivateESIMRequest(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def ConfirmESIMActivation(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12161,6 +12284,7 @@ def ConfirmESIMActivation(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def ConfigureIPPort(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12182,6 +12306,7 @@ def ConfigureIPPort(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def ConfigureSOSGateway(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12203,6 +12328,7 @@ def ConfigureSOSGateway(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def ConfigureSMSGateway(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12224,6 +12350,7 @@ def ConfigureSMSGateway(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def MarkDeviceDefective(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12256,6 +12383,7 @@ def MarkDeviceDefective(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def ReturnToDeviceManufacturer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12289,6 +12417,7 @@ def ReturnToDeviceManufacturer(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_stock', 'view')
 def SellListAvailableDeviceStock(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12329,6 +12458,7 @@ def SellListAvailableDeviceStock(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_stock', 'create')
 def SellFitDevice(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12358,6 +12488,7 @@ def SellFitDevice(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_stock', 'create')
 def StockAssignToDealer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12457,6 +12588,7 @@ def StockAssignToDealer(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_stock', 'filter')
 def deviceStockFilter(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12663,6 +12795,7 @@ def deviceStockFilter(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_stock', 'create')
 def deviceStockCreateBulk(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12804,6 +12937,7 @@ def deviceStockCreateBulk(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
 @transaction.atomic
+@require_permission('device_stock', 'create')
 def deviceStockCreate(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12876,6 +13010,7 @@ def deviceStockCreate(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'create')
 def COPCreate(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12964,6 +13099,7 @@ def COPCreate(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'view')
 def COPAwaitingStateApproval(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -12988,6 +13124,7 @@ def COPAwaitingStateApproval(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def COPSendStateAdminOtp(request ): 
        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
     role="stateadmin"
@@ -13027,6 +13164,7 @@ def COPSendStateAdminOtp(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def COPVerifyStateAdminOtp(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -13066,6 +13204,7 @@ def COPVerifyStateAdminOtp(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def COPManufacturerOtpVerify(request  ): 
     user_id = request.user.id 
        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -13099,6 +13238,7 @@ def COPManufacturerOtpVerify(request  ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'view')
 def list_devicemodel(request ):
     errors = validate_inputs(request)
     if errors:
@@ -13113,6 +13253,7 @@ def list_devicemodel(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'filter')
 def filter_devicemodel(request): 
     errors = validate_inputs(request)
     if errors:
@@ -13327,6 +13468,7 @@ def filter_devicemodel(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'view')
 def details_devicemodel(request ):     
     device_model_id = request.data.get('device_model_id')
     device_model = get_object_or_404(DeviceModel, id=device_model_id) 
@@ -13367,6 +13509,7 @@ def details_devicemodel(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'view')
 def DeviceModelAwaitingStateApproval(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -13401,6 +13544,7 @@ def DeviceModelAwaitingStateApproval(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def DeviceSendStateAdminOtp(request ): 
     user=request.user 
     sa=get_user_object(user,"stateadmin")
@@ -13442,6 +13586,7 @@ def DeviceSendStateAdminOtp(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def DeviceVerifyStateAdminOtp(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -13475,6 +13620,7 @@ def DeviceVerifyStateAdminOtp(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def DeviceCreateManufacturerOtpVerify(request  ): 
     user_id = request.user.id
     user=request.user 
@@ -13506,6 +13652,7 @@ def DeviceCreateManufacturerOtpVerify(request  ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'create')
 def create_Settings_hp_freq(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -13561,6 +13708,7 @@ def create_Settings_hp_freq(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'filter')
 def filter_Settings_hp_freq(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -13602,6 +13750,7 @@ def filter_Settings_hp_freq(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'create')
 def create_Settings_ip(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -13705,6 +13854,7 @@ def filter_Settings_District(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'create')
 def create_Settings_District(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -13764,6 +13914,7 @@ def create_Settings_District(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'filter')
 def filter_Settings_firmware(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -13790,6 +13941,7 @@ def filter_Settings_firmware(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'create')
 def create_Settings_firmware(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -13846,6 +13998,7 @@ def create_Settings_firmware(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'filter')
 def filter_Settings_VehicleCategory(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -13872,6 +14025,7 @@ def filter_Settings_VehicleCategory(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'create')
 def create_Settings_VehicleCategory(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -14363,6 +14517,7 @@ def vehicle_alert_statistics(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage(request ):
     errors = validate_inputs(request)
     if errors:
@@ -14556,6 +14711,7 @@ def homepage(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_state(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -14585,6 +14741,7 @@ def homepage_state(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_alart(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -14673,6 +14830,7 @@ def alart_list(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_device1(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -14702,6 +14860,7 @@ def homepage_device1(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_device2(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -14732,6 +14891,7 @@ def homepage_device2(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_Manufacturer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -14918,6 +15078,7 @@ def homepage_Manufacturer(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_DTO(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -15108,6 +15269,7 @@ def homepage_DTO(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_VehicleOwner(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -15318,6 +15480,7 @@ def homepage_VehicleOwner(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @transaction.atomic
 @require_http_methods(['POST'])
+@require_permission('owner_management', 'update')
 def update_vehicle_owner_expiry(request):
     """
     API to update the expiry date of a given Vehicle Owner.
@@ -15375,6 +15538,7 @@ def update_vehicle_owner_expiry(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_VehicleOwnerold(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -15446,6 +15610,7 @@ def homepage_VehicleOwnerold(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_Dealer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -15620,6 +15785,7 @@ def homepage_Dealer(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('reports', 'view')
 def SOS_adminreport2(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -15778,6 +15944,7 @@ def SOS_adminreport2(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('reports', 'view')
 def SOS_adminreport(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -15867,6 +16034,7 @@ def SOS_adminreport(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('reports', 'view')
 def SOS_TLreport(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -15947,6 +16115,7 @@ def SOS_TLreport(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('reports', 'view')
 def SOS_TLreport2(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -16054,6 +16223,7 @@ def SOS_TLreport2(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('reports', 'view')
 def SOS_EXreport(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -16138,6 +16308,7 @@ def SOS_EXreport(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_stateAdmin(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -16460,6 +16631,7 @@ def homepage_stateAdmin(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_user1(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -16528,6 +16700,7 @@ def homepage_user1(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_user2(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -16560,6 +16733,7 @@ def homepage_user2(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'filter')
 def filter_Settings_State(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -16626,6 +16800,7 @@ def filter_Settings_State_pub(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'create')
 def create_Settings_State(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -16665,6 +16840,7 @@ def create_Settings_State(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'filter')
 def filter_Settings_ip(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -16693,6 +16869,7 @@ def filter_Settings_ip(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('owner_management', 'filter')
 def filter_VehicleOwner(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -16742,6 +16919,7 @@ def filter_VehicleOwner(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('esim_management', 'create')
 def create_esim_activation_request(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -16782,6 +16960,7 @@ def create_esim_activation_request(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @require_http_methods(['GET', 'POST'])
+@require_permission('esim_management', 'filter')
 def filter_esim_activation_request(request):
     errors = validate_inputs(request)
     if errors:
@@ -16925,6 +17104,7 @@ def _parse_demo_devices_payload(raw_payload):
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'create')
 def create_device_model_technical_onboarding_request(request):
     errors = validate_inputs(request)
     if errors:
@@ -16994,6 +17174,7 @@ def create_device_model_technical_onboarding_request(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'view')
 def superadmin_list_device_model_technical_onboarding_requests(request):
     errors = validate_inputs(request)
     if errors:
@@ -17021,6 +17202,7 @@ def superadmin_list_device_model_technical_onboarding_requests(request):
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'update')
 def superadmin_mark_technical_onboarding_ongoing_evaluation(request):
     errors = validate_inputs(request)
     if errors:
@@ -17054,6 +17236,7 @@ def superadmin_mark_technical_onboarding_ongoing_evaluation(request):
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'update')
 def superadmin_finalize_technical_onboarding_request(request):
     errors = validate_inputs(request)
     if errors:
@@ -17114,6 +17297,7 @@ def superadmin_finalize_technical_onboarding_request(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'view')
 def manufacturer_list_own_device_model_technical_onboarding_requests(request):
     errors = validate_inputs(request)
     if errors:
@@ -17146,6 +17330,7 @@ def manufacturer_list_own_device_model_technical_onboarding_requests(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'create')
 def create_device_model(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -17556,6 +17741,7 @@ def create_user(request ):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('user_management', 'update')
 def update_user(request, user_id):
     """
     Update user details.
@@ -19120,6 +19306,7 @@ def validate_otp(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_stock', 'view')
 def combined_device_stock(request):
     """
     Combines data from deviceStockFilter and SellListAvailableDeviceStock endpoints
@@ -19234,6 +19421,7 @@ def combined_device_stock(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'update')
 def deactivate_user(request):
     # Ensure only superadmin can access this API
     if request.user.role != "superadmin":
@@ -19258,6 +19446,7 @@ def deactivate_user(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'update')
 def activate_user(request):
     # Ensure only superadmin can access this API
     if request.user.role != "superadmin":
@@ -19284,6 +19473,7 @@ def activate_user(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('settings_management', 'create')
 def create_holiday(request):
     try:
         data = request.data
@@ -19306,6 +19496,7 @@ def create_holiday(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('settings_management', 'update')
 def update_holiday(request, holiday_id):
     try:
         holiday = Holiday.objects.get(id=holiday_id, created_by=request.user)
@@ -19328,6 +19519,7 @@ def update_holiday(request, holiday_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('settings_management', 'delete')
 def delete_holiday(request, holiday_id):
     try:
         holiday = Holiday.objects.get(id=holiday_id, created_by=request.user)
@@ -19341,6 +19533,7 @@ def delete_holiday(request, holiday_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('settings_management', 'view')
 def list_holidays(request):
     try:
         holidays = Holiday.objects.filter(created_by=request.user)
@@ -19355,6 +19548,7 @@ def list_holidays(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('user_management', 'view')
 def user_logout(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19449,6 +19643,7 @@ def user_get_parent(request, user_id):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('user_management', 'view')
 def get_list(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19496,6 +19691,7 @@ def get_list(request ):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('user_management', 'view')
 def get_details(request, user_id):
     """
     Get details of a specific user.
@@ -19513,6 +19709,7 @@ def get_details(request, user_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('owner_management', 'create')
 def create_vehicle(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19529,6 +19726,7 @@ def create_vehicle(request ):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('owner_management', 'update')
 def update_vehicle(request, vehicle_id):
     try:
         vehicle = Vehicle.objects.get(pk=vehicle_id)
@@ -19547,6 +19745,7 @@ def update_vehicle(request, vehicle_id):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('owner_management', 'delete')
 def delete_vehicle(request, vehicle_id):
     try:
         vehicle = Vehicle.objects.get(pk=vehicle_id)
@@ -19559,6 +19758,7 @@ def delete_vehicle(request, vehicle_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('owner_management', 'view')
 def list_vehicles(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19572,6 +19772,7 @@ def list_vehicles(request ):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('owner_management', 'view')
 def vehicle_details(request, vehicle_id):
     try:
         vehicle = Vehicle.objects.get(pk=vehicle_id)
@@ -19584,6 +19785,7 @@ def vehicle_details(request, vehicle_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('manufacturer_management', 'view')
 def manufacturer_details(request, manufacturer_id):
     try:
         manufacturer = Manufacturer.objects.get(pk=manufacturer_id)
@@ -19596,6 +19798,7 @@ def manufacturer_details(request, manufacturer_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('dealer_management', 'view')
 def dealer_details(request, dealer_id):
     try:
         dealer = Dealer.objects.get(pk=dealer_id)
@@ -19608,6 +19811,7 @@ def dealer_details(request, dealer_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('device_management', 'view')
 def device_details(request, device_id):
     try:
         device = Device.objects.get(pk=device_id)
@@ -19620,6 +19824,7 @@ def device_details(request, device_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('device_management', 'view')
 def device_model_details(request, device_model_id):
     try:
         device_model = DeviceModel.objects.get(pk=device_model_id)
@@ -19633,6 +19838,7 @@ def device_model_details(request, device_model_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('manufacturer_management', 'view')
 def list_manufacturers(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19647,6 +19853,7 @@ def list_manufacturers(request ):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('dealer_management', 'view')
 def list_dealers(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19661,6 +19868,7 @@ def list_dealers(request ):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('device_management', 'view')
 def list_devices(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19675,6 +19883,7 @@ def list_devices(request ):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('device_management', 'view')
 def list_device_models(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19691,6 +19900,7 @@ def list_device_models(request ):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('dealer_management', 'delete')
 def delete_dealer(request, pk):
     dealer = Dealer.objects.get(pk=pk)
     dealer.delete()
@@ -19699,6 +19909,7 @@ def delete_dealer(request, pk):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('device_management', 'delete')
 def delete_device(request, pk):
     device = Device.objects.get(pk=pk)
     device.delete()
@@ -19707,6 +19918,7 @@ def delete_device(request, pk):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('device_management', 'delete')
 def delete_device_model(request, pk):
     device_model = DeviceModel.objects.get(pk=pk)
     device_model.delete()
@@ -19716,6 +19928,7 @@ def delete_device_model(request, pk):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('manufacturer_management', 'update')
 def update_manufacturer(request, pk):
     manufacturer = Manufacturer.objects.get(pk=pk)
     is_creator = bool(getattr(manufacturer, 'createdby_id', None) == getattr(request.user, 'id', None))
@@ -19746,6 +19959,7 @@ def update_manufacturer(request, pk):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('dealer_management', 'update')
 def update_dealer(request, pk):
     dealer = Dealer.objects.get(pk=pk)
     serializer = DealerSerializer(dealer, data=request.data)
@@ -19757,6 +19971,7 @@ def update_dealer(request, pk):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('device_management', 'update')
 def update_device(request, pk):
     device = Device.objects.get(pk=pk)
     serializer = DeviceSerializer(device, data=request.data)
@@ -19768,6 +19983,7 @@ def update_device(request, pk):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('device_management', 'update')
 def update_device_model(request, pk):
     device_model = DeviceModel.objects.get(pk=pk)
     serializer = DeviceModelSerializer(device_model, data=request.data)
@@ -19779,6 +19995,7 @@ def update_device_model(request, pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('manufacturer_management', 'create')
 def create_manufacturer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19794,6 +20011,7 @@ def create_manufacturer(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('dealer_management', 'create')
 def create_dealer(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19809,6 +20027,7 @@ def create_dealer(request ):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@require_permission('device_management', 'create')
 def create_device(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19832,6 +20051,7 @@ def create_device(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('notice_management', 'create')
 def create_notice(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19886,6 +20106,7 @@ def create_notice(request ):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('notice_management', 'filter')
 def filter_notice(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -19964,6 +20185,7 @@ def list_notice(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('notice_management', 'update')
 def update_notice(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -20009,6 +20231,7 @@ def update_notice(request ):
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
+@require_permission('notice_management', 'delete')
 def delete_notice(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -20106,6 +20329,7 @@ def upload_media_file(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'view')
 def StateAdmin_view_all_tagging(request):
     """
     API for state admin to view all tagging done in their state
@@ -20967,6 +21191,7 @@ def activated_device_list(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('esim_management', 'view')
 def dealer_check_esim_status(request):
     """
     API for dealers to check eSIM activation status and validity for their devices
@@ -21134,6 +21359,7 @@ def dealer_check_esim_status(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
+@require_permission('dashboard', 'view')
 def homepage_esimProvider(request):
     """
     Homepage API for esim Provider role showing eSIM related statistics
@@ -21870,6 +22096,7 @@ def state_admin_combined_approval_report(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@require_permission('trip_management', 'view')
 def get_device_trip_details(request):
 
     try:
@@ -22465,6 +22692,7 @@ def get_device_health_status(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@require_permission('user_management', 'view')
 def check_module_access(request):
     """
     Check RBAC access for one module or a batch of modules.
@@ -22542,6 +22770,7 @@ def check_module_access(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@require_permission('user_management', 'view')
 def check_user_type(request):
     """
     Return the authenticated user's role identity and full RBAC module permissions.
@@ -22637,6 +22866,7 @@ def check_user_type(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'view')
 def rbac_list_modules(request):
     """
     GET /rbac/modules/
@@ -22657,6 +22887,7 @@ def rbac_list_modules(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'view')
 def rbac_list_roles(request):
     """
     GET /rbac/roles/
@@ -22690,6 +22921,7 @@ def rbac_list_roles(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'create')
 def rbac_create_custom_role(request):
     """
     POST /rbac/roles/create/
@@ -22728,6 +22960,7 @@ def rbac_create_custom_role(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'view')
 def rbac_get_role_permissions(request):
     """
     GET /rbac/roles/permissions/?role_code=<code>
@@ -22769,6 +23002,7 @@ def rbac_get_role_permissions(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'update')
 def rbac_update_role_permissions(request):
     """
     POST /rbac/roles/permissions/update/
@@ -22848,6 +23082,7 @@ def rbac_update_role_permissions(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'update')
 def rbac_deactivate_role(request):
     """
     POST /rbac/roles/deactivate/
@@ -22881,6 +23116,7 @@ def rbac_deactivate_role(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'update')
 def rbac_update_role(request):
     """
     POST /rbac/roles/update/
@@ -22925,6 +23161,7 @@ def rbac_update_role(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'view')
 def rbac_active_roles(request):
     """
     GET /rbac/roles/active/
@@ -22952,6 +23189,7 @@ def rbac_active_roles(request):
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'view')
 def rbac_list_users(request):
     """
     GET /rbac/users/              — list all users with their role info (paginated, 100/page)
@@ -23004,6 +23242,7 @@ def rbac_list_users(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'update')
 def rbac_assign_role(request):
     """
     POST /rbac/users/assign-role/
@@ -23057,6 +23296,7 @@ def rbac_assign_role(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'create')
 def rbac_create_user(request):
     """
     POST /rbac/users/create/
@@ -23136,6 +23376,7 @@ def rbac_create_user(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('user_management', 'update')
 def rbac_update_user(request):
     """
     POST /rbac/users/update/
@@ -23235,6 +23476,7 @@ def rbac_update_user(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['POST'])
+@require_permission('settings_management', 'create')
 def set_bus_stand(request):
     """Create a new bus stand"""
     try:
@@ -23265,6 +23507,7 @@ def set_bus_stand(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['POST'])
+@require_permission('settings_management', 'update')
 def activate_deactivate_bus_stand(request):
     """Activate or deactivate a bus stand"""
     try:
@@ -23304,6 +23547,7 @@ def activate_deactivate_bus_stand(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['POST'])
+@require_permission('settings_management', 'filter')
 def filter_bus_stand(request):
     """Filter bus stands by various parameters"""
     try:
@@ -23389,6 +23633,7 @@ def filter_bus_stand(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['POST'])
+@require_permission('settings_management', 'create')
 def create_ota_settings(request):
     """Create a new OTA setting"""
     try:
@@ -23419,6 +23664,7 @@ def create_ota_settings(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['POST'])
+@require_permission('settings_management', 'update')
 def update_ota_settings(request):
     """Update an existing OTA setting"""
     try:
@@ -23461,6 +23707,7 @@ def update_ota_settings(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['POST'])
+@require_permission('settings_management', 'filter')
 def filter_ota_settings(request):
     """Filter OTA settings by various parameters"""
     try:
@@ -23567,6 +23814,7 @@ def register_incident(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['POST'])
+@require_permission('alerts', 'filter')
 def filter_incident(request):
     """Filter incidents by various parameters"""
     try:
@@ -23723,6 +23971,7 @@ def filter_incident(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['POST'])
+@require_permission('alerts', 'update')
 def update_incident(request):
     """Update incident status by any registered user"""
     try:
@@ -23772,6 +24021,7 @@ def update_incident(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('alerts', 'create')
 def create_alert_log(request):
     """Create a new alert log entry"""
     try:
@@ -23866,6 +24116,7 @@ def create_alert_log(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('alerts', 'update')
 def update_alert_log(request):
     """Update an existing alert log entry"""
     try:
@@ -23927,6 +24178,7 @@ def update_alert_log(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('alerts', 'filter')
 def filter_alert_log(request):
     """Filter alert logs with multiple parameters, role-based scoping and pagination"""
     try:
@@ -24141,6 +24393,7 @@ def filter_alert_log(request):
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
+@require_permission('alerts', 'update')
 def update_notification_preferences(request):
     """
     API endpoint for users to get or update their notification preferences.
@@ -24231,6 +24484,7 @@ def update_notification_preferences(request):
 @csrf_exempt
 @api_view(['POST']) 
 @permission_classes([IsAuthenticated])
+@require_permission('gps_history', 'view')
 def archive_gps_data_log(request):
     """
     Archive GPSDataLog records up to a specific date (must be at least 2 years old).
@@ -25003,6 +25257,7 @@ def gps_em_data_log_table(request ):
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@require_permission('gps_history', 'view')
 def restore_gps_data_log(request):
     """
     Restore GPSDataLog records from an archive JSON file.
@@ -25076,6 +25331,7 @@ def restore_gps_data_log(request):
 @csrf_exempt
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@require_permission('gps_history', 'view')
 def list_gps_data_archives(request):
     """
     List all available GPS data archive files.
@@ -25127,6 +25383,7 @@ def list_gps_data_archives(request):
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@require_permission('device_management', 'view')
 def get_cell_tower_info(request):
     """
     Get cell tower and network information from the latest GPS data entry for a given device tag.
@@ -26713,6 +26970,7 @@ def sos_monitoring_dashboard(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'create')
 def create_testAgency(request):
     errors = validate_inputs(request)
     if errors:
@@ -26790,6 +27048,7 @@ def create_testAgency(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def update_testAgency(request):
     errors = validate_inputs(request)
     if errors:
@@ -26876,6 +27135,7 @@ def update_testAgency(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'view')
 def get_testAgency_list(request):
     errors = validate_inputs(request)
     if errors:
@@ -26898,6 +27158,7 @@ def get_testAgency_list(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'create')
 def create_testAgencyDetails(request):
     """Create a TestAgencyDetails entry. Only superadmin."""
     errors = validate_inputs(request)
@@ -26932,6 +27193,7 @@ def create_testAgencyDetails(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
 def update_testAgencyDetails(request):
     """Update a TestAgencyDetails entry. Only superadmin."""
     errors = validate_inputs(request)
@@ -26974,6 +27236,7 @@ def update_testAgencyDetails(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'view')
 def get_testAgency_name_list(request):
     """Return list of TestAgencyDetails entries (optionally filtered by testagency_id)."""
     errors = validate_inputs(request)
@@ -27003,6 +27266,7 @@ def public_testAgencyDetails_list(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'view')
 def get_testAgency_device_models(request):
     """Return device models assigned to the calling test agency user's agency name."""
     errors = validate_inputs(request)
@@ -27292,6 +27556,7 @@ def pub_list_vehicle_category_code(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'create')
 def create_vehicle_category_code(request):
     """Superadmin: create a vehicle category code."""
     errors = validate_inputs(request)
@@ -27318,6 +27583,7 @@ def create_vehicle_category_code(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'update')
 def edit_vehicle_category_code(request):
     """Superadmin: edit a vehicle category code. Pass id in request body."""
     errors = validate_inputs(request)
@@ -27350,6 +27616,7 @@ def edit_vehicle_category_code(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'view')
 def list_all_vehicle_category_code(request):
     """Superadmin: list all vehicle category codes (active and inactive)."""
     errors = validate_inputs(request)
