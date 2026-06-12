@@ -1544,7 +1544,7 @@ def send_general_mqtt_message(imei, message_json):
                 response_json = json.dumps(message_json, separators=(",", ":"))
             result = client.publish(response_topic, response_json, qos=1)
             result.wait_for_publish()
-            print(f"[MQTT] Sent message to {response_topic}: {response_json}", flush=True)
+            #print(f"[MQTT] Sent message to {response_topic}: {response_json}", flush=True)
             client.disconnect()
         except Exception as e:
             print(f"[MQTT] Error sending message to {imei}: {e}", flush=True)
@@ -1649,7 +1649,7 @@ def send_sos_mqtt_message(imei, i):
             result = client.publish(response_topic, payload_str, qos=1)
             result.wait_for_publish()
             
-            print(f"[SOS MQTT] Sent JSON to {response_topic}: {payload_str}", flush=True)
+            #print(f"[SOS MQTT] Sent JSON to {response_topic}: {payload_str}", flush=True)
             
             client.disconnect()
             
@@ -2292,15 +2292,6 @@ def _gps_scope_by_role(request, queryset, module='gps_tracking'):
 def gps_track_data_api(request ):  
     
     if request.method == 'GET':
-        # Debug authentication status 
-        if hasattr(request.user, 'role'):
-            print(f"DEBUG: request.user.role = {request.user.role}")
-        else:
-            print("DEBUG: request.user has no role attribute")
-        # Check authentication headers
-        auth_header = request.META.get('HTTP_AUTHORIZATION', None)
-        print(f"DEBUG: Authorization header = {auth_header}")
-
         imei = request.GET.get('imei', None)
         regno = request.GET.get('regno', None)
         # Filters
@@ -2394,6 +2385,8 @@ def gps_track_data_api(request ):
         in_range_param = request.GET.get('in_range', None)
         if in_range_param is not None:
             in_range = str(in_range_param).lower() == 'true'
+        # Optional historical snapshot: last packet per device before this datetime
+        history_dt = _parse_dt_param(_norm(request.GET.get('history_datetime', None)))
         # New owner name substring filter
         owner_name_substr = request.GET.get('owner', None)
         # New road/city substring filter (applies to latest entry per device_tag)
@@ -2434,6 +2427,10 @@ def gps_track_data_api(request ):
             gps_queryset = gps_queryset.filter(
                 device_tag__vehicle_owner__users__name__icontains=owner_name_substr
             )
+        # Push road/city text filter to DB to reduce rows before GROUP BY
+        if poi_t is not None:
+            gps_queryset = gps_queryset.filter(Q(road__icontains=poi_t) | Q(city__icontains=poi_t))
+            poi_t_cf = None
 
         # Apply role-based filtering
         gps_queryset, _role_err = _gps_scope_by_role(request, gps_queryset)
@@ -2452,12 +2449,6 @@ def gps_track_data_api(request ):
         active_type = 'poi' if poi_id is not None else ('route' if route_id is not None else ('polygon' if polygon_param is not None else None))
         if geofence_count > 1 and active_type:
             geofence_message = f"Multiple geofence params provided; using {active_type}."
-        # Debug: show geofence selection
-        try:
-            print(f"DEBUG: geofence active_type={active_type}, poi_id={poi_id}, route_id={route_id}, polygon_present={(polygon_param is not None)}")
-        except Exception:
-            pass
-
         if active_type == 'route':
             try:
                 route = Route.objects.get(id=route_id)
@@ -2561,11 +2552,11 @@ def gps_track_data_api(request ):
             except Exception:
                 all_pois = []
             _t1 = _time.perf_counter()
-            print(f"TIMING: poi_fetch={_t1-_t0:.3f}s  count={len(all_pois)}")
+            #print(f"TIMING: poi_fetch={_t1-_t0:.3f}s  count={len(all_pois)}")
         else:
             all_pois = []
             _t1 = _time.perf_counter()
-            print(f"TIMING: proximity_index_skipped={_t1-_t0:.3f}s")
+            #print(f"TIMING: proximity_index_skipped={_t1-_t0:.3f}s")
 
         # Build pre-computed (lat, lon, poi) tuples — parse JSON location once per POI
         def _extract_poi_coord(poi):
@@ -2605,7 +2596,7 @@ def gps_track_data_api(request ):
             if getattr(_p, 'use_type', None) == 'police':
                 _police_poi_index.append(_entry)
         _t2 = _time.perf_counter()
-        print(f"TIMING: poi_serialize={_t2-_t1:.3f}s  poi_index={len(_poi_index)}")
+        #print(f"TIMING: poi_serialize={_t2-_t1:.3f}s  poi_index={len(_poi_index)}")
 
         # Pre-build route point arrays and serialize once
         if include_proximity:
@@ -2616,7 +2607,7 @@ def gps_track_data_api(request ):
         else:
             all_routes = []
         _t3 = _time.perf_counter()
-        print(f"TIMING: route_fetch={_t3-_t2:.3f}s  count={len(all_routes)}")
+        #print(f"TIMING: route_fetch={_t3-_t2:.3f}s  count={len(all_routes)}")
 
         # _route_index: list of (list_of_(lat,lon)_tuples, serialized_route)
         for _r in all_routes:
@@ -2641,7 +2632,7 @@ def gps_track_data_api(request ):
             if _coords:
                 _route_index.append((_coords, routeSerializer(_r).data))
         _t4 = _time.perf_counter()
-        print(f"TIMING: route_serialize={_t4-_t3:.3f}s  route_index={len(_route_index)}")
+        #print(f"TIMING: route_serialize={_t4-_t3:.3f}s  route_index={len(_route_index)}")
 
         def nearest_poi_info(lat, lon, poi_index):
             best_dist = None
@@ -2694,14 +2685,30 @@ def gps_track_data_api(request ):
         want_count = str(request.GET.get('count', 'true')).lower() != 'false'
         _start = _page * _page_length
 
-        latest_qs = (
-            _gps_annotate_effective_datetime(gps_queryset)
-            .order_by('device_tag', '-effective_datetime', '-id')
-            .distinct('device_tag')
+        # Filter history window before computing latest-per-device
+        if history_dt is not None:
+            gps_queryset = gps_queryset.filter(
+                Q(packet_datetime__lte=history_dt) |
+                Q(packet_datetime__isnull=True, entry_time__lte=history_dt)
+            )
+
+        # Get one row per device using GROUP BY + MAX(id).
+        # id is monotonically increasing with insertion order (GPS packets inserted as received),
+        # so MAX(id) per device_tag == most recent packet for that device.
+        # This is O(distinct devices) vs O(all GPS rows) for the old DISTINCT ON + COALESCE sort.
+        latest_id_qs = (
+            gps_queryset
+            .values('device_tag_id')
+            .annotate(latest_id=Max('id'))
+            .order_by('device_tag_id')
         )
 
-        _total = latest_qs.count() if want_count else None
-        latest_entries = list(latest_qs[_start:_start + _page_length])
+        _total = latest_id_qs.count() if want_count else None
+
+        paginated_rows = list(latest_id_qs[_start:_start + _page_length])
+        paginated_ids = [row['latest_id'] for row in paginated_rows]
+        id_to_entry = {g.id: g for g in GPSData.objects.filter(id__in=paginated_ids)}
+        latest_entries = [id_to_entry[lid] for lid in paginated_ids if lid in id_to_entry]
 
         page_device_tag_ids = [g.device_tag_id for g in latest_entries if getattr(g, 'device_tag_id', None)]
         page_device_tags = DeviceTag.objects.filter(id__in=page_device_tag_ids).select_related(
@@ -2716,10 +2723,10 @@ def gps_track_data_api(request ):
         device_tag_map = {dt.id: dt for dt in page_device_tags}
 
         _t5 = _time.perf_counter()
-        print(
-            f"TIMING: db_query={_t5-_t4:.3f}s  page_rows={len(latest_entries)}  "
-            f"page={_page} page_length={_page_length} total={_total if _total is not None else 'skipped'}"
-        )
+        #print(
+        #    f"TIMING: db_query={_t5-_t4:.3f}s  page_rows={len(latest_entries)}  "
+        #    f"page={_page} page_length={_page_length} total={_total if _total is not None else 'skipped'}"
+        #)
 
         data = []
         for latest_entry in latest_entries:
@@ -2807,7 +2814,7 @@ def gps_track_data_api(request ):
                 dd['nearby_routes_within_100m'] = near_rs
                 data.append(dd)
         _t6 = _time.perf_counter()
-        print(f"TIMING: per_vehicle_loop={_t6-_t5:.3f}s  output={len(data)}  TOTAL={_t6-_t0:.3f}s")
+        #print(f"TIMING: per_vehicle_loop={_t6-_t5:.3f}s  output={len(data)}  TOTAL={_t6-_t0:.3f}s")
         response = {'data': data}
         if geofence_message:
             response['geofence_message'] = geofence_message
@@ -2978,10 +2985,10 @@ def gps_track_data_api_pub(request ):
         if geofence_count > 1 and active_type:
             geofence_message = f"Multiple geofence params provided; using {active_type}."
         # Debug: show geofence selection
-        try:
-            print(f"DEBUG: geofence active_type={active_type}, poi_id={poi_id}, route_id={route_id}, polygon_present={(polygon_param is not None)}")
-        except Exception:
-            pass
+        #try:
+        #    #print(f"DEBUG: geofence active_type={active_type}, poi_id={poi_id}, route_id={route_id}, polygon_present={(polygon_param is not None)}")
+        #except Exception:#
+        #    pass
 
         if active_type == 'route':
             try:
@@ -4382,18 +4389,18 @@ def send_SMS(no,text,tpid):
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()  # Raise error for bad responses (non-200)
         if not response.text.startswith("Success"):
-            print("Loginotpsend Gateway Error:", response.text)
+            #print("Loginotpsend Gateway Error:", response.text)
             return False, response.text
-        print("Message Sent Successfully")
+        #print("Message Sent Successfully")
         return True, response.text
     except requests.exceptions.HTTPError as errh:
-        print("Loginotpsend HTTP Error:", errh)
+        #print("Loginotpsend HTTP Error:", errh)
         return False, str(errh)
     except requests.exceptions.RequestException as err:
-        print("Loginotpsend Request Exception:", err)
+        #print("Loginotpsend Request Exception:", err)
         return False, str(err)
     except Exception as e :
-        print("Loginotpsend:", e)
+        #print("Loginotpsend:", e)
         return False, str(e)
 
 
@@ -4416,13 +4423,13 @@ def sms_send(no,text,tpid):
     try:
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()  # Raise error for bad responses (non-200)
-        print("Message Sent Successfully")
+        #print("Message Sent Successfully")
     except requests.exceptions.HTTPError as errh:
-        print("Loginotpsend HTTP Error:", errh)
+        #print("Loginotpsend HTTP Error:", errh)
     except requests.exceptions.RequestException as err:
-        print("Loginotpsend Request Exception:", err)
+        #print("Loginotpsend Request Exception:", err)
     except Exception as e :
-        print("Loginotpsend:", e)
+        #print("Loginotpsend:", e)
 
 def add_sms_queue(msg,no):
     sms_entry ,error= sms_out.objects.safe_create( sms_text=msg,no=no, status='Queue'  )
@@ -6208,7 +6215,7 @@ def create_manufacturer_pub(request ):
         assam_office_lat = request.data.get('assam_office_lat')
         assam_office_lon = request.data.get('assam_office_lon')
         esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
-        print(esim_provider_ids)
+        #print(esim_provider_ids)
 
         user, error, new_password = create_user('devicemanufacture', request)
         if user:  
@@ -6336,7 +6343,7 @@ def create_manufacturer_pub(request ):
                 a=0
 
                 for esim_provider in esim_providers:
-                    print(esim_provider.state.id)
+                    #print(esim_provider.state.id)
                     if str(esim_provider.state.id)==str(state):
                         manufacturer.esim_provider.set(esim_providers)
                         a=a+1
@@ -6433,7 +6440,7 @@ def create_manufacturer(request ):
         assam_office_lat = request.data.get('assam_office_lat')
         assam_office_lon = request.data.get('assam_office_lon')
         esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
-        print(esim_provider_ids)
+        #print(esim_provider_ids)
 
         user, error, new_password = create_user('devicemanufacture', request)
         if user:  
@@ -6561,7 +6568,7 @@ def create_manufacturer(request ):
                 a=0
 
                 for esim_provider in esim_providers:
-                    print(esim_provider.state.id)
+                    #print(esim_provider.state.id)
                     if str(esim_provider.state.id)==str(state):
                         manufacturer.esim_provider.set(esim_providers)
                         a=a+1
@@ -8925,7 +8932,7 @@ def FEx_broadcastaccept(request ):
  
     #    return JsonResponse({"error":"Request must be from  police_ex or ambulance_ex' or PCR or ACR."}, status=status.HTTP_400_BAD_REQUEST)
     try: 
-        print("sosex type :::",uo.user_type)
+        #print("sosex type :::",uo.user_type)
         id =request.data.get("broadcast_id")  
         ee=EMCallBroadcast.objects.filter( id = id,status="pending").last()
         if not ee:
@@ -15868,7 +15875,7 @@ def SOS_TLreport(request ):
         profile=get_user_object(user,role)
         if not profile:
             return Response({"error":"Request must be from  teamlead"}, status=status.HTTP_400_BAD_REQUEST)
-        print(profile.user_type)
+        #print(profile.user_type)
         if 'teamlead' not in profile.user_type:#, 'desk_ex',
             return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
     
@@ -17912,7 +17919,7 @@ def reset_password(request ):
             tpid ="1007407542374862466" #1007214796274246200"#"1007387007813205696" #1007274756418421381"
             text='Dear user, to reset your password for SkyTron platform, please click at the following link and validate the password re-set request- '+DEPLOY_URL+'/reset-password/'+str(new_password)+' .The link will expire in 24 hours. -SkyTron'  
 
-            print("sending sms to",user.mobile,text)
+            #print("sending sms to",user.mobile,text)
             send_SMS(user.mobile,text,tpid)             
             """send_mail( 
                     'Password Reset',
@@ -17922,15 +17929,15 @@ def reset_password(request ):
                     fail_silently=False,
             ) """
             
-            print("sms sent to",user.mobile,text)
+            #print("sms sent to",user.mobile,text)
             return Response({'Success': "Password reset sms sent", 'mobile': user.mobile}, status=200)
         except Exception as e: 
-            print(f"SMS/Email error: {str(e)}")
+            #print(f"SMS/Email error: {str(e)}")
             import traceback
             traceback.print_exc()
             return Response({'error': "Error in sendig sms/email "+str(e)}, status=400)
     except Exception as e:
-        print(f"Reset password error: {str(e)}")
+        #print(f"Reset password error: {str(e)}")
         import traceback
         traceback.print_exc()
         return Response({'error': "Something went wrong: "+str(e)}, status=400)
@@ -17985,7 +17992,7 @@ def user_login(request ):
             except Captcha.DoesNotExist:
                 return JsonResponse({'success': False, 'error': 'Captcha not found'})
             except Exception as e: #Captcha.DoesNotExist:
-                print('error',e)
+                #print('error',e)
                 return JsonResponse({'success': False, 'error': 'Captcha not found'})
             
     
@@ -18153,7 +18160,7 @@ def user_login(request ):
             except Exception as mail_exc:
                 email_ok = False
                 email_err = str(mail_exc)
-                print("Loginotpsend Mail Error:", mail_exc)
+                #print("Loginotpsend Mail Error:", mail_exc)
             delivery_info = {}
             if not sms_ok:
                 delivery_info['sms_status'] = 'failed'
@@ -18166,7 +18173,7 @@ def user_login(request ):
                 resp['delivery_warnings'] = delivery_info
             return Response(resp, status=status.HTTP_200_OK)
         else:
-            print("Session validation errors:", session_serializer.errors)
+            #print("Session validation errors:", session_serializer.errors)
             return Response({'error': 'Failed to create session', 'details': session_serializer.errors}, status=400)
 
 
@@ -18942,7 +18949,7 @@ def user_login_app(request ):
             except Exception as mail_exc:
                 email_ok = False
                 email_err = str(mail_exc)
-                print("Loginotpsend Mail Error:", mail_exc)
+                #print("Loginotpsend Mail Error:", mail_exc)
             uu=get_user_object(user,user.role)
             if uu:
                 uu = recursive_model_to_dict(uu,["users"])
@@ -18958,7 +18965,7 @@ def user_login_app(request ):
                 resp['delivery_warnings'] = delivery_info
             return Response(resp, status=status.HTTP_200_OK)
         else:
-            print("Session validation errors:", session_serializer.errors)
+            #print("Session validation errors:", session_serializer.errors)
             return Response({'error': 'Failed to create session', 'details': session_serializer.errors}, status=400)
 
 

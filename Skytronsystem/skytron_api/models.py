@@ -1819,6 +1819,8 @@ class GPSData(models.Model):
         indexes = [
             models.Index(fields=['device_tag', '-entry_time', '-id'], name='gpsdata_tag_time_id_idx'),
             models.Index(fields=['device_tag', '-packet_datetime', '-id'], name='gpsdata_tag_packet_dt_idx'),
+            # Supports fast GROUP BY device_tag_id + MAX(id) for latest-per-device queries
+            models.Index(fields=['device_tag', 'id'], name='gpsdata_tag_id_asc_idx'),
         ]
 
 
