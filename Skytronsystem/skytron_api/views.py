@@ -19,7 +19,7 @@ from django.shortcuts import render
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
-from .rbac import require_permission, check_permission, get_all_module_permissions
+from .rbac import require_permission, check_permission, get_all_module_permissions, get_data_scope
 
 import logging
 
@@ -11176,6 +11176,9 @@ def Tag_ownerlist(request ):
                     # If user is not associated with any vehicles, return empty queryset
                     devices = DeviceTag.objects.none()
                     return Response({"error":"Owner account not verified."}, status=status.HTTP_400_BAD_REQUEST)
+            elif check_permission(request.user, 'vehicle_tagging', 'view') and get_data_scope(request.user, 'vehicle_tagging') == 'national':
+                # RBAC-permitted role with national scope (e.g. helpdesk) — sees all tagged devices
+                pass
             else:
                 # For other roles, return empty queryset for security
                 devices = DeviceTag.objects.none()
@@ -12478,8 +12481,10 @@ def deviceStockFilter(request ):
 
     
     if not man:
+        if not check_permission(user, 'device_stock', 'view'):
             return Response({"error":"Request must be from device manufacture or dealer"}, status=status.HTTP_400_BAD_REQUEST)
-   
+        # RBAC-permitted role (e.g. helpdesk) — no manufacturer/dealer filter; sees all stock
+
     # Deserialize the input data
     serializer = DeviceStockFilterSerializer(data=data)
     serializer.is_valid(raise_exception=True)
@@ -16139,24 +16144,28 @@ def homepage_stateAdmin(request ):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     
-    try: 
-        #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-        role="stateadmin"
+    try:
         user=request.user
-        profile=get_user_object(user,role)
-        if not profile:
-            return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
-    
-        #print('profile',profile.state.state)
-   
-        
+        profile=get_user_object(user,"stateadmin")
+        state_filter = None
+
+        if profile:
+            state_filter = profile.state
+        elif check_permission(user, 'dashboard', 'view') and get_data_scope(user, 'dashboard') == 'national':
+            state_id = request.query_params.get('state_id')
+            if not state_id:
+                return Response({"error": "state_id query parameter is required for your role."}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                state_filter = Settings_State.objects.get(id=state_id)
+            except Settings_State.DoesNotExist:
+                return Response({"error": "Invalid state_id."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({"error":"Request must be from  stateadmin."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Create a dictionary to hold the filter parameters
         filters = {}
-        # Add ID filter if provided
 
-
-        if profile:
+        if state_filter:
             # Get current datetime for filtering
             from datetime import datetime, timedelta
             from django.utils import timezone
@@ -16183,9 +16192,6 @@ def homepage_stateAdmin(request ):
                     dr_end = datetime.strptime(end_date_str, '%Y-%m-%d').date()
                 except ValueError:
                     return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, status=400)
-            
-            # Filter data by state admin's state
-            state_filter = profile.state
             
             # Get dealers in this state (through manufacturer)
             dealers_in_state = Dealer.objects.filter(manufacturer__state=state_filter)
@@ -17115,11 +17121,14 @@ def manufacturer_list_own_device_model_technical_onboarding_requests(request):
 
     manufacturer = get_user_object(request.user, 'devicemanufacture')
     if not manufacturer:
-        return Response({'error': 'Request must be from devicemanufacture.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not check_permission(request.user, 'device_management', 'view'):
+            return Response({'error': 'Request must be from devicemanufacture.'}, status=status.HTTP_400_BAD_REQUEST)
+        # RBAC-permitted role (e.g. helpdesk) with national scope — sees all requests
 
-    onboarding_requests = DeviceModelTechnicalOnboardingRequest.objects.filter(
-        manufacturer=manufacturer
-    ).select_related(
+    onboarding_requests = DeviceModelTechnicalOnboardingRequest.objects.all()
+    if manufacturer:
+        onboarding_requests = onboarding_requests.filter(manufacturer=manufacturer)
+    onboarding_requests = onboarding_requests.select_related(
         'manufacturer__state',
         'device_model__created_by'
     ).prefetch_related(
