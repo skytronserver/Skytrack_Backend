@@ -17739,8 +17739,13 @@ def password_reset(request ):
                 users=user, 
                 ).last()
             else:
-                pas=True
-                user=None
+                # Custom IAM roles: use id_card_name (stores ID card number) for last-4-char validation
+                if user.id_card_name:
+                    if not id_no:
+                        return Response({'error': 'id_no not provided'}, status=status.HTTP_400_BAD_REQUEST)
+                    if id_no != user.id_card_name[-4:]:
+                        user = None
+                pas = True
             if not pas:
                 if not id_no:
                     return Response({'error': 'id_no not provided'}, status=status.HTTP_400_BAD_REQUEST)
