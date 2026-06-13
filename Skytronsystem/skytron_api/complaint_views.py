@@ -32,7 +32,7 @@ from .jwt_authentication import JWTAuthentication
 from .models import ComplaintTicket, DeviceStock, Manufacturer, TicketActivity, TicketAttachment
 
 # Roles that may view and manage tickets (internal staff)
-_STAFF_ROLES = {'helpdesk', 'teamleader', 'sosexecutive', 'stateadmin', 'superadmin'}
+_STAFF_ROLES = {'helpdesk', 'teamleader', 'sosexecutive', 'sosadmin', 'stateadmin', 'superadmin'}
 
 # Manufacturer role code — can only see tickets explicitly escalated to their manufacturer
 _MANUFACTURER_ROLE = 'devicemanufacture'
@@ -350,12 +350,13 @@ def list_tickets(request):
         'escalated_to_manufacturer', 'device_stock', 'device_stock__model'
     )
 
-    # Manufacturer role: scope to their own escalated tickets only
+    # Manufacturer role: tickets escalated to them OR created by them
     if _is_manufacturer(user):
         mfr_ids = _get_manufacturer_ids_for_user(user)
-        if not mfr_ids:
-            return Response({'total': 0, 'page': 1, 'page_size': 20, 'results': []})
-        qs = qs.filter(escalated_to='manufacturer', escalated_to_manufacturer_id__in=mfr_ids)
+        qs = qs.filter(
+            Q(escalated_to='manufacturer', escalated_to_manufacturer_id__in=mfr_ids)
+            | Q(created_by=user)
+        )
     else:
         # Apply optional escalated_to filter for staff
         filter_escalated_to = request.GET.get('escalated_to')
@@ -433,7 +434,12 @@ def ticket_detail(request, pk):
 
     if _is_manufacturer(user):
         mfr_ids = _get_manufacturer_ids_for_user(user)
-        if ticket.escalated_to != 'manufacturer' or ticket.escalated_to_manufacturer_id not in mfr_ids:
+        escalated_to_them = (
+            ticket.escalated_to == 'manufacturer'
+            and ticket.escalated_to_manufacturer_id in mfr_ids
+        )
+        created_by_them = ticket.created_by_id == user.pk
+        if not escalated_to_them and not created_by_them:
             return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
 
     return Response(_serialize_ticket(ticket))
@@ -526,7 +532,8 @@ def escalate_ticket(request, pk):
     role_allowed = {
         'helpdesk':     {'teamlead', 'sosadmin'},
         'teamleader':   {'sosadmin', 'manufacturer'},
-        'sosexecutive': {'manufacturer'},
+        'sosexecutive': {'sosadmin', 'manufacturer'},
+        'sosadmin':     valid_levels,
         'stateadmin':   valid_levels,
         'superadmin':   valid_levels,
     }
@@ -650,7 +657,12 @@ def ticket_activity_log(request, pk):
 
     if _is_manufacturer(user):
         mfr_ids = _get_manufacturer_ids_for_user(user)
-        if ticket.escalated_to != 'manufacturer' or ticket.escalated_to_manufacturer_id not in mfr_ids:
+        escalated_to_them = (
+            ticket.escalated_to == 'manufacturer'
+            and ticket.escalated_to_manufacturer_id in mfr_ids
+        )
+        created_by_them = ticket.created_by_id == user.pk
+        if not escalated_to_them and not created_by_them:
             return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
 
     return Response({'ticket_ref': ticket.ticket_ref, 'activities': _serialize_activities(ticket)})
