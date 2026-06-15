@@ -3643,6 +3643,7 @@ class RolePermissionConfig(models.Model):
     ]
 
     MODULE_CHOICES = [
+        # ── Legacy / API-enforcement modules (kept for @require_permission) ───
         ('dashboard',               'Dashboard'),
         ('gps_tracking',            'GPS Live Tracking'),
         ('gps_history',             'GPS History'),
@@ -3667,6 +3668,170 @@ class RolePermissionConfig(models.Model):
         ('trip_management',         'Trip Management'),
         ('settings_management',     'System Settings'),
         ('complaint',               'Complaint Management'),
+
+        # ── UI Navigation modules ─────────────────────────────────────────────
+
+        # Dashboard variants
+        ('dashboard_north',             'North Dashboard'),
+        ('dashboard_central',           'Central Dashboard'),
+
+        # School Bus System
+        ('sbs_dashboard',               'School Bus System — Dashboard'),
+        ('sbs_bus_tagging',             'School Bus System — Bus Tagging'),
+        ('sbs_route_mgmt',              'School Bus System — Route Management'),
+        ('sbs_bus_assignment',          'School Bus System — Bus Assignment'),
+        ('sbs_profile_mgmt',            'School Bus System — Profile Management'),
+        ('sbs_school_reports',          'School Bus System — School Reports'),
+        ('sbs_create_school',           'School Bus System — Create School'),
+        ('sbs_approve_school',          'School Bus System — Approve School'),
+        ('sbs_bus_tracking',            'School Bus System — School Bus Tracking'),
+        ('sbs_create_trip',             'School Bus System — Create Trip'),
+        ('sbs_parent_tracking',         'School Bus System — Parent Tracking'),
+
+        # Test Agency
+        ('ta_create_agency',            'Test Agency — Create Agency Details'),
+        ('ta_agency_list',              'Test Agency — Agency Details List'),
+        ('ta_create_user',              'Test Agency — Create Agency User'),
+        ('ta_user_list',                'Test Agency — Agency User List'),
+        ('ta_view_models',              'Test Agency — View Assigned Models'),
+
+        # Create New (user provisioning)
+        ('cn_state_admin',              'Create New — State Admin'),
+        ('cn_m2m_provider',             'Create New — M2M Service Provider'),
+        ('cn_manufacturer',             'Create New — Manufacturer'),
+        ('cn_sos_admin',                'Create New — SOS Admin'),
+        ('cn_system_admin',             'Create New — System Admin'),
+        ('cn_dto',                      'Create New — DTO'),
+        ('cn_dealer',                   'Create New — Dealer Account'),
+        ('cn_sos_user',                 'Create New — SOS User'),
+        ('cn_vehicle_owner',            'Create New — Vehicle Owner'),
+
+        # M2M
+        ('m2m_registration',            'M2M Registration Requests'),
+        ('m2m_pending',                 'M2M — Pending Activation Requests'),
+        ('m2m_rejected',                'M2M — Rejected Requests'),
+        ('m2m_accepted',                'M2M — Accepted Requests'),
+
+        # Manufacturer / AIS-140 Requests
+        ('mfr_vlt_requests',            'Vehicle Manufacturer Requests'),
+        ('mfr_ais140_requests',         'AIS-140 Manufacturer Requests'),
+
+        # Technical Onboarding
+        ('tech_onboarding',             'Technical Onboarding Requests'),
+        ('tech_onboarding_final',       'Technical Onboarding — Final Approval'),
+        ('mfr_onboarding_new',          'Manufacturer Onboarding — New Request'),
+        ('mfr_onboarding_list',         'Manufacturer Onboarding — My Requests'),
+
+        # Tracking / Playback / Viewer
+        ('route_fixing',                'Route Fixing'),
+        ('live_tracking',               'Live Tracking'),
+        ('history_playback',            'History Playback'),
+        ('trip_viewer',                 'Trip Viewer'),
+        ('trip_monitor',                'Trip Monitor'),
+
+        # VLTD Approval
+        ('vltd_pending_model',          'VLTD — Pending Model Approval'),
+        ('vltd_pending_cop',            'VLTD — Pending COP'),
+        ('vltd_approved_models',        'VLTD — Approved Models'),
+        ('vltd_approved_cops',          'VLTD — Approved COPs'),
+
+        # Whitelist & KYC
+        ('wkyc_requests',               'Whitelist & KYC — Whitelist Requests'),
+        ('wkyc_device_dashboard',       'Whitelist & KYC — Device Dashboard'),
+
+        # POI Viewer
+        ('poi_viewer',                  'POI Viewer'),
+
+        # Report sub-modules
+        ('report_sos',                  'Report — SOS'),
+        ('report_notices',              'Report — Notices'),
+        ('report_users',                'Report — Users'),
+        ('report_state_admin',          'Report — State Admin'),
+        ('report_manufacturer',         'Report — Manufacturer'),
+        ('report_sos_admin',            'Report — SOS Admin'),
+        ('report_m2m_provider',         'Report — M2M Provider'),
+        ('report_dealers',              'Report — Dealers'),
+        ('report_vehicle_owner',        'Report — Vehicle Owner'),
+        ('report_dto',                  'Report — DTO User List'),
+        ('report_gps_log',              'Report — GPS Data Log'),
+        ('report_activation_log',       'Report — Activation Log'),
+        ('report_emergency_data',       'Report — Emergency Data Logs'),
+        ('report_health_packet',        'Report — Health Packet Log'),
+        ('report_event_data',           'Report — Event Data Log'),
+        ('report_activated_device',     'Report — Activated Device'),
+        ('report_alert',                'Report — Alert'),
+        ('report_poi',                  'Report — POI'),
+        ('report_incident',             'Report — Incident'),
+        ('report_device_health',        'Report — Device Health'),
+        ('report_user_stats',           'Report — User Statistics'),
+        ('report_violation',            'Report — Violation'),
+        ('report_sos_users',            'Report — SOS Users'),
+        ('report_sos_call_list',        'Report — SOS Call List'),
+        ('report_stock',                'Report — Stock'),
+        ('report_fitment',              'Report — Fitment'),
+        ('report_device',               'Report — Device'),
+
+        # Settings sub-modules
+        ('settings_notice',             'Settings — Notice'),
+        ('settings_send_command',       'Settings — Send Command'),
+        ('settings_vehicle_type',       'Settings — Vehicle Type'),
+        ('settings_vehicle_category',   'Settings — Vehicle Category Code'),
+        ('settings_alert_notif',        'Settings — Alert Notification Delivery Mode'),
+        ('settings_state_district',     'Settings — State & District'),
+        ('settings_ota_firmware',       'Settings — OTA & Firmware'),
+        ('settings_archive_restore',    'Settings — Archive & Restore'),
+        ('settings_ip',                 'Settings — IP Settings'),
+        ('settings_login',              'Settings — Login Settings'),
+        ('settings_permit_cond',        'Settings — Permit Conditions'),
+        ('settings_custom_alerts',      'Settings — Custom Alerts'),
+
+        # Passenger Info System
+        ('pis_bus_stops',               'PIS — Bus Stops'),
+        ('pis_bus_routes',              'PIS — Bus Routes'),
+        ('pis_bus_schedules',           'PIS — Bus Schedules'),
+
+        # State Transport Analytics
+        ('sta_trip_analysis',           'Analytics — Trip Analysis'),
+        ('sta_driving_patterns',        'Analytics — Driving Pattern Alerts'),
+        ('sta_vehicle_alerts',          'Analytics — Vehicle Alerts Count'),
+        ('sta_pis_summary',             'Analytics — PIS Summary'),
+        ('sta_operational',             'Analytics — Operational Analytics'),
+        ('sta_comparative',             'Analytics — Comparative Analysis'),
+        ('sta_resource_perf',           'Analytics — Resource Performance'),
+
+        # Custom User Module
+        ('cum_custom_roles',            'Custom User — Role Management'),
+        ('cum_feature_perms',           'Custom User — Feature Permissions'),
+        ('cum_user_mgmt',               'Custom User — User Management'),
+
+        # Complaint Tickets (UI sub-menu)
+        ('ct_my_dashboard',             'Complaints — My Ticket Dashboard'),
+        ('ct_create',                   'Complaints — Create Ticket'),
+        ('ct_all_tickets',              'Complaints — All Tickets'),
+        ('ct_escalated',                'Complaints — Escalated Tickets'),
+
+        # Device Model (manufacturer)
+        ('dm_create_model',             'Device — Create Model'),
+        ('dm_tac_cop',                  'Device — TAC/COP Extension'),
+
+        # Device Stock (manufacturer)
+        ('ds_individual',               'Stock — Individual'),
+        ('ds_bulk',                     'Stock — Bulk'),
+        ('ds_assign',                   'Stock — Assign'),
+
+        # Dealer-specific
+        ('dealer_m2m_status',           'Dealer — Check M2M Status'),
+        ('dealer_request_m2m',          'Dealer — Request M2M Activation'),
+        ('dealer_tag_device',           'Dealer — Tag Device to Vehicle'),
+        ('dealer_untagged',             'Dealer — UnTagged Devices'),
+        ('dealer_download_cert',        'Dealer — Download Certificate'),
+
+        # EM Team (SOS Admin)
+        ('em_team_create',              'EM Team — Create'),
+        ('em_team_list',                'EM Team — List'),
+
+        # SOS
+        ('sos_call_list',               'SOS Call List'),
     ]
 
     role   = models.ForeignKey(
