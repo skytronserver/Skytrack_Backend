@@ -182,6 +182,11 @@ urlpatterns = [
     path('Settings/vehicle_category_code/edit/', edit_vehicle_category_code, name='edit_vehicle_category_code'),
     path('Settings/vehicle_category_code/list/', list_all_vehicle_category_code, name='list_all_vehicle_category_code'),
 
+    path('Settings/permit_master/list/', list_permit_master, name='list_permit_master'),
+    path('Settings/permit_master/create/', create_permit_master, name='create_permit_master'),
+    path('Settings/permit_master/edit/', edit_permit_master, name='edit_permit_master'),
+    path('Settings/permit_master/list_all/', list_all_permit_master, name='list_all_permit_master'),
+
     path('Statistics/manufacturer_model_stock_statistics/', manufacturer_model_stock_statistics, name='manufacturer_model_stock_statistics'),
     path('Statistics/user_statistics/', user_statistics, name='user_statistics'),
     path('Statistics/vehicle_alert_statistics/', vehicle_alert_statistics, name='vehicle_alert_statistics'),

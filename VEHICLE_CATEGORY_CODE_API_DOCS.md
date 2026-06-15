@@ -1,8 +1,18 @@
 # Vehicle Category Code — Full API Documentation
 
-> **Version:** 1.0 | **Base path:** `/api/` | **Date:** 2026-06-11
+> **Version:** 1.2 | **Base path:** `/api/` | **Date:** 2026-06-15
 > This document is intended for the frontend development team.
 > All endpoints live under the same base URL as the rest of the Skytrack backend API.
+
+---
+
+## Changelog
+
+| Version | Date | Change |
+|---------|------|--------|
+| 1.2 | 2026-06-15 | Added `Settings_PermitMaster` model with 4 new endpoints (section 7). |
+| 1.1 | 2026-06-15 | Added `speed_limit` field to `Settings_VehicleCategoryCode`. All 4 endpoints updated. |
+| 1.0 | 2026-06-11 | Initial release. |
 
 ---
 
@@ -64,11 +74,14 @@ Endpoints marked **"No auth required"** do not need any header.
 | `id` | integer | Auto, PK | Primary key |
 | `category_code` | string (50) | Unique, required | The category code value |
 | `details` | text | Optional | Description or notes |
+| `speed_limit` | string (5) | Optional | Speed limit for this category (e.g. `"60"`, `"120"`) — numeric value as string, in km/h |
 | `created_by` | integer | FK → User.id, nullable | Set automatically on create |
 | `updated_by` | integer | FK → User.id, nullable | Set automatically on each save |
 | `created_date` | datetime | Auto, read-only | Set once on first save |
 | `updated_date` | datetime | Auto, read-only | Updated on every save |
 | `is_active` | boolean | Default: `true` | Controls visibility in the public list endpoint |
+
+> **v1.1 — New field:** `speed_limit` — pass it wherever you create or update a record. Omitting it is fine; existing records will have it as `null` until explicitly set.
 
 ### `DeviceTag` — new field
 
@@ -125,26 +138,29 @@ curl -X GET "https://<your-domain>/api/pub/Settings/vehicle_category_code/"
     "id": 1,
     "category_code": "CAT-001",
     "details": "Heavy commercial vehicles",
+    "speed_limit": "60",
     "created_by": 3,
     "updated_by": 3,
-    "created_date": "2026-06-11T10:00:00.000000Z",
-    "updated_date": "2026-06-11T10:00:00.000000Z",
+    "created_date": "2026-06-15T10:00:00.000000Z",
+    "updated_date": "2026-06-15T10:00:00.000000Z",
     "is_active": true
   },
   {
     "id": 2,
     "category_code": "CAT-002",
     "details": "Light motor vehicles",
+    "speed_limit": null,
     "created_by": 3,
     "updated_by": 3,
-    "created_date": "2026-06-11T10:05:00.000000Z",
-    "updated_date": "2026-06-11T10:05:00.000000Z",
+    "created_date": "2026-06-15T10:05:00.000000Z",
+    "updated_date": "2026-06-15T10:05:00.000000Z",
     "is_active": true
   }
 ]
 ```
 
 > Inactive records (`is_active = false`) are never returned by this endpoint.
+> Records created before v1.1 will have `"speed_limit": null` until updated.
 
 ---
 
@@ -163,6 +179,7 @@ POST /api/Settings/vehicle_category_code/create/
 |-------|------|----------|-------------|
 | `category_code` | string (max 50) | ✅ Yes | Must be unique across all records |
 | `details` | string | No | Description or notes |
+| `speed_limit` | string (max 5) | No | Speed limit in km/h as a string (e.g. `"60"`). Leave out or pass `null` if not applicable. **New in v1.1** |
 | `is_active` | boolean | No | Default: `true` |
 
 > `created_by` and `updated_by` are set automatically from the authenticated user's ID. Do not pass them in the request.
@@ -176,6 +193,7 @@ curl -X POST "https://<your-domain>/api/Settings/vehicle_category_code/create/" 
   -d '{
     "category_code": "CAT-001",
     "details": "Heavy commercial vehicles",
+    "speed_limit": "60",
     "is_active": true
   }'
 ```
@@ -187,10 +205,11 @@ curl -X POST "https://<your-domain>/api/Settings/vehicle_category_code/create/" 
   "id": 1,
   "category_code": "CAT-001",
   "details": "Heavy commercial vehicles",
+  "speed_limit": "60",
   "created_by": 3,
   "updated_by": 3,
-  "created_date": "2026-06-11T10:00:00.000000Z",
-  "updated_date": "2026-06-11T10:00:00.000000Z",
+  "created_date": "2026-06-15T10:00:00.000000Z",
+  "updated_date": "2026-06-15T10:00:00.000000Z",
   "is_active": true
 }
 ```
@@ -224,9 +243,22 @@ Partial update — only the fields you send will be changed. `id` is mandatory; 
 | `id` | integer | ✅ Yes | ID of the record to update |
 | `category_code` | string (max 50) | No | New code value (must remain unique) |
 | `details` | string | No | Updated description |
+| `speed_limit` | string (max 5) | No | Speed limit in km/h as a string (e.g. `"80"`). Pass `null` to clear it. **New in v1.1** |
 | `is_active` | boolean | No | `true` to activate, `false` to deactivate |
 
 > `updated_by` is always overwritten with the current authenticated user's ID. `created_by` and `created_date` are never changed.
+
+#### cURL — Update speed limit only
+
+```bash
+curl -X POST "https://<your-domain>/api/Settings/vehicle_category_code/edit/" \
+  -H "Authorization: Bearer <superadmin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": 1,
+    "speed_limit": "80"
+  }'
+```
 
 #### cURL — Deactivate a record
 
@@ -240,7 +272,7 @@ curl -X POST "https://<your-domain>/api/Settings/vehicle_category_code/edit/" \
   }'
 ```
 
-#### cURL — Update details and code
+#### cURL — Update details, code, and speed limit together
 
 ```bash
 curl -X POST "https://<your-domain>/api/Settings/vehicle_category_code/edit/" \
@@ -249,7 +281,8 @@ curl -X POST "https://<your-domain>/api/Settings/vehicle_category_code/edit/" \
   -d '{
     "id": 1,
     "category_code": "CAT-001-HCV",
-    "details": "Heavy commercial vehicles — revised definition"
+    "details": "Heavy commercial vehicles — revised definition",
+    "speed_limit": "60"
   }'
 ```
 
@@ -260,10 +293,11 @@ curl -X POST "https://<your-domain>/api/Settings/vehicle_category_code/edit/" \
   "id": 1,
   "category_code": "CAT-001-HCV",
   "details": "Heavy commercial vehicles — revised definition",
+  "speed_limit": "60",
   "created_by": 3,
   "updated_by": 3,
-  "created_date": "2026-06-11T10:00:00.000000Z",
-  "updated_date": "2026-06-11T12:30:00.000000Z",
+  "created_date": "2026-06-15T10:00:00.000000Z",
+  "updated_date": "2026-06-15T12:30:00.000000Z",
   "is_active": true
 }
 ```
@@ -311,26 +345,29 @@ curl -X POST "https://<your-domain>/api/Settings/vehicle_category_code/list/" \
     "id": 1,
     "category_code": "CAT-001-HCV",
     "details": "Heavy commercial vehicles — revised definition",
+    "speed_limit": "60",
     "created_by": 3,
     "updated_by": 3,
-    "created_date": "2026-06-11T10:00:00.000000Z",
-    "updated_date": "2026-06-11T12:30:00.000000Z",
+    "created_date": "2026-06-15T10:00:00.000000Z",
+    "updated_date": "2026-06-15T12:30:00.000000Z",
     "is_active": true
   },
   {
     "id": 2,
     "category_code": "CAT-002",
     "details": "Light motor vehicles",
+    "speed_limit": null,
     "created_by": 3,
     "updated_by": 3,
-    "created_date": "2026-06-11T10:05:00.000000Z",
-    "updated_date": "2026-06-11T10:05:00.000000Z",
+    "created_date": "2026-06-15T10:05:00.000000Z",
+    "updated_date": "2026-06-15T10:05:00.000000Z",
     "is_active": true
   },
   {
     "id": 3,
     "category_code": "CAT-003-OLD",
     "details": "Discontinued category",
+    "speed_limit": null,
     "created_by": 3,
     "updated_by": 3,
     "created_date": "2026-05-01T08:00:00.000000Z",
@@ -482,10 +519,11 @@ Adds `category_code_info` as a nested object alongside the existing `category_in
     "id": 1,
     "category_code": "CAT-001",
     "details": "Heavy commercial vehicles",
+    "speed_limit": "60",
     "created_by": 3,
     "updated_by": 3,
-    "created_date": "2026-06-11T10:00:00.000000Z",
-    "updated_date": "2026-06-11T10:00:00.000000Z",
+    "created_date": "2026-06-15T10:00:00.000000Z",
+    "updated_date": "2026-06-15T10:00:00.000000Z",
     "is_active": true
   },
   "status": "Dealer_OTP_Sent",
@@ -519,10 +557,11 @@ The `category_code` field is expanded as a full nested object directly (not unde
     "id": 1,
     "category_code": "CAT-001",
     "details": "Heavy commercial vehicles",
+    "speed_limit": "60",
     "created_by": 3,
     "updated_by": 3,
-    "created_date": "2026-06-11T10:00:00.000000Z",
-    "updated_date": "2026-06-11T10:00:00.000000Z",
+    "created_date": "2026-06-15T10:00:00.000000Z",
+    "updated_date": "2026-06-15T10:00:00.000000Z",
     "is_active": true
   },
   "device": { "...": "..." },
@@ -545,7 +584,261 @@ The `category_code` field is expanded as a full nested object directly (not unde
 
 ---
 
-## 7. Error Reference
+## 7. Permit Master
+
+> **Added in v1.2 — 2026-06-15**
+
+`Settings_PermitMaster` is a simple master table for permit types. It is managed by **Superadmin** (create / edit / view all) and is readable by **any authenticated user** via the list endpoint.
+
+### Data Model
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | integer | Auto, PK | Primary key |
+| `name` | string (100) | Unique, required | Permit name |
+| `created_by` | integer | FK → User.id, nullable | Set automatically on create |
+| `updated_by` | integer | FK → User.id, nullable | Set automatically on each save |
+| `created_date` | datetime | Auto, read-only | Set once on first save |
+| `updated_date` | datetime | Auto, read-only | Updated on every save |
+| `is_active` | boolean | Default: `true` | Inactive records hidden from the user-facing list |
+
+### Role Access Matrix
+
+| Endpoint | Any Auth User | Superadmin |
+|----------|:---:|:---:|
+| List active records | ✅ | ✅ |
+| Create record | ❌ | ✅ |
+| Edit record | ❌ | ✅ |
+| List all records (incl. inactive) | ❌ | ✅ |
+
+---
+
+### 7.1 List Active Records (Any Authenticated User)
+
+```
+GET /api/Settings/permit_master/list/
+```
+
+**Auth:** Required — any authenticated user  
+**Throttle:** User rate limit applies
+
+Returns only records where `is_active = true`, ordered alphabetically by `name`.
+
+#### cURL
+
+```bash
+curl -X GET "https://<your-domain>/api/Settings/permit_master/list/" \
+  -H "Authorization: Bearer <your_token>"
+```
+
+#### Success Response — `200 OK`
+
+```json
+[
+  {
+    "id": 1,
+    "name": "National Permit",
+    "created_by": 3,
+    "updated_by": 3,
+    "created_date": "2026-06-15T10:00:00.000000Z",
+    "updated_date": "2026-06-15T10:00:00.000000Z",
+    "is_active": true
+  },
+  {
+    "id": 2,
+    "name": "State Permit",
+    "created_by": 3,
+    "updated_by": 3,
+    "created_date": "2026-06-15T10:05:00.000000Z",
+    "updated_date": "2026-06-15T10:05:00.000000Z",
+    "is_active": true
+  }
+]
+```
+
+> Inactive records are never returned by this endpoint.
+
+---
+
+### 7.2 Create Record (Superadmin)
+
+```
+POST /api/Settings/permit_master/create/
+```
+
+**Auth:** Required — superadmin only  
+**Content-Type:** `application/json`
+
+#### Request Body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string (max 100) | ✅ Yes | Must be unique across all records |
+| `is_active` | boolean | No | Default: `true` |
+
+> `created_by` and `updated_by` are set automatically. Do not pass them.
+
+#### cURL
+
+```bash
+curl -X POST "https://<your-domain>/api/Settings/permit_master/create/" \
+  -H "Authorization: Bearer <superadmin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "National Permit"
+  }'
+```
+
+#### Success Response — `201 Created`
+
+```json
+{
+  "id": 1,
+  "name": "National Permit",
+  "created_by": 3,
+  "updated_by": 3,
+  "created_date": "2026-06-15T10:00:00.000000Z",
+  "updated_date": "2026-06-15T10:00:00.000000Z",
+  "is_active": true
+}
+```
+
+#### Error Responses
+
+| HTTP Code | Body | When |
+|-----------|------|------|
+| `400` | `{"name": ["settings permit master with this name already exists."]}` | Duplicate `name` |
+| `400` | `{"name": ["This field is required."]}` | `name` missing |
+| `403` | `{"error": "Request must be from superadmin."}` | Not superadmin |
+| `401` | `{"detail": "Authentication credentials were not provided."}` | No token |
+
+---
+
+### 7.3 Edit Record (Superadmin)
+
+```
+POST /api/Settings/permit_master/edit/
+```
+
+**Auth:** Required — superadmin only  
+**Content-Type:** `application/json`
+
+Partial update — only the fields you send will be changed. `id` is mandatory.
+
+#### Request Body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | integer | ✅ Yes | ID of the record to update |
+| `name` | string (max 100) | No | New name (must remain unique) |
+| `is_active` | boolean | No | `true` to activate, `false` to deactivate |
+
+#### cURL — Rename a permit
+
+```bash
+curl -X POST "https://<your-domain>/api/Settings/permit_master/edit/" \
+  -H "Authorization: Bearer <superadmin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": 1,
+    "name": "All India Permit"
+  }'
+```
+
+#### cURL — Deactivate a permit
+
+```bash
+curl -X POST "https://<your-domain>/api/Settings/permit_master/edit/" \
+  -H "Authorization: Bearer <superadmin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": 1,
+    "is_active": false
+  }'
+```
+
+#### Success Response — `200 OK`
+
+```json
+{
+  "id": 1,
+  "name": "All India Permit",
+  "created_by": 3,
+  "updated_by": 3,
+  "created_date": "2026-06-15T10:00:00.000000Z",
+  "updated_date": "2026-06-15T11:30:00.000000Z",
+  "is_active": true
+}
+```
+
+#### Error Responses
+
+| HTTP Code | Body | When |
+|-----------|------|------|
+| `400` | `{"error": "id is required."}` | `id` not in request body |
+| `404` | `{"error": "Record not found."}` | No record with that `id` |
+| `400` | `{"name": ["settings permit master with this name already exists."]}` | Name collision |
+| `403` | `{"error": "Request must be from superadmin."}` | Not superadmin |
+
+---
+
+### 7.4 List All Records (Superadmin)
+
+```
+POST /api/Settings/permit_master/list_all/
+```
+
+**Auth:** Required — superadmin only  
+**Content-Type:** `application/json`
+
+Returns all records regardless of `is_active` status, ordered alphabetically by `name`.
+
+#### cURL
+
+```bash
+curl -X POST "https://<your-domain>/api/Settings/permit_master/list_all/" \
+  -H "Authorization: Bearer <superadmin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+#### Success Response — `200 OK`
+
+```json
+[
+  {
+    "id": 1,
+    "name": "All India Permit",
+    "created_by": 3,
+    "updated_by": 3,
+    "created_date": "2026-06-15T10:00:00.000000Z",
+    "updated_date": "2026-06-15T11:30:00.000000Z",
+    "is_active": true
+  },
+  {
+    "id": 2,
+    "name": "State Permit",
+    "created_by": 3,
+    "updated_by": 3,
+    "created_date": "2026-06-15T10:05:00.000000Z",
+    "updated_date": "2026-06-15T10:05:00.000000Z",
+    "is_active": true
+  },
+  {
+    "id": 3,
+    "name": "Old Permit Type",
+    "created_by": 3,
+    "updated_by": 3,
+    "created_date": "2026-05-01T08:00:00.000000Z",
+    "updated_date": "2026-06-10T09:00:00.000000Z",
+    "is_active": false
+  }
+]
+```
+
+---
+
+## 8. Error Reference
 
 ### Common Errors
 
@@ -573,11 +866,15 @@ The `category_code` field is expanded as a full nested object directly (not unde
 
 | Method | URL | Auth | Description |
 |--------|-----|------|-------------|
-| `GET` | `/api/pub/Settings/vehicle_category_code/` | None | List active records |
-| `POST` | `/api/Settings/vehicle_category_code/create/` | Superadmin | Create new record |
-| `POST` | `/api/Settings/vehicle_category_code/edit/` | Superadmin | Edit existing record (partial) |
-| `POST` | `/api/Settings/vehicle_category_code/list/` | Superadmin | List all records (incl. inactive) |
-| `POST` | `/api/TagDevice2Vehicle/` | Dealer | Tag device (now accepts optional `category_code`) |
+| `GET` | `/api/pub/Settings/vehicle_category_code/` | None | List active vehicle category codes |
+| `POST` | `/api/Settings/vehicle_category_code/create/` | Superadmin | Create vehicle category code |
+| `POST` | `/api/Settings/vehicle_category_code/edit/` | Superadmin | Edit vehicle category code (partial) |
+| `POST` | `/api/Settings/vehicle_category_code/list/` | Superadmin | List all vehicle category codes (incl. inactive) |
+| `POST` | `/api/TagDevice2Vehicle/` | Dealer | Tag device (accepts optional `category_code`) |
+| `GET` | `/api/Settings/permit_master/list/` | Any auth user | List active permit master records |
+| `POST` | `/api/Settings/permit_master/create/` | Superadmin | Create permit master record |
+| `POST` | `/api/Settings/permit_master/edit/` | Superadmin | Edit permit master record (partial) |
+| `POST` | `/api/Settings/permit_master/list_all/` | Superadmin | List all permit master records (incl. inactive) |
 
 ### Typical Frontend Workflow
 

@@ -27636,3 +27636,107 @@ def list_all_vehicle_category_code(request):
         return Response(serializer.data)
     except Exception as e:
         return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+
+
+# ─── Settings_PermitMaster ───────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET'])
+def list_permit_master(request):
+    """Any authenticated user: list all active permit master records."""
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        from .serializers import Settings_PermitMasterSerializer
+        from .models import Settings_PermitMaster
+        qs = Settings_PermitMaster.objects.filter(is_active=True).order_by('name')
+        serializer = Settings_PermitMasterSerializer(qs, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'create')
+def create_permit_master(request):
+    """Superadmin: create a permit master record."""
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    if not get_user_object(user, 'superadmin'):
+        return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        from .serializers import Settings_PermitMasterSerializer
+        data = request.data.copy()
+        data['created_by'] = user.id
+        data['updated_by'] = user.id
+        serializer = Settings_PermitMasterSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'update')
+def edit_permit_master(request):
+    """Superadmin: edit a permit master record. Pass id in request body."""
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    if not get_user_object(user, 'superadmin'):
+        return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        from .serializers import Settings_PermitMasterSerializer
+        from .models import Settings_PermitMaster
+        rec_id = request.data.get('id')
+        if not rec_id:
+            return Response({'error': 'id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        instance = Settings_PermitMaster.objects.filter(id=rec_id).first()
+        if not instance:
+            return Response({'error': 'Record not found.'}, status=status.HTTP_404_NOT_FOUND)
+        data = request.data.copy()
+        data['updated_by'] = user.id
+        serializer = Settings_PermitMasterSerializer(instance, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('settings_management', 'view')
+def list_all_permit_master(request):
+    """Superadmin: list all permit master records including inactive."""
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    if not get_user_object(user, 'superadmin'):
+        return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        from .serializers import Settings_PermitMasterSerializer
+        from .models import Settings_PermitMaster
+        qs = Settings_PermitMaster.objects.all().order_by('name')
+        serializer = Settings_PermitMasterSerializer(qs, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': 'Unable to process request.' + str(e)}, status=400)

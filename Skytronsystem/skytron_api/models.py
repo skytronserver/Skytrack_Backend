@@ -797,6 +797,7 @@ class Settings_VehicleCategoryCode(models.Model):
     objects = SafeCreateManager()
     category_code = models.CharField(max_length=50, unique=True)
     details = models.TextField(blank=True, null=True)
+    speed_limit = models.CharField(max_length=5, null=True, blank=True)
     created_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='vcc_created')
     updated_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='vcc_updated')
     created_date = models.DateTimeField(auto_now_add=True)
@@ -805,6 +806,19 @@ class Settings_VehicleCategoryCode(models.Model):
 
     def __str__(self):
         return self.category_code
+
+
+class Settings_PermitMaster(models.Model):
+    objects = SafeCreateManager()
+    name = models.CharField(max_length=100, unique=True)
+    created_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='permit_master_created')
+    updated_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='permit_master_updated')
+    created_date = models.DateTimeField(auto_now_add=True)
+    updated_date = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
 
 
 class Settings_District(models.Model):

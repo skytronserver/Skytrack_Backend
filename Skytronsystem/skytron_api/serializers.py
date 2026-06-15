@@ -453,6 +453,12 @@ class Settings_VehicleCategoryCodeSerializer(SanitizingModelSerializer):
         fields = '__all__'
 
 
+class Settings_PermitMasterSerializer(SanitizingModelSerializer):
+    class Meta:
+        model = Settings_PermitMaster
+        fields = '__all__'
+
+
 class Settings_ipSerializer(SanitizingModelSerializer):
     state_info = Settings_StateSerializer(source='state', read_only=True)
     devicemodel_info = DeviceModelSerializer(source='devicemodel', read_only=True)
