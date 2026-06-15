@@ -2524,7 +2524,7 @@ def gps_track_data_api(request ):
         elif active_type == 'polygon':
             try:
                 coords = json.loads(polygon_param)
-                poly_coords = [(float(lon), float(lat)) for lat, lon in coords]
+                poly_coords = [(float(lon), float(lat)) for lon, lat in coords]
                 if poly_coords:
                     polygon = Polygon(poly_coords)
                 else:
@@ -3065,7 +3065,7 @@ def gps_track_data_api_pub(request ):
         elif active_type == 'polygon':
             try:
                 coords = json.loads(polygon_param)
-                poly_coords = [(float(lon), float(lat)) for lat, lon in coords]
+                poly_coords = [(float(lon), float(lat)) for lon, lat in coords]
                 if poly_coords:
                     polygon = Polygon(poly_coords)
                 else:
@@ -22423,7 +22423,7 @@ def get_device_health_status(request):
         
         # Apply user-based access control
         if user.role == 'devicemanufacture':
-            # Manufacturers can only see devices with models created by them
+            # Manufacturers see only vehicles whose device model was created by their account
             manufacturer = get_user_object(user, 'devicemanufacture')
             if not manufacturer:
                 return Response({
@@ -22431,8 +22431,11 @@ def get_device_health_status(request):
                     'message': 'Manufacturer profile not found'
                 }, status=status.HTTP_404_NOT_FOUND)
             device_tags_query = device_tags_query.filter(
-                device__model__created_by=user
+                device__model__created_by__in=manufacturer.users.all()
             )
+        elif user.role == 'sosadmin':
+            # SOS admin can view health status of all vehicles across the country
+            pass
         elif user.role == 'owner':
             # Owners can only see their own devices
             owner = get_user_object(user, 'owner')
@@ -22447,7 +22450,7 @@ def get_device_health_status(request):
             dealer = get_user_object(user, 'dealer')
             if dealer:
                 device_tags_query = device_tags_query.filter(device__dealer=dealer)
-        # superadmin, stateadmin, dto_rto can see all devices (no additional filter)
+        # superadmin, stateadmin, dtorto can see all devices (no additional filter)
         
         # Apply filter parameters
         if vehicle_reg_no:
