@@ -632,10 +632,14 @@ def process_alerts(gps_data, loc_id):
         
   
 
+        # Event-based alert IDs always create a new record on each occurrence
+        # (transient events, not stateful on/off conditions)
+        ALWAYS_CREATE_ALERT_IDS = {"10", "20", "21", "22", "23", "24", "09", "13", "14", "15", "17"}
+
         if alert_id in alert_mappings:
             alert_type, status = alert_mappings[alert_id]
             al = lastnormal_alerts.filter(type=alert_type).last()
-            if not al or al.status != status or  alert_id in ["10", "20", "21", "22", "23", "24"]:
+            if not al or al.status != status or alert_id in ALWAYS_CREATE_ALERT_IDS:
                 create_alert(alert_type, status, loc_id, device_tag)
 
         # Border-cross alerts (state/district/city) on actual administrative change
