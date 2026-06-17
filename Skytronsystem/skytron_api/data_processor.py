@@ -8,12 +8,20 @@ import json
 import time
 import string
 import secrets
+import threading
 from datetime import datetime, timezone, timedelta
 import pytz
 from django.db import close_old_connections
 from django.db.models import Max
 from django.utils import timezone as django_timezone
 from geopy.distance import geodesic
+
+# Per-device cache for the most-recent route alert state.
+# Avoids re-scanning the full AlertsLog table on every GPS update.
+# Invalidated immediately when a new alert is written.
+_route_alert_cache: dict = {}          # device_tag_id -> (expires_at, last_alert_map)
+_route_alert_cache_lock = threading.Lock()
+_ROUTE_ALERT_CACHE_TTL = 30           # seconds
 
 from skytron_api.models import (
     GPSData, GPSDataLog, DeviceTag, DeviceStock, Route, AlertsLog,
@@ -745,47 +753,84 @@ def process_alerts(gps_data, loc_id):
         print(f"Error processing alerts: {e}", flush=True)
 
 
+def _get_route_alert_map(device_tag):
+    """
+    Return {('Route', route_id): alert} using DISTINCT ON to fetch only
+    the most-recent alert per route.  Results are cached per device for
+    _ROUTE_ALERT_CACHE_TTL seconds so the expensive query doesn't run on
+    every GPS update.  The cache is invalidated when a new alert is written.
+    """
+    now = time.monotonic()
+    dtid = device_tag.id
+    with _route_alert_cache_lock:
+        entry = _route_alert_cache.get(dtid)
+        if entry and now < entry[0]:
+            return entry[1]
+
+    # DISTINCT ON (route_ref_id) → one row per route, most-recent first.
+    # Falls back to dedup-in-Python for DBs that don't support DISTINCT ON.
+    try:
+        alerts = list(
+            AlertsLog.objects.filter(deviceTag=device_tag, type="Route")
+            .order_by('route_ref_id', '-id')
+            .distinct('route_ref_id')
+        )
+    except Exception:
+        # Fallback: order + deduplicate in Python (original behaviour)
+        alerts_qs = (
+            AlertsLog.objects.filter(deviceTag=device_tag, type="Route")
+            .order_by('route_ref_id', '-id')
+        )
+        seen: set = set()
+        alerts = []
+        for a in alerts_qs:
+            if a.route_ref_id not in seen:
+                seen.add(a.route_ref_id)
+                alerts.append(a)
+
+    alert_map = {('Route', a.route_ref_id): a for a in alerts if a.route_ref_id}
+    with _route_alert_cache_lock:
+        _route_alert_cache[dtid] = (now + _ROUTE_ALERT_CACHE_TTL, alert_map)
+    return alert_map
+
+
+def _point_within_100m(lat, lon, points) -> bool:
+    """
+    Return True if any route point is within 100 m of (lat, lon).
+    Uses a cheap bounding-box pre-filter (~0.0015 ° ≈ 165 m) to skip
+    the expensive geodesic call for points that are clearly out of range.
+    """
+    LAT_MARGIN = 0.0015   # ~165 m latitude
+    LON_MARGIN = 0.0015   # ~165 m longitude (conservative; varies by latitude)
+    for point in points[:-1]:
+        route_lon, route_lat, *_ = point
+        if abs(route_lat - lat) > LAT_MARGIN or abs(route_lon - lon) > LON_MARGIN:
+            continue
+        if geodesic((lat, lon), (route_lat, route_lon)).meters <= 100:
+            return True
+    return False
+
+
 def process_route_alerts(gps_data, loc_id, device_tag, lat, lon):
     """Process route-based alerts"""
     _t_route_start = time.perf_counter()
     try:
-        # Fetch active routes associated with the device
         routes = Route.objects.filter(status='Active', device=device_tag.device)
         _t_routes_fetched = time.perf_counter()
-        
-        # Fetch last route alerts
-        last_alerts = AlertsLog.objects.filter(
-            deviceTag=device_tag, 
-            type="Route"
-        ).order_by('type', 'route_ref', '-timestamp')
 
-        # Create a dictionary to store the last alert for each route
-        last_alert_map = {}
-        for alert in last_alerts:
-            key = (alert.type, alert.route_ref.id if alert.route_ref else None)
-            if key not in last_alert_map:
-                last_alert_map[key] = alert
+        last_alert_map = _get_route_alert_map(device_tag)
 
         route_count = len(routes)
         print(f"Routes found: {route_count}", flush=True)
         _t_last_alerts_fetched = time.perf_counter()
         print(f"[Tracking][Perf] route_fetch={(_t_routes_fetched-_t_route_start)*1000:.1f}ms  last_alerts_fetch={(_t_last_alerts_fetched-_t_routes_fetched)*1000:.1f}ms  routes={route_count}", flush=True)
-        
+
+        alert_written = False
         for i, route in enumerate(routes):
             _t_ri = time.perf_counter()
-            r = route.route  # Route string containing coordinates
-            points = json.loads(r)  # Convert route string into a list of points
-            status = "out"  # Default status
+            points = json.loads(route.route)
+            status = "in" if _point_within_100m(lat, lon, points) else "out"
 
-            # Check if any point in the route is within 100 meters
-            for point in points[0:-1]:
-                route_lon, route_lat, _ = point
-                distance = geodesic((lat, lon), (route_lat, route_lon)).meters
-                if distance <= 100:
-                    status = "in"
-                    break
-
-            # Determine if a new alert needs to be created
             alert_key = ('Route', route.id)
             last_alert = last_alert_map.get(alert_key)
 
@@ -799,7 +844,13 @@ def process_route_alerts(gps_data, loc_id, device_tag, lat, lon):
                     deviceTag=device_tag,
                     state=device_tag.device.dealer.manufacturer.state
                 )
+                alert_written = True
             print(f"[Tracking][Perf]   route[{i}] id={route.id} pts={len(points)} status={status} took={(time.perf_counter()-_t_ri)*1000:.1f}ms", flush=True)
+
+        # Invalidate cache so the next call reflects newly written alerts
+        if alert_written:
+            with _route_alert_cache_lock:
+                _route_alert_cache.pop(device_tag.id, None)
 
         print(f"[Tracking][Perf] process_route_alerts TOTAL={(time.perf_counter()-_t_route_start)*1000:.1f}ms", flush=True)
 

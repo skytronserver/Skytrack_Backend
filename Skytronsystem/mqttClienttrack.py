@@ -434,7 +434,7 @@ def _safe_exec(name, func, *args, **kwargs):
 #   slow device tracking tasks (which can take 8+ seconds each).
 # ---------------------------------------------------------------------------
 _em_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mqtt-em")
-_tracking_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mqtt-track")
+_tracking_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mqtt-track")
 _user_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mqtt-user")
 
 # ---------------------------------------------------------------------------
