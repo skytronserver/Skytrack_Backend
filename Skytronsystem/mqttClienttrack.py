@@ -329,7 +329,7 @@ def Process_dtorto_Data(msg, topic_parts):
             if not uo:
                 error_message = f"Request must be from {role}"
                 print(error_message)
-                client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "error", "message": error_message}))
+                client.publish(topic_parts[0]+"/"+topic_parts[1]+"/server", json.dumps({"status": "error", "message": error_message}))
                 return
 
             user.last_activity = timezone.now()
@@ -337,13 +337,14 @@ def Process_dtorto_Data(msg, topic_parts):
             user.save()
 
             try:
+                response_topic = topic_parts[0]+"/"+topic_parts[1]+"/server"
                 alerts = AlertsLog.objects.order_by('-id')[:10]
                 if alerts:
                     serializer = AlertsLogSerializer(alerts, many=True)
-                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory": serializer.data}))
+                    client.publish(response_topic, json.dumps({"status": "success", "alertHistory": serializer.data}))
                     print("data sent")
                 else:
-                    client.publish(topic_parts[0]+"/"+topic_parts[1], json.dumps({"status": "success", "alertHistory": []}))
+                    client.publish(response_topic, json.dumps({"status": "success", "alertHistory": []}))
                     print("no data")
             except Exception as e:
                 print(e)
@@ -407,9 +408,9 @@ def on_message(client, userdata, msg):
         elif len(topic_parts) >= 2 and topic_parts[0] == 'sosEx':
             _em_executor.submit(_safe_exec, "Process_sosEx_Data", Process_sosEx_Data, msg, topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'owner':
-            _tracking_executor.submit(_safe_exec, "Process_owner_Data", Process_owner_Data, msg, topic_parts)
+            _user_executor.submit(_safe_exec, "Process_owner_Data", Process_owner_Data, msg, topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'dtorto':
-            _tracking_executor.submit(_safe_exec, "Process_dtorto_Data", Process_dtorto_Data, msg, topic_parts)
+            _user_executor.submit(_safe_exec, "Process_dtorto_Data", Process_dtorto_Data, msg, topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'deviceResponse':
             return  # responses are published by us; nothing to process
         else:
@@ -428,10 +429,13 @@ def _safe_exec(name, func, *args, **kwargs):
 # ---------------------------------------------------------------------------
 # Thread-pool executors
 # EM/SOS messages → high-priority pool (never blocked by tracking).
-# Tracking / owner / dtorto → normal pool (bounded to limit CPU from route checks).
+# Device tracking → normal pool (bounded to limit CPU from route checks).
+# Owner/dtorto → dedicated pool so user requests are never queued behind
+#   slow device tracking tasks (which can take 8+ seconds each).
 # ---------------------------------------------------------------------------
 _em_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mqtt-em")
 _tracking_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mqtt-track")
+_user_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mqtt-user")
 
 # ---------------------------------------------------------------------------
 # MQTT client setup
@@ -468,3 +472,4 @@ finally:
     client.disconnect()
     _em_executor.shutdown(wait=False)
     _tracking_executor.shutdown(wait=False)
+    _user_executor.shutdown(wait=False)

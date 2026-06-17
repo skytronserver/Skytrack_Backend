@@ -22597,21 +22597,21 @@ def get_device_health_status(request):
                 'last_seen': last_seen,
                 'offline_duration_minutes': offline_duration_minutes if device_status == 'offline' else 0,
                 'device_details': {
-                    'imei': device_tag.device.imei,
-                    'device_stock_id': device_tag.device.id,
-                    'device_esn': device_tag.device.device_esn,
-                    'iccid': device_tag.device.iccid,
-                    'msisdn1': device_tag.device.msisdn1,
+                    'imei': device_tag.device.imei if device_tag.device else None,
+                    'device_stock_id': device_tag.device.id if device_tag.device else None,
+                    'device_esn': device_tag.device.device_esn if device_tag.device else None,
+                    'iccid': device_tag.device.iccid if device_tag.device else None,
+                    'msisdn1': device_tag.device.msisdn1 if device_tag.device else None,
                     'device_model': {
                         'id': device_tag.device.model.id,
                         'model_name': device_tag.device.model.model_name,
                         'vendor_id': device_tag.device.model.vendor_id,
                         'hardware_version': device_tag.device.model.hardware_version,
-                    },
+                    } if device_tag.device and device_tag.device.model else None,
                     'manufacturer': {
                         'id': device_tag.device.model.created_by.id if device_tag.device.model.created_by else None,
                         'name': device_tag.device.model.created_by.name if device_tag.device.model.created_by else 'N/A'
-                    }
+                    } if device_tag.device and device_tag.device.model else None
                 },
                 'vehicle_details': {
                     'vehicle_make': device_tag.vehicle_make,
