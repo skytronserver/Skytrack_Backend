@@ -194,6 +194,14 @@ def require_permission(module: str, action: str = 'view'):
     DRF-compatible decorator that rejects the request with HTTP 403 when the
     authenticated user lacks *action* on *module*.
 
+    Fall-back OR-gate: if the specific module check fails, the decorator
+    consults rbac_api_map.  If the user has access to **any** module mapped to
+    this URL (with the action derived from the HTTP method), the request is
+    allowed.  This ensures that a view decorated with
+    ``@require_permission('gps_tracking', 'view')`` is still accessible to a
+    dealer who only has ``gps_clustering`` — as long as ``gps_clustering`` is
+    listed in API_MODULE_MAP for that URL.
+
     Usage (place BELOW @api_view and @permission_classes)::
 
         @api_view(['GET'])
@@ -201,22 +209,33 @@ def require_permission(module: str, action: str = 'view'):
         @require_permission('gps_tracking', 'view')
         def my_view(request):
             ...
-
-    The decorator only runs after DRF has already verified authentication, so
-    request.user is always populated when this check fires.
     """
     def decorator(view_func):
         @wraps(view_func)
         def wrapper(request, *args, **kwargs):
-            if not check_permission(request.user, module, action):
-                return Response(
-                    {
-                        'error': 'Access denied.',
-                        'detail': f"Your role does not have '{action}' permission on '{module}'.",
-                    },
-                    status=403,
-                )
-            return view_func(request, *args, **kwargs)
+            # ── Primary check: specific module ────────────────────────────
+            if check_permission(request.user, module, action):
+                return view_func(request, *args, **kwargs)
+
+            # ── Fallback: map-based OR-gate ───────────────────────────────
+            resolver = getattr(request, 'resolver_match', None)
+            if resolver and resolver.url_name:
+                from .rbac_api_map import get_modules_for_url, get_action_for_url
+                map_modules = get_modules_for_url(resolver.url_name)
+                if map_modules:
+                    map_action = get_action_for_url(resolver.url_name, method=request.method)
+                    if check_any_module_permission(request.user, map_modules, map_action):
+                        return view_func(request, *args, **kwargs)
+
+            return Response(
+                {
+                    'error': 'Access denied.',
+                    'detail': (
+                        f"Your role does not have '{action}' permission on '{module}'."
+                    ),
+                },
+                status=403,
+            )
         return wrapper
     return decorator
 
@@ -313,7 +332,8 @@ class ModuleAccessPermission(BasePermission):
             # URL not in map → not gated, allow
             return True
 
-        action = get_action_for_url(url_name)
+        # Derive action from HTTP method (or per-URL override)
+        action = get_action_for_url(url_name, method=request.method)
         return check_any_module_permission(request.user, modules, action)
 
 

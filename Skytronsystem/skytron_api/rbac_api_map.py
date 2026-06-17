@@ -407,15 +407,125 @@ API_MODULE_MAP: dict[str, list[str]] = {
 
 
 # ---------------------------------------------------------------------------
+# HTTP method → default RBAC action
+# ---------------------------------------------------------------------------
+# Most POST endpoints in this backend are filter/list operations (they take
+# query params in the body rather than creating a resource), so POST defaults
+# to 'view'.  Actual create/update/delete endpoints are overridden below.
+# ---------------------------------------------------------------------------
+_METHOD_TO_ACTION: dict[str, str] = {
+    'GET':     'filter',
+    'HEAD':    'filter',
+    'OPTIONS': 'filter',
+    'POST':    'filter',
+    'PUT':     'update',
+    'PATCH':   'update',
+    'DELETE':  'delete',
+}
+
+# ---------------------------------------------------------------------------
 # Per-URL action override
 # ---------------------------------------------------------------------------
-# By default ModuleAccessPermission checks the 'view' action.
-# For data-retrieval endpoints that require explicit filter permission (F),
-# add the URL name here with action 'filter'.
+# These take precedence over the HTTP-method default above.
+# Use this for:
+#   • POST endpoints that specifically CREATE a resource → 'create'
+#   • POST endpoints that require explicit filter permission → 'filter'
+#   • Any endpoint where the default method→action mapping is wrong
 # ---------------------------------------------------------------------------
 API_ACTION_OVERRIDE: dict[str, str] = {
-    "Tag_ownerlist":          "filter",   # /api/tag/tag_ownerlist/ — trip-viewer (F)
-    "get_device_health_status": "filter", # /api/device-health-status/ — report_device_health (F)
+    # ── filter permission required (explicit, same as the new default) ───────
+    # Listed here for clarity; they were previously special-cased as 'view'.
+    "Tag_ownerlist":              "filter",
+    "get_device_health_status":   "filter",
+
+    # ── create permission required ──────────────────────────────────────────
+    "create_StateAdmin":          "create",
+    "create_eSimProvider":        "create",
+    "create_SOSAdmin":            "create",
+    "create_superuser":           "create",
+    "create_DTO_RTO":             "create",
+    "create_dealer":              "create",
+    "create_SOSuser":             "create",
+    "create_VehicleOwner":        "create",
+    "create_testAgency":          "create",
+    "create_testAgencyDetails":   "create",
+    "create_device_model_technical_onboarding_request": "create",
+    "esimActivateReq-create":     "create",
+    "deviceStockCreate":          "create",
+    "deviceStockCreateBulk":      "create",
+    "devicemodel-create":         "create",
+    "COPCreate":                  "create",
+    "create_poi":                 "create",
+    "create_notice":              "create",
+    "complaint_create":           "create",
+    "whitelist_request_create":   "create",
+    "create_trip":                "create",
+    "create_EM_team":             "create",
+    "create_manufacturer":        "create",
+    "saveRoute":                  "create",
+    "register_incident":          "create",
+    "create_settings_VehicleCategory": "create",
+    "create_vehicle_category_code":    "create",
+    "create_settings_State":      "create",
+    "create_settings_District":   "create",
+    "create_settings_ip":         "create",
+    "create_settings_hp_freq":    "create",
+    "create_settings_firmware":   "create",
+    "create_ota_settings":        "create",
+    "create_permit_master":       "create",
+    "rbac_create_custom_role":    "create",
+    "rbac_create_user":           "create",
+    "TagDevice2Vehicle":          "create",
+    "StockAssignToDealer":        "create",
+    "archive_gps_data_log":       "create",
+
+    # ── update permission required ──────────────────────────────────────────
+    "update_StateAdmin":          "update",
+    "update_eSimProvider":        "update",
+    "update_DTO_RTO":             "update",
+    "update_dealer":              "update",
+    "update_VehicleOwner":        "update",
+    "update_manufacturer":        "update",
+    "update_testAgency":          "update",
+    "update_notice":              "update",
+    "update_trip":                "update",
+    "update_incident":            "update",
+    "edit_EM_team":               "update",
+    "update_ota_settings":        "update",
+    "edit_vehicle_category_code": "update",
+    "edit_permit_master":         "update",
+    "rbac_update_role":           "update",
+    "rbac_update_user":           "update",
+    "rbac_update_role_permissions": "update",
+    "rbac_assign_role":           "update",
+    "complaint_update_status":    "update",
+    "complaint_escalate":         "update",
+    "complaint_final_report":     "update",
+    "whitelist_request_approve":  "update",
+    "whitelist_request_deny":     "update",
+    "whitelist_device_kyc_update":"update",
+    "update_notification_preferences": "update",
+    "update_vehicle_owner_expiry":"update",
+    "superadmin_mark_technical_onboarding_ongoing_evaluation": "update",
+    "superadmin_finalize_technical_onboarding_request":        "update",
+    "approve_manufacturer_tech_onboarding":                    "update",
+    "esimActivateReq-update":     "update",
+    "restore_gps_data_log":       "update",
+    "send_mqtt_command":          "update",
+
+    # ── delete permission required ──────────────────────────────────────────
+    "delete_notice":              "delete",
+    "delete_poi":                 "delete",
+    "rbac_deactivate_role":       "delete",
+    "delete_manufacturer":        "delete",
+    "delete_dealer":              "delete",
+    "delete_VehicleOwner":        "delete",
+    "delete_eSimProvider":        "delete",
+    "delRoute":                   "delete",
+    "unTagDevice2Vehicle":        "delete",
+    "remove_EM_team":             "delete",
+    "end_trip":                   "delete",
+    "cancel_trip":                "delete",
 }
 
 
@@ -424,6 +534,14 @@ def get_modules_for_url(url_name: str) -> list[str]:
     return API_MODULE_MAP.get(url_name, [])
 
 
-def get_action_for_url(url_name: str) -> str:
-    """Return the RBAC action to check for *url_name* (default: 'view')."""
-    return API_ACTION_OVERRIDE.get(url_name, 'view')
+def get_action_for_url(url_name: str, method: str = 'GET') -> str:
+    """
+    Return the RBAC action to check for *url_name* + HTTP *method*.
+
+    Priority:
+      1. Explicit per-URL override in API_ACTION_OVERRIDE
+      2. HTTP method default from _METHOD_TO_ACTION
+    """
+    if url_name in API_ACTION_OVERRIDE:
+        return API_ACTION_OVERRIDE[url_name]
+    return _METHOD_TO_ACTION.get(method.upper(), 'view')
