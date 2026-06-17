@@ -308,6 +308,10 @@ REST_FRAMEWORK = {
 
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
+        # Module-level OR-gate: if the URL is in rbac_api_map, the user must
+        # have 'view' on at least one of its mapped modules.  URLs not in the
+        # map are allowed through (backward-compatible for un-mapped endpoints).
+        'skytron_api.rbac.ModuleAccessPermission',
     ],
 
 }

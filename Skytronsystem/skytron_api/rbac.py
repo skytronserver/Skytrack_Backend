@@ -3,16 +3,23 @@ RBAC permission engine for Skytrack.
 
 Public API
 ----------
-check_permission(user, module, action)   → bool
-get_module_permission(user, module)      → dict | None
-get_all_module_permissions(user)         → dict[module → perm_dict]
-get_data_scope(user, module)             → str
-invalidate_role_cache(role_code)         → None
+check_permission(user, module, action)         → bool
+check_any_module_permission(user, modules, action) → bool
+get_module_permission(user, module)            → dict | None
+get_all_module_permissions(user)               → dict[module → perm_dict]
+get_data_scope(user, module)                   → str
+invalidate_role_cache(role_code)               → None
 
-apply_gps_scope(user, module, queryset)  → (qs | None, err_dict | None)
-apply_dt_scope(user, module, queryset)   → (qs | None, err_dict | None)
+apply_gps_scope(user, module, queryset)        → (qs | None, err_dict | None)
+apply_dt_scope(user, module, queryset)         → (qs | None, err_dict | None)
 
-require_permission(module, action)       → decorator
+require_permission(module, action)             → decorator (single module)
+require_any_module(modules, action)            → decorator (OR across modules)
+
+DRF permission class
+--------------------
+ModuleAccessPermission  — drop into DEFAULT_PERMISSION_CLASSES; automatically
+                          gates every URL registered in rbac_api_map.API_MODULE_MAP.
 """
 
 import json
@@ -21,6 +28,7 @@ from functools import wraps
 from typing import Optional
 
 from django.core.cache import cache
+from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 
 logger = logging.getLogger(__name__)
@@ -129,6 +137,25 @@ def check_permission(user, module: str, action: str = 'view') -> bool:
     return bool(perm.get(action, False))
 
 
+def check_any_module_permission(user, modules: list, action: str = 'view') -> bool:
+    """
+    Return True if *user* has *action* permission on **any** module in *modules*.
+
+    This is the OR-gate used when a single API endpoint is shared across
+    multiple sidebar modules (e.g. gps_track_data_api is used by live_tracking,
+    gps_tracking, gps_history, …).  Access is granted as soon as one hit is found.
+    """
+    role_code = getattr(user, 'role', None)
+    if not role_code:
+        return False
+    perms = _load_role_permissions(role_code)
+    for module in modules:
+        mp = perms.get(module)
+        if mp and mp.get(action, False):
+            return True
+    return False
+
+
 def get_data_scope(user, module: str) -> str:
     """
     Return the data-hierarchy scope string for (user, module).
@@ -192,6 +219,102 @@ def require_permission(module: str, action: str = 'view'):
             return view_func(request, *args, **kwargs)
         return wrapper
     return decorator
+
+
+def require_any_module(modules: list, action: str = 'view'):
+    """
+    DRF-compatible decorator that rejects the request with HTTP 403 when the
+    authenticated user lacks *action* on **all** modules in *modules*.
+
+    Use this when multiple sidebar modules share the same API endpoint and
+    access should be granted if the user has permission on any one of them.
+
+    Usage::
+
+        @api_view(['GET'])
+        @permission_classes([IsAuthenticated])
+        @require_any_module(['live_tracking', 'gps_clustering', 'gps_tracking'])
+        def gps_track_data_api(request):
+            ...
+    """
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(request, *args, **kwargs):
+            if not check_any_module_permission(request.user, modules, action):
+                return Response(
+                    {
+                        'error': 'Access denied.',
+                        'detail': (
+                            f"Your role does not have '{action}' permission on any of: "
+                            f"{', '.join(modules)}."
+                        ),
+                    },
+                    status=403,
+                )
+            return view_func(request, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
+# ── DRF Permission class (automatic map-based enforcement) ────────────────────
+
+class ModuleAccessPermission(BasePermission):
+    """
+    DRF permission class that enforces module-level access for every API
+    endpoint registered in ``rbac_api_map.API_MODULE_MAP``.
+
+    Add to ``DEFAULT_PERMISSION_CLASSES`` in settings alongside
+    ``IsAuthenticated``::
+
+        'DEFAULT_PERMISSION_CLASSES': [
+            'rest_framework.permissions.IsAuthenticated',
+            'skytron_api.rbac.ModuleAccessPermission',
+        ]
+
+    Behaviour
+    ---------
+    • If the URL name is **not** in the map → allow (unknown endpoints are not
+      restricted by this layer; use ``@require_permission`` for those).
+    • If the user is not authenticated → allow (``IsAuthenticated`` handles
+      the 401; we don't double-up with a confusing 403).
+    • If the user's role is ``superadmin`` → allow (superadmin has every module
+      in the DB, but short-circuiting avoids a cache miss on every request).
+    • Otherwise → grant access iff the user has **view** permission on at least
+      one of the mapped modules.
+    """
+
+    message = {
+        'error': 'Access denied.',
+        'detail': 'Your role does not have access to this resource.',
+    }
+
+    def has_permission(self, request, view) -> bool:
+        # Not authenticated → defer to IsAuthenticated
+        if not request.user or not request.user.is_authenticated:
+            return True
+
+        # Superadmin always passes (they have every module)
+        role_code = getattr(request.user, 'role', None)
+        if role_code == 'superadmin':
+            return True
+
+        # Resolve the URL name for this request
+        resolver_match = getattr(request, 'resolver_match', None)
+        if not resolver_match:
+            return True
+        url_name = resolver_match.url_name
+        if not url_name:
+            return True
+
+        # Look up the modules and required action for this URL
+        from .rbac_api_map import get_modules_for_url, get_action_for_url
+        modules = get_modules_for_url(url_name)
+        if not modules:
+            # URL not in map → not gated, allow
+            return True
+
+        action = get_action_for_url(url_name)
+        return check_any_module_permission(request.user, modules, action)
 
 
 # ── Internal scope helpers ────────────────────────────────────────────────────
