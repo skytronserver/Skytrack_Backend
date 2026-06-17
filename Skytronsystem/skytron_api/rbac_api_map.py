@@ -172,7 +172,7 @@ API_MODULE_MAP: dict[str, list[str]] = {
 
     "gps_history_map_data":       ["gps_history", "history_playback"],
 
-    "Tag_ownerlist":              ["trip_viewer"],
+    "tag_ownerlist":              ["trip_viewer", "vehicle_tagging"],
     "get_trip":                   ["trip_monitor", "trip_management"],
     "create_trip":                ["trip_management"],
     "update_trip":                ["trip_management"],
@@ -435,7 +435,7 @@ _METHOD_TO_ACTION: dict[str, str] = {
 API_ACTION_OVERRIDE: dict[str, str] = {
     # ── filter permission required (explicit, same as the new default) ───────
     # Listed here for clarity; they were previously special-cased as 'view'.
-    "Tag_ownerlist":              "filter",
+    "tag_ownerlist":              "filter",
     "get_device_health_status":   "filter",
 
     # ── create permission required ──────────────────────────────────────────
