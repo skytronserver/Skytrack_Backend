@@ -45,6 +45,13 @@ from rest_framework.response import Response
 from rest_framework import status
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
+from django.db import close_old_connections
+
+# Background thread pool for reverse geocoding.
+# Geocoding blocks on an external HTTP call (~50-70 ms) — we run it after
+# the GPS record is already saved so the tracking worker thread is not stalled.
+_geocode_bg_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="geocode-bg")
 
 
 def generate_uuid_hex():
@@ -1960,6 +1967,25 @@ def _gps_reverse_geocode_from_api(lat, lon):
     }
 
 
+def _geocode_and_patch(pk, lat, lon):
+    """Background: resolve address from geocoding API and patch the GPS record."""
+    try:
+        close_old_connections()
+        geo = _gps_reverse_geocode_from_api(lat, lon)
+        if not geo:
+            return
+        patch = {}
+        if geo.get('state'):     patch['state']     = geo['state']
+        if geo.get('district'):  patch['district']  = geo['district']
+        if geo.get('city'):      patch['city']      = geo['city']
+        if geo.get('road'):      patch['road']      = geo['road']
+        if geo.get('road_type'): patch['road_type'] = geo['road_type']
+        if patch:
+            GPSData.objects.filter(pk=pk).update(**patch)
+    except Exception:
+        pass
+
+
 @receiver(post_save, sender=GPSData, dispatch_uid="gpsdata_populate_location_and_consecutive_time")
 def gpsdata_populate_location_and_consecutive_time(sender, instance, created, **kwargs):
     """Populate state/district/city/road and consecutive time counters on insert.
@@ -1978,23 +2004,9 @@ def gpsdata_populate_location_and_consecutive_time(sender, instance, created, **
 
     update_data = {}
 
-    # Populate from reverse geocoding API first (as requested).
-    try:
-        lat = float(instance.latitude)
-        lon = float(instance.longitude)
-        geo = _gps_reverse_geocode_from_api(lat, lon)
-        if not instance.state and geo.get('state'):
-            update_data['state'] = geo.get('state')
-        if not instance.district and geo.get('district'):
-            update_data['district'] = geo.get('district')
-        if not instance.city and geo.get('city'):
-            update_data['city'] = geo.get('city')
-        if not instance.road and geo.get('road'):
-            update_data['road'] = geo.get('road')
-        if not instance.road_type and geo.get('road_type'):
-            update_data['road_type'] = geo.get('road_type')
-    except Exception:
-        pass
+    # Geocoding is done asynchronously in the background (_geocode_and_patch).
+    # Here we only carry forward location from the previous GPS point so the
+    # record has useful data immediately, without blocking on an HTTP call.
 
     # Fallback from device-tag registration hierarchy where possible.
     try:
@@ -2075,6 +2087,14 @@ def gpsdata_populate_location_and_consecutive_time(sender, instance, created, **
     # Avoid recursion: update via queryset.
     if update_data:
         GPSData.objects.filter(pk=instance.pk).update(**update_data)
+
+    # Submit reverse geocoding in background; will patch state/city/road when done.
+    try:
+        _lat = float(instance.latitude)
+        _lon = float(instance.longitude)
+        _geocode_bg_executor.submit(_geocode_and_patch, instance.pk, _lat, _lon)
+    except Exception:
+        pass
 
 class GPSDataLog(models.Model):
     objects = SafeCreateManager()

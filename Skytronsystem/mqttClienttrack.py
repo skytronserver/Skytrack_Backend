@@ -433,9 +433,9 @@ def _safe_exec(name, func, *args, **kwargs):
 # Owner/dtorto → dedicated pool so user requests are never queued behind
 #   slow device tracking tasks (which can take 8+ seconds each).
 # ---------------------------------------------------------------------------
-_em_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mqtt-em")
-_tracking_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mqtt-track")
-_user_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mqtt-user")
+_em_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="mqtt-em")
+_tracking_executor = ThreadPoolExecutor(max_workers=32, thread_name_prefix="mqtt-track")
+_user_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="mqtt-user")
 
 # ---------------------------------------------------------------------------
 # MQTT client setup

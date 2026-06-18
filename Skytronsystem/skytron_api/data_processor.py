@@ -23,6 +23,22 @@ _route_alert_cache: dict = {}          # device_tag_id -> (expires_at, last_aler
 _route_alert_cache_lock = threading.Lock()
 _ROUTE_ALERT_CACHE_TTL = 30           # seconds
 
+# Per-IMEI cache for DeviceStock lookups (device registration rarely changes).
+_device_cache: dict = {}               # imei_str -> (expires_at, DeviceStock|None)
+_device_cache_lock = threading.Lock()
+_DEVICE_CACHE_TTL = 120               # seconds
+
+# Per-device_id cache for DeviceTag lookups.
+_device_tag_cache: dict = {}           # device.id -> (expires_at, DeviceTag|None)
+_device_tag_cache_lock = threading.Lock()
+
+# Per-device cache for the most-recent non-Route alert per type.
+# Eliminates 15+ DB queries per packet caused by lastnormal_alerts.filter().last() calls.
+# Invalidated whenever create_alert() writes a new row.
+_normal_alert_cache: dict = {}         # device_tag_id -> (expires_at, {type: AlertsLog})
+_normal_alert_cache_lock = threading.Lock()
+_NORMAL_ALERT_CACHE_TTL = 10          # seconds
+
 from skytron_api.models import (
     GPSData, GPSDataLog, DeviceTag, DeviceStock, Route, AlertsLog,
     EMGPSLocation, GPSemDataLog, User, BleKey,
@@ -33,6 +49,66 @@ from skytron_api.models import (
 # Timezone setup
 gmt_timezone = pytz.timezone('GMT')
 ist_timezone = pytz.timezone('Asia/Kolkata')
+
+
+def _get_device_by_imei(imei):
+    """Cached DeviceStock lookup by IMEI string. TTL = 120 s."""
+    now = time.monotonic()
+    key = str(imei)
+    with _device_cache_lock:
+        entry = _device_cache.get(key)
+        if entry and now < entry[0]:
+            return entry[1]
+    device = DeviceStock.objects.filter(imei__contains=key).last()
+    with _device_cache_lock:
+        _device_cache[key] = (now + _DEVICE_CACHE_TTL, device)
+    return device
+
+
+def _get_device_tag(device):
+    """Cached DeviceTag lookup for a DeviceStock instance. TTL = 120 s."""
+    if device is None:
+        return None
+    now = time.monotonic()
+    key = device.id
+    with _device_tag_cache_lock:
+        entry = _device_tag_cache.get(key)
+        if entry and now < entry[0]:
+            return entry[1]
+    device_tag = DeviceTag.objects.filter(device=device, status='Owner_Final_OTP_Verified').last()
+    with _device_tag_cache_lock:
+        _device_tag_cache[key] = (now + _DEVICE_CACHE_TTL, device_tag)
+    return device_tag
+
+
+def _get_normal_alert_map(device_tag):
+    """Return {alert_type: AlertsLog} for the latest non-Route alert per type.
+    Cached per device for _NORMAL_ALERT_CACHE_TTL seconds.
+    Invalidated by create_alert() on every new alert write.
+    """
+    now = time.monotonic()
+    key = device_tag.id
+    with _normal_alert_cache_lock:
+        entry = _normal_alert_cache.get(key)
+        if entry and now < entry[0]:
+            return entry[1]
+
+    last_alerts = (
+        AlertsLog.objects.filter(deviceTag=device_tag)
+        .exclude(type="Route")
+        .values('type')
+        .annotate(latest_timestamp=Max('timestamp'))
+    )
+    alerts = list(AlertsLog.objects.filter(
+        deviceTag=device_tag,
+        type__in=[e['type'] for e in last_alerts],
+        timestamp__in=[e['latest_timestamp'] for e in last_alerts],
+    ))
+    alert_map = {a.type: a for a in alerts}
+
+    with _normal_alert_cache_lock:
+        _normal_alert_cache[key] = (now + _NORMAL_ALERT_CACHE_TTL, alert_map)
+    return alert_map
 
 
 def process_gps_data(data_str):
@@ -433,6 +509,9 @@ def create_alert(alert_type, status, loc_id, device_tag, poi_ref=None):
             poi_ref=poi_ref,
             alert_details='',
         )
+        # Invalidate per-device alert cache so next packet sees the new row.
+        with _normal_alert_cache_lock:
+            _normal_alert_cache.pop(device_tag.id, None)
     except Exception as e:
         print(f"Error creating alert: {e}", flush=True)
 
@@ -452,37 +531,26 @@ def process_alerts(gps_data, loc_id):
         lat = gps_data['latitude']
         lon = gps_data['longitude']
 
-        # Fetch last alerts for non-route alerts
-        last_alerts = (
-            AlertsLog.objects.filter(deviceTag=device_tag)
-            .exclude(type="Route")
-            .values('type')
-            .annotate(latest_timestamp=Max('timestamp'))
-        )
-
-        lastnormal_alerts = AlertsLog.objects.filter(
-            deviceTag=device_tag,
-            type__in=[entry['type'] for entry in last_alerts],
-            timestamp__in=[entry['latest_timestamp'] for entry in last_alerts]
-        )
+        # Load latest alert per type from cache (avoids 15+ DB queries per packet).
+        normal_alert_map = _get_normal_alert_map(device_tag)
 
         # Emergency Alert
         if packet_type == "EA":
             alert_type = "Em"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "out":
                 create_alert(alert_type, "in", loc_id, device_tag)
 
         # Engine/Ignition Alerts
         if gps_data["ignition_status"] == "1":
             alert_type = "Eng"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "out":
                 create_alert(alert_type, "in", loc_id, device_tag)
 
             # Close any open UnauthorizedParking when engine starts
             try:
-                up_last = lastnormal_alerts.filter(type='UnauthorizedParking').last()
+                up_last = normal_alert_map.get('UnauthorizedParking')
                 if up_last and (up_last.status or '') == 'in':
                     create_alert('UnauthorizedParking', 'out', loc_id, device_tag)
             except Exception as _e:
@@ -502,7 +570,7 @@ def process_alerts(gps_data, loc_id):
 
                     in_hours = _in_working_hours(now_ist_time, wh_start, wh_end)
                     if not in_hours:
-                        ot_last = lastnormal_alerts.filter(type="Overtime").last()
+                        ot_last = normal_alert_map.get("Overtime")
                         if not ot_last or (ot_last.status or "") != "in":
                             create_alert("Overtime", "in", loc_id, device_tag)
                 # If no working hours configured, skip Overtime
@@ -510,13 +578,13 @@ def process_alerts(gps_data, loc_id):
                 print(f"Overtime check error: {_e}", flush=True)
         elif gps_data["ignition_status"] == "0":
             alert_type = "Eng"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "in":
                 create_alert(alert_type, "out", loc_id, device_tag)
 
             # Close Overtime on engine off
             try:
-                ot_last = lastnormal_alerts.filter(type="Overtime").last()
+                ot_last = normal_alert_map.get("Overtime")
                 if ot_last and (ot_last.status or "") == "in":
                     create_alert("Overtime", "out", loc_id, device_tag)
             except Exception as _e:
@@ -542,60 +610,60 @@ def process_alerts(gps_data, loc_id):
         # Speed Alerts
         if gps_data["speed"] > 80:
             alert_type = "OverSpeed"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "out":
                 create_alert(alert_type, "in", loc_id, device_tag)
         elif gps_data["speed"] <= 80:
             alert_type = "OverSpeed"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "in":
                 create_alert(alert_type, "out", loc_id, device_tag)
 
         # Internal Battery Alerts
         if gps_data["internal_battery_voltage"] < 3:
             alert_type = "LowIntBat"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "out":
                 create_alert(alert_type, "in", loc_id, device_tag)
         elif gps_data["internal_battery_voltage"] >= 3:
             alert_type = "LowIntBat"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "in":
                 create_alert(alert_type, "out", loc_id, device_tag)
 
         # External Battery Alerts
         if gps_data["main_input_voltage"] < 8:
             alert_type = "LowExtBat"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "out":
                 create_alert(alert_type, "in", loc_id, device_tag)
         elif gps_data["main_input_voltage"] > 9:
             alert_type = "LowExtBat"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "in":
                 create_alert(alert_type, "out", loc_id, device_tag)
 
         # Battery Disconnect Alerts
         if gps_data["main_input_voltage"] < 2:
             alert_type = "ExtBatDiscnt"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "out":
                 create_alert(alert_type, "in", loc_id, device_tag)
         elif gps_data["main_input_voltage"] >= 2:
             alert_type = "ExtBatDiscnt"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "in":
                 create_alert(alert_type, "out", loc_id, device_tag)
 
         # Box Tamper Alerts
         if gps_data["box_tamper_alert"] == "C":
             alert_type = "BoxTemp"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "out":
                 create_alert(alert_type, "in", loc_id, device_tag)
         elif gps_data["box_tamper_alert"] == "O":
             alert_type = "BoxTemp"
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status == "in":
                 create_alert(alert_type, "out", loc_id, device_tag)
 
@@ -606,7 +674,7 @@ def process_alerts(gps_data, loc_id):
             gps_fix_ok = False
         alert_type = "GPSLoss"
         desired_status = "out" if gps_fix_ok else "in"
-        al = lastnormal_alerts.filter(type=alert_type).last()
+        al = normal_alert_map.get(alert_type)
         if not al or (al.status or "") != desired_status:
             create_alert(alert_type, desired_status, loc_id, device_tag)
 
@@ -619,7 +687,7 @@ def process_alerts(gps_data, loc_id):
             signal_val = 0.0
         alert_type = "NetworkLoss"
         desired_status = "in" if signal_val < 15 else "out"
-        al = lastnormal_alerts.filter(type=alert_type).last()
+        al = normal_alert_map.get(alert_type)
         if not al or (al.status or "") != desired_status:
             create_alert(alert_type, desired_status, loc_id, device_tag)
 
@@ -646,7 +714,7 @@ def process_alerts(gps_data, loc_id):
 
         if alert_id in alert_mappings:
             alert_type, status = alert_mappings[alert_id]
-            al = lastnormal_alerts.filter(type=alert_type).last()
+            al = normal_alert_map.get(alert_type)
             if not al or al.status != status or alert_id in ALWAYS_CREATE_ALERT_IDS:
                 create_alert(alert_type, status, loc_id, device_tag)
 
@@ -705,7 +773,7 @@ def process_alerts(gps_data, loc_id):
                 if geodesic((lat, lon), (_poi.lat, _poi.lon)).meters <= 100:
                     _prohibited_in_range = _poi
                     break
-            _pa_last = lastnormal_alerts.filter(type='Prohibited_Area').last()
+            _pa_last = normal_alert_map.get('Prohibited_Area')
             if _prohibited_in_range is not None:
                 if not _pa_last or (_pa_last.status or '') == 'out':
                     create_alert('Prohibited_Area', 'in', loc_id, device_tag, poi_ref=_prohibited_in_range)
@@ -877,10 +945,10 @@ def process_device_tracking_data(data_str, source="unknown"):
     try:
         def _swap_reg_by_imei(match):
             imei_val = match.group(1)
-            device = DeviceStock.objects.filter(imei__contains=str(imei_val)).last()
+            device = _get_device_by_imei(imei_val)
             if not device:
                 return match.group(0)
-            device_tag = DeviceTag.objects.filter(device=device,status = 'Owner_Final_OTP_Verified').last()
+            device_tag = _get_device_tag(device)
             reg_no = (getattr(device_tag, "vehicle_reg_no", None) or "").strip() if device_tag else ""
             if not reg_no:
                 return match.group(0)
@@ -911,15 +979,15 @@ def process_device_tracking_data(data_str, source="unknown"):
                 if gps_data:
                     imei = gps_data['imei']
 
-                    # Find device by IMEI
+                    # Find device by IMEI (cached, TTL=120s)
                     _t0 = time.perf_counter()
-                    device = DeviceStock.objects.filter(imei__contains=str(imei)).last()
+                    device = _get_device_by_imei(imei)
                     _t1 = time.perf_counter()
                     print(f"#{imei}# -> Device: {device}", flush=True)
                     print(f"[Tracking][Perf] device_lookup={(_t1-_t0)*1000:.1f}ms", flush=True)
 
                     if device:
-                        device_tag = DeviceTag.objects.filter(device=device,status = 'Owner_Final_OTP_Verified').last()
+                        device_tag = _get_device_tag(device)
                         _t2 = time.perf_counter()
                         print(f"[Tracking][Perf] device_tag_lookup={(_t2-_t1)*1000:.1f}ms", flush=True)
 
