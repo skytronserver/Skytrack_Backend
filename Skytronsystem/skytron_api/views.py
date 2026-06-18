@@ -26998,7 +26998,7 @@ def create_testAgency(request):
         expirydate = date_joined + timezone.timedelta(days=365 * 2)
 
         partner_status = _normalize_partner_status(request.data.get('status'))
-        if partner_status is None:
+        if partner_status is None or partner_status == 'Created':
             partner_status = 'Created'
         elif partner_status not in ALLOWED_PARTNER_STATUSES:
             return Response(
