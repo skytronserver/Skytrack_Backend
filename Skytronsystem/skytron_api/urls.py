@@ -28,6 +28,7 @@ from .whitelist_views import (
     device_dashboard,
     device_detail,
 )
+from .activation_views import receive_activation_command_reply
 from django.urls import path
 
  
@@ -631,6 +632,9 @@ urlpatterns = [
     path('whitelist/device/dashboard/', device_dashboard, name='whitelist_device_dashboard'),
     path('whitelist/device/<int:pk>/detail/', device_detail, name='whitelist_device_detail'),
     path('whitelist/device/<int:pk>/kyc/update/', update_device_kyc, name='whitelist_device_kyc_update'),
+
+    # Activation command reply (public – called by SMS gateway)
+    path('device/activation-reply/', receive_activation_command_reply, name='device_activation_reply'),
 ]  
 
 

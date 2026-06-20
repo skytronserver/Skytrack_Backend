@@ -4683,3 +4683,21 @@ def gpsdata_evaluate_custom_alert_rules(sender, instance, created, **kwargs):
         return
     from django.db import transaction
     transaction.on_commit(lambda: _evaluate_custom_alert_rules(instance))
+
+
+class ActivationCommandReply(models.Model):
+    objects = SafeCreateManager()
+    imei = models.CharField(max_length=55)
+    device_tag = models.ForeignKey(DeviceTag, on_delete=models.SET_NULL, null=True, blank=True, related_name='activation_command_replies')
+    raw_message = models.TextField()
+    timestamp = models.DateTimeField()
+    incoming_from_no = models.CharField(max_length=20)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['imei']),
+            models.Index(fields=['timestamp']),
+        ]
+
+    def __str__(self):
+        return f"{self.imei} @ {self.timestamp}"

@@ -11504,6 +11504,17 @@ def TagSendOwnerOtpFinal(request ):
     #device_model = get_object_or_404(DeviceTag, id=device_model_id,   status='TempActive')
     device_model = get_object_or_404(DeviceTag, device__id=device_model_id,  status__in=['Owner_OTP_Verified','Dealer_OTP_Verified','TempActiveSent','TempActive',"Owner_Final_OTP_Sent"])
 
+    two_days_ago = timezone.now() - timedelta(days=2)
+    activation_received = ActivationCommandReply.objects.filter(
+        device_tag=device_model,
+        timestamp__gte=two_days_ago,
+    ).exists()
+    if not activation_received:
+        return Response(
+            {"error": "Waiting for activation message from device. Please ensure the device has sent an activation reply within the last 2 days."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     if STATIC_OTP_CAP:
         device_model.otp  = str(685472)
     else:
