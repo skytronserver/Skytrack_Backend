@@ -4422,7 +4422,7 @@ def send_SMS(no,text,tpid):
 
 
 def sms_send(no,text,tpid):
-    #text = "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+    #text = "Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
     import os
     url = os.getenv("SMS_URL", "http://tra.bulksmshyderabad.co.in/websms/sendsms.aspx")
     params = {
@@ -6969,8 +6969,8 @@ def create_user(role, req):
 
 def send_usercreation_otp(user, new_password, type):
     tpid = "1007515117119518623"
-    text = ('Dear user, to confirm your registration in SkyTron platform, '
-            'please click at the following link and validate the registration request- '
+    text = ('Dear user, to confirm your registration on SkyTron platform, '
+            'please click on the following link and validate the registration request- '
             'https://' + DEPLOY_URL + '/new/' + str(new_password) +
             '. The link will expire in 24 hours. -SkyTron')
     ok, msg = send_SMS(user.mobile, text, tpid)
@@ -10490,7 +10490,7 @@ def CancelTagDevice2Vehicle(request ):
 
 
   
-            text="Dear VLTD Dealer/ Manufacturer,We have received request for tagging and activation of following device and vehicle-Vehicle Reg No: {}Device IMEI No: {}To confirm, please enter the OTP {}.- SkyTron".format(device_tag.vehicle_reg_no,device_tag.device.imei,device_tag.otp)
+            text="Dear VLTD Dealer/ Manufacturer, we have received a request for tagging and activation of following device and vehicle- Vehicle Reg No:{}, Device IMEI No:{}. To confirm, please enter the OTP {}. - SkyTron".format(device_tag.vehicle_reg_no,device_tag.device.imei,device_tag.otp)
             tpid="1007201930295888818"
             send_SMS( user.mobile,text,tpid) 
             send_mail(
@@ -10647,7 +10647,7 @@ def TagDevice2Vehicle(request ):
 
 
   
-            text="Dear VLTD Dealer/Manufacturer, We have received request for tagging and activation of following device and vehicle-Vehicle Reg No: {}, Device IMEI No: {}. To confirm, please enter the OTP {}.- SkyTron".format(device_tag.vehicle_reg_no,device_tag.device.imei,device_tag.otp)
+            text="Dear VLTD Dealer/ Manufacturer, we have received a request for tagging and activation of following device and vehicle- Vehicle Reg No:{}, Device IMEI No:{}. To confirm, please enter the OTP {}. - SkyTron".format(device_tag.vehicle_reg_no,device_tag.device.imei,device_tag.otp)
             tpid="1007201930295888818"
             send_SMS( user.mobile,text,tpid) 
             send_mail(
@@ -11472,8 +11472,8 @@ def TagSendOwnerOtp(request ):
     user=device_model.vehicle_owner.users.last()
 
  
-    text="Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 24 hours. Please do NOT share.-SkyTron".format(device_model.otp)
-    tpid="1007937055979875563"
+    text="Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {}. OTP will expire in 24 hours. Please do NOT share. -SkyTron".format(device_model.otp)
+    tpid="1007518520513302294"
     send_SMS( user.mobile,text,tpid) 
     send_mail(
                 'Login OTP',
@@ -11527,8 +11527,8 @@ def TagSendOwnerOtpFinal(request ):
     user=device_model.vehicle_owner.users.last()
 
  
-    text="Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 24 hours. Please do NOT share.-SkyTron".format(device_model.otp)
-    tpid="1007937055979875563"
+    text="Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {}. OTP will expire in 24 hours. Please do NOT share. -SkyTron".format(device_model.otp)
+    tpid="1007518520513302294"
     send_SMS( user.mobile,text,tpid) 
     send_mail(
                 'Login OTP',
@@ -11565,8 +11565,8 @@ def TagResendOwnerOtpFinal(request):
     device_model.save()
 
     owner_user = device_model.vehicle_owner.users.last()
-    text = "Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 24 hours. Please do NOT share.-SkyTron".format(device_model.otp)
-    tpid = "1007937055979875563"
+    text = "Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {}. OTP will expire in 24 hours. Please do NOT share. -SkyTron".format(device_model.otp)
+    tpid = "1007518520513302294"
     send_SMS(owner_user.mobile, text, tpid)
     send_mail(
         'Login OTP',
@@ -12138,7 +12138,7 @@ def TagResendDealerOtp(request):
     device_tag.otp_time = timezone.now()
     device_tag.save()
 
-    text = "Dear VLTD Dealer/ Manufacturer, we have received request for tagging and activation of following device and vehicle-Vehicle Reg No:{}, Device IMEI No:{}. To confirm, please enter the OTP {}.- SkyTron".format(
+    text = "Dear VLTD Dealer/ Manufacturer, we have received a request for tagging and activation of following device and vehicle- Vehicle Reg No:{}, Device IMEI No:{}. To confirm, please enter the OTP {}. - SkyTron".format(
         device_tag.vehicle_reg_no, device_tag.device.imei, device_tag.otp)
     tpid = "1007201930295888818"
     send_SMS(user.mobile, text, tpid)
@@ -12177,8 +12177,8 @@ def TagResendOwnerOtp(request):
     device_tag.save()
 
     owner_user = device_tag.vehicle_owner.users.last()
-    text = "Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {} will expire in 24 hours. Please do NOT share.-SkyTron".format(device_tag.otp)
-    tpid = "1007937055979875563"
+    text = "Dear Vehicle Owner, to confirm tagging of your VLTD with your vehicle, please enter the OTP: {}. OTP will expire in 24 hours. Please do NOT share. -SkyTron".format(device_tag.otp)
+    tpid = "1007518520513302294"
     send_SMS(owner_user.mobile, text, tpid)
     send_mail(
         'Login OTP',
@@ -13091,7 +13091,7 @@ def COPCreate(request ):
             device_cop_instance.save()
 
             if not new_model_create:
-                text="Dear user, your OTP to validate COP creation/update in SkyTron portal is {}. Please DO NOT disclose it to anyone. -SkyTron".format(otp)
+                text="Dear user, your OTP to validate COP creation/update on SkyTron portal is {}. Please DO NOT disclose it to anyone. -SkyTron".format(otp)
                 tpid="1007967997984175182"
                 send_SMS(user.mobile,text,tpid) 
                 """send_mail(
@@ -13159,7 +13159,7 @@ def COPSendStateAdminOtp(request ):
     
     device_model.status = 'StateAdminOTPSend'
     device_model.save()
-    text="Dear user, your OTP to validate COP creation/update in SkyTron portal is {}. Please DO NOT disclose it to anyone. -SkyTron".format(device_model.otp)
+    text="Dear user, your OTP to validate COP creation/update on SkyTron portal is {}. Please DO NOT disclose it to anyone. -SkyTron".format(device_model.otp)
     tpid="1007967997984175182"
     send_SMS(user.mobile,text,tpid) 
     send_mail(
@@ -17402,7 +17402,7 @@ def create_device_model(request ):
             # Update the tac_doc_path field in the DeviceModel instance
             device_model_instance.tac_doc_path = file_path
             device_model_instance.save()
-            text="Dear user, Confirmation OTP for VLTD Model Creation at SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
+            text="Dear user, confirmation OTP for VLTD Model Creation at SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron".format(otp)
             tpid="1007338577423920274" 
             send_SMS(user.mobile,text,tpid) 
             send_mail(
@@ -17539,7 +17539,7 @@ def send_email_confirmation(request ):
         email_confirmation_serializer.save()
         url=f"https://{DEPLOY_URL}/new/{confirmation_token}"
         tpid ="1007515117119518623"
-        text=f"Dear user, to confirm your registration in SkyTron platform, please click at the following link and validate the registration request-{url} The link will expire in 24 hours.-SkyTron"
+        text=f"Dear user, to confirm your registration on SkyTron platform, please click on the following link and validate the registration request- {url}. The link will expire in 24 hours. -SkyTron"
 
         send_SMS(user.mobile,text,tpid) 
 
@@ -18051,13 +18051,13 @@ def send_sms_otp(request ):
             session.save()
 
             user=session.user
-            text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp)
+            text="Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp)
             tpid="1007536593942813283"
             send_SMS(user.mobile,text,tpid) 
             """
             send_mail(
                 'Login OTP',
-                "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp),
+                "Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(session.otp),
                 'noreply@skytron.in',
                 [user.email],
                 fail_silently=False,
@@ -18129,7 +18129,7 @@ def reset_password(request ):
 
         try:
             tpid ="1007407542374862466" #1007214796274246200"#"1007387007813205696" #1007274756418421381"
-            text='Dear user, to reset your password for SkyTron platform, please click at the following link and validate the password re-set request- '+DEPLOY_URL+'/reset-password/'+str(new_password)+' .The link will expire in 24 hours. -SkyTron'  
+            text='Dear user, to reset your password for SkyTron platform, please click on the following link and validate the password reset request.  '+DEPLOY_URL+'/reset-password/'+str(new_password)+'. The link will expire in 24 hours. -SkyTron'
 
             #print("sending sms to",user.mobile,text)
             send_SMS(user.mobile,text,tpid)             
@@ -18356,7 +18356,7 @@ def user_login(request ):
 
 
 
-            text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+            text="Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             sms_ok, sms_err = send_SMS(user.mobile, text, tpid)
             email_ok = True
@@ -18364,7 +18364,7 @@ def user_login(request ):
             try:
                 send_mail(
                     'Login OTP',
-                    "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                    "Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                     'noreply@skytron.in',
                     [user.email],
                     fail_silently=False,
@@ -18613,14 +18613,14 @@ def temp_user_login(request ):
                     return error  # Return the Response object from safe_create
 
         
-        text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+        text="Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
         tpid="1007536593942813283"
         if tempu:
 
             send_SMS(tempu.mobile,text,tpid) 
             #send_mail(
             #    'Login OTP',
-            #    "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+            #    "Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
             #    'noreply@skytron.in',
             #    ["kishalaychakraborty1@gmail.com"],
             #    fail_silently=False,
@@ -18655,7 +18655,7 @@ def temp_user_resendOTP(request ):
         tempu.otp=otp
         tempu.otp_time=otp_time
         tempu.save()
-        text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+        text="Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
         tpid="1007536593942813283"
         if tempu:
             send_SMS(tempu.mobile,text,tpid) 
@@ -18964,7 +18964,7 @@ def temp_user_logout(request ):
         session_serializer = SessionSerializer(data=session_data)  
         if session_serializer.is_valid():
             session_serializer.save()
-            text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+            text="Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             sms_ok, sms_err = send_SMS(user.mobile, text, tpid)
             email_ok = True
@@ -18972,7 +18972,7 @@ def temp_user_logout(request ):
             try:
                 send_mail(
                     'Login OTP',
-                    "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                    "Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                     'noreply@skytron.in',
                     [user.email],
                     fail_silently=False,
@@ -19145,7 +19145,7 @@ def user_login_app(request ):
             
             # Add session to Redis for tracking (will be updated to 'login' status after OTP validation)
             # Note: Session tracking is done in validate_otp after OTP confirmation
-            text="Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
+            text="Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
             sms_ok, sms_err = send_SMS(user.mobile, text, tpid)
             email_ok = True
@@ -19153,7 +19153,7 @@ def user_login_app(request ):
             try:
                 send_mail(
                     'Login OTP',
-                    "Dear user, Your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
+                    "Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
                     'noreply@skytron.in',
                     [user.email],
                     fail_silently=False,
