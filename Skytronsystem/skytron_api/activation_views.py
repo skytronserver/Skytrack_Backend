@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -7,7 +8,6 @@ from rest_framework.response import Response
 
 from .models import ActivationCommandReply, DeviceStock, DeviceTag
 
-# Minimum field count for a valid ACTVR message
 _MIN_FIELDS = 12
 
 
@@ -15,12 +15,51 @@ def _digits_only(phone: str) -> str:
     return ''.join(c for c in phone if c.isdigit())
 
 
-def _phone_matches(incoming: str, stored: str | None) -> bool:
+def _phone_matches(incoming: str, stored: Optional[str]) -> bool:
     if not stored:
         return False
     a, b = _digits_only(incoming), _digits_only(stored)
-    # Accept if either is a suffix of the other (handles country-code prefixes)
     return a == b or a.endswith(b) or b.endswith(a)
+
+
+def _parse_raw_message(raw_message: str):
+    """
+    Handles two formats:
+
+    New (From-header embedded):
+        From : +919101033201()
+        ACTVR,123321,MAPW,1.0.4,...
+
+    Legacy (ACTVR line only):
+        ACTVR,123321,MAPW,1.0.4,...
+
+    Returns (actvr_line, incoming_from_no).
+    - actvr_line       : the comma-separated ACTVR data string
+    - incoming_from_no : cleaned phone number, or '0000000000' if absent
+    """
+    actvr_line = None
+    incoming_from_no = '0000000000'
+
+    for line in raw_message.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        if line.upper().startswith('FROM'):
+            # Extract everything after the first ':'
+            phone_raw = line.split(':', 1)[1].strip() if ':' in line else line[4:].strip()
+            # Remove +91 country-code prefix if present
+            if phone_raw.startswith('+91'):
+                phone_raw = phone_raw[3:]
+            # Keep digits only (strips trailing "()" and any other chars)
+            digits = _digits_only(phone_raw)
+            if digits:
+                incoming_from_no = digits
+
+        elif line.startswith('ACTVR'):
+            actvr_line = line
+
+    return actvr_line, incoming_from_no
 
 
 @api_view(['POST'])
@@ -30,22 +69,39 @@ def receive_activation_command_reply(request):
     Public endpoint called by the SMS gateway when a device sends an ACTVR reply.
 
     Expected body:
-        raw_message      – e.g. "ACTVR,348752,MAPW,1.0.4,866192076850302,..."
-        incoming_from_no – (optional) phone number the SMS arrived from;
-                           defaults to "0000000000", skipping MSISDN validation
+        raw_message – full message from gateway, which may include a "From" header:
+
+            From : +919101033201()
+            ACTVR,123321,MAPW,1.0.4,866192076850302,...
+
+        or just the bare ACTVR line (legacy):
+
+            ACTVR,123321,MAPW,1.0.4,866192076850302,...
+
+        incoming_from_no – (optional) overrides the phone number extracted from
+                           the message. Defaults to '0000000000' if neither the
+                           header nor this field provides a number.
     """
     raw_message = request.data.get('raw_message', '').strip()
-    incoming_from_no = (request.data.get('incoming_from_no', '') or '').strip() or '0000000000'
-
     if not raw_message:
         return Response({'error': 'raw_message is required.'}, status=400)
 
-    fields = [f.strip() for f in raw_message.split(',')]
+    # Parse the From-header and ACTVR line out of the full message
+    actvr_line, extracted_no = _parse_raw_message(raw_message)
+
+    # Allow explicit override via request field; fall back to extracted, then default
+    override_no = (request.data.get('incoming_from_no', '') or '').strip()
+    incoming_from_no = _digits_only(override_no) if override_no else extracted_no
+
+    if not actvr_line:
+        return Response({'error': 'No ACTVR line found in message.'}, status=400)
+
+    fields = [f.strip() for f in actvr_line.split(',')]
 
     if len(fields) < _MIN_FIELDS or fields[0] != 'ACTVR':
         return Response({'error': 'Invalid ACTVR message format.'}, status=400)
 
-    code = fields[1]   # device_esn / activation code echoed by device
+    code = fields[1]   # activation code echoed by device (stored in raw_message only)
     imei = fields[4]   # 15-digit IMEI
 
     # Parse timestamp – field[11] is "DDMMYYYY HHMMSS"
@@ -55,16 +111,16 @@ def receive_activation_command_reply(request):
     except (ValueError, IndexError):
         return Response({'error': 'Invalid or missing timestamp in message.'}, status=400)
 
-    # 1. Match IMEI + code against DeviceStock
+    # 1. Match IMEI against DeviceStock
     try:
-        device_stock = DeviceStock.objects.get(imei=imei, device_esn=code)
+        device_stock = DeviceStock.objects.get(imei=imei)
     except DeviceStock.DoesNotExist:
         return Response(
-            {'error': 'No device found matching the given IMEI and code.'},
+            {'error': 'No device found matching the given IMEI.'},
             status=404,
         )
 
-    # 2. Verify incoming phone number against msisdn1 / msisdn2 (skip if not provided)
+    # 2. Verify phone number against msisdn1 / msisdn2 (skip when no number was provided)
     if incoming_from_no != '0000000000' and not (
         _phone_matches(incoming_from_no, device_stock.msisdn1)
         or _phone_matches(incoming_from_no, device_stock.msisdn2)
@@ -82,28 +138,28 @@ def receive_activation_command_reply(request):
         .first()
     )
 
-    # 4. Create and store the reply log (device_tag may be None if not yet tagged)
+    # 4. Store only the ACTVR data line (From-header stripped)
     entry = ActivationCommandReply.objects.create(
         imei=imei,
         device_tag=device_tag,
-        raw_message=raw_message,
+        raw_message=actvr_line,
         timestamp=ts,
         incoming_from_no=incoming_from_no,
     )
 
-    # Build parsed data from all message fields for the response
+    # Build parsed fields for the response
     def _safe(idx, cast=str, default=None):
         try:
             return cast(fields[idx])
         except (IndexError, ValueError):
             return default
 
-    lat_val  = _safe(6, float)
-    lat_dir  = _safe(7)
-    lon_val  = _safe(8, float)
-    lon_dir  = _safe(9)
-    latitude  = lat_val  if lat_dir  == 'N' else (-lat_val  if lat_val  else None)
-    longitude = lon_val  if lon_dir  == 'E' else (-lon_val  if lon_val  else None)
+    lat_val = _safe(6, float)
+    lat_dir = _safe(7)
+    lon_val = _safe(8, float)
+    lon_dir = _safe(9)
+    latitude  = lat_val if lat_dir == 'N' else (-lat_val if lat_val else None)
+    longitude = lon_val if lon_dir == 'E' else (-lon_val if lon_val else None)
 
     parsed = {
         'command':          _safe(0),
@@ -131,13 +187,13 @@ def receive_activation_command_reply(request):
 
     return Response(
         {
-            'id':            entry.id,
-            'imei':          entry.imei,
-            'device_tag_id': entry.device_tag_id,
-            'timestamp':     entry.timestamp,
+            'id':               entry.id,
+            'imei':             entry.imei,
+            'device_tag_id':    entry.device_tag_id,
+            'timestamp':        entry.timestamp,
             'incoming_from_no': entry.incoming_from_no,
-            'parsed_message': parsed,
-            'message':       'Activation reply recorded.',
+            'parsed_message':   parsed,
+            'message':          'Activation reply recorded.',
         },
         status=201,
     )

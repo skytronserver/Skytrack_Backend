@@ -45,10 +45,40 @@ POST /api/device/activation-reply/
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `raw_message` | string | **Yes** | Full raw ACTVR string received from the device |
-| `incoming_from_no` | string | No | Phone number the SMS was received from. If omitted or empty, `0000000000` is stored and MSISDN validation is skipped |
+| `raw_message` | string | **Yes** | Full message from the SMS gateway — includes the `From` header and the ACTVR data line (see formats below) |
+| `incoming_from_no` | string | No | Explicit phone number override. If provided, takes precedence over the number extracted from the `From` header. If neither source provides a number, `0000000000` is stored and MSISDN validation is skipped |
 
-**Example:**
+### Accepted `raw_message` formats
+
+**New format (From-header embedded — primary):**
+```
+From : +919101033201()
+ACTVR,348752,MAPW,1.0.4,866192076850302,1,26.192982,N,91.752884,E,1,20062026 055205,137.55,0.00,27,405,56,1BDA,1,0,11.20,000064,0
+```
+
+**Legacy format (bare ACTVR line):**
+```
+ACTVR,348752,MAPW,1.0.4,866192076850302,1,26.192982,N,91.752884,E,1,20062026 055205,137.55,0.00,27,405,56,1BDA,1,0,11.20,000064,0
+```
+
+### Phone number extraction (From-header)
+
+The `From` line is parsed as follows:
+1. Everything after `:` is taken as the raw phone string — e.g. `+919101033201()`
+2. If the string starts with `+91`, those 3 characters are stripped
+3. All non-digit characters (spaces, `+`, `(`, `)`) are removed
+4. Result is stored as `incoming_from_no` — e.g. `9101033201`
+
+The number may be 10 digits or longer depending on the originating network.
+
+**Example request body (new format):**
+```json
+{
+    "raw_message": "From : +919101033201()\nACTVR,348752,MAPW,1.0.4,866192076850302,1,26.192982,N,91.752884,E,1,20062026 055205,137.55,0.00,27,405,56,1BDA,1,0,11.20,000064,0"
+}
+```
+
+**Example request body (legacy format):**
 ```json
 {
     "raw_message": "ACTVR,348752,MAPW,1.0.4,866192076850302,1,26.192982,N,91.752884,E,1,20062026 055205,137.55,0.00,27,405,56,1BDA,1,0,11.20,000064,0",
@@ -69,7 +99,7 @@ ACTVR,<esn>,<server_id>,<firmware>,<imei>,<gps_fix>,<lat_val>,<lat_dir>,<lon_val
 | Index | Sample Value | Field Name | Type | Description |
 |---|---|---|---|---|
 | 0 | `ACTVR` | command | string | Command identifier. Must be `ACTVR` |
-| 1 | `348752` | esn_code | string | Device ESN — matched against `DeviceStock.device_esn` |
+| 1 | `348752` | activation_code | string | Activation code echoed by the device. Stored in `raw_message` for reference only — not validated against the database |
 | 2 | `MAPW` | server_id | string | Server / protocol identifier |
 | 3 | `1.0.4` | firmware_version | string | Device firmware version |
 | 4 | `866192076850302` | imei | string | 15-digit IMEI — matched against `DeviceStock.imei` |
@@ -102,7 +132,7 @@ ACTVR,<esn>,<server_id>,<firmware>,<imei>,<gps_fix>,<lat_val>,<lat_dir>,<lon_val
 |---|---|
 | 1 | `fields[0]` must be `ACTVR` and the message must contain at least 12 fields |
 | 2 | `fields[11]` must be a valid datetime string in `DDMMYYYY HHMMSS` format |
-| 3 | A `DeviceStock` record must exist with `imei = fields[4]` AND `device_esn = fields[1]` |
+| 3 | A `DeviceStock` record must exist with `imei = fields[4]` |
 | 4 | If `incoming_from_no` is provided (not `0000000000`): it must match `msisdn1` or `msisdn2` of the matched device. Matching is digit-only and country-code-prefix tolerant (suffix match) |
 
 ---
@@ -155,6 +185,9 @@ ACTVR,<esn>,<server_id>,<firmware>,<imei>,<gps_fix>,<lat_val>,<lat_dir>,<lon_val
 { "error": "raw_message is required." }
 ```
 ```json
+{ "error": "No ACTVR line found in message." }
+```
+```json
 { "error": "Invalid ACTVR message format." }
 ```
 ```json
@@ -196,9 +229,18 @@ A new row is created in the `ActivationCommandReply` table on every successful r
 
 ---
 
-## 8. cURL Example
+## 8. cURL Examples
 
-### With incoming number (full validation)
+### New format — From-header embedded (phone extracted automatically)
+```bash
+curl -X POST http://<your-server>/api/device/activation-reply/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "raw_message": "From : +919101033201()\nACTVR,348752,MAPW,1.0.4,866192076850302,1,26.192982,N,91.752884,E,1,20062026 055205,137.55,0.00,27,405,56,1BDA,1,0,11.20,000064,0"
+  }'
+```
+
+### Legacy format — phone passed as separate field
 ```bash
 curl -X POST http://<your-server>/api/device/activation-reply/ \
   -H "Content-Type: application/json" \
@@ -208,7 +250,7 @@ curl -X POST http://<your-server>/api/device/activation-reply/ \
   }'
 ```
 
-### Without incoming number (MSISDN validation skipped)
+### No phone number available (MSISDN validation skipped, stores 0000000000)
 ```bash
 curl -X POST http://<your-server>/api/device/activation-reply/ \
   -H "Content-Type: application/json" \

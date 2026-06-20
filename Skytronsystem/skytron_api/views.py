@@ -11505,8 +11505,9 @@ def TagSendOwnerOtpFinal(request ):
     device_model = get_object_or_404(DeviceTag, device__id=device_model_id,  status__in=['Owner_OTP_Verified','Dealer_OTP_Verified','TempActiveSent','TempActive',"Owner_Final_OTP_Sent"])
 
     two_days_ago = timezone.now() - timedelta(days=2)
-    activation_received = ActivationCommandReply.objects.filter(
-        device_tag=device_model,
+    device_imei = device_model.device.imei if device_model.device else None
+    activation_received = bool(device_imei) and ActivationCommandReply.objects.filter(
+        imei=device_imei,
         timestamp__gte=two_days_ago,
     ).exists()
     if not activation_received:
