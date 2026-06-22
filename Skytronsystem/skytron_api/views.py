@@ -13977,6 +13977,7 @@ def create_Settings_firmware(request ):
 
     request_data = request.data.copy()
     request_data.update(data)
+    request_data.pop('file_bin', None)  # file is handled post-save; CharField can't accept a file object
     serializer = Settings_firmwareSerializer(data=request_data)
 
     if serializer.is_valid():

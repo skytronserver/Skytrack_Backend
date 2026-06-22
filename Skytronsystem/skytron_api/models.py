@@ -994,9 +994,39 @@ class Settings_firmware(models.Model):
     file_hash_md5 = models.CharField(max_length=32, blank=True, null=True)
     file_hash_sha256 = models.CharField(max_length=64, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
-     
 
-class Settings_hp_freq(models.Model): 
+
+class DeviceFirmwareLog(models.Model):
+    objects = SafeCreateManager()
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('success', 'Success'),
+        ('failed',  'Failed'),
+    ]
+
+    device_tag       = models.ForeignKey('DeviceTag', on_delete=models.CASCADE, related_name='firmware_logs')
+    firmware         = models.CharField(max_length=255, blank=True, null=True)
+    firmware_version = models.CharField(max_length=255, blank=True, null=True)
+    file_size        = models.BigIntegerField(blank=True, null=True)
+    file_hash_md5    = models.CharField(max_length=32, blank=True, null=True)
+    file_hash_sha256 = models.CharField(max_length=64, blank=True, null=True)
+    updated_at       = models.DateTimeField(blank=True, null=True)
+    status           = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    updated_by       = models.CharField(max_length=255, blank=True, null=True)
+    created          = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        indexes = [
+            models.Index(fields=['device_tag', '-updated_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.device_tag} | v{self.firmware_version} | {self.updated_at}"
+
+
+class Settings_hp_freq(models.Model):
     objects = SafeCreateManager()
     devicemodel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE)
     created = models.DateField(auto_now_add=True)
