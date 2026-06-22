@@ -984,11 +984,15 @@ class DeviceModelTechnicalOnboardingDemoDevice(models.Model):
 
 
 class Settings_firmware(models.Model):
-    objects = SafeCreateManager() 
+    objects = SafeCreateManager()
     devicemodel = models.ForeignKey('DeviceModel', on_delete=models.CASCADE)
     created = models.DateField(auto_now_add=True)
     firmware_vertion = models.CharField(max_length=255, blank=True, null=True)
-    file_bin = models.CharField(max_length=255, blank=True, null=True)
+    file_bin = models.CharField(max_length=512, blank=True, null=True)  # relative path
+    original_filename = models.CharField(max_length=255, blank=True, null=True)
+    file_size = models.BigIntegerField(blank=True, null=True)            # bytes
+    file_hash_md5 = models.CharField(max_length=32, blank=True, null=True)
+    file_hash_sha256 = models.CharField(max_length=64, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
      
 

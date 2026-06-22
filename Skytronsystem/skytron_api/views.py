@@ -13967,37 +13967,48 @@ def create_Settings_firmware(request ):
     if not uo:
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
     
-    user_id = request.user.id  
+    import os, hashlib
+
+    user_id = request.user.id
     data = {
         'createdby': user_id,
-        'created': timezone.now(),  
-        'file_bin':'file',
-        #'status': 'Manufacturer_OTP_Sent',
+        'created': timezone.now(),
     }
 
-    
-        
-
-    # Attach the file to the request data
     request_data = request.data.copy()
     request_data.update(data)
-    #print(request_data)
     serializer = Settings_firmwareSerializer(data=request_data)
 
     if serializer.is_valid():
         instance = serializer.save()
         uploaded_file = request.FILES.get('file_bin')
         if uploaded_file:
-            # Save the file to a specific location
-            file_path = 'fileuploads/file_bin/' + str(instance.id) + '_' + uploaded_file.name
-            with open(file_path, 'wb') as file:
+            # Save to /app/MAPW/<devicemodel_id>/ (host: /home/azureuser/Skytrack_Backend/MAPW/<devicemodel_id>/)
+            device_dir = os.path.join('/app/MAPW', str(instance.devicemodel_id))
+            os.makedirs(device_dir, exist_ok=True)
+            dest_filename = str(instance.id) + '_' + uploaded_file.name
+            abs_path = os.path.join(device_dir, dest_filename)
+
+            md5 = hashlib.md5()
+            sha256 = hashlib.sha256()
+            file_size = 0
+            with open(abs_path, 'wb') as f:
                 for chunk in uploaded_file.chunks():
-                    file.write(chunk)
-            
-            # Update the cop_file field in the DeviceCOP instance
-            instance.file_bin = file_path
+                    f.write(chunk)
+                    md5.update(chunk)
+                    sha256.update(chunk)
+                    file_size += len(chunk)
+
+            # Store relative path so it's portable across environments
+            rel_path = os.path.join('MAPW', str(instance.devicemodel_id), dest_filename)
+            instance.file_bin = rel_path
+            instance.original_filename = uploaded_file.name
+            instance.file_size = file_size
+            instance.file_hash_md5 = md5.hexdigest()
+            instance.file_hash_sha256 = sha256.hexdigest()
             instance.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(Settings_firmwareSerializer(instance).data, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
