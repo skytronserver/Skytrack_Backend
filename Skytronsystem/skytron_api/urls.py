@@ -644,7 +644,7 @@ urlpatterns = [
 urlpatterns += staticfiles_urlpatterns()
 
 # Public firmware download — no auth required
-# GET /api/fota/MAPW/<devicemodel_id>/<filename>
+# GET /api/fota/SKTN/<devicemodel_id>/<filename>
 urlpatterns += [
-    path('fota/MAPW/<path:filepath>', serve_firmware_file, name='serve_firmware_file'),
+    path('fota/SKTN/<path:filepath>', serve_firmware_file, name='serve_firmware_file'),
 ]

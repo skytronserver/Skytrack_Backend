@@ -115,12 +115,12 @@ sudo docker run -d --restart=always \
   --network "$NETWORK_NAME" \
   -p 2000:2000 \
   -v $STORAGE_DIR:/host_storage \
-  -v /home/azureuser/Skytrack_Backend/MAPW:/app/MAPW \
+  -v /home/azureuser/Skytrack_Backend/SKTN:/app/SKTN \
   --name skytron-backend-api-container \
   skytron-backend-api
 
 echo "Docker container started with host storage mounted at /host_storage"
-echo "Firmware files will be stored in /home/azureuser/Skytrack_Backend/MAPW on the host machine"
+echo "Firmware files will be stored in /home/azureuser/Skytrack_Backend/SKTN on the host machine"
 #@SET PORT1-6000*
 #@GET DEBUG   @CLR SOSDIS-1*
 #@GET LOC*

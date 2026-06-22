@@ -13951,13 +13951,12 @@ def filter_Settings_firmware(request ):
 
 def serve_firmware_file(request, filepath):
     """
-    Public, no-auth endpoint to download firmware files stored under /app/MAPW/.
-    URL: GET /api/fota/MAPW/<filepath>
-    e.g. /api/fota/MAPW/1/23_test.pac
+    Public, no-auth endpoint to download firmware files stored under /app/SKTN/.
+    URL: GET /api/fota/SKTN/<filepath>
+    e.g. /api/fota/SKTN/4/23_firmware.pac
     """
     import os, posixpath
-    base_dir = os.path.realpath('/app/MAPW')
-    # Normalise and resolve to block path traversal (../../etc/passwd etc.)
+    base_dir = os.path.realpath('/app/SKTN')
     safe_rel = posixpath.normpath(filepath).lstrip('/')
     abs_path = os.path.realpath(os.path.join(base_dir, safe_rel))
     if not abs_path.startswith(base_dir + os.sep) and abs_path != base_dir:
@@ -13976,20 +13975,26 @@ def serve_firmware_file(request, filepath):
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 @require_permission('settings_management', 'create')
-def create_Settings_firmware(request ):
+def create_Settings_firmware(request):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-     
-    #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
-    role="superadmin"
-    user=request.user
-    uo=get_user_object(user,role)
+    role = "superadmin"
+    user = request.user
+    uo = get_user_object(user, role)
     if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    import os, hashlib
+        return Response({"error": "Request must be from " + role + '.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    import os, hashlib, re
+
+    # Validate firmware_vertion format: x.x.x (digits only, e.g. 1.0.2)
+    firmware_version = request.data.get('firmware_vertion', '')
+    if not re.fullmatch(r'\d+\.\d+\.\d+', str(firmware_version).strip()):
+        return Response(
+            {'firmware_vertion': 'Version must be in the format x.x.x (e.g. 1.0.2).'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     user_id = request.user.id
     data = {
@@ -14002,38 +14007,52 @@ def create_Settings_firmware(request ):
     request_data.pop('file_bin', None)  # file is handled post-save; CharField can't accept a file object
     serializer = Settings_firmwareSerializer(data=request_data)
 
-    if serializer.is_valid():
-        instance = serializer.save()
-        uploaded_file = request.FILES.get('file_bin')
-        if uploaded_file:
-            # Save to /app/MAPW/<devicemodel_id>/ (host: /home/azureuser/Skytrack_Backend/MAPW/<devicemodel_id>/)
-            device_dir = os.path.join('/app/MAPW', str(instance.devicemodel_id))
-            os.makedirs(device_dir, exist_ok=True)
-            dest_filename = str(instance.id) + '_' + uploaded_file.name
-            abs_path = os.path.join(device_dir, dest_filename)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            md5 = hashlib.md5()
-            sha256 = hashlib.sha256()
-            file_size = 0
-            with open(abs_path, 'wb') as f:
-                for chunk in uploaded_file.chunks():
-                    f.write(chunk)
-                    md5.update(chunk)
-                    sha256.update(chunk)
-                    file_size += len(chunk)
+    uploaded_file = request.FILES.get('file_bin')
+    abs_path = None
+    try:
+        with transaction.atomic():
+            instance = serializer.save()
 
-            # Store relative path so it's portable across environments
-            rel_path = os.path.join('MAPW', str(instance.devicemodel_id), dest_filename)
-            instance.file_bin = rel_path
-            instance.original_filename = uploaded_file.name
-            instance.file_size = file_size
-            instance.file_hash_md5 = md5.hexdigest()
-            instance.file_hash_sha256 = sha256.hexdigest()
-            instance.save()
+            if uploaded_file:
+                device_dir = os.path.join('/app/SKTN', str(instance.devicemodel_id))
+                os.makedirs(device_dir, exist_ok=True)
+                dest_filename = str(instance.id) + '_' + uploaded_file.name
+                abs_path = os.path.join(device_dir, dest_filename)
+
+                md5 = hashlib.md5()
+                sha256 = hashlib.sha256()
+                file_size = 0
+                with open(abs_path, 'wb') as f:
+                    for chunk in uploaded_file.chunks():
+                        f.write(chunk)
+                        md5.update(chunk)
+                        sha256.update(chunk)
+                        file_size += len(chunk)
+
+                if file_size == 0:
+                    raise ValueError("Uploaded file is empty.")
+
+                rel_path = os.path.join('SKTN', str(instance.devicemodel_id), dest_filename)
+                instance.file_bin = rel_path
+                instance.original_filename = uploaded_file.name
+                instance.file_size = file_size
+                instance.file_hash_md5 = md5.hexdigest()
+                instance.file_hash_sha256 = sha256.hexdigest()
+                instance.save()
 
         return Response(Settings_firmwareSerializer(instance).data, status=status.HTTP_201_CREATED)
 
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        # Clean up any partial file written before the transaction rolled back
+        if abs_path and os.path.exists(abs_path):
+            os.remove(abs_path)
+        return Response(
+            {'error': f'Firmware creation failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 
