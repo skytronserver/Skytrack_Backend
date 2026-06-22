@@ -1317,7 +1317,7 @@ def get_login_settings(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 # skytron_api/views.py
 from rest_framework.authtoken.models import Token 
-from django.http import HttpResponseBadRequest, JsonResponse,HttpResponse  
+from django.http import HttpResponseBadRequest, JsonResponse, HttpResponse, FileResponse  
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
@@ -13949,12 +13949,34 @@ def filter_Settings_firmware(request ):
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
 
+def serve_firmware_file(request, filepath):
+    """
+    Public, no-auth endpoint to download firmware files stored under /app/MAPW/.
+    URL: GET /api/fota/MAPW/<filepath>
+    e.g. /api/fota/MAPW/1/23_test.pac
+    """
+    import os, posixpath
+    base_dir = os.path.realpath('/app/MAPW')
+    # Normalise and resolve to block path traversal (../../etc/passwd etc.)
+    safe_rel = posixpath.normpath(filepath).lstrip('/')
+    abs_path = os.path.realpath(os.path.join(base_dir, safe_rel))
+    if not abs_path.startswith(base_dir + os.sep) and abs_path != base_dir:
+        return HttpResponse(status=404)
+    if not os.path.isfile(abs_path):
+        return HttpResponse(status=404)
+    filename = os.path.basename(abs_path)
+    response = FileResponse(open(abs_path, 'rb'), content_type='application/octet-stream')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response['Content-Length'] = os.path.getsize(abs_path)
+    return response
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 @require_permission('settings_management', 'create')
-def create_Settings_firmware(request ): 
+def create_Settings_firmware(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
