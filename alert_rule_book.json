@@ -168,9 +168,51 @@
         "trigger": "device data"
     },
     {
-        "type": "HarshAccileration",
+        "type": "HarshAcceleration",
         "status": "in",
         "reason": "Harsh acceleration event detected",
         "trigger": "device data"
+    },
+    {
+        "type": "UnauthorizedParking",
+        "status": "in/out",
+        "reason": "Vehicle stopped or parked at a NoParking zone",
+        "trigger": "device location in no-parking poi for threshold duration"
+    },
+    {
+        "type": "Permit_3day",
+        "status": "in",
+        "reason": "Vehicle in non-permitted district for more than 3 days",
+        "trigger": "permit check and location data"
+    },
+    {
+        "type": "Prohibited_Area",
+        "status": "in/out",
+        "reason": "Vehicle entered a restricted or prohibited geographic zone",
+        "trigger": "device location in prohibited_area poi"
+    },
+    {
+        "type": "state_border_cross",
+        "status": "in/out",
+        "reason": "Vehicle crossed from one state into another",
+        "trigger": "state boundary geofence and device data"
+    },
+    {
+        "type": "district_border_cross",
+        "status": "in/out",
+        "reason": "Vehicle crossed from one district into another",
+        "trigger": "district boundary geofence and device data"
+    },
+    {
+        "type": "city_border_cross",
+        "status": "in/out",
+        "reason": "Vehicle crossed the boundary of a city",
+        "trigger": "city boundary geofence and device data"
+    },
+    {
+        "type": "Route_overspeed",
+        "status": "in",
+        "reason": "Vehicle exceeded the speed limit specific to its assigned route",
+        "trigger": "speed exceeds route speed limit from device data"
     }
 ]

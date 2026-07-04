@@ -454,6 +454,8 @@ def list_active_whitelist(request):
     if esim_id := request.query_params.get('esim_provider_id'):
         qs = qs.filter(esim_provider_id=esim_id)
 
+    page_qs, pagination = _paginate(qs, request.query_params)
+
     data = [
         {
             'id': w.id,
@@ -466,9 +468,9 @@ def list_active_whitelist(request):
             'source_request_id': w.source_request_id,
             'activated_at': w.activated_at,
         }
-        for w in qs
+        for w in page_qs
     ]
-    return Response({'active_whitelists': data, 'count': len(data)})
+    return Response({'active_whitelists': data, **pagination})
 
 
 # ===========================================================================
