@@ -279,6 +279,16 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "filter_ota_settings":        ["settings_ota_firmware"],
     "create_ota_settings":        ["settings_ota_firmware"],
     "update_ota_settings":        ["settings_ota_firmware"],
+
+    # OTA Command Management
+    "create_ota_command_definition":       ["ota_command_definition"],
+    "update_ota_command_definition":       ["ota_command_definition"],
+    "filter_ota_command_definitions":      ["ota_command_definition"],
+    "filter_ota_command_history":          ["ota_command_history"],
+    "update_ota_command_history":          ["ota_command_history"],
+    "send_ota_command":                    ["ota_command_history"],
+    "search_devices_for_ota_command":      ["ota_command_history"],
+    "get_ota_command_value_suggestions":   ["ota_value_suggestion"],
     "filter_settings_firmware":   ["settings_ota_firmware"],
     "create_settings_firmware":   ["settings_ota_firmware"],
     "list_gps_data_archives":     ["settings_archive_restore"],

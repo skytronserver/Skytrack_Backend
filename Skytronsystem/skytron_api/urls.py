@@ -546,7 +546,21 @@ urlpatterns = [
     path('ota/create/', create_ota_settings, name='create_ota_settings'),
     path('ota/update/', update_ota_settings, name='update_ota_settings'),
     path('ota/filter/', filter_ota_settings, name='filter_ota_settings'),
-    
+
+    # OTA Command Definitions (Page 1)
+    path('ota/command/create/', create_ota_command_definition, name='create_ota_command_definition'),
+    path('ota/command/update/', update_ota_command_definition, name='update_ota_command_definition'),
+    path('ota/command/filter/', filter_ota_command_definitions, name='filter_ota_command_definitions'),
+
+    # OTA Command History & Send Command (Page 2)
+    path('ota/command/history/filter/', filter_ota_command_history, name='filter_ota_command_history'),
+    path('ota/command/history/update/', update_ota_command_history, name='update_ota_command_history'),
+    path('ota/command/send/', send_ota_command, name='send_ota_command'),
+    path('ota/command/device-search/', search_devices_for_ota_command, name='search_devices_for_ota_command'),
+
+    # OTA Command Value Suggestions
+    path('ota/command/value-suggestions/', get_ota_command_value_suggestions, name='get_ota_command_value_suggestions'),
+
     # Incident Register APIs
     path('incident/register/', register_incident, name='register_incident'),
     path('incident/filter/', filter_incident, name='filter_incident'),

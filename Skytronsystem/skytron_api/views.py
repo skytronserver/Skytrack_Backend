@@ -27805,3 +27805,503 @@ def list_all_permit_master(request):
         return Response(serializer.data)
     except Exception as e:
         return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+
+
+# ================================
+# OTA Command Management APIs
+# ================================
+# Three models:
+#   OTACommandDefinition       — Page 1: command catalogue (create/update/filter, activate-deactivate via update)
+#   OTACommandHistory          — Page 2: send-command (create) + reply capture (update) + history list (filter)
+#   OTACommandValueSuggestion  — auto-populated "previously used values" list, GET only
+
+def _ota_apply_reply_regex(reply_regex, reply_text):
+    """
+    Extracts the OTA reply value using the command definition's reply_regex.
+    Returns the first capture group if the pattern has one, else the whole
+    match, else None if it doesn't match / isn't configured.
+    """
+    if not reply_regex or not reply_text:
+        return None
+    try:
+        m = re.search(reply_regex, reply_text)
+        if not m:
+            return None
+        return m.group(1) if m.groups() else m.group(0)
+    except re.error:
+        return None
+
+
+def _ota_build_wire_command(ota_command, command_type, value=None):
+    """
+    Builds the final on-wire command string from the definition's
+    per-operation template ({value} is substituted for 'set'), wrapped in
+    the '@...*' framing used elsewhere in this codebase for device commands
+    (see send_mqtt_command). Returns (wire_command, error_message).
+    """
+    template = {
+        'get': ota_command.get_command_template,
+        'set': ota_command.set_command_template,
+        'clear': ota_command.clear_command_template,
+    }.get(command_type)
+
+    if not template:
+        return None, f"No {command_type} command template configured for this OTA command."
+
+    body = template.replace('{value}', str(value)) if command_type == 'set' else template
+    return f"@{body}*", None
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+@require_permission('ota_command_definition', 'create')
+def create_ota_command_definition(request):
+    """Create a new OTA command definition (Page 1 — 'Create New')."""
+    try:
+        serializer = OTACommandDefinitionSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(created_by=request.user)
+            return Response({
+                'status': 'success',
+                'message': 'OTA command definition created successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+        return Response({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+@require_permission('ota_command_definition', 'update')
+def update_ota_command_definition(request):
+    """
+    Update an existing OTA command definition. Also used for
+    activate/deactivate (Page 1) by passing status='active' / 'inactive'.
+    """
+    try:
+        ota_id = request.data.get('ota_id') or request.data.get('id')
+        if not ota_id:
+            return Response({'status': 'error', 'message': 'ota_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        instance = OTACommandDefinition.objects.filter(id=ota_id).first()
+        if not instance:
+            return Response({'status': 'error', 'message': 'OTA command definition not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = OTACommandDefinitionSerializer(instance, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save(updated_by=request.user)
+            return Response({
+                'status': 'success',
+                'message': 'OTA command definition updated successfully',
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
+        return Response({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+@require_permission('ota_command_definition', 'filter')
+def filter_ota_command_definitions(request):
+    """
+    List / filter OTA command definitions (Page 1). Pass status='active' to
+    populate the 'active command' dropdown on the Page 2 send-command popup.
+    """
+    try:
+        queryset = OTACommandDefinition.objects.all()
+
+        command_id = request.data.get('command_id')
+        if command_id:
+            queryset = queryset.filter(command_id__icontains=command_id)
+
+        command_key = request.data.get('command_key')
+        if command_key:
+            queryset = queryset.filter(command_key__icontains=command_key)
+
+        search = request.data.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(command_id__icontains=search) |
+                Q(command_key__icontains=search) |
+                Q(specification__icontains=search)
+            )
+
+        status_filter = request.data.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        allowed_source = request.data.get('allowed_source')
+        if allowed_source:
+            queryset = queryset.filter(allowed_source=allowed_source)
+
+        for flag in ('allow_get', 'allow_set', 'allow_clear'):
+            val = request.data.get(flag)
+            if val is not None:
+                queryset = queryset.filter(**{flag: str(val).lower() in ('1', 'true', 'yes')})
+
+        queryset = queryset.order_by('-created_at')
+
+        page = request.data.get('page', 1)
+        page_size = request.data.get('page_size', 10)
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+
+        serializer = OTACommandDefinitionSerializer(page_obj, many=True)
+        return Response({
+            'status': 'success',
+            'total_count': paginator.count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': paginator.num_pages,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('ota_command_history', 'view')
+def search_devices_for_ota_command(request):
+    """
+    Search tagged devices by registration number / owner name to resolve an
+    IMEI for the 'send command' popup (Page 2).
+    Query params: vehicle_reg_no, owner_name (both optional, partial match).
+    """
+    try:
+        vehicle_reg_no = request.GET.get('vehicle_reg_no', '')
+        owner_name = request.GET.get('owner_name', '')
+
+        queryset = DeviceTag.objects.exclude(device__isnull=True).select_related(
+            'device', 'device__dealer', 'vehicle_owner'
+        ).prefetch_related('vehicle_owner__users')
+
+        if vehicle_reg_no:
+            queryset = queryset.filter(vehicle_reg_no__icontains=vehicle_reg_no)
+        if owner_name:
+            queryset = queryset.filter(vehicle_owner__users__name__icontains=owner_name)
+
+        queryset = queryset.order_by('-tagged')[:20]
+
+        results = []
+        for tag in queryset:
+            owner_user = tag.vehicle_owner.users.first() if tag.vehicle_owner else None
+            results.append({
+                'device_tag_id': tag.id,
+                'vehicle_reg_no': tag.vehicle_reg_no,
+                'imei': tag.device.imei if tag.device else None,
+                'owner_name': owner_user.name if owner_user else None,
+                'dealer_name': tag.device.dealer.company_name if (tag.device and tag.device.dealer) else None,
+                'status': tag.status,
+            })
+
+        return Response({'status': 'success', 'data': results}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+@require_permission('ota_command_history', 'create')
+def send_ota_command(request):
+    """
+    Send an OTA get/set/clear command to a device (Page 2 — 'Send Command'
+    popup). Dispatches over MQTT (publishes to deviceResponse/{imei}) or SMS
+    (queues via the existing sms_out gateway queue), logs an
+    OTACommandHistory row, and — for 'set' commands — automatically records
+    the value in OTACommandValueSuggestion for future dropdown suggestions.
+    """
+    try:
+        data = request.data
+        ota_id = data.get('ota_id')
+        imei = data.get('imei')
+        device_tag_id = data.get('device_tag_id')
+        command_type = data.get('command_type')
+        value = data.get('value')
+        source = data.get('source')
+
+        if not ota_id or not command_type:
+            return Response({'status': 'error', 'message': 'ota_id and command_type are required'}, status=status.HTTP_400_BAD_REQUEST)
+        if command_type not in ('get', 'set', 'clear'):
+            return Response({'status': 'error', 'message': "command_type must be 'get', 'set' or 'clear'"}, status=status.HTTP_400_BAD_REQUEST)
+
+        ota_command = OTACommandDefinition.objects.filter(id=ota_id).first()
+        if not ota_command:
+            return Response({'status': 'error', 'message': 'OTA command definition not found'}, status=status.HTTP_404_NOT_FOUND)
+        if ota_command.status != 'active':
+            return Response({'status': 'error', 'message': 'This OTA command is not active'}, status=status.HTTP_400_BAD_REQUEST)
+
+        allow_map = {'get': ota_command.allow_get, 'set': ota_command.allow_set, 'clear': ota_command.allow_clear}
+        if not allow_map[command_type]:
+            return Response({'status': 'error', 'message': f"'{command_type}' is not allowed for this OTA command"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Resolve device_tag / imei
+        device_tag = None
+        if device_tag_id:
+            device_tag = DeviceTag.objects.filter(id=device_tag_id).select_related('device').first()
+            if not device_tag:
+                return Response({'status': 'error', 'message': 'device_tag_id not found'}, status=status.HTTP_404_NOT_FOUND)
+            if not imei and device_tag.device:
+                imei = device_tag.device.imei
+        elif imei:
+            device_tag = DeviceTag.objects.filter(device__imei=imei).select_related('device').first()
+
+        if not imei:
+            return Response({'status': 'error', 'message': 'imei (or device_tag_id resolving to one) is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Resolve / validate source against what this command allows
+        if ota_command.allowed_source == 'both':
+            if source not in ('sms', 'mqtt'):
+                return Response({'status': 'error', 'message': "source ('sms' or 'mqtt') is required for this OTA command"}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            source = source or ota_command.allowed_source
+            if source != ota_command.allowed_source:
+                return Response({'status': 'error', 'message': f"This OTA command only allows source='{ota_command.allowed_source}'"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate value for 'set'
+        if command_type == 'set':
+            if value is None or value == '':
+                return Response({'status': 'error', 'message': 'value is required for a set command'}, status=status.HTTP_400_BAD_REQUEST)
+            if ota_command.value_regex:
+                try:
+                    if not re.fullmatch(ota_command.value_regex, str(value)):
+                        return Response({'status': 'error', 'message': f'value does not match the expected format ({ota_command.value_regex})'}, status=status.HTTP_400_BAD_REQUEST)
+                except re.error:
+                    pass
+
+        wire_command, tmpl_error = _ota_build_wire_command(ota_command, command_type, value)
+        if tmpl_error:
+            return Response({'status': 'error', 'message': tmpl_error}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Dispatch (fire-and-forget, matches existing send_mqtt_command / sms_out queue convention —
+        # send_status='queued' means dispatched, not device-confirmed; use update_ota_command_history
+        # to record the reply once it arrives).
+        dispatch_error = None
+        if source == 'mqtt':
+            try:
+                send_general_mqtt_message(imei, {'keys': wire_command})
+                send_status_value = 'queued'
+            except Exception as e:
+                dispatch_error = str(e)
+                send_status_value = 'failed'
+        else:  # sms
+            device_stock = DeviceStock.objects.filter(imei=imei).first()
+            phone_no = device_stock.msisdn1 if device_stock else None
+            if not phone_no:
+                return Response({'status': 'error', 'message': f'No SMS gateway number (msisdn1) found for imei {imei}'}, status=status.HTTP_400_BAD_REQUEST)
+            sms_error = add_sms_queue(wire_command, phone_no)
+            if sms_error is not None:
+                dispatch_error = 'Failed to queue SMS command'
+                send_status_value = 'failed'
+            else:
+                send_status_value = 'queued'
+
+        history = OTACommandHistory.objects.create(
+            ota_command=ota_command,
+            command_type=command_type,
+            command_sent=wire_command,
+            imei=imei,
+            source=source,
+            send_status=send_status_value,
+            device_tag=device_tag,
+            sent_by=request.user,
+            sent_at=timezone.now(),
+        )
+
+        # Auto-record value suggestion for 'set' — no manual create endpoint for this model.
+        if command_type == 'set' and value not in (None, ''):
+            suggestion, created = OTACommandValueSuggestion.objects.get_or_create(
+                ota_command=ota_command, value=str(value)
+            )
+            if not created:
+                suggestion.use_count = suggestion.use_count + 1
+                suggestion.save(update_fields=['use_count', 'last_used_at'])
+
+        serializer = OTACommandHistorySerializer(history)
+        response_status = status.HTTP_201_CREATED if send_status_value == 'queued' else status.HTTP_502_BAD_GATEWAY
+        return Response({
+            'status': 'success' if send_status_value == 'queued' else 'error',
+            'message': 'OTA command dispatch failed' if dispatch_error else 'OTA command sent successfully',
+            'dispatch_error': dispatch_error,
+            'data': serializer.data
+        }, status=response_status)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+@require_permission('ota_command_history', 'update')
+def update_ota_command_history(request):
+    """
+    Record a device's reply against a previously-sent OTA command history
+    row. Applies the command definition's reply_regex to auto-extract
+    reply_regex_output; can also be used standalone to mark a record
+    'failed' / 'timeout'.
+    """
+    try:
+        history_id = request.data.get('history_id') or request.data.get('id')
+        if not history_id:
+            return Response({'status': 'error', 'message': 'history_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        history = OTACommandHistory.objects.filter(id=history_id).select_related('ota_command').first()
+        if not history:
+            return Response({'status': 'error', 'message': 'OTA command history record not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        reply_received = request.data.get('reply_received')
+        send_status_value = request.data.get('send_status')
+
+        if reply_received is not None:
+            history.reply_received = reply_received
+            history.reply_regex_output = _ota_apply_reply_regex(history.ota_command.reply_regex, reply_received)
+            history.received_at = timezone.now()
+            history.send_status = 'replied'
+
+        if send_status_value in dict(OTACommandHistory.SEND_STATUS_CHOICES):
+            history.send_status = send_status_value
+
+        history.save()
+
+        serializer = OTACommandHistorySerializer(history)
+        return Response({
+            'status': 'success',
+            'message': 'OTA command history updated successfully',
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+@require_permission('ota_command_history', 'filter')
+def filter_ota_command_history(request):
+    """List / filter OTA command history (Page 2) by registration no, imei, dealer, etc."""
+    try:
+        queryset = OTACommandHistory.objects.select_related(
+            'ota_command', 'device_tag', 'device_tag__device', 'device_tag__device__dealer', 'sent_by'
+        )
+
+        ota_id = request.data.get('ota_id')
+        if ota_id:
+            queryset = queryset.filter(ota_command_id=ota_id)
+
+        imei = request.data.get('imei')
+        if imei:
+            queryset = queryset.filter(imei__icontains=imei)
+
+        registration_no = request.data.get('registration_no') or request.data.get('vehicle_reg_no')
+        if registration_no:
+            queryset = queryset.filter(device_tag__vehicle_reg_no__icontains=registration_no)
+
+        dealer_id = request.data.get('dealer_id')
+        if dealer_id:
+            queryset = queryset.filter(device_tag__device__dealer_id=dealer_id)
+
+        command_type = request.data.get('command_type')
+        if command_type:
+            queryset = queryset.filter(command_type=command_type)
+
+        source = request.data.get('source')
+        if source:
+            queryset = queryset.filter(source=source)
+
+        send_status_filter = request.data.get('send_status')
+        if send_status_filter:
+            queryset = queryset.filter(send_status=send_status_filter)
+
+        sent_from = request.data.get('sent_from')
+        sent_to = request.data.get('sent_to')
+        if sent_from:
+            queryset = queryset.filter(sent_at__gte=sent_from)
+        if sent_to:
+            queryset = queryset.filter(sent_at__lte=sent_to)
+
+        queryset = queryset.order_by('-created_at')
+
+        page = request.data.get('page', 1)
+        page_size = request.data.get('page_size', 10)
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+
+        serializer = OTACommandHistorySerializer(page_obj, many=True)
+        return Response({
+            'status': 'success',
+            'total_count': paginator.count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': paginator.num_pages,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('ota_value_suggestion', 'view')
+def get_ota_command_value_suggestions(request):
+    """
+    Get the auto-populated list of previously-used values for an OTA command
+    (populates the 'set' value dropdown on Page 2). Values are recorded
+    automatically by send_ota_command; there is no manual create endpoint.
+    Query params: ota_id (required).
+    """
+    try:
+        ota_id = request.GET.get('ota_id')
+        if not ota_id:
+            return Response({'status': 'error', 'message': 'ota_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = OTACommandValueSuggestion.objects.filter(ota_command_id=ota_id).order_by('-use_count', '-last_used_at')
+        serializer = OTACommandValueSuggestionSerializer(queryset, many=True)
+        return Response({'status': 'success', 'data': serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

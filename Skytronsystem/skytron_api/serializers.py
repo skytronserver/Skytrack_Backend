@@ -929,10 +929,38 @@ class BusStandSerializer(SanitizingModelSerializer):
 
 class OTASettingsSerializer(SanitizingModelSerializer):
     triggered_by_info = UserSerializer(source='triggered_by', read_only=True)
-    
+
     class Meta:
         model = OTASettings
         fields = '__all__'
+
+
+class OTACommandDefinitionSerializer(SanitizingModelSerializer):
+    created_by_info = UserSerializer(source='created_by', read_only=True)
+    updated_by_info = UserSerializer(source='updated_by', read_only=True)
+
+    class Meta:
+        model = OTACommandDefinition
+        fields = '__all__'
+        read_only_fields = ['created_by', 'updated_by', 'created_at', 'updated_at']
+
+
+class OTACommandHistorySerializer(SanitizingModelSerializer):
+    ota_command_info = OTACommandDefinitionSerializer(source='ota_command', read_only=True)
+    device_tag_info = DeviceTagSerializer(source='device_tag', read_only=True)
+    sent_by_info = UserSerializer(source='sent_by', read_only=True)
+
+    class Meta:
+        model = OTACommandHistory
+        fields = '__all__'
+        read_only_fields = ['sent_by', 'created_at']
+
+
+class OTACommandValueSuggestionSerializer(SanitizingModelSerializer):
+    class Meta:
+        model = OTACommandValueSuggestion
+        fields = '__all__'
+        read_only_fields = ['use_count', 'last_used_at', 'created_at']
 
 
 class IncidentRegisterSerializer(SanitizingModelSerializer):

@@ -3886,6 +3886,11 @@ class RolePermissionConfig(models.Model):
 
         # SOS
         ('sos_call_list',               'SOS Call List'),
+
+        # OTA Command Management
+        ('ota_command_definition',      'OTA — Command Definitions'),
+        ('ota_command_history',         'OTA — Command History & Send Command'),
+        ('ota_value_suggestion',        'OTA — Value Suggestions'),
     ]
 
     role   = models.ForeignKey(
@@ -4732,6 +4737,137 @@ class ActivationCommandReply(models.Model):
             models.Index(fields=['imei']),
             models.Index(fields=['timestamp']),
         ]
+
+
+# ===========================================================================
+# OTA Command Management
+# ===========================================================================
+
+class OTACommandDefinition(models.Model):
+    """
+    A reusable OTA command definition (Page 1 — 'OT Commands' list).
+    Defines the protocol-level get/set/clear templates for one device command.
+    """
+    objects = SafeCreateManager()
+
+    SOURCE_CHOICES = [
+        ('sms', 'SMS'),
+        ('mqtt', 'MQTT'),
+        ('both', 'Both'),
+    ]
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+    ]
+
+    command_id = models.CharField(max_length=100, unique=True, verbose_name="Command ID")
+    specification = models.TextField(blank=True, null=True)
+    command_key = models.CharField(max_length=255, verbose_name="Command Key")
+
+    # On-wire templates. {value} is substituted with the value supplied at
+    # send-time (only meaningful for set_command_template).
+    get_command_template = models.CharField(max_length=255, blank=True, null=True)
+    set_command_template = models.CharField(max_length=255, blank=True, null=True)
+    clear_command_template = models.CharField(max_length=255, blank=True, null=True)
+
+    value_regex = models.CharField(max_length=500, blank=True, null=True)
+    reply_regex = models.CharField(max_length=500, blank=True, null=True)
+
+    allow_get = models.BooleanField(default=False)
+    allow_set = models.BooleanField(default=False)
+    allow_clear = models.BooleanField(default=False)
+
+    allowed_source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='both')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
+
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ota_command_definitions_created')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='ota_command_definitions_updated')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ota_command_definition'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.command_id} ({self.command_key})"
+
+
+class OTACommandHistory(models.Model):
+    """
+    A single get/set/clear command sent to a device and its reply (Page 2 —
+    'OTA Command History').
+    """
+    objects = SafeCreateManager()
+
+    COMMAND_TYPE_CHOICES = [
+        ('get', 'Get'),
+        ('set', 'Set'),
+        ('clear', 'Clear'),
+    ]
+    SOURCE_CHOICES = [
+        ('sms', 'SMS'),
+        ('mqtt', 'MQTT'),
+    ]
+    SEND_STATUS_CHOICES = [
+        ('queued', 'Queued'),
+        ('sent', 'Sent'),
+        ('failed', 'Failed'),
+        ('replied', 'Replied'),
+        ('timeout', 'Timeout'),
+    ]
+
+    ota_command = models.ForeignKey(OTACommandDefinition, on_delete=models.CASCADE, related_name='history', verbose_name="OTA Command")
+    command_type = models.CharField(max_length=10, choices=COMMAND_TYPE_CHOICES)
+    command_sent = models.TextField(blank=True, null=True)
+    reply_received = models.TextField(blank=True, null=True)
+    imei = models.CharField(max_length=55)
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES)
+    send_status = models.CharField(max_length=10, choices=SEND_STATUS_CHOICES, default='queued')
+
+    device_tag = models.ForeignKey(DeviceTag, on_delete=models.SET_NULL, null=True, blank=True, related_name='ota_command_history')
+    sent_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='ota_commands_sent')
+
+    sent_at = models.DateTimeField(null=True, blank=True)
+    received_at = models.DateTimeField(null=True, blank=True)
+    reply_regex_output = models.CharField(max_length=500, blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'ota_command_history'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['imei']),
+            models.Index(fields=['sent_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.ota_command_id} -> {self.imei} @ {self.created_at}"
+
+
+class OTACommandValueSuggestion(models.Model):
+    """
+    Auto-populated list of previously-used values per OTA command (Model 3).
+    Rows are created/updated automatically by the send-command API whenever a
+    'set' command is sent with a value that isn't already in the list —
+    there is no manual create endpoint for this model.
+    """
+    objects = SafeCreateManager()
+
+    ota_command = models.ForeignKey(OTACommandDefinition, on_delete=models.CASCADE, related_name='value_suggestions', verbose_name="OTA Command")
+    value = models.CharField(max_length=500)
+    use_count = models.PositiveIntegerField(default=1)
+    last_used_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'ota_command_value_suggestion'
+        ordering = ['-last_used_at']
+        unique_together = ('ota_command', 'value')
+
+    def __str__(self):
+        return f"{self.ota_command_id}: {self.value}"
 
     def __str__(self):
         return f"{self.imei} @ {self.timestamp}"
