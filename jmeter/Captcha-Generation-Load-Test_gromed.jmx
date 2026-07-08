@@ -32,7 +32,7 @@
           </elementProp>
           <elementProp name="THREADS" elementType="Argument">
             <stringProp name="Argument.name">THREADS</stringProp>
-            <stringProp name="Argument.value">${__P(THREADS,200)}</stringProp>
+            <stringProp name="Argument.value">${__P(THREADS,500)}</stringProp>
           </elementProp>
           <elementProp name="RAMP_UP" elementType="Argument">
             <stringProp name="Argument.name">RAMP_UP</stringProp>
@@ -71,8 +71,8 @@
       </HeaderManager>
       <hashTree/>
       <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Captcha Generation · ${THREADS} concurrent users">
-        <stringProp name="ThreadGroup.num_threads">${__P(THREADS,200)}</stringProp>
-        <stringProp name="ThreadGroup.ramp_time">${__P(RAMP_UP,60)}</stringProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(THREADS,500)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(RAMP_UP,90)}</stringProp>
         <stringProp name="ThreadGroup.duration">${__P(DURATION,300)}</stringProp>
         <longProp name="ThreadGroup.delay">0</longProp>
         <boolProp name="ThreadGroup.same_user_on_next_iteration">false</boolProp>
