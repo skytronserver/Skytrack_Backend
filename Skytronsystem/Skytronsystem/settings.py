@@ -48,8 +48,7 @@ MQTT_CA_FILE = os.environ.get('MQTT_CA_FILE', '/etc/mosquitto/certs/ca.crt')
 ALLOW_ALL_DEV_MQTT = os.environ.get('ALLOWALLDEVMQTT', 'false').lower() == 'true'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True  # os.environ.get('DEBUG', 'False') == 'True'
-# True
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 # ALLOWED_HOSTS = ['api.skytron.in', 'skytron.in','dev.skytron.in','api-dev.skytron.in', 'skytrack.tech']
@@ -197,6 +196,7 @@ DATABASES = {
         'PASSWORD': os.environ.get('DB_PASSWORD', 'lask1028zmnx'),
         'HOST': os.environ.get('DB_HOST', ''),
         'PORT': os.environ.get('DB_PORT', '5432'),
+        'CONN_MAX_AGE': int(os.environ.get('DB_CONN_MAX_AGE', '60')),
     }
 }
 
