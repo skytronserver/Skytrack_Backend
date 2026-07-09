@@ -543,6 +543,16 @@ def mqtt_validate_connection(request):
             if _RE_IMEI.match(username):
                 logger.debug(f"MQTT Auth: Device IMEI mode - imei={username}")
 
+                # Dev/load-test bypass: skip clientid match, session-lease, and
+                # password checks entirely. Must run before those gates — otherwise
+                # a fast reconnect/disconnect loop (e.g. a load test reusing the
+                # same synthetic IMEIs) can still get 403'd on the session lease
+                # before ever reaching this flag.
+                if ALLOW_ALL_DEV_MQTT:
+                    logger.debug(f"MQTT Auth: ALLOWALLDEVMQTT=true — bypassing all checks for IMEI '{username}'")
+                    _clear_failure(clientid)
+                    return Response({'ok': True, 'username': username}, status=status.HTTP_200_OK)
+
                 # Backward-compatible clientid policy:
                 # accept existing deployed patterns if they embed the same IMEI,
                 # then enforce one active session per IMEI via Redis lease.
@@ -570,10 +580,6 @@ def mqtt_validate_connection(request):
                             status=status.HTTP_403_FORBIDDEN,
                         )
 
-                if ALLOW_ALL_DEV_MQTT:
-                    logger.debug(f"MQTT Auth: ALLOWALLDEVMQTT=true — skipping password check for IMEI '{username}'")
-                    _clear_failure(clientid)
-                    return Response({'ok': True, 'username': username}, status=status.HTTP_200_OK)
                 success, device_stock = _verify_device_password(username, password)
                 if not success:
                     _log_throttled(
