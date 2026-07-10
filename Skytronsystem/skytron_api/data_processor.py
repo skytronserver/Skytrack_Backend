@@ -1150,23 +1150,21 @@ def generate_ble_keys_for_device(imei):
         # First, deactivate any existing keys for this IMEI
         BleKey.objects.filter(imei=imei).update(active=False)
         
-        # Generate 30 new keys (15-char Base32 alphabet)
-        keys = []
-        for i in range(30):
-            key_value = generate_random_ble_key(15)
-            
-            # Ensure uniqueness
-            while BleKey.objects.filter(key=key_value).exists():
-                key_value = generate_random_ble_key(15)
-            
-            # Create the BLE key
-            ble_key = BleKey.objects.create(
-                key=key_value,
-                imei=imei,
-                active=True
-            )
-            keys.append(key_value)
-            
+        # Generate 30 new keys (15-char Base32 alphabet).
+        # Keyspace is 32^15 (~3.8e22), so collisions against the existing table
+        # or within this batch are astronomically unlikely — the `key` column's
+        # unique constraint is the real backstop, not a per-key existence check.
+        # bulk_create replaces what used to be up to 61 sequential queries
+        # (1 exists + 1 create per key) with 2.
+        keys = set()
+        while len(keys) < 30:
+            keys.add(generate_random_ble_key(15))
+        keys = list(keys)
+
+        BleKey.objects.bulk_create([
+            BleKey(key=k, imei=imei, active=True) for k in keys
+        ])
+
         print(f"Generated {len(keys)} BLE keys for device {imei}", flush=True)
         return keys
         
@@ -1177,49 +1175,14 @@ def generate_ble_keys_for_device(imei):
 
 def get_device_response_data(imei):
     """
-    Get device response data with SOS status and BLE keys
+    Get device response data with SOS status.
+
+    BLE key issuance is disabled here for now (each device needing keys was
+    costing 60+ sequential DB round-trips per tracking message). BleKey model
+    and generate_ble_keys_for_device() are untouched, so this can call them
+    again to re-enable BLE keys later.
     """
-    try:
-        # Check if we have active BLE keys for this device
-        active_keys = BleKey.objects.filter(imei=imei, active=True).order_by('entry_time')
-
-        # Helper: validate key is 15-char using Base32 alphabet
-        def _is_valid_b32_15(s: str) -> bool:
-            if not s or len(s) != 15:
-                return False
-            alphabet = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
-            return all(c in alphabet for c in s.upper())
-
-        count = active_keys.count()
-        need_regen = count != 30
-        keys_list = []
-        if not need_regen:
-            # Validate each key for new format
-            for k in active_keys:
-                val = (k.key or '').strip().upper()
-                if not _is_valid_b32_15(val):
-                    need_regen = True
-                    break
-                keys_list.append(val)
-
-        if need_regen:
-            print(f"Device {imei} needs new BLE keys (current: {count}); regenerating 15-char Base32 keys", flush=True)
-            keys = generate_ble_keys_for_device(imei)
-        else:
-            keys = keys_list
-            print(f"Using existing 15-char Base32 BLE keys for device {imei}", flush=True)
-        
-        # Create response data
-        response_data = {
-            "sos": 0,  # Default SOS status
-            "keys": keys
-        }
-        
-        return response_data
-        
-    except Exception as e:
-        print(f"Error getting device response data for {imei}: {e}", flush=True)
-        return {
-            "sos": 0,
-            "keys": []
-        }
+    return {
+        "sos": 0,  # Default SOS status
+        "keys": [],
+    }

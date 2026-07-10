@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="MQTT-Steady-State-Load-Test-(Gromed)">
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+    </TestPlan>
+    <hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="MQTT Steady State · ${__P(THREADS,1000)} persistent devices">
+        <stringProp name="ThreadGroup.num_threads">${__P(THREADS,1000)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(RAMP_UP,120)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__P(DURATION,300)}</stringProp>
+        <longProp name="ThreadGroup.delay">0</longProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <intProp name="LoopController.loops">-1</intProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </ThreadGroup>
+      <hashTree>
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="Setup (runs only on first iteration: assign device IMEI, connect)">
+          <stringProp name="IfController.condition">${__counter(TRUE,)} == 1</stringProp>
+          <boolProp name="IfController.evaluateAll">false</boolProp>
+        </IfController>
+        <hashTree>
+          <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Assign stable device IMEI">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="script">long imei = 100000000000000L + (long)(Math.random() * 899999999999999L)
+vars.put("DEVICE_IMEI", Long.toString(imei))</stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+          </JSR223PreProcessor>
+          <hashTree/>
+          <net.xmeter.samplers.ConnectSampler guiclass="net.xmeter.gui.ConnectSamplerUI" testclass="net.xmeter.samplers.ConnectSampler" testname="MQTT Connect (once)">
+            <stringProp name="mqtt.server">135.235.166.209</stringProp>
+            <stringProp name="mqtt.port">8883</stringProp>
+            <stringProp name="mqtt.version">3.1.1</stringProp>
+            <stringProp name="mqtt.conn_timeout">60</stringProp>
+            <stringProp name="mqtt.protocol">SSL</stringProp>
+            <stringProp name="mqtt.ws_path"></stringProp>
+            <boolProp name="mqtt.dual_ssl_authentication">false</boolProp>
+            <stringProp name="mqtt.clientcert_file_path"></stringProp>
+            <stringProp name="mqtt.clientcert_password"></stringProp>
+            <stringProp name="mqtt.user_name">${DEVICE_IMEI}</stringProp>
+            <stringProp name="mqtt.password">isjihiuhguish57hgh58ghh4ghg7h75ihgshgs8hs854h98h9hgruhgrh89w959hguh985h</stringProp>
+            <stringProp name="mqtt.client_id_prefix">mapwala_${DEVICE_IMEI}</stringProp>
+            <boolProp name="mqtt.client_id_suffix">false</boolProp>
+            <stringProp name="mqtt.conn_keep_alive">30</stringProp>
+            <stringProp name="mqtt.conn_attampt_max">0</stringProp>
+            <stringProp name="mqtt.reconn_attampt_max">0</stringProp>
+            <stringProp name="mqtt.conn_clean_session">0</stringProp>
+          </net.xmeter.samplers.ConnectSampler>
+          <hashTree/>
+        </hashTree>
+        <net.xmeter.samplers.PubSampler guiclass="net.xmeter.gui.PubSamplerUI" testclass="net.xmeter.samplers.PubSampler" testname="MQTT Pub Sampler (every cycle)" enabled="true">
+          <stringProp name="mqtt.topic_name">deviceTracking/${DEVICE_IMEI}</stringProp>
+          <stringProp name="mqtt.qos_level">1</stringProp>
+          <boolProp name="mqtt.add_timestamp">false</boolProp>
+          <stringProp name="mqtt.message_type">String</stringProp>
+          <stringProp name="mqtt.message_type_fixed_length">1024</stringProp>
+          <stringProp name="mqtt.message_to_sent">$,PVT,SKTM,1.0.1,NR,01,L,${DEVICE_IMEI},AA00AA0000,1,150626,120000,12.9716,N,77.5946,E,0.0,0,10,920,1.2,1.1,AIRTEL,1,1,12.4,3.9,0,0,18,404,20,1234,5678,0,0,0,0x00,0x00,1,*4F,*</stringProp>
+          <boolProp name="mqtt.retained_message">false</boolProp>
+        </net.xmeter.samplers.PubSampler>
+        <hashTree>
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="SLA: publish under 3000 ms">
+            <stringProp name="DurationAssertion.duration">3000</stringProp>
+          </DurationAssertion>
+          <hashTree/>
+        </hashTree>
+        <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Publish interval ${__P(PUBLISH_INTERVAL_MS,5000)}ms" enabled="true">
+          <stringProp name="ConstantTimer.delay">${__P(PUBLISH_INTERVAL_MS,5000)}</stringProp>
+        </ConstantTimer>
+        <hashTree/>
+        <ResultCollector guiclass="SimpleDataWriter" testclass="ResultCollector" testname="Simple Data Writer">
+          <boolProp name="ResultCollector.error_logging">false</boolProp>
+          <objProp>
+            <name>saveConfig</name>
+            <value class="SampleSaveConfiguration">
+              <time>true</time>
+              <latency>true</latency>
+              <timestamp>true</timestamp>
+              <success>true</success>
+              <label>true</label>
+              <code>true</code>
+              <message>true</message>
+              <threadName>true</threadName>
+              <dataType>true</dataType>
+              <encoding>false</encoding>
+              <assertions>true</assertions>
+              <subresults>true</subresults>
+              <responseData>false</responseData>
+              <samplerData>false</samplerData>
+              <xml>false</xml>
+              <fieldNames>true</fieldNames>
+              <responseHeaders>false</responseHeaders>
+              <requestHeaders>false</requestHeaders>
+              <responseDataOnError>false</responseDataOnError>
+              <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+              <assertionsResultsToSave>0</assertionsResultsToSave>
+              <bytes>true</bytes>
+              <sentBytes>true</sentBytes>
+              <url>true</url>
+              <threadCounts>true</threadCounts>
+              <idleTime>true</idleTime>
+              <connectTime>true</connectTime>
+            </value>
+          </objProp>
+          <stringProp name="filename">results/mqtt-steady-results.jtl</stringProp>
+        </ResultCollector>
+        <hashTree/>
+        <ResultCollector guiclass="StatVisualizer" testclass="ResultCollector" testname="Aggregate Report">
+          <boolProp name="ResultCollector.error_logging">false</boolProp>
+          <objProp>
+            <name>saveConfig</name>
+            <value class="SampleSaveConfiguration">
+              <time>true</time>
+              <latency>true</latency>
+              <timestamp>true</timestamp>
+              <success>true</success>
+              <label>true</label>
+              <code>true</code>
+              <message>true</message>
+              <threadName>true</threadName>
+              <dataType>true</dataType>
+              <encoding>false</encoding>
+              <assertions>true</assertions>
+              <subresults>true</subresults>
+              <responseData>false</responseData>
+              <samplerData>false</samplerData>
+              <xml>false</xml>
+              <fieldNames>true</fieldNames>
+              <responseHeaders>false</responseHeaders>
+              <requestHeaders>false</requestHeaders>
+              <responseDataOnError>false</responseDataOnError>
+              <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+              <assertionsResultsToSave>0</assertionsResultsToSave>
+              <bytes>true</bytes>
+              <sentBytes>true</sentBytes>
+              <url>true</url>
+              <threadCounts>true</threadCounts>
+              <idleTime>true</idleTime>
+              <connectTime>true</connectTime>
+            </value>
+          </objProp>
+          <stringProp name="filename">results/mqtt-steady-aggregate.csv</stringProp>
+        </ResultCollector>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

@@ -2331,9 +2331,12 @@ class BleKey(models.Model):
     
     def __str__(self):
         return f"BleKey {self.key} - {self.imei}"
-    
+
     class Meta:
         app_label = 'skytron_api'
+        indexes = [
+            models.Index(fields=['imei', 'active'], name='blekey_imei_active_idx'),
+        ]
 
 
 class TokenBlacklist(models.Model):
