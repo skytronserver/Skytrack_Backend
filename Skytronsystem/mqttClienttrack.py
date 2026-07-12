@@ -3,8 +3,7 @@ import json
 import os
 import ssl
 import time
-import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from typing import Optional, Tuple
 
 # Third-party
@@ -353,10 +352,30 @@ def Process_dtorto_Data(msg, topic_parts):
         raise e
 
 
-def Process_Device_Data(msg):
-    """Process device tracking data using common processor and send response."""
+def _tracking_worker_init():
+    """Runs once at startup in each tracking worker PROCESS.
+
+    Workers are forked from the main process, which may already hold a live
+    DB connection at fork time -- sharing that same socket across process
+    boundaries corrupts the wire protocol. Discard it here so each worker
+    opens its own fresh connection on its first query.
+    """
+    from django.db import connections
+    connections.close_all()
+
+
+def _process_tracking_message(payload):
+    """Process one deviceTracking message. Runs in a worker PROCESS (not a
+    thread) so CPU-bound work (parsing, ORM hydration, alert evaluation)
+    gets real multi-core parallelism instead of competing for one GIL.
+
+    Returns (imei, response_data) instead of publishing directly -- worker
+    processes don't hold the MQTT client connection, only the main process
+    does. The main process publishes the response via a completion callback.
+    """
+    start = time.perf_counter()
     try:
-        data_str = str(msg.payload.decode())
+        data_str = payload.decode()
         process_device_tracking_data(data_str, source="MQTT")
 
         # Extract IMEI for PVT format: $,PVT,<model>,<ver>,NR,<seq>,L,<imei>,...
@@ -369,14 +388,34 @@ def Process_Device_Data(msg):
             print(f"[MQTT] Error extracting IMEI: {e}", flush=True)
 
         if imei:
-            try:
-                response_data = get_device_response_data(imei)
-                client.publish(f"deviceResponse/{imei}", json.dumps(response_data))
-            except Exception as e:
-                print(f"[MQTT] Error sending device response: {e}", flush=True)
+            response_data = get_device_response_data(imei)
+            return imei, response_data
+        return None
 
     except Exception as e:
         print(f"[MQTT] Device data processing error: {e}", flush=True)
+        return None
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        print(f"[MQTT][Perf] Process_Device_Data took {duration_ms:.2f} ms", flush=True)
+
+
+def _publish_tracking_response(future):
+    """Runs in the main process when a tracking worker process completes.
+    Only the main process holds the MQTT client, so the actual publish()
+    has to happen here rather than inside the worker.
+    """
+    try:
+        result = future.result()
+    except Exception as e:
+        print(f"[MQTT] tracking worker error: {e}", flush=True)
+        return
+    if result:
+        imei, response_data = result
+        try:
+            client.publish(f"deviceResponse/{imei}", json.dumps(response_data))
+        except Exception as e:
+            print(f"[MQTT] Error sending device response: {e}", flush=True)
 
 
 def Process_EM_Data(msg):
@@ -402,7 +441,8 @@ def on_message(client, userdata, msg):
             return
 
         if len(topic_parts) == 2 and topic_parts[0] == 'deviceTracking':
-            _tracking_executor.submit(_safe_exec, "Process_Device_Data", Process_Device_Data, msg)
+            future = _tracking_executor.submit(_process_tracking_message, msg.payload)
+            future.add_done_callback(_publish_tracking_response)
         elif len(topic_parts) == 2 and topic_parts[0] == 'deviceEM':
             _em_executor.submit(_safe_exec, "Process_EM_Data", Process_EM_Data, msg)
         elif len(topic_parts) >= 2 and topic_parts[0] == 'sosEx':
@@ -427,14 +467,20 @@ def _safe_exec(name, func, *args, **kwargs):
 
 
 # ---------------------------------------------------------------------------
-# Thread-pool executors
-# EM/SOS messages → high-priority pool (never blocked by tracking).
-# Device tracking → normal pool (bounded to limit CPU from route checks).
-# Owner/dtorto → dedicated pool so user requests are never queued behind
-#   slow device tracking tasks (which can take 8+ seconds each).
+# Executors
+# EM/SOS messages → high-priority thread pool (never blocked by tracking).
+# Device tracking → process pool, so CPU-bound work (parsing, ORM hydration,
+#   alert evaluation) gets real multi-core parallelism instead of competing
+#   for one GIL across 32 threads. Tunable via MQTT_TRACKING_WORKERS since
+#   this shares the host with mosquitto, the API backend, and Postgres.
+# Owner/dtorto → dedicated thread pool so user requests are never queued
+#   behind slow device tracking tasks.
 # ---------------------------------------------------------------------------
 _em_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="mqtt-em")
-_tracking_executor = ThreadPoolExecutor(max_workers=32, thread_name_prefix="mqtt-track")
+_tracking_executor = ProcessPoolExecutor(
+    max_workers=int(os.getenv("MQTT_TRACKING_WORKERS", "6")),
+    initializer=_tracking_worker_init,
+)
 _user_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="mqtt-user")
 
 # ---------------------------------------------------------------------------
@@ -461,7 +507,7 @@ client.on_message = on_message
 client.connect(BROKER_URL, BROKER_PORT, 60)
 client.loop_start()
 
-print("[MQTT] Client started with threaded executor model. Waiting for messages...", flush=True)
+print("[MQTT] Client started (tracking: process pool, EM/user: thread pools). Waiting for messages...", flush=True)
 try:
     while True:
         time.sleep(1)

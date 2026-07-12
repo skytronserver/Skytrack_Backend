@@ -8,7 +8,6 @@ import json
 import time
 import string
 import secrets
-import threading
 from datetime import datetime, timezone, timedelta
 import pytz
 from django.db import close_old_connections
@@ -19,24 +18,24 @@ from geopy.distance import geodesic
 # Per-device cache for the most-recent route alert state.
 # Avoids re-scanning the full AlertsLog table on every GPS update.
 # Invalidated immediately when a new alert is written.
+# No lock: dict get/set/pop are atomic under the GIL, and a race here only
+# means a redundant recompute of an idempotent value, never corruption --
+# a shared lock across all devices would otherwise serialize every
+# concurrent cache-miss (e.g. a burst of many distinct devices reconnecting).
 _route_alert_cache: dict = {}          # device_tag_id -> (expires_at, last_alert_map)
-_route_alert_cache_lock = threading.Lock()
 _ROUTE_ALERT_CACHE_TTL = 30           # seconds
 
 # Per-IMEI cache for DeviceStock lookups (device registration rarely changes).
 _device_cache: dict = {}               # imei_str -> (expires_at, DeviceStock|None)
-_device_cache_lock = threading.Lock()
 _DEVICE_CACHE_TTL = 120               # seconds
 
 # Per-device_id cache for DeviceTag lookups.
 _device_tag_cache: dict = {}           # device.id -> (expires_at, DeviceTag|None)
-_device_tag_cache_lock = threading.Lock()
 
 # Per-device cache for the most-recent non-Route alert per type.
 # Eliminates 15+ DB queries per packet caused by lastnormal_alerts.filter().last() calls.
 # Invalidated whenever create_alert() writes a new row.
 _normal_alert_cache: dict = {}         # device_tag_id -> (expires_at, {type: AlertsLog})
-_normal_alert_cache_lock = threading.Lock()
 _NORMAL_ALERT_CACHE_TTL = 10          # seconds
 
 from skytron_api.models import (
@@ -52,16 +51,28 @@ ist_timezone = pytz.timezone('Asia/Kolkata')
 
 
 def _get_device_by_imei(imei):
-    """Cached DeviceStock lookup by IMEI string. TTL = 120 s."""
+    """Cached DeviceStock lookup by IMEI string. TTL = 120 s.
+
+    Locking removed: dict get/set are atomic under the GIL, and this cache
+    is idempotent (a race just means two threads redundantly compute the
+    same DeviceStock lookup) -- the shared lock was serializing every
+    concurrent cache-miss across ALL devices, which under a burst of many
+    distinct devices (e.g. a mass reconnect) became the bottleneck itself.
+    """
     now = time.monotonic()
     key = str(imei)
-    with _device_cache_lock:
-        entry = _device_cache.get(key)
-        if entry and now < entry[0]:
-            return entry[1]
-    device = DeviceStock.objects.filter(imei__contains=key).last()
-    with _device_cache_lock:
-        _device_cache[key] = (now + _DEVICE_CACHE_TTL, device)
+    entry = _device_cache.get(key)
+    if entry and now < entry[0]:
+        return entry[1]
+    # Exact match first -- uses the unique index on imei (O(log n)).
+    # Falls back to substring match only for legacy rows whose stored imei
+    # doesn't exactly match what the device sends (varying lengths seen in
+    # production data); that fallback can't use an index and is O(n), so
+    # it should stay rare.
+    device = DeviceStock.objects.filter(imei=key).first()
+    if device is None:
+        device = DeviceStock.objects.filter(imei__contains=key).last()
+    _device_cache[key] = (now + _DEVICE_CACHE_TTL, device)
     return device
 
 
@@ -71,13 +82,11 @@ def _get_device_tag(device):
         return None
     now = time.monotonic()
     key = device.id
-    with _device_tag_cache_lock:
-        entry = _device_tag_cache.get(key)
-        if entry and now < entry[0]:
-            return entry[1]
+    entry = _device_tag_cache.get(key)
+    if entry and now < entry[0]:
+        return entry[1]
     device_tag = DeviceTag.objects.filter(device=device, status='Owner_Final_OTP_Verified').last()
-    with _device_tag_cache_lock:
-        _device_tag_cache[key] = (now + _DEVICE_CACHE_TTL, device_tag)
+    _device_tag_cache[key] = (now + _DEVICE_CACHE_TTL, device_tag)
     return device_tag
 
 
@@ -88,10 +97,9 @@ def _get_normal_alert_map(device_tag):
     """
     now = time.monotonic()
     key = device_tag.id
-    with _normal_alert_cache_lock:
-        entry = _normal_alert_cache.get(key)
-        if entry and now < entry[0]:
-            return entry[1]
+    entry = _normal_alert_cache.get(key)
+    if entry and now < entry[0]:
+        return entry[1]
 
     last_alerts = (
         AlertsLog.objects.filter(deviceTag=device_tag)
@@ -106,8 +114,7 @@ def _get_normal_alert_map(device_tag):
     ))
     alert_map = {a.type: a for a in alerts}
 
-    with _normal_alert_cache_lock:
-        _normal_alert_cache[key] = (now + _NORMAL_ALERT_CACHE_TTL, alert_map)
+    _normal_alert_cache[key] = (now + _NORMAL_ALERT_CACHE_TTL, alert_map)
     return alert_map
 
 
@@ -510,8 +517,7 @@ def create_alert(alert_type, status, loc_id, device_tag, poi_ref=None):
             alert_details='',
         )
         # Invalidate per-device alert cache so next packet sees the new row.
-        with _normal_alert_cache_lock:
-            _normal_alert_cache.pop(device_tag.id, None)
+        _normal_alert_cache.pop(device_tag.id, None)
     except Exception as e:
         print(f"Error creating alert: {e}", flush=True)
 
@@ -830,10 +836,9 @@ def _get_route_alert_map(device_tag):
     """
     now = time.monotonic()
     dtid = device_tag.id
-    with _route_alert_cache_lock:
-        entry = _route_alert_cache.get(dtid)
-        if entry and now < entry[0]:
-            return entry[1]
+    entry = _route_alert_cache.get(dtid)
+    if entry and now < entry[0]:
+        return entry[1]
 
     # DISTINCT ON (route_ref_id) → one row per route, most-recent first.
     # Falls back to dedup-in-Python for DBs that don't support DISTINCT ON.
@@ -857,8 +862,7 @@ def _get_route_alert_map(device_tag):
                 alerts.append(a)
 
     alert_map = {('Route', a.route_ref_id): a for a in alerts if a.route_ref_id}
-    with _route_alert_cache_lock:
-        _route_alert_cache[dtid] = (now + _ROUTE_ALERT_CACHE_TTL, alert_map)
+    _route_alert_cache[dtid] = (now + _ROUTE_ALERT_CACHE_TTL, alert_map)
     return alert_map
 
 
@@ -917,8 +921,7 @@ def process_route_alerts(gps_data, loc_id, device_tag, lat, lon):
 
         # Invalidate cache so the next call reflects newly written alerts
         if alert_written:
-            with _route_alert_cache_lock:
-                _route_alert_cache.pop(device_tag.id, None)
+            _route_alert_cache.pop(device_tag.id, None)
 
         print(f"[Tracking][Perf] process_route_alerts TOTAL={(time.perf_counter()-_t_route_start)*1000:.1f}ms", flush=True)
 

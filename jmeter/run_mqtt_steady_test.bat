@@ -1,6 +1,13 @@
 @echo off
 setlocal
 
+:: Requires tests\registered_devices.csv (one IMEI per line, header "imei"),
+:: generated server-side by: python manage.py seed_load_test_devices --csv-out ...
+:: Each thread picks one row and uses it for its whole lifetime -- these are
+:: real registered devices (DeviceStock+DeviceTag), so tracking messages
+:: exercise the full pipeline (GPS save, geocoding signal, alerts), not just
+:: the "unknown device" fallback that only writes to GPSDataLog.
+
 set JMETER_EXE=apache-jmeter-5.6.3\bin\jmeter.bat
 set TEST_FILE=tests\MQTT-Steady-State-Load-Test-(Gromed).jmx
 set RESULT_JTL=results\mqtt-steady-results.jtl

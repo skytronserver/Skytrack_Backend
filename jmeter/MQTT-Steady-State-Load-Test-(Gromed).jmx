@@ -28,14 +28,17 @@
           <boolProp name="IfController.evaluateAll">false</boolProp>
         </IfController>
         <hashTree>
-          <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Assign stable device IMEI">
-            <stringProp name="cacheKey">true</stringProp>
-            <stringProp name="filename"></stringProp>
-            <stringProp name="parameters"></stringProp>
-            <stringProp name="script">long imei = 100000000000000L + (long)(Math.random() * 899999999999999L)
-vars.put("DEVICE_IMEI", Long.toString(imei))</stringProp>
-            <stringProp name="scriptLanguage">groovy</stringProp>
-          </JSR223PreProcessor>
+          <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Registered device IMEIs">
+            <stringProp name="delimiter">,</stringProp>
+            <stringProp name="fileEncoding">UTF-8</stringProp>
+            <stringProp name="filename">${__P(DEVICE_CSV,tests/registered_devices.csv)}</stringProp>
+            <boolProp name="ignoreFirstLine">true</boolProp>
+            <boolProp name="quotedData">false</boolProp>
+            <boolProp name="recycle">true</boolProp>
+            <stringProp name="shareMode">shareMode.group</stringProp>
+            <boolProp name="stopThread">false</boolProp>
+            <stringProp name="variableNames">DEVICE_IMEI</stringProp>
+          </CSVDataSet>
           <hashTree/>
           <net.xmeter.samplers.ConnectSampler guiclass="net.xmeter.gui.ConnectSamplerUI" testclass="net.xmeter.samplers.ConnectSampler" testname="MQTT Connect (once)">
             <stringProp name="mqtt.server">135.235.166.209</stringProp>
@@ -64,7 +67,7 @@ vars.put("DEVICE_IMEI", Long.toString(imei))</stringProp>
           <boolProp name="mqtt.add_timestamp">false</boolProp>
           <stringProp name="mqtt.message_type">String</stringProp>
           <stringProp name="mqtt.message_type_fixed_length">1024</stringProp>
-          <stringProp name="mqtt.message_to_sent">$,PVT,SKTM,1.0.1,NR,01,L,${DEVICE_IMEI},AA00AA0000,1,150626,120000,12.9716,N,77.5946,E,0.0,0,10,920,1.2,1.1,AIRTEL,1,1,12.4,3.9,0,0,18,404,20,1234,5678,0,0,0,0x00,0x00,1,*4F,*</stringProp>
+          <stringProp name="mqtt.message_to_sent">$,PVT,SKTM,1.0.1,NR,01,L,${DEVICE_IMEI},AA00AA0000,1,${__time(ddMMyyyy)},${__time(HHmmss)},12.9716,N,77.5946,E,0.0,341.14,23,56.8,0.9,0.6,AIRTEL,1,1,11.6,4.2,1,C,16,405,56,1BDA,E62F,0000,0000,0,0000,0000,0,0000,0000,0,1111,10,000043,20,*</stringProp>
           <boolProp name="mqtt.retained_message">false</boolProp>
         </net.xmeter.samplers.PubSampler>
         <hashTree>

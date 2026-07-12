@@ -93,9 +93,13 @@ echo "Running database migrations..."
 #docker run --rm --network "$NETWORK_NAME" --name skytrack-mqtt-migration skytrack-mqtt-client python manage.py migrate --run-syncdb
 
 # Run the container with the volume mount (environment variables are now baked into the image)
+# MQTT_TRACKING_WORKERS: tracking process-pool size (see mqttClienttrack.py).
+# Passed at run time (not baked into the image) so it can be tuned without a rebuild --
+# just edit .env and re-run this script.
 sudo docker run -d --restart=always \
   --network "$NETWORK_NAME" \
   -v $STORAGE_DIR:/host_storage \
+  -e MQTT_TRACKING_WORKERS="${MQTT_TRACKING_WORKERS:-8}" \
   --name skytrack-mqtt-client-container \
   skytrack-mqtt-client
 
