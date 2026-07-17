@@ -97,7 +97,14 @@
       "Bash(grep -c \"\\\\.py$\")",
       "Bash(grep -n \"^import re\\\\|^import re$\\\\|^import re\\\\b\" /home/azureuser/Skytrack_Backend/Skytronsystem/skytron_api/views.py)",
       "Bash(grep -n \"^import re$\" /home/azureuser/Skytrack_Backend/Skytronsystem/skytron_api/views.py)",
-      "Bash(python -c \"import py_compile; py_compile.compile\\('skytron_api/models.py', doraise=True\\); py_compile.compile\\('skytron_api/views.py', doraise=True\\); py_compile.compile\\('skytron_api/migrations/0068_device_tag_trailer_fields.py', doraise=True\\); print\\('OK'\\)\")"
+      "Bash(python -c \"import py_compile; py_compile.compile\\('skytron_api/models.py', doraise=True\\); py_compile.compile\\('skytron_api/views.py', doraise=True\\); py_compile.compile\\('skytron_api/migrations/0068_device_tag_trailer_fields.py', doraise=True\\); print\\('OK'\\)\")",
+      "Bash(sort -t_ -k1 -V)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('skytron_api/activation_views.py', doraise=True\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('/home/azureuser/Skytrack_Backend/Skytronsystem/skytron_api/activation_views.py', doraise=True\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('/home/azureuser/Skytrack_Backend/Skytronsystem/skytron_api/migrations/0070_device_model_api_url_token.py', doraise=True\\); print\\('OK'\\)\")",
+      "Bash(sudo docker exec skytron-backend-api-container python manage.py makemigrations --check --dry-run --verbosity 3)",
+      "Bash(sudo docker exec skytron-backend-api-container python manage.py showmigrations skytron_api)"
     ]
   }
 }

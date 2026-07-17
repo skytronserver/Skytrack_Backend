@@ -1,14 +1,26 @@
+import secrets
 from datetime import datetime
 from typing import Optional
 
+from django.core.paginator import Paginator
+from django.db.models import Max
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
-from .models import ActivationCommandReply, DeviceStock, DeviceTag
+from .models import ActivationCommandDispatch, ActivationCommandReply, DeviceStock, DeviceTag
+from .rbac import require_permission
+from .serializers import ActivationCommandDispatchSerializer
+from .views import add_sms_queue, get_user_object
 
 _MIN_FIELDS = 12
+
+# Fixed reply-to number embedded in the ACTV command payload, per device firmware spec.
+_ACTIVATION_REPLY_TO_NUMBER = "9002481874"
+_TERMINAL_TAG_STATUSES = ['TagDeleted', 'Device_Untagged', 'untaged_after_failed_taging']
 
 
 def _digits_only(phone: str) -> str:
@@ -145,7 +157,18 @@ def receive_activation_command_reply(request):
         raw_message=actvr_line,
         timestamp=ts,
         incoming_from_no=incoming_from_no,
+        activation_code=code,
     )
+
+    # 5. Match against the most recent outstanding dispatch for this IMEI + code
+    dispatch = ActivationCommandDispatch.objects.filter(
+        imei=imei, activation_code=code, send_status='queued'
+    ).order_by('-sent_at').first()
+    if dispatch:
+        dispatch.reply = entry
+        dispatch.replied_at = ts
+        dispatch.send_status = 'replied'
+        dispatch.save(update_fields=['reply', 'replied_at', 'send_status'])
 
     # Build parsed fields for the response
     def _safe(idx, cast=str, default=None):
@@ -196,4 +219,142 @@ def receive_activation_command_reply(request):
             'message':          'Activation reply recorded.',
         },
         status=201,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('vehicle_tagging', 'update')
+def send_activation_command(request):
+    """
+    Dealer-triggered: sends an ACTV activation command SMS to the device for a
+    given device tag and logs the dispatch so it can be correlated against the
+    ACTVR reply recorded by receive_activation_command_reply().
+    """
+    user = request.user
+    role = "dealer"
+    man = get_user_object(user, role)
+    if not man:
+        return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
+
+    device_tag_id = request.data.get('device_tag_id') or request.data.get('device_id')
+    if not device_tag_id:
+        return Response({"error": "device_tag_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    device_tag = DeviceTag.objects.filter(id=device_tag_id, tagged_by=user).exclude(
+        status__in=_TERMINAL_TAG_STATUSES
+    ).select_related('device').first()
+    if not device_tag:
+        return Response({"error": "Device tag not found or not eligible for activation."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not device_tag.device or not device_tag.device.msisdn1:
+        return Response({"error": "Device has no SMS number (msisdn1) configured."}, status=status.HTTP_400_BAD_REQUEST)
+
+    code = str(secrets.randbelow(1000000)).zfill(6)
+    command = f"ACTV,{code},{_ACTIVATION_REPLY_TO_NUMBER}"
+
+    sms_error = add_sms_queue(command, device_tag.device.msisdn1)
+    send_status_value = 'failed' if sms_error is not None else 'queued'
+
+    dispatch = ActivationCommandDispatch.objects.create(
+        device_tag=device_tag,
+        imei=device_tag.device.imei,
+        activation_code=code,
+        command_sent=command,
+        send_status=send_status_value,
+        sent_by=user,
+        sent_at=timezone.now(),
+    )
+
+    if send_status_value == 'failed':
+        return Response(
+            {"error": "Failed to queue activation SMS.", "data": ActivationCommandDispatchSerializer(dispatch).data},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response(
+        {"data": ActivationCommandDispatchSerializer(dispatch).data, "message": "Activation command queued."},
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('vehicle_tagging', 'view')
+def get_activation_status(request):
+    """
+    Reports whether the most recent activation command sent for a device tag /
+    IMEI has received a matching ACTVR reply yet.
+    """
+    device_tag_id = request.GET.get('device_tag_id') or request.GET.get('device_id')
+    imei = request.GET.get('imei')
+
+    if not device_tag_id and not imei:
+        return Response({"error": "device_tag_id or imei is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    dispatch_qs = ActivationCommandDispatch.objects.select_related('device_tag', 'reply').order_by('-sent_at')
+    if device_tag_id:
+        dispatch_qs = dispatch_qs.filter(device_tag_id=device_tag_id)
+    if imei:
+        dispatch_qs = dispatch_qs.filter(imei=imei)
+
+    dispatch = dispatch_qs.first()
+    if not dispatch:
+        return Response({"error": "No activation command has been sent for this device."}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(
+        {
+            "reply_received": dispatch.send_status == 'replied',
+            "data": ActivationCommandDispatchSerializer(dispatch).data,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('vehicle_tagging', 'view')
+def list_pending_activations(request):
+    """
+    Lists device tags whose most recently sent activation command has not
+    yet received a matching ACTVR reply.
+    """
+    latest_ids = (
+        ActivationCommandDispatch.objects.values('device_tag_id')
+        .annotate(latest_id=Max('id'))
+        .values_list('latest_id', flat=True)
+    )
+    queryset = ActivationCommandDispatch.objects.filter(id__in=latest_ids, send_status='queued').select_related(
+        'device_tag', 'device_tag__device', 'device_tag__device__dealer', 'device_tag__vehicle_owner'
+    ).order_by('sent_at')
+
+    dealer_id = request.GET.get('dealer_id')
+    if dealer_id:
+        queryset = queryset.filter(device_tag__device__dealer_id=dealer_id)
+
+    imei = request.GET.get('imei')
+    if imei:
+        queryset = queryset.filter(imei__icontains=imei)
+
+    vehicle_reg_no = request.GET.get('vehicle_reg_no')
+    if vehicle_reg_no:
+        queryset = queryset.filter(device_tag__vehicle_reg_no__icontains=vehicle_reg_no)
+
+    page = request.GET.get('page', 1)
+    page_size = request.GET.get('page_size', 20)
+    paginator = Paginator(queryset, page_size)
+    page_obj = paginator.get_page(page)
+
+    return Response(
+        {
+            "data": ActivationCommandDispatchSerializer(page_obj, many=True).data,
+            "total_count": paginator.count,
+            "page": int(page),
+            "page_size": int(page_size),
+            "total_pages": paginator.num_pages,
+        },
+        status=status.HTTP_200_OK,
     )

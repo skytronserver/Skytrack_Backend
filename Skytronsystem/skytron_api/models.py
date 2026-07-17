@@ -916,6 +916,8 @@ class DeviceModel(models.Model):
     tac_doc_path = models.FileField(upload_to='tac_docs/', null=True, blank=True)
     otp = models.CharField(max_length=6 )
     mqtt_pw = models.CharField(max_length=255, blank=True, null=True)
+    api_url = models.URLField(max_length=500, null=True, blank=True)
+    token = models.CharField(max_length=500, null=True, blank=True)
 
     class Meta:
         # Composite index for common filtering combinations
@@ -4736,11 +4738,39 @@ class ActivationCommandReply(models.Model):
     raw_message = models.TextField()
     timestamp = models.DateTimeField()
     incoming_from_no = models.CharField(max_length=20)
+    activation_code = models.CharField(max_length=20, null=True, blank=True)
 
     class Meta:
         indexes = [
             models.Index(fields=['imei']),
             models.Index(fields=['timestamp']),
+            models.Index(fields=['activation_code']),
+        ]
+
+
+class ActivationCommandDispatch(models.Model):
+    objects = SafeCreateManager()
+    SEND_STATUS_CHOICES = [
+        ('queued', 'Queued'),
+        ('failed', 'Failed'),
+        ('replied', 'Replied'),
+    ]
+
+    device_tag = models.ForeignKey(DeviceTag, on_delete=models.CASCADE, related_name='activation_command_dispatches')
+    imei = models.CharField(max_length=55)
+    activation_code = models.CharField(max_length=20)
+    command_sent = models.CharField(max_length=255)
+    send_status = models.CharField(max_length=10, choices=SEND_STATUS_CHOICES, default='queued')
+    sent_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='activation_commands_sent')
+    sent_at = models.DateTimeField()
+    reply = models.ForeignKey(ActivationCommandReply, on_delete=models.SET_NULL, null=True, blank=True, related_name='dispatch')
+    replied_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['imei']),
+            models.Index(fields=['sent_at']),
+            models.Index(fields=['send_status']),
         ]
 
 

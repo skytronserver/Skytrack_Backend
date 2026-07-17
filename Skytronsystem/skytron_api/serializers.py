@@ -963,6 +963,23 @@ class OTACommandValueSuggestionSerializer(SanitizingModelSerializer):
         read_only_fields = ['use_count', 'last_used_at', 'created_at']
 
 
+class ActivationCommandReplySerializer(SanitizingModelSerializer):
+    class Meta:
+        model = ActivationCommandReply
+        fields = '__all__'
+
+
+class ActivationCommandDispatchSerializer(SanitizingModelSerializer):
+    device_tag_info = DeviceTagSerializer(source='device_tag', read_only=True)
+    sent_by_info = UserSerializer(source='sent_by', read_only=True)
+    reply_info = ActivationCommandReplySerializer(source='reply', read_only=True)
+
+    class Meta:
+        model = ActivationCommandDispatch
+        fields = '__all__'
+        read_only_fields = ['sent_by', 'sent_at', 'send_status', 'reply', 'replied_at']
+
+
 class IncidentRegisterSerializer(SanitizingModelSerializer):
     registered_by_info = UserSerializer(source='registered_by', read_only=True)
     updated_by_info = UserSerializer(source='updated_by', read_only=True)
