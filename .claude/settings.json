@@ -92,7 +92,12 @@
       "Bash(awk '{print $6}')",
       "Bash(bc)",
       "Bash(sudo journalctl -u mosquitto --since \"15 sec ago\" --no-pager)",
-      "Bash(awk '{sum+=$6} END{print sum\" KB total RSS\"}')"
+      "Bash(awk '{sum+=$6} END{print sum\" KB total RSS\"}')",
+      "Bash(docker update *)",
+      "Bash(grep -c \"\\\\.py$\")",
+      "Bash(grep -n \"^import re\\\\|^import re$\\\\|^import re\\\\b\" /home/azureuser/Skytrack_Backend/Skytronsystem/skytron_api/views.py)",
+      "Bash(grep -n \"^import re$\" /home/azureuser/Skytrack_Backend/Skytronsystem/skytron_api/views.py)",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('skytron_api/models.py', doraise=True\\); py_compile.compile\\('skytron_api/views.py', doraise=True\\); py_compile.compile\\('skytron_api/migrations/0068_device_tag_trailer_fields.py', doraise=True\\); print\\('OK'\\)\")"
     ]
   }
 }

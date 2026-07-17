@@ -1239,6 +1239,8 @@ class DeviceTag(models.Model):
     otp = models.CharField(max_length= 6,null=True,blank=True)
     otp_time = models.DateTimeField( null=True,blank=True)
     drivers= models.ManyToManyField(Driver, related_name='driver_vehicles', blank=True)
+    with_trailer = models.BooleanField(default=False)
+    trailer_id = models.CharField(max_length=30, null=True, blank=True)
 
     def __str__(self):
         return self.vehicle_reg_no

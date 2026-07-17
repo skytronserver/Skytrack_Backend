@@ -2770,6 +2770,8 @@ def gps_track_data_api(request ):
                 if device_tag_obj:
                     dd['vehicle_registration_number'] = device_tag_obj.vehicle_reg_no
                     dd['imei'] = device_tag_obj.device.imei if device_tag_obj.device else None
+                    dd['with_trailer'] = device_tag_obj.with_trailer
+                    dd['trailer_id'] = device_tag_obj.trailer_id
                     device_tag_data = DeviceTagSerializer(device_tag_obj).data
                     # Attach concise device/manufacturer summary for convenience
                     try:
@@ -2802,6 +2804,8 @@ def gps_track_data_api(request ):
                 else:
                     dd['vehicle_registration_number'] = ""
                     dd['imei'] = ""
+                    dd['with_trailer'] = False
+                    dd['trailer_id'] = None
                     dd['device_tag_info'] = None
 
                 # Attach nearest POI, nearest Police POI, and nearby Routes (<=100m)
@@ -10618,6 +10622,16 @@ def TagDevice2Vehicle(request ):
                     cat_code_obj = None
                 if not cat_code_obj:
                     return Response({"error": "Invalid category_code. Provide a valid Settings_VehicleCategoryCode id or code."}, status=status.HTTP_400_BAD_REQUEST)
+            # Trailer info
+            with_trailer = str(request.data.get('with_trailer', 'false')).strip().lower() == 'true'
+            trailer_id = (request.data.get('trailer_id') or '').strip()
+            if with_trailer:
+                if not trailer_id:
+                    return Response({"error": "trailer_id is required when with_trailer is true."}, status=status.HTTP_400_BAD_REQUEST)
+                if len(trailer_id) > 30 or not trailer_id.isalnum():
+                    return Response({"error": "trailer_id must be alphanumeric with a maximum length of 30 characters."}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                trailer_id = ''
             otp = str(secrets.randbelow(1000000)).zfill(6)
             device_tag ,error= DeviceTag.objects.safe_create(
             device_id=device_id,
@@ -10637,7 +10651,9 @@ def TagDevice2Vehicle(request ):
             tagged_by=user,
             tagged=current_datetime,
             otp= otp ,
-            otp_time=timezone.now()
+            otp_time=timezone.now(),
+            with_trailer=with_trailer,
+            trailer_id=trailer_id or None,
             )
             if error:   # Rollback user creation if dealer creation fails
                     return error  # Return the Response object from safe_create
