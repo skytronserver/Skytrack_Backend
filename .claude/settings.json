@@ -104,7 +104,19 @@
       "Bash(python -c \"import py_compile; py_compile.compile\\('/home/azureuser/Skytrack_Backend/Skytronsystem/skytron_api/activation_views.py', doraise=True\\); print\\('OK'\\)\")",
       "Bash(python -c \"import py_compile; py_compile.compile\\('/home/azureuser/Skytrack_Backend/Skytronsystem/skytron_api/migrations/0070_device_model_api_url_token.py', doraise=True\\); print\\('OK'\\)\")",
       "Bash(sudo docker exec skytron-backend-api-container python manage.py makemigrations --check --dry-run --verbosity 3)",
-      "Bash(sudo docker exec skytron-backend-api-container python manage.py showmigrations skytron_api)"
+      "Bash(sudo docker exec skytron-backend-api-container python manage.py showmigrations skytron_api)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:9478/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:2000/)",
+      "Bash(curl -s -X POST http://localhost:9478/api/get_routePath/ -H 'Content-Type: application/json' -d '{\"points\": [[77.5946, 12.9716], [77.6046, 12.9816]]}' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n')",
+      "Bash(curl -s http://localhost:9478/api/ -w \"\\\\nSTATUS:%{http_code}\\\\n\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:9478/admin/)",
+      "Bash(curl -s -X POST http://localhost:18765/api/get_routePath/ -H 'Content-Type: application/json' -d '{\"points\": [[77.5946, 12.9716], [77.6046, 12.9816]]}' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n' --max-time 20)",
+      "Bash(pkill -f \"runserver 0.0.0.0:18765\")",
+      "Bash(nohup bash -c 'source /home/azureuser/Skytrack_Backend/.env && exec python manage.py runserver 0.0.0.0:18765')",
+      "Bash(disown)",
+      "Bash(curl -s -X POST http://127.0.0.1:2000/api/get_routePath/ -H 'Content-Type: application/json' -d '{\"points\": [[77.5946, 12.9716], [77.6046, 12.9816]]}' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n' --max-time 25)",
+      "Bash(curl -s -X POST https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_new_v2.php?token=fb46cfb86bea498dce694350fb6dd16d161ff8eb -H 'Content-Type: application/json' -d '{\"points\": [[77.5946, 12.9716], [77.6046, 12.9816]]}' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n' --max-time 25)",
+      "Bash(bash run_with_host_storage.sh)"
     ]
   }
 }

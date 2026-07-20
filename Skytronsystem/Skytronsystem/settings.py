@@ -335,10 +335,8 @@ EMAIL_HOST = 'smtp.titan.email'  # Use your email provider's SMTP server
 EMAIL_PORT = 465
 EMAIL_USE_SSL = True
 EMAIL_USE_TLS = False
-# os.environ.get('EMAIL_HOST_USER', 'default-email@gmail.com')
-EMAIL_HOST_USER = "noreply@skytron.in"
-# os.environ.get('EMAIL_HOST_PASSWORD', 'default-password')
-EMAIL_HOST_PASSWORD = "Developer@18062025"
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'noreply@skytron.in')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 
 
 AUTHENTICATION_BACKENDS = [
