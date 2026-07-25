@@ -34,6 +34,22 @@ from .activation_views import (
     get_activation_status,
     list_pending_activations,
 )
+from .alert_stats_views import (
+    alert_stats_type_options,
+    alert_stats_summary,
+    alert_stats_dashboard,
+)
+from .device_inspector_views import (
+    device_inspector_lookup,
+    device_inspector_logs,
+    device_inspector_send_command,
+    device_inspector_command_history,
+    device_inspector_dashboard,
+)
+from .server_health_views import (
+    server_health_summary,
+    server_health_dashboard,
+)
 from django.urls import path
 
  
@@ -659,6 +675,22 @@ urlpatterns = [
     path('device/send-activation-command/', send_activation_command, name='send_activation_command'),
     path('device/activation-status/', get_activation_status, name='get_activation_status'),
     path('device/pending-activations/', list_pending_activations, name='list_pending_activations'),
+
+    # Alert Statistics Dashboard
+    path('alert-stats/types/', alert_stats_type_options, name='alert_stats_type_options'),
+    path('alert-stats/summary/', alert_stats_summary, name='alert_stats_summary'),
+    path('alert-stats/dashboard/', alert_stats_dashboard, name='alert_stats_dashboard'),
+
+    # Device Inspector: lookup, logs, command console
+    path('device-inspector/lookup/', device_inspector_lookup, name='device_inspector_lookup'),
+    path('device-inspector/logs/', device_inspector_logs, name='device_inspector_logs'),
+    path('device-inspector/command/send/', device_inspector_send_command, name='device_inspector_send_command'),
+    path('device-inspector/command/history/', device_inspector_command_history, name='device_inspector_command_history'),
+    path('device-inspector/dashboard/', device_inspector_dashboard, name='device_inspector_dashboard'),
+
+    # Server Health (superadmin only)
+    path('server-health/summary/', server_health_summary, name='server_health_summary'),
+    path('server-health/dashboard/', server_health_dashboard, name='server_health_dashboard'),
 ]
 
 

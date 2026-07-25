@@ -11,10 +11,17 @@ import pytz
 
 # Import common data processor (same as MQTT) - handles both PVT and legacy formats
 from skytron_api.data_processor import process_gps_data
+from skytron_api import connection_registry
 
 # Timezone setup
 gmt_timezone = pytz.timezone('GMT')
 ist_timezone = pytz.timezone('Asia/Kolkata')
+
+# Live socket registry: imei -> connected socket, so the command dispatcher
+# thread (running in this same process) can find a live connection to
+# sendall() a queued command onto.
+LIVE_SOCKETS = {}
+LIVE_SOCKETS_LOCK = threading.Lock()
 
 '''
 def handle_client(conn, client_address):
@@ -419,6 +426,14 @@ def process_alert(gps_data, locid):
 import time
 def handle_client(conn, client_address):
     print(f"Accepted connection from {client_address}", flush=True)
+    seen_imeis = set()
+
+    def _on_imei_seen(seen_imei):
+        with LIVE_SOCKETS_LOCK:
+            LIVE_SOCKETS[seen_imei] = conn
+        seen_imeis.add(seen_imei)
+        connection_registry.record_tcp_connect(seen_imei, client_address[0], client_address[1], "tcp")
+
     try:
         conn.settimeout(180)
         last_data_time=time.time()
@@ -457,6 +472,7 @@ def handle_client(conn, client_address):
                             if gps_data:
 
                                 reg=gps_data['imei']
+                                _on_imei_seen(reg)
                                 dev=DeviceStock.objects.filter(imei__contains=str(reg)).last()
                                 print("#"+reg+"#",dev)
                                 if dev: 
@@ -470,18 +486,18 @@ def handle_client(conn, client_address):
 
                                         g=GPSData.objects.create(**gps_data)
                                         g.save()
-                                           try:
-                                               gpsdata_populate_location_and_consecutive_time(
-                                                   sender=GPSData,
-                                                   instance=g,
-                                                   created=True,
-                                               )
-                                               g.refresh_from_db(fields=[
-                                                   'state', 'district', 'city', 'road', 'road_type',
-                                                   'time_in_same_state', 'time_in_same_district', 'time_in_same_city'
-                                               ])
-                                           except Exception as enrich_error:
-                                               print(f"GPS enrichment error: {enrich_error}", flush=True)
+                                        try:
+                                            gpsdata_populate_location_and_consecutive_time(
+                                                sender=GPSData,
+                                                instance=g,
+                                                created=True,
+                                            )
+                                            g.refresh_from_db(fields=[
+                                                'state', 'district', 'city', 'road', 'road_type',
+                                                'time_in_same_state', 'time_in_same_district', 'time_in_same_city'
+                                            ])
+                                        except Exception as enrich_error:
+                                            print(f"GPS enrichment error: {enrich_error}", flush=True)
                                         process_alert(gps_data,g.id)
 
                                         print("########################",flush=True)
@@ -500,6 +516,12 @@ def handle_client(conn, client_address):
         print(f"Error handling client {client_address}: {e}", flush=True)
         raise e
     finally:
+        with LIVE_SOCKETS_LOCK:
+            for seen_imei in seen_imeis:
+                if LIVE_SOCKETS.get(seen_imei) is conn:
+                    del LIVE_SOCKETS[seen_imei]
+        for seen_imei in seen_imeis:
+            connection_registry.record_tcp_disconnect(seen_imei, "tcp")
         # Close any remaining database connections
         close_old_connections()
         conn.close()
@@ -507,10 +529,49 @@ def handle_client(conn, client_address):
 
 
 
+def _tcp_command_dispatcher():
+    """Background loop (runs in this process, alongside the accept loop):
+    pop queued commands for the GPS TCP transport and sendall() them onto
+    whichever live socket in LIVE_SOCKETS matches the target IMEI."""
+    while True:
+        item = connection_registry.pop_command_for_dispatch("tcp", timeout=1)
+        if not item:
+            continue
+
+        request_id = item.get("request_id")
+        imei = item.get("imei")
+
+        if connection_registry.is_command_stale(item):
+            connection_registry.push_command_ack(
+                request_id, "error", error="Command was stale (issued too long ago)"
+            )
+            continue
+
+        with LIVE_SOCKETS_LOCK:
+            sock = LIVE_SOCKETS.get(imei)
+
+        if not sock:
+            connection_registry.push_command_ack(
+                request_id, "error", error=f"No live socket for IMEI {imei}"
+            )
+            continue
+
+        try:
+            payload = item.get("payload", "")
+            encoded = payload.encode(item.get("encoding") or "utf-8") if isinstance(payload, str) else payload
+            sock.sendall(encoded)
+            connection_registry.push_command_ack(request_id, "sent", bytes_sent=len(encoded))
+        except Exception as e:
+            connection_registry.push_command_ack(request_id, "error", error=str(e))
+
+
 class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         host = '0.0.0.0'
         port = 6000
+
+        dispatcher_thread = threading.Thread(target=_tcp_command_dispatcher, daemon=True)
+        dispatcher_thread.start()
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
             server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

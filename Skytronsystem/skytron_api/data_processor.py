@@ -929,10 +929,16 @@ def process_route_alerts(gps_data, loc_id, device_tag, lat, lon):
         print(f"Error processing route alerts: {e}", flush=True)
 
 
-def process_device_tracking_data(data_str, source="unknown"):
+def process_device_tracking_data(data_str, source="unknown", on_imei_seen=None):
     """
     Main function to process device tracking data
     Used by both TCP server and MQTT deviceTracking topic
+
+    on_imei_seen: optional callback(imei) invoked as soon as an IMEI is
+    extracted from a packet. A single call to this function can process
+    multiple $-delimited packets (potentially from different IMEIs) in the
+    loop below, so this is a per-packet callback rather than a single
+    return value.
     """
     _t_total_start = time.perf_counter()
     # Close old database connections to prevent leaks
@@ -981,6 +987,12 @@ def process_device_tracking_data(data_str, source="unknown"):
 
                 if gps_data:
                     imei = gps_data['imei']
+
+                    if on_imei_seen is not None:
+                        try:
+                            on_imei_seen(imei)
+                        except Exception as e:
+                            print(f"[{source}] on_imei_seen callback error: {e}", flush=True)
 
                     # Find device by IMEI (cached, TTL=120s)
                     _t0 = time.perf_counter()

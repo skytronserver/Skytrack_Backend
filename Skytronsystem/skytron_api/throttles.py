@@ -159,3 +159,18 @@ class PasswordResetRateThrottle(LoadTestBypassMixin, AnonRateThrottle):
             return False
 
         return True
+
+
+class AlertStatsRateThrottle(LoadTestBypassMixin, UserRateThrottle):
+    """Throttle for the alert-statistics dashboard/summary endpoints."""
+    scope = 'alert_stats'
+
+
+class DeviceCommandRateThrottle(LoadTestBypassMixin, UserRateThrottle):
+    """Conservative throttle for sending raw commands down to a live device."""
+    scope = 'device_command'
+
+
+class ServerHealthRateThrottle(LoadTestBypassMixin, UserRateThrottle):
+    """Throttle for the internal server-health dashboard (superadmin only)."""
+    scope = 'server_health'

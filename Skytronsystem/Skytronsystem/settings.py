@@ -297,6 +297,9 @@ REST_FRAMEWORK = {
         'login': '10/minute',    # Limit login endpoints to 10 requests per minute
         'otp': '10/minute',      # Limit OTP endpoints to 10 requests per minute
         'password_reset': '3/minute',  # Limit password reset to 3 requests per minute
+        'alert_stats': '30/minute',    # Alert-statistics dashboard/summary
+        'device_command': '20/minute', # Sending raw commands down to a live device
+        'server_health': '10/minute',  # Internal server-health dashboard (superadmin only)
     },
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',

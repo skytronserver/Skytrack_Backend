@@ -23,6 +23,7 @@ from skytron_api.data_processor import (
     process_device_tracking_data,
     process_emergency_data,
 )
+from skytron_api import connection_registry
 from skytron_api.jwt_authentication import HybridAuthentication
 from skytron_api.models import (  # noqa: F401 – wildcard kept for dynamic model access
     EMCallAssignment, EMCallBroadcast, EMCallMessages,
@@ -384,6 +385,7 @@ def _process_tracking_message(payload):
             data_parts = data_str.split(',')
             if len(data_parts) > 7:
                 imei = data_parts[7]
+                connection_registry.record_mqtt_seen(imei, topic="deviceTracking/" + imei)
         except Exception as e:
             print(f"[MQTT] Error extracting IMEI: {e}", flush=True)
 

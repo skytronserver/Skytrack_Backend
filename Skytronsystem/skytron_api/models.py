@@ -2214,11 +2214,17 @@ class AlertsLog(models.Model):
     alert_details = models.TextField()
     #dummnyuser=models.ForeignKey(User, on_delete=models.CASCADE,null=True,blank=True) 
     deviceTag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE) 
-    #district=models.ForeignKey(dto_rto, on_delete=models.CASCADE,null=True, blank=True) 
-    state=models.ForeignKey(Settings_State, on_delete=models.CASCADE) 
-    
+    #district=models.ForeignKey(dto_rto, on_delete=models.CASCADE,null=True, blank=True)
+    state=models.ForeignKey(Settings_State, on_delete=models.CASCADE)
 
-class Notice(models.Model): 
+    class Meta:
+        app_label = 'skytron_api'
+        indexes = [
+            models.Index(fields=['deviceTag', 'type', '-timestamp'], name='alertslog_tag_type_ts_idx'),
+        ]
+
+
+class Notice(models.Model):
     objects = SafeCreateManager()
     created = models.DateField(auto_now_add=True)  
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)

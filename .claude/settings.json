@@ -121,7 +121,17 @@
       "Bash(awk -F: '$1>=15000 && $1<=15200')",
       "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python manage.py check)",
       "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python manage.py makemigrations skytron_api)",
-      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python manage.py makemigrations --check --dry-run)"
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python manage.py makemigrations --check --dry-run)",
+      "Bash(/home/azureuser/venv/bin/python -c \"import django; print\\(django.__version__\\)\")",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -c \"import django; print\\(django.__version__\\)\")",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -c \"import django_redis, redis, psutil, paho.mqtt.client; print\\('ok'\\)\")",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python manage.py makemigrations skytron_api --dry-run -v 2)",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python manage.py makemigrations skytron_api --dry-run -v 3)",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python manage.py makemigrations --check --dry-run skytron_api)",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile skytron_api/management/commands/tcp_server.py em_server.py mqttClienttrack.py skytron_api/connection_registry.py skytron_api/alert_stats_views.py skytron_api/device_inspector_views.py skytron_api/server_health_views.py)",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile /tmp/orig_tcp_server.py)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile skytron_api/management/commands/tcp_server.py em_server.py mqttClienttrack.py skytron_api/connection_registry.py skytron_api/alert_stats_views.py skytron_api/device_inspector_views.py skytron_api/server_health_views.py skytron_api/models.py skytron_api/urls.py skytron_api/throttles.py Skytronsystem/settings.py)"
     ]
   }
 }
