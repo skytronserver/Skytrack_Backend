@@ -810,7 +810,7 @@ def public_device_onboarding_dashboard(request):
         'device_model_id',
         flat=True
     ).distinct().count()
-    total_device_stock = DeviceStock.objects.count()
+    total_device_stock = DeviceStock.objects.exclude(stock_status=DEVICE_STOCK_DELETED_STATUS).count()
 
     tagged_device_base_qs = DeviceTag.objects.exclude(status__in=['Device_Untagged', 'TagDeleted'])
     total_tagged_device = tagged_device_base_qs.count()
@@ -12658,7 +12658,7 @@ def deviceStockFilter(request ):
     from django.db.models import Exists, OuterRef, Case, When, BooleanField
     
     # Build the base query with only essential fields
-    base_query = DeviceStock.objects.filter(**serializer.validated_data)
+    base_query = DeviceStock.objects.filter(**serializer.validated_data).exclude(stock_status=DEVICE_STOCK_DELETED_STATUS)
     
     # Get total count
     total_count = base_query.count()
@@ -12819,12 +12819,258 @@ def deviceStockFilter(request ):
     }, status=200)
 
 
+# Tag statuses that mean "this device is not (or no longer) actively tagged
+# to a vehicle" — a DeviceTag row in one of these states must not count as
+# "tagged" when deciding whether a DeviceStock is free/available.
+DEVICE_STOCK_UNTAGGED_TAG_STATUSES = ['TagDeleted', 'Device_Untagged', 'untaged_after_failed_taging']
+
+DEVICE_STOCK_DELETED_STATUS = 'Deleted'
+
+# Filter fields on DeviceStockUntaggedFilterSerializer that should be matched
+# with a partial (icontains) lookup on the DeviceStock model itself.
+DEVICE_STOCK_ICONTAINS_FIELDS = [
+    'imei', 'iccid', 'iccid2', 'msisdn1', 'msisdn2', 'imsi1', 'imsi2',
+    'device_esn', 'telecom_provider1', 'telecom_provider2', 'remarks',
+]
+
+
+def _strip_blank_filters(data):
+    """
+    Drop any key whose value is None or '' (frontends commonly send '' for
+    cleared filter inputs) so those keys are treated as "not filtered"
+    regardless of the underlying field type.
+    """
+    cleaned = {}
+    for key, value in data.items():
+        if value is None:
+            continue
+        if isinstance(value, str) and value.strip() == '':
+            continue
+        cleaned[key] = value
+    return cleaned
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('device_stock', 'filter')
+def deviceStockUntaggedFilter(request):
+    """
+    List/filter DeviceStock rows that have no *active* DeviceTag pointing at
+    them (a tag in a terminal/untagged status doesn't count as tagged).
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = request.user
+    man = None
+    role_filter = Q()
+
+    if user.role == "devicemanufacture":
+        man = get_user_object(user, "devicemanufacture")
+        if man:
+            role_filter = Q(created_by=user)
+    elif user.role == "dealer":
+        man = get_user_object(user, "dealer")
+        if man:
+            role_filter = Q(dealer=man)
+
+    if not man:
+        if not check_permission(user, 'device_stock', 'view'):
+            return Response({"error": "Request must be from device manufacture or dealer"}, status=status.HTTP_400_BAD_REQUEST)
+        # RBAC-permitted role (e.g. helpdesk) — no manufacturer/dealer filter; sees all stock
+
+    data = _strip_blank_filters(request.data.copy())
+    serializer = DeviceStockUntaggedFilterSerializer(data=data)
+    serializer.is_valid(raise_exception=True)
+    filters = dict(serializer.validated_data)
+
+    page_size = min(max(int(filters.pop('page_size', 50) or 50), 1), 200)
+    page = max(int(filters.pop('page', 1) or 1), 1)
+    offset = (page - 1) * page_size
+
+    dealer_id = filters.pop('dealer_id', None)
+    unassigned_only = filters.pop('unassigned_only', False)
+    upload_file_name = filters.pop('upload_file_name', None)
+
+    query = Q()
+    for field in DEVICE_STOCK_ICONTAINS_FIELDS:
+        if field in filters:
+            query &= Q(**{f"{field}__icontains": filters.pop(field)})
+
+    for field in ['model_id', 'stock_status', 'esim_status', 'upload_batch_id']:
+        if field in filters:
+            query &= Q(**{field: filters.pop(field)})
+
+    if unassigned_only:
+        query &= Q(dealer__isnull=True)
+    elif dealer_id is not None:
+        query &= Q(dealer_id=dealer_id)
+
+    if upload_file_name:
+        query &= Q(upload_batch__file_name__icontains=upload_file_name)
+
+    from django.db.models import Exists
+    active_tag_subquery = DeviceTag.objects.filter(device=OuterRef('pk')).exclude(
+        status__in=DEVICE_STOCK_UNTAGGED_TAG_STATUSES
+    )
+
+    base_query = (
+        DeviceStock.objects
+        .filter(role_filter)
+        .filter(query)
+        .exclude(stock_status=DEVICE_STOCK_DELETED_STATUS)
+        .annotate(is_actively_tagged=Exists(active_tag_subquery))
+        .filter(is_actively_tagged=False)
+    )
+
+    total_count = base_query.count()
+
+    device_stock = base_query.select_related(
+        'model', 'dealer', 'created_by', 'upload_batch'
+    ).prefetch_related('esim_provider').order_by('-id')[offset:offset + page_size]
+
+    result_serializer = DeviceStockSerializer2(device_stock, many=True)
+
+    total_pages = (total_count + page_size - 1) // page_size if page_size else 0
+
+    return JsonResponse({
+        'data': result_serializer.data,
+        'pagination': {
+            'current_page': page,
+            'page_size': page_size,
+            'total_count': total_count,
+            'total_pages': total_pages,
+            'has_next': page < total_pages,
+            'has_previous': page > 1,
+        }
+    }, status=200)
+
+
+def _truncate_deleted_value(prefix, original_value, max_length):
+    """
+    Build the "deleted_<id>_<original_value>" replacement value for a unique
+    field, truncated to fit the column's max_length. If the prefix alone
+    already exceeds max_length, the prefix itself is truncated.
+    """
+    if len(prefix) >= max_length:
+        return prefix[:max_length]
+    available = max_length - len(prefix)
+    return prefix + str(original_value)[:available]
+
+
+def _get_device_stock_blocking_references(stock):
+    """
+    Return the list of related model names that still hold a live reference
+    to this DeviceStock row, found by introspecting every FK/M2M relation
+    that points at DeviceStock (so a newly added related model is picked up
+    automatically). DeviceActivationLog is an immutable audit trail (see its
+    docstring), not a live reference, so it never blocks a soft-delete.
+    """
+    blocking = []
+    for rel in DeviceStock._meta.related_objects:
+        if rel.related_model is DeviceActivationLog:
+            continue
+        related_manager = getattr(stock, rel.get_accessor_name())
+        if related_manager.exists():
+            blocking.append(rel.related_model.__name__)
+    return blocking
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('device_stock', 'delete')
+def deviceStockSoftDelete(request):
+    """
+    Soft-delete a batch of DeviceStock rows: verify ownership, block any id
+    still referenced by another model, and for the rest rewrite every unique
+    field to "deleted_<id>_<original_value>" and set stock_status='Deleted'.
+    Nothing is hard-deleted.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = request.user
+    stock_ids = request.data.get('stock_ids') or request.data.get('ids')
+    if not isinstance(stock_ids, list) or not stock_ids:
+        return JsonResponse({'error': "'stock_ids' must be a non-empty list of device stock IDs."}, status=400)
+
+    man = None
+    scope_filter = {}
+    if user.role == "devicemanufacture":
+        man = get_user_object(user, "devicemanufacture")
+        if man:
+            scope_filter = {'created_by': user}
+    elif user.role == "dealer":
+        man = get_user_object(user, "dealer")
+        if man:
+            scope_filter = {'dealer': man}
+
+    if not man:
+        if not check_permission(user, 'device_stock', 'delete'):
+            return Response({"error": "Request must be from device manufacture or dealer"}, status=status.HTTP_400_BAD_REQUEST)
+        # RBAC-permitted role (e.g. helpdesk) — no manufacturer/dealer scoping; can manage all stock
+
+    deleted_ids = []
+    blocked = []
+    not_found = []
+
+    for raw_id in stock_ids:
+        try:
+            stock_id = int(raw_id)
+        except (TypeError, ValueError):
+            blocked.append({'id': raw_id, 'error': 'Invalid stock id.'})
+            continue
+
+        stock = DeviceStock.objects.filter(id=stock_id, **scope_filter).exclude(
+            stock_status=DEVICE_STOCK_DELETED_STATUS
+        ).last()
+        if not stock:
+            not_found.append(stock_id)
+            continue
+
+        blocking_models = _get_device_stock_blocking_references(stock)
+        if blocking_models:
+            blocked.append({
+                'id': stock_id,
+                'error': f"Cannot delete: still referenced by {', '.join(blocking_models)}.",
+            })
+            continue
+
+        with transaction.atomic():
+            prefix = f"deleted_{stock_id}_"
+            for field in stock._meta.get_fields():
+                if isinstance(field, models.CharField) and getattr(field, 'unique', False):
+                    value = getattr(stock, field.name, None)
+                    if value:
+                        setattr(stock, field.name, _truncate_deleted_value(prefix, value, field.max_length))
+            stock.stock_status = DEVICE_STOCK_DELETED_STATUS
+            stock.save()
+        deleted_ids.append(stock_id)
+
+    response_data = {
+        'message': f"{len(deleted_ids)} of {len(stock_ids)} device stock record(s) deleted.",
+        'deleted_ids': deleted_ids,
+    }
+    if blocked:
+        response_data['blocked'] = blocked
+    if not_found:
+        response_data['not_found'] = not_found
+
+    return JsonResponse(response_data, status=200)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 @require_permission('device_stock', 'create')
-def deviceStockCreateBulk(request ): 
+def deviceStockCreateBulk(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -12843,6 +13089,15 @@ def deviceStockCreateBulk(request ):
     mod=DeviceModel.objects.filter(id=model_id,created_by=user).last()
     if not mod:
         return JsonResponse({'error': 'invalid model_id or unauthorised user.'}, status=400)
+
+    uploaded_file_name = request.FILES['excel_file'].name
+    if DeviceStockUploadBatch.objects.filter(file_name=uploaded_file_name).exists():
+        return JsonResponse({'error': f"A file named '{uploaded_file_name}' has already been uploaded."}, status=400)
+    upload_batch = DeviceStockUploadBatch.objects.create(
+        file_name=uploaded_file_name,
+        uploaded_by=user,
+        device_model=mod,
+    )
 
     esim_provider = request.data['esim_provider']
     if not isinstance(esim_provider, list)  : 
@@ -12923,6 +13178,7 @@ def deviceStockCreateBulk(request ):
             'remarks': row.get('remarks', ''),
             'created_by': request.user.id,
             'created': timezone.now(),
+            'upload_batch': upload_batch.id,
         }
 
         # Pre-flight: check ALL unique fields at once and report every conflict before writing anything
@@ -14183,10 +14439,10 @@ def manufacturer_model_stock_statistics(request):
             
             for model in device_models:
                 # Get total stock for this model
-                total_stock = DeviceStock.objects.filter(model=model).count()
-                
+                total_stock = DeviceStock.objects.filter(model=model).exclude(stock_status=DEVICE_STOCK_DELETED_STATUS).count()
+
                 # Get device stock IDs for this model
-                device_stock_ids = DeviceStock.objects.filter(model=model).values_list('id', flat=True)
+                device_stock_ids = DeviceStock.objects.filter(model=model).exclude(stock_status=DEVICE_STOCK_DELETED_STATUS).values_list('id', flat=True)
                 
                 # Get total device tags from these stocks
                 total_device_tags = DeviceTag.objects.filter(
@@ -14680,7 +14936,7 @@ def homepage(request ):
         tagged_device_ids = tagged_devices_qs.values_list('id', flat=True)
         total_tagged_devices = tagged_devices_qs.count()
 
-        total_device_stock = DeviceStock.objects.count()
+        total_device_stock = DeviceStock.objects.exclude(stock_status=DEVICE_STOCK_DELETED_STATUS).count()
         total_untagged_devices = DeviceTag.objects.filter(status__in=untagged_statuses).count()
         
 
@@ -15014,7 +15270,7 @@ def homepage_Manufacturer(request ):
             # Basic manufacturer statistics
             mod = DeviceModel.objects.filter(created_by=manufacturer_user, technical_onboarding_requests__status='accepted').distinct()
             dealers = Dealer.objects.filter(manufacturer=profile)
-            stock = DeviceStock.objects.filter(created_by=manufacturer_user)
+            stock = DeviceStock.objects.filter(created_by=manufacturer_user).exclude(stock_status=DEVICE_STOCK_DELETED_STATUS)
             associated_vehicle_owners = VehicleOwner.objects.filter(
                 devicetag__device__created_by=manufacturer_user
             ).distinct()
@@ -16471,7 +16727,7 @@ def homepage_stateAdmin(request ):
             # Get device stock in this state
             device_stock_in_state = DeviceStock.objects.filter(
                 dealer__manufacturer__state=state_filter
-            )
+            ).exclude(stock_status=DEVICE_STOCK_DELETED_STATUS)
             
             # Get districts in this state
             districts_in_state = Settings_District.objects.filter(state=state_filter)
@@ -19426,7 +19682,7 @@ def combined_device_stock(request):
     device_tagged_subquery = DeviceTag.objects.filter(device=OuterRef('pk')).values('pk')
     
     # Base queryset with efficient joins
-    device_stocks = DeviceStock.objects.select_related(
+    device_stocks = DeviceStock.objects.exclude(stock_status=DEVICE_STOCK_DELETED_STATUS).select_related(
         'model', 'dealer', 'created_by'
     ).prefetch_related(
         'esim_provider'
@@ -21301,7 +21557,7 @@ def dealer_check_esim_status(request):
         now = timezone.now()
         
         # Base query for devices assigned to this dealer
-        devices = DeviceStock.objects.filter(dealer=dealer)
+        devices = DeviceStock.objects.filter(dealer=dealer).exclude(stock_status=DEVICE_STOCK_DELETED_STATUS)
         
         # Apply filters if provided
         if device_esn:
@@ -21472,7 +21728,7 @@ def homepage_esimProvider(request):
             week_ago = now - timedelta(days=7)
             
             # Get all device stocks associated with this eSIM provider
-            device_stocks = DeviceStock.objects.filter(esim_provider=profile)
+            device_stocks = DeviceStock.objects.filter(esim_provider=profile).exclude(stock_status=DEVICE_STOCK_DELETED_STATUS)
             
             # Total devices with this eSIM provider
             total_devices = device_stocks.count()

@@ -688,6 +688,7 @@ def device_imei_lookup(request):
     devices = (
         DeviceStock.objects
         .filter(imei__icontains=q)
+        .exclude(stock_status='Deleted')
         .select_related('model')[:20]
     )
 

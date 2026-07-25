@@ -201,6 +201,42 @@ class DeviceStockFilterSerializer(serializers.Serializer):
     stock_status = serializers.CharField(required=False)
     esim_status = serializers.CharField(required=False)
     #is_tagged=serializers.CharField(required=False)
+
+
+class DeviceStockUploadBatchSerializer(SanitizingModelSerializer):
+    class Meta:
+        model = DeviceStockUploadBatch
+        fields = '__all__'
+
+
+class DeviceStockUntaggedFilterSerializer(serializers.Serializer):
+    # Partial (icontains) match fields
+    imei = serializers.CharField(required=False)
+    iccid = serializers.CharField(required=False)
+    iccid2 = serializers.CharField(required=False)
+    msisdn1 = serializers.CharField(required=False)
+    msisdn2 = serializers.CharField(required=False)
+    imsi1 = serializers.CharField(required=False)
+    imsi2 = serializers.CharField(required=False)
+    device_esn = serializers.CharField(required=False)
+    telecom_provider1 = serializers.CharField(required=False)
+    telecom_provider2 = serializers.CharField(required=False)
+    remarks = serializers.CharField(required=False)
+    upload_file_name = serializers.CharField(required=False)
+
+    # Exact match fields
+    model_id = serializers.IntegerField(required=False)
+    stock_status = serializers.CharField(required=False)
+    esim_status = serializers.CharField(required=False)
+    dealer_id = serializers.IntegerField(required=False)
+    unassigned_only = serializers.BooleanField(required=False)
+    upload_batch_id = serializers.IntegerField(required=False)
+
+    # Pagination
+    page = serializers.IntegerField(required=False)
+    page_size = serializers.IntegerField(required=False)
+
+
 class DeviceModelFilterSerializer(serializers.Serializer):
     model_name = serializers.CharField(required=False)
     test_agency = serializers.CharField(required=False)

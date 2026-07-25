@@ -1071,6 +1071,17 @@ class Settings_ip(models.Model):
      
 
 
+class DeviceStockUploadBatch(models.Model):
+    objects = SafeCreateManager()
+    file_name = models.CharField(max_length=255, unique=True)
+    uploaded_by = models.ForeignKey('User', on_delete=models.CASCADE, related_name='device_stock_upload_batches')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    device_model = models.ForeignKey(DeviceModel, on_delete=models.CASCADE, related_name='stock_upload_batches')
+
+    def __str__(self):
+        return self.file_name
+
+
 class DeviceStock(models.Model):
     objects = SafeCreateManager()
     model = models.ForeignKey(DeviceModel, on_delete=models.CASCADE)
@@ -1107,15 +1118,17 @@ class DeviceStock(models.Model):
         ('Device_Defective', 'Device Defective'),
         ('Returned_to_manufacturer', 'Returned to Manufacturer'),
         ('Device_Untagged', 'Device Untagged'),
-        
+        ('Deleted', 'Deleted'),
+
     ]
- 
+
     dealer =  models.ForeignKey(Dealer, on_delete=models.CASCADE,null=True,blank=True)
-    assigned_by = models.ForeignKey(User, on_delete=models.CASCADE,null=True,blank=True)   
+    assigned_by = models.ForeignKey(User, on_delete=models.CASCADE,null=True,blank=True)
     assigned = models.DateTimeField(null=True,blank=True)
     shipping_remark = models.TextField(null=True,blank=True)
     stock_status = models.CharField(max_length=55, choices=STATUS_CHOICES)
     esim_status = models.CharField(max_length=55, choices=STATUS_CHOICES)
+    upload_batch = models.ForeignKey(DeviceStockUploadBatch, on_delete=models.SET_NULL, null=True, blank=True, related_name='device_stocks')
 
     # KYC fields — updated directly by the eSimProvider
     KYC_STATUS_CHOICES = [

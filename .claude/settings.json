@@ -116,7 +116,12 @@
       "Bash(disown)",
       "Bash(curl -s -X POST http://127.0.0.1:2000/api/get_routePath/ -H 'Content-Type: application/json' -d '{\"points\": [[77.5946, 12.9716], [77.6046, 12.9816]]}' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n' --max-time 25)",
       "Bash(curl -s -X POST https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_new_v2.php?token=fb46cfb86bea498dce694350fb6dd16d161ff8eb -H 'Content-Type: application/json' -d '{\"points\": [[77.5946, 12.9716], [77.6046, 12.9816]]}' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n' --max-time 25)",
-      "Bash(bash run_with_host_storage.sh)"
+      "Bash(bash run_with_host_storage.sh)",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -c ' *)",
+      "Bash(awk -F: '$1>=15000 && $1<=15200')",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python manage.py check)",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python manage.py makemigrations skytron_api)",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python manage.py makemigrations --check --dry-run)"
     ]
   }
 }

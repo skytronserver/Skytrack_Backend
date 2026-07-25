@@ -54,12 +54,12 @@ def _accessible_stocks(user):
         mfr = _get_manufacturer(user)
         if not mfr:
             return DeviceStock.objects.none()
-        return DeviceStock.objects.filter(dealer__manufacturer=mfr)
+        return DeviceStock.objects.filter(dealer__manufacturer=mfr).exclude(stock_status='Deleted')
     if role == 'dealer':
         dealer = _get_dealer(user)
         if not dealer:
             return DeviceStock.objects.none()
-        return DeviceStock.objects.filter(dealer=dealer)
+        return DeviceStock.objects.filter(dealer=dealer).exclude(stock_status='Deleted')
     return DeviceStock.objects.none()
 
 
@@ -510,19 +510,19 @@ def _get_scoped_stock_qs(user):
         mfr = _get_manufacturer(user)
         if not mfr:
             return None, Response({'error': 'No manufacturer record found for this user.'}, status=400)
-        return DeviceStock.objects.filter(dealer__manufacturer=mfr), None
+        return DeviceStock.objects.filter(dealer__manufacturer=mfr).exclude(stock_status='Deleted'), None
     if role == 'dealer':
         dealer = _get_dealer(user)
         if not dealer:
             return None, Response({'error': 'No dealer record found for this user.'}, status=400)
-        return DeviceStock.objects.filter(dealer=dealer), None
+        return DeviceStock.objects.filter(dealer=dealer).exclude(stock_status='Deleted'), None
     if role == _ESIM_ROLE:
         provider = _get_esim_provider(user)
         if not provider:
             return None, Response({'error': 'No eSimProvider record found for this user.'}, status=400)
-        return DeviceStock.objects.filter(esim_provider=provider), None
+        return DeviceStock.objects.filter(esim_provider=provider).exclude(stock_status='Deleted'), None
     if role in _ADMIN_ROLES:
-        return DeviceStock.objects.all(), None
+        return DeviceStock.objects.exclude(stock_status='Deleted'), None
     return None, Response({'error': 'Access denied.'}, status=403)
 
 
