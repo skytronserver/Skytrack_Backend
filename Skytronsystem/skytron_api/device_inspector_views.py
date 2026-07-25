@@ -172,11 +172,17 @@ def _mqtt_publish_command(imei, payload):
         client.username_pw_set(username, password)
         client.tls_set(ca_certs=ca_cert, cert_reqs=ssl.CERT_REQUIRED, tls_version=ssl.PROTOCOL_TLSv1_2)
         client.connect(broker_host, broker_port, 60)
+        # loop_start() is required -- without it nothing reads the socket, so
+        # the broker's PUBACK is never processed and wait_for_publish() times
+        # out even though the publish actually succeeded.
+        client.loop_start()
 
         topic = f'deviceCommand/{imei}'
         result = client.publish(topic, payload, qos=1)
         result.wait_for_publish(timeout=5)
         published = result.is_published()
+
+        client.loop_stop()
         client.disconnect()
 
         if published:
@@ -349,9 +355,25 @@ function saveToken() {
   localStorage.setItem('deviceInspectorToken', document.getElementById('token').value.trim());
   document.getElementById('tokenStatus').textContent = 'Saved.';
 }
+// Shareable pre-authenticated links: ?token=... seeds localStorage once, then
+// is stripped from the address bar so it doesn't linger there afterward.
+function seedTokenFromQuery(storageKey) {
+  const params = new URLSearchParams(window.location.search);
+  const qToken = params.get('token');
+  if (!qToken) return false;
+  localStorage.setItem(storageKey, qToken);
+  params.delete('token');
+  const newSearch = params.toString();
+  window.history.replaceState({}, '', window.location.pathname + (newSearch ? '?' + newSearch : '') + window.location.hash);
+  return true;
+}
 (function initToken() {
+  const seededFromLink = seedTokenFromQuery('deviceInspectorToken');
   const t = getToken();
-  if (t) { document.getElementById('token').value = t; document.getElementById('tokenStatus').textContent = 'Loaded from storage.'; }
+  if (t) {
+    document.getElementById('token').value = t;
+    document.getElementById('tokenStatus').textContent = seededFromLink ? 'Loaded from shared link.' : 'Loaded from storage.';
+  }
 })();
 function authHeaders(json) {
   const t = getToken();
