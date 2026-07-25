@@ -174,3 +174,8 @@ class DeviceCommandRateThrottle(LoadTestBypassMixin, UserRateThrottle):
 class ServerHealthRateThrottle(LoadTestBypassMixin, UserRateThrottle):
     """Throttle for the internal server-health dashboard (superadmin only)."""
     scope = 'server_health'
+
+
+class DeviceDataHealthRateThrottle(LoadTestBypassMixin, UserRateThrottle):
+    """Throttle for the device-data-health lookup (bounded raw-log scans per request)."""
+    scope = 'device_data_health'

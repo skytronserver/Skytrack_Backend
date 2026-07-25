@@ -140,7 +140,12 @@
       "Bash(sudo docker exec skytron-backend-api-container printenv)",
       "Bash(sudo docker exec skytron-backend-api-container ls -la /app/keys/ca.crt)",
       "Bash(sudo docker exec skytron-backend-api-container python -c ' *)",
-      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile skytron_api/device_inspector_views.py)"
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile skytron_api/device_inspector_views.py)",
+      "Bash(pm2 list *)",
+      "WebFetch(domain:claude.ai)",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile skytron_api/protocol_formats.py)",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile skytron_api/device_data_health_views.py skytron_api/protocol_formats.py skytron_api/urls.py skytron_api/throttles.py Skytronsystem/settings.py)",
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile skytron_api/device_data_health_views.py skytron_api/protocol_formats.py)"
     ]
   }
 }

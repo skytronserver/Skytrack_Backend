@@ -50,6 +50,11 @@ from .server_health_views import (
     server_health_summary,
     server_health_dashboard,
 )
+from .device_data_health_views import (
+    device_data_health_format_options,
+    device_data_health_lookup,
+    device_data_health_dashboard,
+)
 from django.urls import path
 
  
@@ -691,6 +696,11 @@ urlpatterns = [
     # Server Health (superadmin only)
     path('server-health/summary/', server_health_summary, name='server_health_summary'),
     path('server-health/dashboard/', server_health_dashboard, name='server_health_dashboard'),
+
+    # Device Data Health: last packet per category, validated against a protocol format
+    path('device-data-health/formats/', device_data_health_format_options, name='device_data_health_format_options'),
+    path('device-data-health/lookup/', device_data_health_lookup, name='device_data_health_lookup'),
+    path('device-data-health/dashboard/', device_data_health_dashboard, name='device_data_health_dashboard'),
 ]
 
 

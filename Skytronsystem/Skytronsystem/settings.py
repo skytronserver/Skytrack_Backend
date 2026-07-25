@@ -300,6 +300,7 @@ REST_FRAMEWORK = {
         'alert_stats': '30/minute',    # Alert-statistics dashboard/summary
         'device_command': '20/minute', # Sending raw commands down to a live device
         'server_health': '10/minute',  # Internal server-health dashboard (superadmin only)
+        'device_data_health': '20/minute',  # Device protocol-format validator lookups
     },
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
