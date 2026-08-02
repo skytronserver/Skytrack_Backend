@@ -154,6 +154,26 @@ def process_gps_data(data_str):
                 if str(groups[13]) not in ["N", "S"] or str(groups[15]) not in ["E", "W"]:
                     return None
 
+                # Amendment 3 PVT inserts 4 extra fields (AIN1, AIN2, DeltaDistance,
+                # OTA-response envelope) between the Frame Number and the checksum/'*'
+                # pair, and reverses the NMR neighbour-cell triplet order (Sig,Lac,Cell
+                # instead of Cell,Lac,Sig). Neither variant carries an explicit version
+                # flag, so total field count is the only reliable signal: ARAI totals
+                # ~51 comma-fields after the leading '$', Amendment 3 totals ~55.
+                is_amd3 = len(groups) >= 53
+
+                def _nbr(idx):
+                    if is_amd3:
+                        sig, lac, cell = groups[idx], groups[idx + 1], groups[idx + 2]
+                    else:
+                        cell, lac, sig = groups[idx], groups[idx + 1], groups[idx + 2]
+                    return cell[:10], lac[:10], sig[:10]
+
+                nbr1_cell, nbr1_lac, nbr1_sig = _nbr(34)
+                nbr2_cell, nbr2_lac, nbr2_sig = _nbr(37)
+                nbr3_cell, nbr3_lac, nbr3_sig = _nbr(40)
+                nbr4_cell, nbr4_lac, nbr4_sig = _nbr(43)
+
                 gps_data = {
                     'packet_type': groups[4][:2],  # PVT -> PV (limit to 2 chars)
                     'alert_id': groups[5][:2],     # 01 (sequence number, used as alert_id)
@@ -186,26 +206,40 @@ def process_gps_data(data_str):
                     'mnc': groups[31][:10],           # 56 (Mobile Network Code)
                     'lac': groups[32][:10],           # 1BDA (Location Area Code)
                     'cell_id': groups[33][:10],       # E62F (Cell ID)
-                    'nbr1_cell_id': groups[34][:10],  # 0000 (Neighboring cell 1)
-                    'nbr1_lac': groups[35][:10],      # 0000
-                    'nbr1_signal_strength': groups[36][:10], # 0
-                    'nbr2_cell_id': groups[37][:10],  # 0000 (Neighboring cell 2)
-                    'nbr2_lac': groups[38][:10],      # 0000
-                    'nbr2_signal_strength': groups[39][:10], # 0
-                    'nbr3_cell_id': groups[40][:10],  # 0000 (Neighboring cell 3)
-                    'nbr3_lac': groups[41][:10],      # 0000
-                    'nbr3_signal_strength': groups[42][:10], # 0
-                    'nbr4_cell_id': groups[43][:10],  # 0000 (Neighboring cell 4)
-                    'nbr4_lac': groups[44][:10],      # 0000
-                    'nbr4_signal_strength': groups[45][:10] if len(groups) > 45 else '0', # 0
+                    'nbr1_cell_id': nbr1_cell,
+                    'nbr1_lac': nbr1_lac,
+                    'nbr1_signal_strength': nbr1_sig,
+                    'nbr2_cell_id': nbr2_cell,
+                    'nbr2_lac': nbr2_lac,
+                    'nbr2_signal_strength': nbr2_sig,
+                    'nbr3_cell_id': nbr3_cell,
+                    'nbr3_lac': nbr3_lac,
+                    'nbr3_signal_strength': nbr3_sig,
+                    'nbr4_cell_id': nbr4_cell,
+                    'nbr4_lac': nbr4_lac,
+                    'nbr4_signal_strength': nbr4_sig,
                     'digital_input_status': groups[46][:10] if len(groups) > 46 else '1111', # 1111
-                    'digital_output_status': groups[47][:3] if len(groups) > 47 else '00', # 1111 
+                    'digital_output_status': groups[47][:3] if len(groups) > 47 else '00', # 1111
                     'frame_number': int(groups[48]) if len(groups) > 48 and groups[48].isdigit() else 0, # 10 (odometer reading)
-                    'odometer': float(groups[49]) if len(groups) > 49 and groups[49].replace('.', '').isdigit() else 0.0, # 000043
+                    'packet_format': 'AMD3' if is_amd3 else 'ARAI',
                 }
 
+                if is_amd3:
+                    # Amendment 3 tail: ..., FRAME, AIN1, AIN2, DELTADIST, (OTA envelope), *, CS
+                    gps_data['ain1_voltage'] = float(groups[49])
+                    gps_data['ain2_voltage'] = float(groups[50])
+                    gps_data['odometer'] = float(groups[51])
+                    gps_data['ota_response'] = groups[52]
+                else:
+                    # ARAI PVT has no analog-input/delta-distance/OTA fields; groups[49]
+                    # here is the packet checksum, not telemetry -- don't store it as odometer.
+                    gps_data['ain1_voltage'] = None
+                    gps_data['ain2_voltage'] = None
+                    gps_data['odometer'] = 0.0
+                    gps_data['ota_response'] = None
+
                 return gps_data
-                
+
             except (ValueError, IndexError) as e:
                 print(f"Error parsing PVT format: {e}", flush=True)
                 return None
@@ -351,6 +385,15 @@ def process_em_data(data_str, publish_callback=None):
                     except Exception:
                         extention_value = None
                     
+                    # Wire order (both ARAI and Amendment 3 EPB): ..., Altitude(11),
+                    # Speed(12), then field 13 is either the ARAI literal HDOP
+                    # placeholder "0.000" or the Amendment 3 real Delta-Distance.
+                    # ARAI/Amendment 3 EPB have identical field counts and can only be
+                    # told apart by field 13's content: Amendment 3 formats it with
+                    # %.1f (always exactly one decimal digit), which can never
+                    # produce the literal 3-decimal ARAI placeholder "0.000".
+                    epb_format = 'ARAI' if (data_list[13] or '').strip() == '0.000' else 'AMD3'
+
                     # Create EM location data
                     em_data = {
                         'packet_type': data_list[1],      # EPB
@@ -363,37 +406,38 @@ def process_em_data(data_str, publish_callback=None):
                         'latitude_dir': data_list[8],     # N
                         'longitude': float(data_list[9]), # 91.752815
                         'longitude_dir': data_list[10],   # E
-                        'speed': float(data_list[11]),    # 90.6
-                        'course': float(data_list[12]),   # 0.0
-                        'altitude': float(data_list[13]), # 0.000
+                        'altitude': float(data_list[11]), # 90.6
+                        'speed': float(data_list[12]),    # 0.0
+                        'distance': float(data_list[13]), # 0.000 (ARAI placeholder) / delta-distance (AMD3)
                         'gps_quality': data_list[14],     # G
                         'vehicle_reg': data_list[15],     # DL01AB1234
                         'contact_info': data_list[16] if len(data_list) > 16 else '', # 9401633421
+                        'packet_format': epb_format,
                     }
-                    
+
                     # You might want to create a specific EM data object here
                     # For now, we'll use the existing EMGPSLocation.create_from_string method
                     # but with the parsed data converted to the expected format
-                    
+
                     # Convert to format expected by EMGPSLocation.create_from_string
                     # Looking at the original EM server, the expected format should be:
                     # [0] message_type (EMR)
-                    # [1] device_imei  
+                    # [1] device_imei
                     # [2] packet_status (NM)
-                    # [3] date (DDMMYYYY) 
+                    # [3] date (DDMMYYYY)
                     # [4] time (HHMMSS)
                     # [5] gps_validity (A)
                     # [6] latitude
                     # [7] latitude_direction (N)
-                    # [8] longitude  
+                    # [8] longitude
                     # [9] longitude_direction (E)
-                    # [10] speed
-                    # [11] course/distance
-                    # [12] altitude
+                    # [10] altitude
+                    # [11] speed
+                    # [12] distance (ARAI HDOP placeholder / Amendment 3 delta-distance)
                     # [13] provider (G)
                     # [14] vehicle_reg_no
                     # [15] reply_mob_no
-                    
+
                     converted_data = [
                         data_list[2],  # EMR (message_type)
                         data_list[3],  # 860269065242240 (device_imei)
@@ -405,14 +449,14 @@ def process_em_data(data_str, publish_callback=None):
                         data_list[8],  # N (latitude_direction)
                         data_list[9],  # 92.881081 (longitude)
                         data_list[10], # E (longitude_direction)
-                        data_list[11], # 18.6 (speed)
-                        data_list[12], # 0.0 (course/distance)
-                        data_list[13], # 0.000 (altitude)
+                        data_list[11], # altitude
+                        data_list[12], # speed
+                        data_list[13], # distance (ARAI HDOP placeholder / Amendment 3 delta-distance)
                         data_list[14], # G (provider)
                         data_list[15], # DL01AB1234 (vehicle_reg_no)
                         data_list[16] if len(data_list) > 16 else '9401633421', # reply_mob_no
                     ]
-                    
+
                     # Create EM data directly instead of using the problematic create_from_string method
                     try:
                         # Convert IST datetime to date and time fields
@@ -462,13 +506,14 @@ def process_em_data(data_str, publish_callback=None):
                             latitude_direction=data_list[8],  # N
                             longitude=float(data_list[9]),    # 92.881050
                             longitude_direction=data_list[10], # E
-                            speed=float(data_list[11]),       # 15.9
-                            distance=float(data_list[12]),    # 0.0 (course)
-                            altitude=float(data_list[13]),    # 0.000
+                            altitude=float(data_list[11]),    # 15.9
+                            speed=float(data_list[12]),       # 0.0
+                            distance=float(data_list[13]),    # 0.000 (ARAI placeholder) / delta-distance (AMD3)
                             provider=data_list[14],           # G
                             vehicle_reg_no= device_tag.vehicle_reg_no,  #  data_list[15],     # DL01AB1234
                             reply_mob_no=data_list[16] if len(data_list) > 16 else '9401633421', # phone
                             extention=extention_value,
+                            packet_format=epb_format,
                             device_tag=device_tag             # DeviceTag or None
                         )
                         
@@ -718,7 +763,12 @@ def process_alerts(gps_data, loc_id):
         # (transient events, not stateful on/off conditions)
         ALWAYS_CREATE_ALERT_IDS = {"10", "20", "21", "22", "23", "24", "09", "13", "14", "15", "17"}
 
-        if alert_id in alert_mappings:
+        # These alert_id values (esp. 09/17) are only meaningful as app/BLE-triggered
+        # sub-alerts under packet_type "EA". Amendment 3 firmware reuses the same
+        # numbers under different packet_types (TA/09 = tamper edge, OS/17 = overspeed
+        # edge) which are already covered by the value-based Box Tamper / Speed alert
+        # checks above -- scoping to "EA" here avoids misfiling those as EmTemp/Tilt.
+        if packet_type == "EA" and alert_id in alert_mappings:
             alert_type, status = alert_mappings[alert_id]
             al = normal_alert_map.get(alert_type)
             if not al or al.status != status or alert_id in ALWAYS_CREATE_ALERT_IDS:

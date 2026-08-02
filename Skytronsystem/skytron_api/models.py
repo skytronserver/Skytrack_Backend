@@ -1314,8 +1314,14 @@ class EMGPSLocation(models.Model): #imergency tracking data
     distance = models.FloatField()
     provider = models.CharField(max_length=50)
     vehicle_reg_no = models.CharField(max_length=20)
-    reply_mob_no = models.CharField(max_length=15)    
+    reply_mob_no = models.CharField(max_length=15)
     extention = models.TextField(blank=True, null=True)
+    # Which EPB wire-protocol variant produced this row: 'ARAI' or 'AMD3'.
+    # ARAI/Amendment 3 EPB packets have the same field count and can only be
+    # told apart by content (field 13 is a literal "0.000" placeholder in
+    # ARAI vs a real delta-distance in Amendment 3; field 16 is a reply
+    # phone number in ARAI vs the configured SMS center in Amendment 3).
+    packet_format = models.CharField(max_length=10, null=True, blank=True)
     device_tag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE,null=True, blank=True)
     class Meta:
         app_label = 'skytron_api'
@@ -1870,9 +1876,24 @@ class GPSData(models.Model):
     digital_input_status = models.CharField(max_length=6)
     digital_output_status = models.CharField(max_length=4)
     frame_number = models.IntegerField()
+    # ARAI PVT has no odometer/distance field; this stores the Amendment 3
+    # "Delta Distance" (metres travelled since the previous packet) and is 0
+    # for ARAI rows.
     odometer = models.FloatField()
     #checksum = models.CharField(max_length=8)
-    #end_char = models.CharField(max_length=1) 
+    #end_char = models.CharField(max_length=1)
+
+    # Amendment 3 PVT only (null for ARAI rows): analog inputs and the raw
+    # OTA command-response envelope echoed back by the device.
+    ain1_voltage = models.FloatField(null=True, blank=True)
+    ain2_voltage = models.FloatField(null=True, blank=True)
+    ota_response = models.TextField(null=True, blank=True)
+    # Which wire-protocol variant produced this row: 'ARAI' or 'AMD3'.
+    # Needed because several fields (odometer, NMR order) mean different
+    # things depending on the variant, and neither format carries an
+    # explicit version flag.
+    packet_format = models.CharField(max_length=10, null=True, blank=True)
+
     device_tag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE,null=True, blank=True)
 
     # Location / administrative area information (nullable)

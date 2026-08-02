@@ -145,7 +145,12 @@
       "WebFetch(domain:claude.ai)",
       "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile skytron_api/protocol_formats.py)",
       "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile skytron_api/device_data_health_views.py skytron_api/protocol_formats.py skytron_api/urls.py skytron_api/throttles.py Skytronsystem/settings.py)",
-      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile skytron_api/device_data_health_views.py skytron_api/protocol_formats.py)"
+      "Bash(/home/azureuser/Skytrack_Backend/.venv/bin/python -m py_compile skytron_api/device_data_health_views.py skytron_api/protocol_formats.py)",
+      "Bash(sudo systemctl restart nginx)",
+      "Bash(sudo systemctl status nginx --no-pager -l)",
+      "Bash(grep -n \"process_em_data\\\\|process_device_tracking_data\\\\|process_emergency_data\\\\|def read_loop\\\\|recv\\(\\\\|readline\\\\|strip\\(\\\\|split\\('\\\\\\\\$'\\\\|split\\(\\\\\"\\\\\\\\$\\\\\"\" /home/azureuser/Skytrack_Backend/Skytronsystem/em_server.py)",
+      "Bash(grep -n \"strip\\(\\\\|split\\('\\\\\\\\$'\\\\|split\\(\\\\\"\\\\\\\\$\\\\\"\\\\|def on_message\\\\|def on_message2\\\\|payload.decode\\\\|data_str\\\\s*=\" /home/azureuser/Skytrack_Backend/Skytronsystem/mqttClienttrack.py)",
+      "Bash(python3 manage.py makemigrations skytron_api)"
     ]
   }
 }
