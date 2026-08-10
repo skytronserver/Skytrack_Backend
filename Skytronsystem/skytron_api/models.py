@@ -590,6 +590,42 @@ class eSimProvider(models.Model):
             ('Accept', 'Accept'),
         ]
     status = models.CharField(max_length=20, choices=status_choices)
+
+    # ── M2M API Configuration (submitted by the eSimProvider after login) ──
+    # Step 1: provider submits/updates these. No delete — only create/update.
+    # Once m2m_api_verified=True, these become locked (no further edits).
+    m2m_api_url = models.URLField(max_length=500, null=True, blank=True)
+    m2m_api_token = models.CharField(max_length=500, null=True, blank=True)
+    m2m_sample_iccid = models.CharField(max_length=55, null=True, blank=True)
+
+    # Step 2: technical onboarding / API testing status.
+    # Can be tested multiple times — this field always reflects the LATEST
+    # test outcome. Defaults to 'incorrect_api' until proven otherwise.
+    M2M_TECHNICAL_ONBOARDING_STATUS_CHOICES = [
+        ('incorrect_api', 'Incorrect API'),
+        ('invalid_format', 'API Data Format Invalid'),
+        ('token_expired', 'Token Expired'),
+        ('ok', 'Ok'),
+    ]
+    m2m_technical_onboarding_status = models.CharField(
+        max_length=20,
+        choices=M2M_TECHNICAL_ONBOARDING_STATUS_CHOICES,
+        default='incorrect_api',
+    )
+
+    # Raw result of the most recent test attempt (response body / error
+    # detail), kept for debugging regardless of pass/fail. Overwritten
+    # on every test — not a history log.
+    m2m_last_test_result = models.JSONField(null=True, blank=True)
+    m2m_api_last_tested_at = models.DateTimeField(null=True, blank=True)
+
+    # Verified is separate from "tested" — stays blank/null until the
+    # onboarding status becomes 'ok' for the FIRST time. Once set to True,
+    # it is permanent — m2m_api_url/token/sample_iccid become locked, and
+    # this field itself can never change again.
+    m2m_api_verified = models.BooleanField(null=True, blank=True, default=None)
+    m2m_api_verified_at = models.DateTimeField(null=True, blank=True)
+   
          
 class Dealer(models.Model):
     objects = SafeCreateManager()

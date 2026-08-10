@@ -1077,5 +1077,8 @@ urlpatterns = [
     
     path('pis/public/buses/live-location/', PISPublicBusLiveLocationByRegNoAPIView.as_view(), name='pis-public-bus-live-location'),
     
+    path('esim-provider/m2m-config/', m2m_config_create_update, name='m2m_config_create_update'),
+    path('esim-provider/m2m-config/test/', m2m_config_test, name='m2m_config_test'),
+    
     
 ]

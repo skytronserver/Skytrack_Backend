@@ -21,6 +21,12 @@ from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from .rbac import require_permission, check_permission, get_all_module_permissions, get_data_scope
 
+import re
+import requests
+from requests.exceptions import Timeout, RequestException
+from django.core.validators import URLValidator
+from django.core.exceptions import ValidationError as DjangoValidationError
+
 import logging
 
 
@@ -39093,4 +39099,230 @@ class PISPublicBusLiveLocationByRegNoAPIView(APIView):
             message="Bus live location fetched successfully"
         )
         
+
+
+REQUIRED_M2M_RESPONSE_FIELDS = [
+    'iccid', 'imsi', 'msisdn', 'sim_status',
+    'activation_date', 'validity_date', 'telecom_provider'
+]
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def m2m_config_create_update(request):
+    """
+    POST /api/esim-provider/m2m-config/
+
+    Creates or updates the M2M API config (api_url, token, sample_iccid)
+    for the logged-in eSimProvider account.
+    Locked once m2m_api_verified=True — cannot be edited after that.
+    """
+    provider = eSimProvider.objects.filter(users=request.user).first()
+    if not provider:
+        return Response(
+            {"error": "No eSimProvider account found for this user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if provider.m2m_api_verified:
+        return Response(
+            {"error": "M2M API configuration is already verified and locked. It cannot be changed."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    api_url = request.data.get('api_url')
+    token = request.data.get('token')
+    sample_iccid = request.data.get('sample_iccid')
+
+    errors = {}
+
+    if not api_url:
+        errors['api_url'] = 'This field is required.'
+    else:
+        try:
+            URLValidator()(api_url)
+        except DjangoValidationError:
+            errors['api_url'] = 'api_url is not a valid URL.'
+
+    if not token:
+        errors['token'] = 'This field is required.'
+
+    if not sample_iccid:
+        errors['sample_iccid'] = 'This field is required.'
+    elif not re.fullmatch(r'\d{15}', str(sample_iccid)):
+        errors['sample_iccid'] = 'sample_iccid is not exactly 15 numeric digits.'
+
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    provider.m2m_api_url = api_url
+    provider.m2m_api_token = token
+    provider.m2m_sample_iccid = sample_iccid
+    # Any edit resets onboarding status — must be re-tested after changes
+    provider.m2m_technical_onboarding_status = 'incorrect_api'
+    provider.save(update_fields=[
+        'm2m_api_url', 'm2m_api_token', 'm2m_sample_iccid',
+        'm2m_technical_onboarding_status'
+    ])
+
+    return Response({
+        "status": "success",
+        "message": "M2M API configuration saved successfully.",
+        "data": {
+            "id": provider.id,
+            "m2m_api_url": provider.m2m_api_url,
+            "m2m_sample_iccid": provider.m2m_sample_iccid,
+            "m2m_technical_onboarding_status": provider.m2m_technical_onboarding_status,
+            "m2m_api_verified": provider.m2m_api_verified,
+        }
+    }, status=status.HTTP_200_OK)
+
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def m2m_config_test(request):
+    """
+    POST /api/esim-provider/m2m-config/test/
+
+    Calls the provider's own m2m_api_url (with their token + sample_iccid)
+    and checks the response. Can be called multiple times.
+
+    On the FIRST time the result is 'ok':
+      - m2m_api_verified is set True (permanently)
+      - config fields become locked for future edits
+    """
+    provider = eSimProvider.objects.filter(users=request.user).first()
+    if not provider:
+        return Response(
+            {"error": "No eSimProvider account found for this user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if provider.m2m_api_verified:
+        return Response(
+            {"error": "M2M API is already verified. No need to test again."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not provider.m2m_api_url or not provider.m2m_api_token or not provider.m2m_sample_iccid:
+        return Response(
+            {"error": "Please submit api_url, token and sample_iccid first."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    now = timezone.now()
+
+    try:
+        resp = requests.get(
+            provider.m2m_api_url,
+            headers={"Authorization": f"Bearer {provider.m2m_api_token}"},
+            params={"iccid": provider.m2m_sample_iccid},
+            timeout=10,
+        )
+    except Timeout:
+        return _save_test_result(
+            provider, now, 'incorrect_api', {"error": "timeout"},
+            "API timeout — either API is not available or IP whitelisting not done."
+        )
+    except RequestException as e:
+        return _save_test_result(
+            provider, now, 'incorrect_api', {"error": str(e)},
+            "Could not reach the API — please check the URL and try again."
+        )
+
+    if resp.status_code in (401, 403):
+        return _save_test_result(
+            provider, now, 'token_expired',
+            {"http_status": resp.status_code, "body": _safe_json(resp)},
+            "Token expired or unauthorized."
+        )
+
+    if resp.status_code != 200:
+        return _save_test_result(
+            provider, now, 'incorrect_api',
+            {"http_status": resp.status_code, "body": _safe_json(resp)},
+            f"API returned HTTP {resp.status_code}."
+        )
+
+    body = _safe_json(resp)
+    if body is None:
+        return _save_test_result(
+            provider, now, 'invalid_format', {"raw_text": resp.text[:2000]},
+            "API did not return valid JSON."
+        )
+
+    data = body.get('data') if isinstance(body, dict) else None
+    missing_fields = []
+    if body.get('status') != 'success' or not isinstance(data, dict):
+        missing_fields.append('data')
+    else:
+        missing_fields = [f for f in REQUIRED_M2M_RESPONSE_FIELDS if not data.get(f)]
+
+    if missing_fields:
+        provider.m2m_last_test_result = body
+        provider.m2m_api_last_tested_at = now
+        provider.m2m_technical_onboarding_status = 'invalid_format'
+        provider.save(update_fields=[
+            'm2m_technical_onboarding_status', 'm2m_last_test_result', 'm2m_api_last_tested_at'
+        ])
+        return Response({
+            "status": "error",
+            "message": "API response is missing required fields.",
+            "missing_fields": missing_fields,
+            "m2m_technical_onboarding_status": provider.m2m_technical_onboarding_status,
+        }, status=status.HTTP_200_OK)
+
+    # ── All checks passed ──────────────────────────────────────────────
+    first_time_verified = not provider.m2m_api_verified
+    provider.m2m_last_test_result = body
+    provider.m2m_api_last_tested_at = now
+    provider.m2m_technical_onboarding_status = 'ok'
+    if first_time_verified:
+        provider.m2m_api_verified = True
+        provider.m2m_api_verified_at = now
+
+    provider.save(update_fields=[
+        'm2m_technical_onboarding_status', 'm2m_last_test_result',
+        'm2m_api_last_tested_at', 'm2m_api_verified', 'm2m_api_verified_at'
+    ])
+
+    return Response({
+        "status": "success",
+        "message": "API verified successfully." + (
+            " Configuration is now locked." if first_time_verified else ""
+        ),
+        "m2m_technical_onboarding_status": provider.m2m_technical_onboarding_status,
+        "m2m_api_verified": provider.m2m_api_verified,
+    }, status=status.HTTP_200_OK)
+
+
+def _save_test_result(provider, now, onboarding_status, raw_result, message):
+    provider.m2m_technical_onboarding_status = onboarding_status
+    provider.m2m_last_test_result = raw_result
+    provider.m2m_api_last_tested_at = now
+    provider.save(update_fields=[
+        'm2m_technical_onboarding_status', 'm2m_last_test_result', 'm2m_api_last_tested_at'
+    ])
+    return Response({
+        "status": "error",
+        "message": message,
+        "m2m_technical_onboarding_status": provider.m2m_technical_onboarding_status,
+    }, status=status.HTTP_200_OK)
+
+
+def _safe_json(resp):
+    try:
+        return resp.json()
+    except ValueError:
+        return None
+
+
+
+
+
+
 
