@@ -26,7 +26,7 @@ import requests
 from requests.exceptions import Timeout, RequestException
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError as DjangoValidationError
-
+from decimal import Decimal, InvalidOperation
 import logging
 
 
@@ -24966,9 +24966,27 @@ def _is_tracking_packet(raw_data):
         return ',PVT,' in raw_data
 
 
-def _is_health_packet(raw_data):
-        return ',HLM,' in raw_data
+def _is_health_packet(raw, ble=None):
+    # VERIFIED — 1.5M rows in production.
+    return _packet_type_in_header(raw, 'HLM')
 
+def _packet_fields(raw):
+    """Split a packet into fields, with the leading '$' stripped."""
+    parts = [p.strip() for p in _normalise_packet(raw).split(',')]
+    if parts and parts[0].startswith('$'):
+        parts[0] = parts[0][1:]
+    return parts
+
+
+def _packet_type_in_header(raw, type_code):
+    """
+    True when the packet's type code appears in the first few fields.
+
+    Checks fields rather than substrings, so both header spellings work:
+      $,PVT,DTPL,...   ->  ['PVT', 'DTPL', ...]
+      $EPB,PVT,...     ->  ['EPB', 'PVT', ...]
+    """
+    return type_code.upper() in [f.upper() for f in _packet_fields(raw)[:3]]
 
 def _is_login_packet(raw_data):
         return raw_data.strip().startswith('$AS')
@@ -39324,5 +39342,1286 @@ def _safe_json(resp):
 
 
 
+# ── M2M / eSIM provider API (Mapwala format) ──────────────────────────
+# Success code returned by the provider when the lookup worked.
+M2M_SUCCESS_RESPONSE_CODES = {"LCM_001"}
+
+# Provider response codes that mean "bad credential" rather than "bad data".
+# Empty for now — fill in once the provider shares their error code list.
+M2M_AUTH_ERROR_RESPONSE_CODES = set()
 
 
+def _parse_ddmmyyyy(value):
+    """Provider sends dates as DD-MM-YYYY. Returns a date, or None."""
+    if not value:
+        return None
+    for fmt in ('%d-%m-%Y', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(str(value).strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _normalise_m2m_result(body):
+    """
+    Convert a provider's raw response into our internal shape.
+
+    Returns (normalised_dict, error_code, error_message).
+    Exactly one of normalised_dict / error_code is set.
+    """
+    if not isinstance(body, dict):
+        return None, 'invalid_format', "API did not return a JSON object."
+
+    response_code = body.get('apiResponseCode')
+    response_msg = body.get('apiResponseMsg') or ''
+
+    if not response_code:
+        return None, 'invalid_format', "API response is missing 'apiResponseCode'."
+
+    if response_code in M2M_AUTH_ERROR_RESPONSE_CODES:
+        return None, 'token_expired', f"Provider rejected the credential ({response_code})."
+
+    if response_code not in M2M_SUCCESS_RESPONSE_CODES:
+        return None, 'incorrect_api', f"API returned {response_code}. {response_msg}".strip()
+
+    result_obj = body.get('resultObj')
+    if not isinstance(result_obj, list):
+        return None, 'invalid_format', "API response is missing the 'resultObj' list."
+
+    if not result_obj:
+        return None, 'incorrect_api', "API returned no SIM record for this ICCID."
+
+    sim = result_obj[0]
+    if not isinstance(sim, dict):
+        return None, 'invalid_format', "'resultObj' does not contain a SIM object."
+
+    return {
+        'iccid': sim.get('iccid'),
+        'sim_status': sim.get('cardStatus'),
+        'card_state': sim.get('cardState'),
+        'activation_date': _parse_ddmmyyyy(sim.get('activateOn')),
+        'validity_date': _parse_ddmmyyyy(sim.get('expiredOn')),
+        'telecom_provider': sim.get('primaryTSP'),
+        'msisdn': sim.get('primaryMSISDN'),
+        'primary_status': sim.get('primaryStatus'),
+        'fallback_tsp': sim.get('fallbackTSP'),
+        'fallback_msisdn': sim.get('fallbackMSISDN'),
+        'fallback_status': sim.get('fallbackStatus'),
+        'data_usage': sim.get('dataUsage'),
+        'data_usage_date': _parse_ddmmyyyy(sim.get('dataUsageDate')),
+    }, None, None
+
+
+# =====================================================================
+# SECTION 2 — skytron_api/views.py
+# Paste near the top, with the other module-level constants.
+# =====================================================================
+ 
+# ── New tagging flow: tunable thresholds ─────────────────────────────
+# Vehicle registered longer ago than this is treated as an "old" vehicle.
+REGISTRATION_AGE_THRESHOLD_YEARS = 2
+# Minimum remaining SIM validity required, by vehicle age.
+SIM_VALIDITY_OLD_VEHICLE_YEARS = 1
+SIM_VALIDITY_NEW_VEHICLE_YEARS = 2
+# GPS packets older than this are not counted as received (Step 4).
+GPS_PACKET_FRESHNESS_HOURS = 24
+# OTP validity — matches the existing tagging flow.
+TAGGING_OTP_EXPIRY_HOURS = 24
+# Minimum gap between OTP resend requests.
+TAGGING_OTP_RESEND_COOLDOWN_SECONDS = 60
+ 
+# Vahan response keys that must be present and non-empty. These map to
+# NOT NULL columns, so a missing one is rejected before we try to save.
+REQUIRED_VAHAN_FIELDS = [
+    'chassisNo', 'deviceActivationStatus', 'deviceSerialno', 'engineNo',
+    'fitmentCentreName', 'gnssConstellationCode', 'imeiNo', 'makerName',
+    'modelName', 'ownerName', 'tacNo', 'tacValidUpto', 'vehClass',
+]
+ 
+ 
+# =====================================================================
+# SECTION 3 — skytron_api/views.py
+# Shared helpers for the tagging flow. Paste above the step views.
+# =====================================================================
+ 
+def _shift_years(d, years):
+    """Add/subtract whole years from a date, handling 29 Feb safely."""
+    try:
+        return d.replace(year=d.year + years)
+    except ValueError:
+        return d.replace(month=2, day=28, year=d.year + years)
+ 
+ 
+def _parse_vahan_date(value):
+    """Vahan sends dates as YYYY-MM-DD."""
+    if not value:
+        return None
+    for fmt in ('%Y-%m-%d', '%d-%m-%Y'):
+        try:
+            return datetime.strptime(str(value).strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+ 
+ 
+def call_vahan_api(imei, iccid=None):
+    """
+    Look up vehicle + device details by IMEI.
+ 
+    Vahan access is not available yet, so this returns dummy data matching
+    the documented response shape. Swap the body for the real HTTP call
+    when access is granted — the return contract stays the same.
+ 
+    NOTE: the `iccid` argument exists only so the dummy can echo back the
+    submitted value, which keeps the ICCID cross-check testable. The real
+    Vahan call takes IMEI only — drop the argument when swapping it in.
+ 
+    Returns (data_dict, error_message). Exactly one is non-None.
+    """
+    if not imei:
+        return None, "IMEI is required for the Vahan lookup."
+ 
+    # --- DUMMY DATA — replace with the real call ---------------------
+    return {
+        "chassisNo": "MD2A26AZ4EWF18595",
+        "dateOfRegistration": "2015-02-13",
+        "deviceActivationStatus": "PENDING",
+        "deviceSerialno": "ASMABC00000013",
+        "engineNo": "BAZWEF24719",
+        "fitmentCentreName": "SSSSSSSSS",
+        "gnssConstellationCode": "5,2,6,1,3",
+        "iccId": str(iccid) if iccid else "86185006025361000001",
+        "imeiNo": str(imei),
+        "makerName": "Pricol SGPCA SLD",
+        "modelName": "ASMTEST",
+        "ownerName": "TULSI SHARMA",
+        "regNo": "TN02372999",
+        "tacNo": "SKYTRON09",
+        "tacValidUpto": "2026-08-31",
+        "vehClass": "Motor Cab",
+    }, None
+    # -----------------------------------------------------------------
+ 
+ 
+def _validate_vahan_response(vahan_data):
+    """
+    Confirm the Vahan response carries everything the NOT NULL columns
+    need, before we attempt to save. Without this, a short response would
+    fail with a database IntegrityError instead of a readable message.
+ 
+    Returns an error message, or None when the response is usable.
+    """
+    if not isinstance(vahan_data, dict):
+        return "Vahan did not return a valid response."
+ 
+    missing = [f for f in REQUIRED_VAHAN_FIELDS if not str(vahan_data.get(f) or '').strip()]
+    if missing:
+        return f"Vahan response is missing required fields: {', '.join(missing)}."
+ 
+    if _parse_vahan_date(vahan_data.get('tacValidUpto')) is None:
+        return "Vahan returned an unreadable TAC validity date."
+ 
+    # A registered vehicle must carry a readable registration date. A
+    # vehicle with no registration number is a fresh vehicle and is
+    # allowed to have neither.
+    reg_no = str(vahan_data.get('regNo') or '').strip()
+    if reg_no and _parse_vahan_date(vahan_data.get('dateOfRegistration')) is None:
+        return "Vahan returned an unreadable vehicle registration date."
+ 
+    return None
+ 
+ 
+def _get_tagging_dealer(request):
+    """
+    Common check 1 — the caller must be a dealer.
+    Returns (dealer, error_response).
+    """
+    dealer = get_user_object(request.user, "dealer")
+    if not dealer:
+        return None, Response(
+            {"error": "Request must be from a dealer."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    return dealer, None
+ 
+ 
+def _get_tagging_record(request, record_id, expected_step):
+    """
+    Common checks 2-5, applied by every step API after Step 1:
+ 
+      - caller is a dealer
+      - record exists and is not soft deleted
+      - record was created by THIS user
+      - record is sitting at exactly the expected step
+ 
+    The step check blocks both skipping ahead and redoing a finished step.
+    Repeat calls WHILE on a step (OTP resend, re-checking packets) stay
+    allowed, because the step only advances on success.
+ 
+    Returns (record, dealer, error_response).
+    """
+    dealer, error = _get_tagging_dealer(request)
+    if error:
+        return None, None, error
+ 
+    if not record_id:
+        return None, None, Response(
+            {"error": "id is required."}, status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    record = DeviceStockMaster.objects.filter(id=record_id, is_deleted=False).first()
+    if not record:
+        return None, None, Response(
+            {"error": "No such entry found."}, status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if record.created_by_id != request.user.id:
+        return None, None, Response(
+            {"error": "This entry was created by another user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if record.current_step != expected_step:
+        if record.current_step > expected_step:
+            msg = f"Step {expected_step} is already completed for this entry."
+        else:
+            msg = (
+                f"Step {record.current_step - 1} must be completed first. "
+                f"This entry is currently at step {record.current_step}."
+            )
+        return None, None, Response(
+            {
+                "error": msg,
+                "current_step": record.current_step,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    return record, dealer, None
+ 
+ 
+def _send_tagging_otp(mobile, email, otp, vehicle_reg_no, imei):
+    """Send a tagging OTP by SMS (and email when available)."""
+    text = (
+        "Dear VLTD Dealer/ Manufacturer, we have received a request for tagging "
+        "and activation of following device and vehicle- Vehicle Reg No:{}, "
+        "Device IMEI No:{}. To confirm, please enter the OTP {}. - SkyTron"
+    ).format(vehicle_reg_no or '-', imei, otp)
+    tpid = "1007201930295888818"
+    try:
+        send_SMS(mobile, text, tpid)
+    except Exception as e:
+        logger.error(f"Tagging OTP SMS failed for {mobile}: {e}")
+    if email:
+        try:
+            send_mail('Tagging OTP', text, 'noreply@skytron.in', [email], fail_silently=True)
+        except Exception as e:
+            logger.error(f"Tagging OTP email failed for {email}: {e}")
+ 
+ 
+# =====================================================================
+# SECTION 4 — skytron_api/views.py
+# STEP 1 API
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step1_create(request):
+    """
+    POST /api/device-tagging/step1/
+ 
+    Validates the dealer's inputs, looks the vehicle up on Vahan, and
+    creates the DeviceStockMaster record.
+ 
+    Nothing is written to the database until Vahan returns successfully
+    and its response is confirmed complete.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    # ── Check 1: caller is a dealer ──────────────────────────────────
+    dealer, error = _get_tagging_dealer(request)
+    if error:
+        return error
+ 
+    manufacturer_id = request.data.get('manufacturer_id')
+    model_id = request.data.get('model_id')
+    esim_provider_id = request.data.get('esim_provider_id')
+    imei = str(request.data.get('imei') or '').strip()
+    iccid = str(request.data.get('iccid') or '').strip()
+    owner_phone_number = str(request.data.get('owner_phone_number') or '').strip()
+ 
+    field_errors = {}
+    if not manufacturer_id:
+        field_errors['manufacturer_id'] = 'This field is required.'
+    if not model_id:
+        field_errors['model_id'] = 'This field is required.'
+    if not esim_provider_id:
+        field_errors['esim_provider_id'] = 'This field is required.'
+    if not imei:
+        field_errors['imei'] = 'This field is required.'
+    elif not re.fullmatch(r'\d{15}', imei):
+        field_errors['imei'] = 'imei must be exactly 15 numeric digits.'
+    if not iccid:
+        field_errors['iccid'] = 'This field is required.'
+    elif not re.fullmatch(r'\d{18,22}', iccid):
+        field_errors['iccid'] = 'iccid must be 18 to 22 numeric digits.'
+    if not owner_phone_number:
+        field_errors['owner_phone_number'] = 'This field is required.'
+ 
+    if field_errors:
+        return Response({'errors': field_errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    # ── Check 2: dealer is under the given manufacturer ──────────────
+    if str(dealer.manufacturer_id) != str(manufacturer_id):
+        return Response(
+            {"error": "Dealer is not associated with this manufacturer."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    manufacturer = dealer.manufacturer
+ 
+    # ── Check 3: model belongs to that manufacturer ──────────────────
+    # DeviceModel has no FK to Manufacturer — the link is through
+    # created_by. Uses users.all(), NOT users.first(), so models created
+    # by a second manufacturer user are not silently missed.
+    device_model = DeviceModel.objects.filter(
+        id=model_id,
+        created_by__in=manufacturer.users.all()
+    ).first()
+    if not device_model:
+        return Response(
+            {"error": "This device model does not belong to your manufacturer."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Check 4: model's technical onboarding is complete ────────────
+    onboarding_done = DeviceModelTechnicalOnboardingRequest.objects.filter(
+        device_model_id=device_model.id,
+        status='StateAdminApproved'
+    ).exists()
+    if not onboarding_done:
+        return Response(
+            {"error": "Technical onboarding for this device model is not complete."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Check 5: eSIM provider is listed against the model ───────────
+    esim_provider = device_model.eSimProviders.filter(id=esim_provider_id).first()
+    if not esim_provider:
+        return Response(
+            {"error": "This eSIM provider is not listed against the given device model."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Check 6: provider has passed technical onboarding ────────────
+    if not esim_provider.m2m_api_verified:
+        return Response(
+            {"error": "This eSIM provider has not completed M2M technical onboarding."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Check 7: duplicates among NON-DELETED rows ───────────────────
+    # No unique constraint on DeviceStockMaster — this is a query check.
+    duplicate = DeviceStockMaster.objects.filter(
+        Q(imei=imei) | Q(iccid=iccid),
+        is_deleted=False
+    ).first()
+    if duplicate:
+        if duplicate.imei == imei and duplicate.iccid == iccid:
+            msg = "This IMEI and ICCID combination is already in the tagging process."
+        elif duplicate.imei == imei:
+            msg = "This IMEI is already in the tagging process."
+        else:
+            msg = "This ICCID is already in the tagging process."
+        return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    # Also check DeviceStock — those columns are unique at DB level, so a
+    # clash there would only surface at the Step 5 commit otherwise.
+    if DeviceStock.objects.filter(imei=imei).exists():
+        return Response(
+            {"error": "This IMEI already exists in device stock."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if DeviceStock.objects.filter(iccid=iccid).exists():
+        return Response(
+            {"error": "This ICCID already exists in device stock."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Check 8: owner phone resolves to an active vehicle owner ─────
+    vehicle_owner = VehicleOwner.objects.filter(
+        users__mobile=owner_phone_number,
+        users__status='active'
+    ).last()
+    if not vehicle_owner:
+        return Response(
+            {"error": "No active vehicle owner found for this phone number."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Check 9: Vahan lookup — nothing saved before this succeeds ───
+    vahan_data, vahan_error = call_vahan_api(imei, iccid)
+    if vahan_error:
+        return Response({"error": vahan_error}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    # ── Check 10: Vahan response carries every mandatory field ───────
+    response_error = _validate_vahan_response(vahan_data)
+    if response_error:
+        return Response({"error": response_error}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    # ── Check 11: Vahan ICCID must match the dealer's input ──────────
+    vahan_iccid = str(vahan_data.get('iccId') or '').strip()
+    if vahan_iccid and vahan_iccid != iccid:
+        return Response(
+            {
+                "error": "ICCID does not match the record on Vahan for this IMEI.",
+                "submitted_iccid": iccid,
+                "vahan_iccid": vahan_iccid,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Check 12: vehicle identifiers not already tagged ─────────────
+    # vehicle_reg_no / engine_no / chassis_no are unique on DeviceTag.
+    # Checking now means the dealer fails here instead of after Step 5.
+    reg_no = str(vahan_data.get('regNo') or '').strip()
+    engine_no = str(vahan_data.get('engineNo') or '').strip()
+    chassis_no = str(vahan_data.get('chassisNo') or '').strip()
+ 
+    if reg_no and DeviceTag.objects.filter(vehicle_reg_no=reg_no).exists():
+        return Response(
+            {"error": f"Vehicle registration number {reg_no} is already tagged to a device."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if DeviceTag.objects.filter(engine_no=engine_no).exists():
+        return Response(
+            {"error": "This engine number is already tagged to a device."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if DeviceTag.objects.filter(chassis_no=chassis_no).exists():
+        return Response(
+            {"error": "This chassis number is already tagged to a device."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── All checks passed — save ─────────────────────────────────────
+    now = timezone.now()
+    record = DeviceStockMaster.objects.create(
+        dealer=dealer,
+        manufacturer=manufacturer,
+        device_model=device_model,
+        esim_provider=esim_provider,
+        vehicle_owner=vehicle_owner,
+        imei=imei,
+        iccid=iccid,
+ 
+        vahan_chassis_no=chassis_no,
+        vahan_date_of_registration=_parse_vahan_date(vahan_data.get('dateOfRegistration')),
+        vahan_device_activation_status=vahan_data.get('deviceActivationStatus'),
+        vahan_device_serial_no=vahan_data.get('deviceSerialno'),
+        vahan_engine_no=engine_no,
+        vahan_fitment_centre_name=vahan_data.get('fitmentCentreName'),
+        vahan_gnss_constellation_code=vahan_data.get('gnssConstellationCode'),
+        vahan_iccid=vahan_iccid,
+        vahan_imei=vahan_data.get('imeiNo'),
+        vahan_maker_name=vahan_data.get('makerName'),
+        vahan_model_name=vahan_data.get('modelName'),
+        vahan_owner_name=vahan_data.get('ownerName'),
+        vahan_reg_no=reg_no,
+        vahan_tac_no=vahan_data.get('tacNo'),
+        vahan_tac_valid_upto=_parse_vahan_date(vahan_data.get('tacValidUpto')),
+        vahan_veh_class=vahan_data.get('vehClass'),
+        vahan_raw_response=vahan_data,
+ 
+        current_step=2,
+        step1_completed_at=now,
+        created_by=request.user,
+        updated_by=request.user,
+    )
+ 
+    return Response({
+        "status": "success",
+        "message": "Step 1 completed successfully. Vehicle details saved.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "imei": record.imei,
+            "iccid": record.iccid,
+            "manufacturer": {"id": manufacturer.id, "company_name": manufacturer.company_name},
+            "device_model": {"id": device_model.id, "model_name": device_model.model_name},
+            "esim_provider": {"id": esim_provider.id, "company_name": esim_provider.company_name},
+            "vehicle_owner_id": vehicle_owner.id,
+            "vahan": {
+                "chassis_no": record.vahan_chassis_no,
+                "date_of_registration": record.vahan_date_of_registration,
+                "device_activation_status": record.vahan_device_activation_status,
+                "device_serial_no": record.vahan_device_serial_no,
+                "engine_no": record.vahan_engine_no,
+                "fitment_centre_name": record.vahan_fitment_centre_name,
+                "gnss_constellation_code": record.vahan_gnss_constellation_code,
+                "iccid": record.vahan_iccid,
+                "imei": record.vahan_imei,
+                "maker_name": record.vahan_maker_name,
+                "model_name": record.vahan_model_name,
+                "owner_name": record.vahan_owner_name,
+                "reg_no": record.vahan_reg_no,
+                "tac_no": record.vahan_tac_no,
+                "tac_valid_upto": record.vahan_tac_valid_upto,
+                "veh_class": record.vahan_veh_class,
+            },
+            "step1_completed_at": record.step1_completed_at,
+        }
+    }, status=status.HTTP_200_OK)
+ 
+ 
+# =====================================================================
+# STEP 2 API
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step2_esim(request):
+    """
+    POST /api/device-tagging/step2/
+ 
+    Queries the eSIM provider's M2M API for the SIM, validates its status
+    and remaining validity against the vehicle's registration age, and
+    stores the result.
+ 
+    On success, sends a 6-digit OTP to the dealer (start of Step 3).
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+ 
+    # ── Common checks + must be sitting at step 2 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=2)
+    if error:
+        return error
+ 
+    # ── Second guard: eSIM data must not already be stored ───────────
+    # Belt and braces alongside the step check, because this step has an
+    # external side effect (it sends the dealer OTP).
+    if record.step2_completed_at or record.m2m_raw_response:
+        return Response(
+            {"error": "eSIM data is already saved for this entry."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    provider = record.esim_provider
+    if not provider.m2m_api_url or not provider.m2m_api_token:
+        return Response(
+            {"error": "This eSIM provider has not configured their M2M API."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Call the provider's M2M API ──────────────────────────────────
+    try:
+        resp = requests.post(
+            provider.m2m_api_url,
+            json={"k1": provider.m2m_api_token, "k2": record.iccid},
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+    except Timeout:
+        return Response(
+            {"error": "eSIM provider API timed out. Please try again."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except RequestException as e:
+        logger.error(f"M2M API call failed for record {record.id}: {e}")
+        return Response(
+            {"error": "Could not reach the eSIM provider API."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if resp.status_code in (401, 403):
+        return Response(
+            {"error": "eSIM provider API rejected our credentials."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if resp.status_code != 200:
+        return Response(
+            {"error": f"eSIM provider API returned HTTP {resp.status_code}."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    body = _safe_json(resp)
+    if body is None:
+        return Response(
+            {"error": "eSIM provider API did not return valid JSON."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # Same normaliser used by the provider onboarding test — one place
+    # that knows the provider's response format.
+    normalised, error_code, error_message = _normalise_m2m_result(body)
+    if error_code:
+        return Response({"error": error_message}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    # ── Returned ICCID must be the one we asked about ────────────────
+    if str(normalised.get('iccid') or '').strip() != record.iccid:
+        return Response(
+            {"error": "eSIM provider returned details for a different ICCID."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    today = timezone.localdate()
+ 
+    # ── Check: activation date is today or earlier ───────────────────
+    activation_date = normalised.get('activation_date')
+    if not activation_date:
+        return Response(
+            {"error": "eSIM provider did not return an activation date."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if activation_date > today:
+        return Response(
+            {
+                "error": "eSIM activation date is in the future.",
+                "activation_date": activation_date,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Check: SIM is active ─────────────────────────────────────────
+    card_status = str(normalised.get('sim_status') or '').strip()
+    if card_status.lower() != 'active':
+        return Response(
+            {
+                "error": "eSIM is not active.",
+                "sim_status": card_status,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Check: remaining validity, by vehicle registration age ───────
+    expiry_date = normalised.get('validity_date')
+    if not expiry_date:
+        return Response(
+            {"error": "eSIM provider did not return an expiry date."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    reg_no = (record.vahan_reg_no or '').strip()
+    reg_date = record.vahan_date_of_registration
+    threshold_date = _shift_years(today, -REGISTRATION_AGE_THRESHOLD_YEARS)
+ 
+    if not reg_no:
+        # Case C — fresh vehicle, not registered yet.
+        required_years = SIM_VALIDITY_NEW_VEHICLE_YEARS
+        case_label = "fresh vehicle (no registration number)"
+    elif reg_date and reg_date < threshold_date:
+        # Case A — registered longer ago than the threshold.
+        required_years = SIM_VALIDITY_OLD_VEHICLE_YEARS
+        case_label = f"registered more than {REGISTRATION_AGE_THRESHOLD_YEARS} years ago"
+    else:
+        # Case B — registered within the threshold.
+        required_years = SIM_VALIDITY_NEW_VEHICLE_YEARS
+        case_label = f"registered within {REGISTRATION_AGE_THRESHOLD_YEARS} years"
+ 
+    required_expiry = _shift_years(today, required_years)
+    if expiry_date < required_expiry:
+        return Response(
+            {
+                "error": (
+                    f"eSIM validity is too short. Vehicle is {case_label}, "
+                    f"so at least {required_years} year(s) of validity is required."
+                ),
+                "expiry_date": expiry_date,
+                "minimum_required_expiry": required_expiry,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── All checks passed — save the eSIM data ───────────────────────
+    now = timezone.now()
+ 
+    record.m2m_iccid = normalised.get('iccid')
+    record.m2m_card_state = normalised.get('card_state')
+    record.m2m_card_status = normalised.get('sim_status')
+    record.m2m_activation_date = activation_date
+    record.m2m_expiry_date = expiry_date
+    record.m2m_primary_tsp = normalised.get('telecom_provider')
+    record.m2m_primary_msisdn = normalised.get('msisdn')
+    record.m2m_primary_status = normalised.get('primary_status')
+    record.m2m_fallback_tsp = normalised.get('fallback_tsp') or None
+    record.m2m_fallback_msisdn = normalised.get('fallback_msisdn') or None
+    record.m2m_fallback_status = normalised.get('fallback_status') or None
+    record.m2m_data_usage = normalised.get('data_usage')
+    record.m2m_data_usage_date = normalised.get('data_usage_date')
+    record.m2m_raw_response = body
+ 
+    # ── Generate and send the dealer OTP (start of Step 3) ───────────
+    otp = str(secrets.randbelow(1000000)).zfill(6)
+    record.dealer_otp = otp
+    record.dealer_otp_sent_at = now
+ 
+    record.step2_completed_at = now
+    record.current_step = 3
+    record.updated_by = request.user
+    record.save()
+ 
+    _send_tagging_otp(
+        mobile=request.user.mobile,
+        email=getattr(request.user, 'email', None),
+        otp=otp,
+        vehicle_reg_no=record.vahan_reg_no,
+        imei=record.imei,
+    )
+ 
+    return Response({
+        "status": "success",
+        "message": "Step 2 completed successfully. OTP has been sent to your registered mobile number.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "esim": {
+                "iccid": record.m2m_iccid,
+                "card_state": record.m2m_card_state,
+                "card_status": record.m2m_card_status,
+                "activation_date": record.m2m_activation_date,
+                "expiry_date": record.m2m_expiry_date,
+                "primary_tsp": record.m2m_primary_tsp,
+                "primary_msisdn": record.m2m_primary_msisdn,
+                "primary_status": record.m2m_primary_status,
+                "fallback_tsp": record.m2m_fallback_tsp,
+                "fallback_msisdn": record.m2m_fallback_msisdn,
+                "data_usage": record.m2m_data_usage,
+                "data_usage_date": record.m2m_data_usage_date,
+            },
+            "validity_case": case_label,
+            "step2_completed_at": record.step2_completed_at,
+        }
+    }, status=status.HTTP_200_OK)
+ 
+ 
+ # Wrong OTP submissions allowed before the OTP is invalidated.
+TAGGING_OTP_MAX_ATTEMPTS = 5
+ 
+ 
+ 
+def _tagging_otp_matches(stored_otp, submitted_otp):
+    """
+    Compare a submitted OTP against the stored one.
+ 
+    For local development a configured test OTP is also accepted, so the
+    flow can be exercised without waiting for a real SMS. This is gated on
+    settings.DEBUG as well as the env flag, so it cannot be switched on by
+    config alone on a production server.
+ 
+    To match the school bus module's behaviour instead (env flag only),
+    drop `settings.DEBUG and` from the condition below.
+    """
+    if not stored_otp or not submitted_otp:
+        return False
+ 
+    if secrets.compare_digest(str(stored_otp), str(submitted_otp)):
+        return True
+ 
+    if settings.DEBUG and os.environ.get('ALLOW_DEFAULT_TEST_OTP', '').lower() == 'true':
+        test_otp = os.environ.get('DEFAULT_TEST_OTP', '')
+        if test_otp and secrets.compare_digest(str(test_otp), str(submitted_otp)):
+            logger.warning(
+                "Tagging OTP accepted via DEFAULT_TEST_OTP — development only."
+            )
+            return True
+ 
+    return False
+ 
+ 
+# =====================================================================
+# SECTION 4 — skytron_api/views.py
+# STEP 3 — RESEND DEALER OTP
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step3_resend_otp(request):
+    """
+    POST /api/device-tagging/step3/resend-otp/
+ 
+    Generates a fresh OTP and sends it to the dealer's registered mobile.
+ 
+    Can be called repeatedly while the record sits at step 3, subject to a
+    cooldown. Once step 3 is verified the record moves on and this endpoint
+    rejects it.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+ 
+    # ── Common checks + must be sitting at step 3 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=3)
+    if error:
+        return error
+ 
+    now = timezone.now()
+ 
+    # ── Cooldown — stops the endpoint being hammered ─────────────────
+    if record.dealer_otp_sent_at:
+        elapsed = (now - record.dealer_otp_sent_at).total_seconds()
+        if elapsed < TAGGING_OTP_RESEND_COOLDOWN_SECONDS:
+            wait = int(TAGGING_OTP_RESEND_COOLDOWN_SECONDS - elapsed)
+            return Response(
+                {
+                    "error": f"Please wait {wait} more second(s) before requesting a new OTP.",
+                    "retry_after_seconds": wait,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+    # ── Fresh OTP, attempt counter reset ─────────────────────────────
+    otp = str(secrets.randbelow(1000000)).zfill(6)
+    record.dealer_otp = otp
+    record.dealer_otp_sent_at = now
+    record.dealer_otp_attempts = 0
+    record.updated_by = request.user
+    record.save(update_fields=[
+        'dealer_otp', 'dealer_otp_sent_at', 'dealer_otp_attempts',
+        'updated_by', 'updated_at'
+    ])
+ 
+    _send_tagging_otp(
+        mobile=request.user.mobile,
+        email=getattr(request.user, 'email', None),
+        otp=otp,
+        vehicle_reg_no=record.vahan_reg_no,
+        imei=record.imei,
+    )
+ 
+    return Response({
+        "status": "success",
+        "message": "OTP has been sent to your registered mobile number.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "otp_sent_at": record.dealer_otp_sent_at,
+            "otp_expires_in_hours": TAGGING_OTP_EXPIRY_HOURS,
+        }
+    }, status=status.HTTP_200_OK)
+ 
+ 
+# =====================================================================
+# SECTION 5 — skytron_api/views.py
+# STEP 3 — VERIFY DEALER OTP
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step3_verify_otp(request):
+    """
+    POST /api/device-tagging/step3/verify-otp/
+ 
+    Verifies the dealer OTP. On success the record advances to step 4.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+    submitted_otp = str(request.data.get('otp') or '').strip()
+ 
+    # ── Common checks + must be sitting at step 3 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=3)
+    if error:
+        return error
+ 
+    if not submitted_otp:
+        return Response(
+            {"error": "otp is required."}, status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── An OTP must actually be outstanding ──────────────────────────
+    if not record.dealer_otp or not record.dealer_otp_sent_at:
+        return Response(
+            {"error": "No OTP is pending for this entry. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    now = timezone.now()
+ 
+    # ── Expiry ───────────────────────────────────────────────────────
+    if now > record.dealer_otp_sent_at + timedelta(hours=TAGGING_OTP_EXPIRY_HOURS):
+        return Response(
+            {"error": "This OTP has expired. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Attempt limit ────────────────────────────────────────────────
+    if record.dealer_otp_attempts >= TAGGING_OTP_MAX_ATTEMPTS:
+        return Response(
+            {"error": "Too many incorrect attempts. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Compare ──────────────────────────────────────────────────────
+    if not _tagging_otp_matches(record.dealer_otp, submitted_otp):
+        record.dealer_otp_attempts += 1
+        remaining = TAGGING_OTP_MAX_ATTEMPTS - record.dealer_otp_attempts
+ 
+        if remaining <= 0:
+            # Burn the OTP so the counter cannot simply be waited out.
+            record.dealer_otp = None
+            record.save(update_fields=['dealer_otp', 'dealer_otp_attempts', 'updated_at'])
+            return Response(
+                {"error": "Too many incorrect attempts. Please request a new OTP."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        record.save(update_fields=['dealer_otp_attempts', 'updated_at'])
+        return Response(
+            {
+                "error": "Incorrect OTP.",
+                "attempts_remaining": remaining,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Verified — advance to step 4 ─────────────────────────────────
+    record.dealer_otp_verified_at = now
+    record.dealer_otp_attempts = 0
+    record.step3_completed_at = now
+    record.current_step = 4
+    record.updated_by = request.user
+    record.save(update_fields=[
+        'dealer_otp_verified_at', 'dealer_otp_attempts', 'step3_completed_at',
+        'current_step', 'updated_by', 'updated_at'
+    ])
+ 
+    return Response({
+        "status": "success",
+        "message": "OTP verified successfully. Step 3 completed.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "dealer_otp_verified_at": record.dealer_otp_verified_at,
+            "step3_completed_at": record.step3_completed_at,
+        }
+    }, status=status.HTTP_200_OK)
+
+
+
+
+
+
+
+# Packets older than this are not counted as received.
+# Also bounds the query: only this window is scanned.
+GPS_PACKET_FRESHNESS_HOURS = 24
+ 
+# Safety cap on how many rows are pulled per table for one device.
+GPS_PACKET_SCAN_LIMIT = 5000
+ 
+# The 9 packet types, in display order.
+TAGGING_PACKET_TYPES = [
+    'login_packet',
+    'health_packet',
+    'pvt_packet',
+    'emergency_start',
+    'ble_emergency_start',
+    'emergency_stop',
+    'sos_start',
+    'sos_start_ble',
+    'sos_stop',
+]
+ 
+# Which of the 9 must be received before step 4 can pass.
+# All 9 per TL. Trim this list to relax the requirement without
+# touching any logic — the others are still checked and reported.
+TAGGING_REQUIRED_PACKETS = list(TAGGING_PACKET_TYPES)
+ 
+ 
+# =====================================================================
+# SECTION 2 — skytron_api/views.py
+# Packet matchers. Paste above the step 4 view.
+# =====================================================================
+ 
+def _normalise_packet(raw):
+    """
+    Packets arrive with two header spellings — '$EPB,...' and '$,EPB,...'.
+    Normalise so field positions line up.
+    """
+    return (raw or '').strip().replace('$,', '$', 1)
+ 
+ 
+def _packet_has_ble_marker(raw):
+    """
+    True when the packet carries the BLE source marker.
+ 
+    Per TL: BLE-triggered alerts are marked by a 'BLE' source string at
+    the end of the packet.
+ 
+    UNVERIFIED — no BLE packet exists in the data yet, so the exact
+    spelling and position could not be confirmed. Checked case-insensitively
+    against the tail of the packet to be tolerant. Correct this once a real
+    BLE packet is available.
+    """
+    tail = _normalise_packet(raw)[-40:].upper()
+    return 'BLE' in tail
+ 
+ 
+def _is_login_packet(raw, ble=None):
+    # VERIFIED — 487,707 rows in production start with '$AS'.
+    return _normalise_packet(raw).startswith('$AS')
+ 
+ 
+def _is_health_packet(raw, ble=None):
+    # VERIFIED — 1.5M rows in production.
+    return ',HLM,' in _normalise_packet(raw)
+ 
+ 
+def _is_pvt_packet(raw, ble=None):
+    # VERIFIED — 24.7M rows in production.
+    return _packet_type_in_header(raw, 'PVT')
+ 
+ 
+def _is_emergency_start(raw, ble=False):
+    """
+    Emergency start in GPSDataLog, alert type EM,10 per TL.
+    UNVERIFIED — no EM,10 rows exist in the data yet.
+    """
+    packet = _normalise_packet(raw)
+    if 'EM,10' not in packet:
+        return False
+    return _packet_has_ble_marker(packet) == ble
+ 
+ 
+def _is_emergency_stop(raw, ble=None):
+    """
+    Emergency stop in GPSDataLog, alert type EM,11 per TL.
+    UNVERIFIED — no EM,11 rows exist in the data yet.
+    """
+    return 'EM,11' in _normalise_packet(raw)
+ 
+ 
+def _is_sos_packet(raw, msg_type, ble=False):
+    """
+    SOS packets in GPSemDataLog. EMR = start, SEM = stop.
+
+    VERIFIED — EMR 6.2M rows, SEM 48K rows in production.
+    The BLE split is UNVERIFIED.
+    """
+    if not _packet_type_in_header(raw, msg_type):
+        return False
+    return _packet_has_ble_marker(raw) == ble
+ 
+# Which table each packet type lives in, and how to recognise it.
+# One place to correct a matcher — nothing else needs touching.
+TAGGING_PACKET_MATCHERS = {
+    'login_packet':        ('gps',   lambda r: _is_login_packet(r)),
+    'health_packet':       ('gps',   lambda r: _is_health_packet(r)),
+    'pvt_packet':          ('gps',   lambda r: _is_pvt_packet(r)),
+    'emergency_start':     ('gps',   lambda r: _is_emergency_start(r, ble=False)),
+    'ble_emergency_start': ('gps',   lambda r: _is_emergency_start(r, ble=True)),
+    'emergency_stop':      ('gps',   lambda r: _is_emergency_stop(r)),
+    'sos_start':           ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=False)),
+    'sos_start_ble':       ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=True)),
+    'sos_stop':            ('gpsem', lambda r: _is_sos_packet(r, 'SEM')),
+}
+ 
+ 
+def _extract_pvt_lat_lon(raw):
+    """
+    Pull latitude and longitude out of a PVT packet.
+
+    Real format:
+      $PVT,DTPL,1.0.0,NR,01,L,<imei>,<reg>,0,<date>,<time>,<lat>,N,<lon>,E,...
+                                                            +11  +12 +13 +14
+
+    The N/E direction fields are checked as an anchor, so if the layout
+    ever shifts we return None instead of a wrong coordinate.
+    """
+    parts = _packet_fields(raw)
+    try:
+        idx = next(i for i, p in enumerate(parts) if p.upper() == 'PVT')
+    except StopIteration:
+        return None, None
+
+    try:
+        lat_raw, lat_dir = parts[idx + 11], parts[idx + 12].upper()
+        lon_raw, lon_dir = parts[idx + 13], parts[idx + 14].upper()
+
+        if lat_dir not in ('N', 'S') or lon_dir not in ('E', 'W'):
+            return None, None
+
+        lat = Decimal(lat_raw)
+        lon = Decimal(lon_raw)
+    except (IndexError, InvalidOperation, ValueError):
+        return None, None
+
+    if lat == 0 and lon == 0:
+        return None, None
+
+    if lat_dir == 'S':
+        lat = -lat
+    if lon_dir == 'W':
+        lon = -lon
+
+    return lat, lon
+ 
+ 
+# =====================================================================
+# SECTION 3 — skytron_api/views.py
+# STEP 4 API
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step4_packet_check(request):
+    """
+    POST /api/device-tagging/step4/
+ 
+    Checks whether the fitted device is transmitting all required packet
+    types, and records the result.
+ 
+    Re-runnable: the dealer will typically call this several times while
+    triggering alerts on the device. Each call re-checks live and
+    overwrites the stored result. The record only advances to step 5 once
+    every required packet has been seen inside the freshness window.
+ 
+    Query strategy: the GPS log tables have no IMEI column and no index on
+    raw_data, so matching by IMEI alone would mean a full scan of tables
+    holding tens of millions of rows. Restricting to the freshness window
+    first bounds the work — which is why the threshold is not just a
+    validation rule.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+ 
+    # ── Common checks + must be sitting at step 4 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=4)
+    if error:
+        return error
+ 
+    now = timezone.now()
+    cutoff = now - timedelta(hours=GPS_PACKET_FRESHNESS_HOURS)
+    imei = record.imei
+    reg_no = (record.vahan_reg_no or '').strip()
+ 
+    # ── Pull this device's recent packets — two queries, not eighteen ─
+    gps_rows = list(
+        GPSDataLog.objects
+        .filter(timestamp__gte=cutoff, raw_data__contains=imei)
+        .order_by('-timestamp')
+        .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+    )
+    gpsem_rows = list(
+        GPSemDataLog.objects
+        .filter(timestamp__gte=cutoff, raw_data__contains=imei)
+        .order_by('-timestamp')
+        .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+    )
+ 
+    rows_by_table = {'gps': gps_rows, 'gpsem': gpsem_rows}
+ 
+    # ── Classify — rows are already newest first, so the first match
+    #    for each type is the latest one ─────────────────────────────
+    results = {}
+    latest_pvt_raw = None
+ 
+    for packet_type in TAGGING_PACKET_TYPES:
+        table, matcher = TAGGING_PACKET_MATCHERS[packet_type]
+        found = None
+ 
+        for raw_data, packet_time in rows_by_table[table]:
+            # A packet carrying a different vehicle's registration number
+            # is not this device's traffic.
+            if reg_no and reg_no not in raw_data:
+                continue
+            try:
+                if matcher(raw_data):
+                    found = (raw_data, packet_time)
+                    break
+            except Exception:
+                # A malformed packet is simply not a match.
+                continue
+ 
+        if found:
+            raw_data, packet_time = found
+            results[packet_type] = {
+                'received': True,
+                'timestamp': packet_time.isoformat(),
+                'raw_data': raw_data,
+            }
+            if packet_type == 'pvt_packet':
+                latest_pvt_raw = raw_data
+        else:
+            results[packet_type] = {
+                'received': False,
+                'timestamp': None,
+                'raw_data': None,
+            }
+ 
+    # ── Latitude / longitude from the latest PVT packet ───────────────
+    latitude, longitude = (None, None)
+    if latest_pvt_raw:
+        latitude, longitude = _extract_pvt_lat_lon(latest_pvt_raw)
+ 
+    # ── Did everything required arrive? ──────────────────────────────
+    missing = [p for p in TAGGING_REQUIRED_PACKETS if not results[p]['received']]
+    all_received = not missing
+ 
+    # ── Store — every call overwrites, so the record always holds the
+    #    most recent check ────────────────────────────────────────────
+    record.packet_results = results
+    record.packets_all_received = all_received
+    record.packets_checked_at = now
+    record.packet_latitude = latitude
+    record.packet_longitude = longitude
+    record.updated_by = request.user
+ 
+    update_fields = [
+        'packet_results', 'packets_all_received', 'packets_checked_at',
+        'packet_latitude', 'packet_longitude', 'updated_by', 'updated_at',
+    ]
+ 
+    if all_received:
+        record.step4_completed_at = now
+        record.current_step = 5
+        update_fields += ['step4_completed_at', 'current_step']
+ 
+    record.save(update_fields=update_fields)
+ 
+    return Response({
+        "status": "success" if all_received else "pending",
+        "message": (
+            "All required packets received. Step 4 completed."
+            if all_received else
+            "Some packets have not been received yet. Trigger them on the device and check again."
+        ),
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "imei": record.imei,
+            "vehicle_reg_no": record.vahan_reg_no,
+            "checked_at": record.packets_checked_at,
+            "freshness_window_hours": GPS_PACKET_FRESHNESS_HOURS,
+            "all_received": all_received,
+            "missing_packets": missing,
+            "latitude": record.packet_latitude,
+            "longitude": record.packet_longitude,
+            "packets": results,
+        }
+    }, status=status.HTTP_200_OK)
+ 
+  

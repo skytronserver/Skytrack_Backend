@@ -4982,3 +4982,183 @@ class OTACommandValueSuggestion(models.Model):
 
     def __str__(self):
         return f"{self.imei} @ {self.timestamp}"
+    
+    
+    
+    
+    
+    
+
+
+
+
+class DeviceStockMaster(models.Model):
+    """
+    Staging record for the 5-step VLTD tagging flow.
+ 
+    One row per tagging attempt, written to progressively across the five
+    steps. Real DeviceStock + DeviceTag records are created only after
+    Step 5 (owner OTP) succeeds.
+ 
+    Field nullability rule:
+      - everything written by Step 1 is MANDATORY (not null)
+      - everything written by Steps 2-5 is nullable, filled in later
+ 
+    Two exceptions, both driven by the "fresh vehicle" case in Step 2:
+      - vahan_reg_no is NOT NULL but may be an empty string
+      - vahan_date_of_registration must stay nullable, because a vehicle
+        with no registration number has no registration date
+ 
+    NOTE: no unique constraints anywhere on this model — uniqueness is
+    enforced in application code against non-deleted rows only, so that a
+    soft-deleted attempt does not permanently block the same IMEI/ICCID.
+    """
+    objects = SafeCreateManager()
+ 
+    # ── Step tracking ────────────────────────────────────────────────
+    STEP_CHOICES = [
+        (2, 'Step 2 - eSIM Verification Pending'),
+        (3, 'Step 3 - Dealer OTP Pending'),
+        (4, 'Step 4 - GPS Packet Check Pending'),
+        (5, 'Step 5 - Owner OTP Pending'),
+        (6, 'Completed'),
+    ]
+    # Row only exists once Step 1 has succeeded, so it starts at 2.
+    current_step = models.PositiveSmallIntegerField(
+        choices=STEP_CHOICES, default=2, db_index=True
+    )
+ 
+    # Step 1 always sets this; later steps fill theirs in as they complete.
+    step1_completed_at = models.DateTimeField()
+    step2_completed_at = models.DateTimeField(null=True, blank=True)
+    step3_completed_at = models.DateTimeField(null=True, blank=True)
+    step4_completed_at = models.DateTimeField(null=True, blank=True)
+    step5_completed_at = models.DateTimeField(null=True, blank=True)
+ 
+    # ── Group A: dealer input (Step 1) — all mandatory ───────────────
+    dealer = models.ForeignKey(
+        'Dealer', on_delete=models.CASCADE, related_name='stock_master_entries'
+    )
+    manufacturer = models.ForeignKey(
+        'Manufacturer', on_delete=models.CASCADE, related_name='stock_master_entries'
+    )
+    device_model = models.ForeignKey(
+        'DeviceModel', on_delete=models.CASCADE, related_name='stock_master_entries'
+    )
+    esim_provider = models.ForeignKey(
+        'eSimProvider', on_delete=models.CASCADE, related_name='stock_master_entries'
+    )
+    # Owner phone number itself is NOT stored — only the resolved owner.
+    vehicle_owner = models.ForeignKey(
+        'VehicleOwner', on_delete=models.CASCADE, related_name='stock_master_entries'
+    )
+ 
+    imei = models.CharField(max_length=55, db_index=True)
+    iccid = models.CharField(max_length=55, db_index=True)
+ 
+    # ── Group B: Vahan response (Step 1) — all mandatory ─────────────
+    vahan_chassis_no = models.CharField(max_length=100)
+    vahan_device_activation_status = models.CharField(max_length=50)
+    vahan_device_serial_no = models.CharField(max_length=100)
+    vahan_engine_no = models.CharField(max_length=100)
+    vahan_fitment_centre_name = models.CharField(max_length=255)
+    vahan_gnss_constellation_code = models.CharField(max_length=100)
+    vahan_imei = models.CharField(max_length=55)
+    vahan_maker_name = models.CharField(max_length=255)
+    vahan_model_name = models.CharField(max_length=255)
+    vahan_owner_name = models.CharField(max_length=255)
+    vahan_tac_no = models.CharField(max_length=100)
+    vahan_tac_valid_upto = models.DateField()
+    vahan_veh_class = models.CharField(max_length=100)
+    vahan_raw_response = models.JSONField()
+ 
+    # Vahan may not return an ICCID at all — column is mandatory but the
+    # value may be an empty string.
+    vahan_iccid = models.CharField(max_length=55, blank=True, default='')
+ 
+    # A fresh, not-yet-registered vehicle has no registration number.
+    # Column is mandatory; empty string means "not registered yet".
+    vahan_reg_no = models.CharField(max_length=55, blank=True, default='')
+ 
+    # MUST stay nullable — a fresh vehicle has no registration date, and a
+    # DateField cannot hold an empty value. Step 2 Case C depends on this.
+    vahan_date_of_registration = models.DateField(null=True, blank=True)
+ 
+    # ── Group C: M2M / eSIM provider response (Step 2) ───────────────
+    # Blank and nullable — filled in only when Step 2 succeeds.
+    m2m_iccid = models.CharField(max_length=55, null=True, blank=True)
+    m2m_card_state = models.CharField(max_length=50, null=True, blank=True)
+    m2m_card_status = models.CharField(max_length=50, null=True, blank=True)
+    m2m_activation_date = models.DateField(null=True, blank=True)
+    m2m_expiry_date = models.DateField(null=True, blank=True)
+    m2m_primary_tsp = models.CharField(max_length=100, null=True, blank=True)
+    m2m_primary_msisdn = models.CharField(max_length=55, null=True, blank=True)
+    m2m_primary_status = models.CharField(max_length=50, null=True, blank=True)
+    m2m_fallback_tsp = models.CharField(max_length=100, null=True, blank=True)
+    m2m_fallback_msisdn = models.CharField(max_length=55, null=True, blank=True)
+    m2m_fallback_status = models.CharField(max_length=50, null=True, blank=True)
+    m2m_data_usage = models.CharField(max_length=50, null=True, blank=True)
+    m2m_data_usage_date = models.DateField(null=True, blank=True)
+    m2m_raw_response = models.JSONField(null=True, blank=True)
+ 
+    # ── Group D: dealer OTP (Step 3) ─────────────────────────────────
+    dealer_otp = models.CharField(max_length=6, null=True, blank=True)
+    dealer_otp_sent_at = models.DateTimeField(null=True, blank=True)
+    dealer_otp_attempts = models.PositiveSmallIntegerField(default=0)
+    dealer_otp_verified_at = models.DateTimeField(null=True, blank=True)
+ 
+    # ── Group E: GPS packet verification (Step 4) ────────────────────
+    # One JSON object holding all 9 packet results — each entry is
+    # {"received": bool, "timestamp": iso, "raw_data": str}.
+    packet_results = models.JSONField(null=True, blank=True)
+    packets_all_received = models.BooleanField(null=True, blank=True, default=None)
+    packets_checked_at = models.DateTimeField(null=True, blank=True)
+    packet_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    packet_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+ 
+    # ── Group F: owner OTP (Step 5) ──────────────────────────────────
+    owner_otp = models.CharField(max_length=6, null=True, blank=True)
+    owner_otp_sent_at = models.DateTimeField(null=True, blank=True)
+    owner_otp_attempts = models.PositiveSmallIntegerField(default=0)
+    owner_otp_verified_at = models.DateTimeField(null=True, blank=True)
+ 
+    # ── Group G: final commit references (Step 5) ────────────────────
+    created_device_stock = models.ForeignKey(
+        'DeviceStock', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='stock_master_source'
+    )
+    created_device_tag = models.ForeignKey(
+        'DeviceTag', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='stock_master_source'
+    )
+ 
+    # ── Group H: audit / soft delete ─────────────────────────────────
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='deleted_stock_master_entries'
+    )
+ 
+    created_by = models.ForeignKey(
+        'User', on_delete=models.CASCADE, related_name='created_stock_master_entries'
+    )
+    # Nullable only because of on_delete=SET_NULL.
+    updated_by = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='updated_stock_master_entries'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        indexes = [
+            models.Index(fields=['created_by', 'is_deleted']),
+            models.Index(fields=['imei', 'is_deleted']),
+            models.Index(fields=['iccid', 'is_deleted']),
+            models.Index(fields=['current_step', 'is_deleted']),
+            models.Index(fields=['dealer', 'current_step']),
+        ]
+ 
+    def __str__(self):
+        return f"DeviceStockMaster #{self.id} - IMEI {self.imei} (step {self.current_step})"

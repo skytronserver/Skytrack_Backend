@@ -727,7 +727,7 @@ urlpatterns += [
 
 
 
-urlpatterns = [
+urlpatterns += [
 
     # =========================
     # School Onboarding
@@ -1080,5 +1080,14 @@ urlpatterns = [
     path('esim-provider/m2m-config/', m2m_config_create_update, name='m2m_config_create_update'),
     path('esim-provider/m2m-config/test/', m2m_config_test, name='m2m_config_test'),
     
+    
+    path('device-tagging/step1/', device_tagging_step1_create, name='device-tagging-step1'),
+    path('device-tagging/step2/', device_tagging_step2_esim,   name='device-tagging-step2'),
+    
+    path('device-tagging/step3/resend-otp/', device_tagging_step3_resend_otp, name='device-tagging-step3-resend'),
+    path('device-tagging/step3/verify-otp/', device_tagging_step3_verify_otp, name='device-tagging-step3-verify'),
+    
+    path('device-tagging/step4/', device_tagging_step4_packet_check, name='device-tagging-step4'),
+ 
     
 ]
