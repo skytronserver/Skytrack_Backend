@@ -39435,8 +39435,15 @@ TAGGING_OTP_RESEND_COOLDOWN_SECONDS = 60
 # Temporary registration number format:
 #   <district_code> + TEMP_REG_NO_MARKER + last 4 of chassis number
 # e.g. AS01Tmp8595
-TEMP_REG_NO_MARKER = 'Tmp'
+TEMP_REG_NO_MARKER = 'TMP'
 TEMP_REG_NO_CHASSIS_DIGITS = 4
+
+# Device is physically fitted to a vehicle and tagging is complete.
+TAGGING_FINAL_STOCK_STATUS = 'Fitted'
+# The provider's API confirmed the SIM is active during step 2.
+TAGGING_FINAL_ESIM_STATUS = 'ESIM_Active_Confirmed'
+# Terminal state for a completed tag.
+TAGGING_FINAL_TAG_STATUS = 'Owner_Final_OTP_Verified'
 
  
 # Vahan response keys that must be present and non-empty. These map to
@@ -39709,6 +39716,14 @@ def _build_temp_reg_no(district, chassis_no):
     return temp_reg_no, None
 
  
+ # Device is physically fitted to a vehicle and tagging is complete.
+TAGGING_FINAL_STOCK_STATUS = 'Fitted'
+# The provider's API confirmed the SIM is active during step 2.
+TAGGING_FINAL_ESIM_STATUS = 'ESIM_Active_Confirmed'
+# Terminal state for a completed tag.
+TAGGING_FINAL_TAG_STATUS = 'Owner_Final_OTP_Verified'
+
+
 # =====================================================================
 # SECTION 4 
 # STEP 1 API
@@ -40754,3 +40769,320 @@ def device_tagging_step4_packet_check(request):
     }, status=status.HTTP_200_OK)
  
   
+  
+  
+# =====================================================================
+# SECTION 4 
+# STEP 5 
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step5_send_owner_otp(request):
+    """
+    POST /api/device-tagging/step5/send-otp/
+ 
+    Sends a 6-digit OTP to the vehicle owner's registered mobile — the
+    owner resolved from the phone number given in step 1.
+ 
+    Callable repeatedly while the record sits at step 5, subject to a
+    cooldown. Also serves as the resend endpoint.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+ 
+    # ── Common checks + must be sitting at step 5 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=5)
+    if error:
+        return error
+ 
+    # ── Everything before this step must genuinely be complete ───────
+    prerequisite_error = _check_step5_prerequisites(record)
+    if prerequisite_error:
+        return Response({"error": prerequisite_error}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    owner_mobile, owner_email = _get_owner_mobile(record.vehicle_owner)
+    if not owner_mobile:
+        return Response(
+            {"error": "The vehicle owner has no active account with a registered mobile number."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    now = timezone.now()
+ 
+    # ── Cooldown ─────────────────────────────────────────────────────
+    if record.owner_otp_sent_at:
+        elapsed = (now - record.owner_otp_sent_at).total_seconds()
+        if elapsed < TAGGING_OTP_RESEND_COOLDOWN_SECONDS:
+            wait = int(TAGGING_OTP_RESEND_COOLDOWN_SECONDS - elapsed)
+            return Response(
+                {
+                    "error": f"Please wait {wait} more second(s) before requesting a new OTP.",
+                    "retry_after_seconds": wait,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+    otp = str(secrets.randbelow(1000000)).zfill(6)
+    record.owner_otp = otp
+    record.owner_otp_sent_at = now
+    record.owner_otp_attempts = 0
+    record.updated_by = request.user
+    record.save(update_fields=[
+        'owner_otp', 'owner_otp_sent_at', 'owner_otp_attempts',
+        'updated_by', 'updated_at'
+    ])
+ 
+    _send_tagging_otp(
+        mobile=owner_mobile,
+        email=owner_email,
+        otp=otp,
+        vehicle_reg_no=record.vahan_reg_no,
+        imei=record.imei,
+    )
+ 
+    return Response({
+        "status": "success",
+        "message": "OTP has been sent to the vehicle owner's registered mobile number.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            # Masked — the dealer should not be able to read the owner's number
+            # off this endpoint.
+            "owner_mobile": f"{owner_mobile[:2]}xxxxxx{owner_mobile[-2:]}",
+            "otp_sent_at": record.owner_otp_sent_at,
+            "otp_expires_in_hours": TAGGING_OTP_EXPIRY_HOURS,
+        }
+    }, status=status.HTTP_200_OK)
+ 
+ 
+# =====================================================================
+# SECTION 5 — skytron_api/views.py
+# STEP 5 — VERIFY OWNER OTP + FINAL COMMIT
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step5_verify_owner_otp(request):
+    """
+    POST /api/device-tagging/step5/verify-otp/
+ 
+    The owner receives the OTP and passes it to the dealer, who submits it
+    here. On success this creates the real records:
+ 
+      - one DeviceStock row  (device + SIM details)
+      - one DeviceTag row    (vehicle details, linked to the stock row)
+ 
+    Both are created in a single transaction with the record update, so a
+    failure part-way leaves nothing behind.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+    submitted_otp = str(request.data.get('otp') or '').strip()
+ 
+    # ── Common checks + must be sitting at step 5 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=5)
+    if error:
+        return error
+ 
+    if not submitted_otp:
+        return Response({"error": "otp is required."}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    prerequisite_error = _check_step5_prerequisites(record)
+    if prerequisite_error:
+        return Response({"error": prerequisite_error}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    if not record.owner_otp or not record.owner_otp_sent_at:
+        return Response(
+            {"error": "No OTP is pending for this entry. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    now = timezone.now()
+ 
+    if now > record.owner_otp_sent_at + timedelta(hours=TAGGING_OTP_EXPIRY_HOURS):
+        return Response(
+            {"error": "This OTP has expired. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if record.owner_otp_attempts >= TAGGING_OTP_MAX_ATTEMPTS:
+        return Response(
+            {"error": "Too many incorrect attempts. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if not _tagging_otp_matches(record.owner_otp, submitted_otp):
+        record.owner_otp_attempts += 1
+        remaining = TAGGING_OTP_MAX_ATTEMPTS - record.owner_otp_attempts
+ 
+        if remaining <= 0:
+            record.owner_otp = None
+            record.save(update_fields=['owner_otp', 'owner_otp_attempts', 'updated_at'])
+            return Response(
+                {"error": "Too many incorrect attempts. Please request a new OTP."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        record.save(update_fields=['owner_otp_attempts', 'updated_at'])
+        return Response(
+            {"error": "Incorrect OTP.", "attempts_remaining": remaining},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── OTP verified. Build the final records. ───────────────────────
+ 
+    reg_no = (record.vahan_reg_no or '').strip().upper()
+    engine_no = (record.vahan_engine_no or '').strip().upper()
+    chassis_no = (record.vahan_chassis_no or '').strip().upper()
+    device_esn = (record.vahan_device_serial_no or '').strip()
+    msisdn1 = (record.m2m_primary_msisdn or '').strip()
+    msisdn2 = _blank_to_none(record.m2m_fallback_msisdn)
+ 
+    # ── Last-moment uniqueness check ─────────────────────────────────
+    # Step 1 checked what it could, but another dealer may have tagged the
+    # same device in the meantime. Checking here turns a database
+    # IntegrityError into a readable message.
+    conflicts = {}
+    if DeviceStock.objects.filter(imei=record.imei).exists():
+        conflicts['imei'] = "already exists in device stock"
+    if DeviceStock.objects.filter(iccid=record.iccid).exists():
+        conflicts['iccid'] = "already exists in device stock"
+    if device_esn and DeviceStock.objects.filter(device_esn=device_esn).exists():
+        conflicts['device_esn'] = "already exists in device stock"
+    if msisdn1 and DeviceStock.objects.filter(msisdn1=msisdn1).exists():
+        conflicts['msisdn1'] = "already exists in device stock"
+    if msisdn2 and DeviceStock.objects.filter(msisdn2=msisdn2).exists():
+        conflicts['msisdn2'] = "already exists in device stock"
+    if reg_no and DeviceTag.objects.filter(vehicle_reg_no=reg_no).exists():
+        conflicts['vehicle_reg_no'] = "already tagged to a device"
+    if engine_no and DeviceTag.objects.filter(engine_no=engine_no).exists():
+        conflicts['engine_no'] = "already tagged to a device"
+    if chassis_no and DeviceTag.objects.filter(chassis_no=chassis_no).exists():
+        conflicts['chassis_no'] = "already tagged to a device"
+ 
+    if conflicts:
+        return Response(
+            {
+                "error": "This device or vehicle has already been registered elsewhere.",
+                "conflicts": conflicts,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if not msisdn1:
+        return Response(
+            {"error": "No primary MSISDN was returned by the eSIM provider. Please run step 2 again."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if not device_esn:
+        return Response(
+            {"error": "No device serial number is stored for this entry."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Create DeviceStock — device and SIM ──────────────────────────
+    device_stock = DeviceStock.objects.create(
+        model=record.device_model,
+        device_esn=device_esn,
+        imei=record.imei,
+        iccid=record.iccid,
+        iccid2=None,
+        telecom_provider1=(record.m2m_primary_tsp or '')[:25],
+        telecom_provider2=(_blank_to_none(record.m2m_fallback_tsp) or None),
+        msisdn1=msisdn1,
+        msisdn2=msisdn2,
+        imsi1=None,   # the provider API does not return IMSI
+        imsi2=None,
+        esim_validity=_as_end_of_day(record.m2m_expiry_date),
+        remarks=f"Created by tagging flow from DeviceStockMaster #{record.id}",
+        created=now,
+        created_by=request.user,
+        dealer=record.dealer,
+        stock_status=TAGGING_FINAL_STOCK_STATUS,
+        esim_status=TAGGING_FINAL_ESIM_STATUS,
+    )
+    device_stock.esim_provider.add(record.esim_provider)
+ 
+    # ── Create DeviceTag — vehicle, linked to the stock row ──────────
+    # vehicle_make / vehicle_model are 55 chars on DeviceTag but 255 on
+    # DeviceStockMaster, so they are trimmed rather than risking a failure
+    # at the very last step of a five-step flow.
+    device_tag = DeviceTag.objects.create(
+        device=device_stock,
+        vehicle_owner=record.vehicle_owner,
+        vehicle_reg_no=reg_no,
+        engine_no=engine_no,
+        chassis_no=chassis_no,
+        vehicle_make=(record.vahan_maker_name or '')[:55],
+        vehicle_model=(record.vahan_model_name or '')[:55],
+        category=record.category,
+        district=record.district,
+        rc_file=record.rc_file,
+        receipt_file_or='',   # not collected in this flow, per TL
+        receipt_file_ul='',   # not collected in this flow, per TL
+        status=TAGGING_FINAL_TAG_STATUS,
+        tagged_by=request.user,
+        tagged=now,
+    )
+ 
+    # ── Close out the staging record ─────────────────────────────────
+    record.owner_otp_verified_at = now
+    record.owner_otp_attempts = 0
+    record.step5_completed_at = now
+    record.current_step = 6          # 6 = Completed
+    record.created_device_stock = device_stock
+    record.created_device_tag = device_tag
+    record.updated_by = request.user
+    record.save(update_fields=[
+        'owner_otp_verified_at', 'owner_otp_attempts', 'step5_completed_at',
+        'current_step', 'created_device_stock', 'created_device_tag',
+        'updated_by', 'updated_at'
+    ])
+ 
+    return Response({
+        "status": "success",
+        "message": "Owner OTP verified. Tagging completed successfully.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "owner_otp_verified_at": record.owner_otp_verified_at,
+            "step5_completed_at": record.step5_completed_at,
+            "device_stock": {
+                "id": device_stock.id,
+                "device_esn": device_stock.device_esn,
+                "imei": device_stock.imei,
+                "iccid": device_stock.iccid,
+                "msisdn1": device_stock.msisdn1,
+                "msisdn2": device_stock.msisdn2,
+                "telecom_provider1": device_stock.telecom_provider1,
+                "esim_validity": device_stock.esim_validity,
+                "stock_status": device_stock.stock_status,
+                "esim_status": device_stock.esim_status,
+            },
+            "device_tag": {
+                "id": device_tag.id,
+                "vehicle_reg_no": device_tag.vehicle_reg_no,
+                "is_temp_reg_no": record.is_temp_reg_no,
+                "engine_no": device_tag.engine_no,
+                "chassis_no": device_tag.chassis_no,
+                "vehicle_make": device_tag.vehicle_make,
+                "vehicle_model": device_tag.vehicle_model,
+                "category": device_tag.category.category,
+                "district": device_tag.district.district if device_tag.district else None,
+                "rc_file": device_tag.rc_file,
+                "status": device_tag.status,
+            },
+        }
+    }, status=status.HTTP_200_OK)
+ 
