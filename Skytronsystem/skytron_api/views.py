@@ -28649,6 +28649,8 @@ from django.core.paginator import Paginator
 from django.utils.dateparse import parse_datetime
 from django.db.models import Avg, F, ExpressionWrapper, DateTimeField
 from django.db.models.functions import ExtractHour, ExtractMinute, ExtractSecond , TruncDate
+from rest_framework.decorators import parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser
 
 
 
@@ -39414,8 +39416,7 @@ def _normalise_m2m_result(body):
 
 
 # =====================================================================
-# SECTION 2 — skytron_api/views.py
-# Paste near the top, with the other module-level constants.
+# SECTION 2 
 # =====================================================================
  
 # ── New tagging flow: tunable thresholds ─────────────────────────────
@@ -39430,6 +39431,13 @@ GPS_PACKET_FRESHNESS_HOURS = 24
 TAGGING_OTP_EXPIRY_HOURS = 24
 # Minimum gap between OTP resend requests.
 TAGGING_OTP_RESEND_COOLDOWN_SECONDS = 60
+
+# Temporary registration number format:
+#   <district_code> + TEMP_REG_NO_MARKER + last 4 of chassis number
+# e.g. AS01Tmp8595
+TEMP_REG_NO_MARKER = 'Tmp'
+TEMP_REG_NO_CHASSIS_DIGITS = 4
+
  
 # Vahan response keys that must be present and non-empty. These map to
 # NOT NULL columns, so a missing one is rejected before we try to save.
@@ -39441,8 +39449,7 @@ REQUIRED_VAHAN_FIELDS = [
  
  
 # =====================================================================
-# SECTION 3 — skytron_api/views.py
-# Shared helpers for the tagging flow. Paste above the step views.
+# SECTION 3 
 # =====================================================================
  
 def _shift_years(d, years):
@@ -39620,41 +39627,123 @@ def _send_tagging_otp(mobile, email, otp, vehicle_reg_no, imei):
             logger.error(f"Tagging OTP email failed for {email}: {e}")
  
  
+def _resolve_tagging_district(dealer, district_id):
+    """
+    Work out which district this tagging belongs to.
+
+    A dealer can be assigned several districts, so:
+      - district_id given  -> must be one of the dealer's own
+      - not given, one district -> use it
+      - not given, several      -> ask the dealer to choose
+
+    Returns (district, error_message).
+    """
+    dealer_districts = dealer.districts.filter(status='active')
+
+    if district_id:
+        district = dealer_districts.filter(id=district_id).first()
+        if not district:
+            return None, "This district is not assigned to your dealership."
+        return district, None
+
+    count = dealer_districts.count()
+    if count == 1:
+        return dealer_districts.first(), None
+    if count == 0:
+        return None, "No active district is assigned to your dealership."
+    return None, "Please select a district — your dealership covers more than one."
+
+
+def _resolve_vehicle_category(veh_class):
+    """
+    Match Vahan's vehClass against Settings_VehicleCategory by name.
+
+    Deliberately does NOT create a missing category. That model requires
+    maxSpeed and warnSpeed, which Vahan does not send — and those values
+    drive the over-speed alerts that become violation reports. Guessing
+    them would produce wrong enforcement records, so a missing category
+    is an error a human resolves once.
+
+    Returns (category, error_message).
+    """
+    veh_class = (veh_class or '').strip()
+    if not veh_class:
+        return None, "Vahan did not return a vehicle class."
+
+    category = Settings_VehicleCategory.objects.filter(category__iexact=veh_class).first()
+    if not category:
+        return None, (
+            f"Vehicle category '{veh_class}' is not set up in the system. "
+            "Please ask an administrator to add it with the correct speed limits."
+        )
+    return category, None
+
+
+def _build_temp_reg_no(district, chassis_no):
+    """
+    Build a temporary registration number for a vehicle that has not been
+    registered yet.
+
+        district_code + 'Tmp' + last 4 characters of the chassis number
+        e.g. AS01 + Tmp + 8595  ->  AS01Tmp8595
+
+    Returns (temp_reg_no, error_message).
+    """
+    code = (getattr(district, 'district_code', '') or '').strip().upper()
+    if not code:
+        return None, "This district has no district code configured."
+
+    chassis = (chassis_no or '').strip()
+    if len(chassis) < TEMP_REG_NO_CHASSIS_DIGITS:
+        return None, "Chassis number from Vahan is too short to build a temporary registration number."
+
+    temp_reg_no = f"{code}{TEMP_REG_NO_MARKER}{chassis[-TEMP_REG_NO_CHASSIS_DIGITS:].upper()}"
+
+    # vehicle_reg_no is unique on DeviceTag, so a collision would only
+    # surface at the step 5 commit. Catch it here instead.
+    if DeviceTag.objects.filter(vehicle_reg_no=temp_reg_no).exists():
+        return None, f"Temporary registration number {temp_reg_no} is already in use."
+    if DeviceStockMaster.objects.filter(vahan_reg_no=temp_reg_no, is_deleted=False).exists():
+        return None, f"Temporary registration number {temp_reg_no} is already in use."
+
+    return temp_reg_no, None
+
+ 
 # =====================================================================
-# SECTION 4 — skytron_api/views.py
+# SECTION 4 
 # STEP 1 API
 # =====================================================================
  
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
+@parser_classes([MultiPartParser, FormParser])
 @transaction.atomic
 def device_tagging_step1_create(request):
     """
     POST /api/device-tagging/step1/
- 
+
+    Content-Type: multipart/form-data (an RC file is uploaded).
+
     Validates the dealer's inputs, looks the vehicle up on Vahan, and
     creates the DeviceStockMaster record.
- 
+
     Nothing is written to the database until Vahan returns successfully
     and its response is confirmed complete.
     """
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
- 
     # ── Check 1: caller is a dealer ──────────────────────────────────
     dealer, error = _get_tagging_dealer(request)
     if error:
         return error
- 
+
     manufacturer_id = request.data.get('manufacturer_id')
     model_id = request.data.get('model_id')
     esim_provider_id = request.data.get('esim_provider_id')
+    district_id = request.data.get('district_id')
     imei = str(request.data.get('imei') or '').strip()
     iccid = str(request.data.get('iccid') or '').strip()
     owner_phone_number = str(request.data.get('owner_phone_number') or '').strip()
- 
+
     field_errors = {}
     if not manufacturer_id:
         field_errors['manufacturer_id'] = 'This field is required.'
@@ -39672,10 +39761,12 @@ def device_tagging_step1_create(request):
         field_errors['iccid'] = 'iccid must be 18 to 22 numeric digits.'
     if not owner_phone_number:
         field_errors['owner_phone_number'] = 'This field is required.'
- 
+    if not request.FILES.get('rc_file'):
+        field_errors['rc_file'] = 'RC document is required.'
+
     if field_errors:
         return Response({'errors': field_errors}, status=status.HTTP_400_BAD_REQUEST)
- 
+
     # ── Check 2: dealer is under the given manufacturer ──────────────
     if str(dealer.manufacturer_id) != str(manufacturer_id):
         return Response(
@@ -39683,11 +39774,13 @@ def device_tagging_step1_create(request):
             status=status.HTTP_400_BAD_REQUEST
         )
     manufacturer = dealer.manufacturer
- 
-    # ── Check 3: model belongs to that manufacturer ──────────────────
-    # DeviceModel has no FK to Manufacturer — the link is through
-    # created_by. Uses users.all(), NOT users.first(), so models created
-    # by a second manufacturer user are not silently missed.
+
+    # ── Check 3: district ────────────────────────────────────────────
+    district, district_error = _resolve_tagging_district(dealer, district_id)
+    if district_error:
+        return Response({"error": district_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Check 4: model belongs to that manufacturer ──────────────────
     device_model = DeviceModel.objects.filter(
         id=model_id,
         created_by__in=manufacturer.users.all()
@@ -39697,8 +39790,8 @@ def device_tagging_step1_create(request):
             {"error": "This device model does not belong to your manufacturer."},
             status=status.HTTP_400_BAD_REQUEST
         )
- 
-    # ── Check 4: model's technical onboarding is complete ────────────
+
+    # ── Check 5: model's technical onboarding is complete ────────────
     onboarding_done = DeviceModelTechnicalOnboardingRequest.objects.filter(
         device_model_id=device_model.id,
         status='StateAdminApproved'
@@ -39708,24 +39801,23 @@ def device_tagging_step1_create(request):
             {"error": "Technical onboarding for this device model is not complete."},
             status=status.HTTP_400_BAD_REQUEST
         )
- 
-    # ── Check 5: eSIM provider is listed against the model ───────────
+
+    # ── Check 6: eSIM provider is listed against the model ───────────
     esim_provider = device_model.eSimProviders.filter(id=esim_provider_id).first()
     if not esim_provider:
         return Response(
             {"error": "This eSIM provider is not listed against the given device model."},
             status=status.HTTP_400_BAD_REQUEST
         )
- 
-    # ── Check 6: provider has passed technical onboarding ────────────
+
+    # ── Check 7: provider has passed technical onboarding ────────────
     if not esim_provider.m2m_api_verified:
         return Response(
             {"error": "This eSIM provider has not completed M2M technical onboarding."},
             status=status.HTTP_400_BAD_REQUEST
         )
- 
-    # ── Check 7: duplicates among NON-DELETED rows ───────────────────
-    # No unique constraint on DeviceStockMaster — this is a query check.
+
+    # ── Check 8: duplicates among NON-DELETED rows ───────────────────
     duplicate = DeviceStockMaster.objects.filter(
         Q(imei=imei) | Q(iccid=iccid),
         is_deleted=False
@@ -39738,9 +39830,7 @@ def device_tagging_step1_create(request):
         else:
             msg = "This ICCID is already in the tagging process."
         return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
- 
-    # Also check DeviceStock — those columns are unique at DB level, so a
-    # clash there would only surface at the Step 5 commit otherwise.
+
     if DeviceStock.objects.filter(imei=imei).exists():
         return Response(
             {"error": "This IMEI already exists in device stock."},
@@ -39751,8 +39841,8 @@ def device_tagging_step1_create(request):
             {"error": "This ICCID already exists in device stock."},
             status=status.HTTP_400_BAD_REQUEST
         )
- 
-    # ── Check 8: owner phone resolves to an active vehicle owner ─────
+
+    # ── Check 9: owner phone resolves to an active vehicle owner ─────
     vehicle_owner = VehicleOwner.objects.filter(
         users__mobile=owner_phone_number,
         users__status='active'
@@ -39762,17 +39852,16 @@ def device_tagging_step1_create(request):
             {"error": "No active vehicle owner found for this phone number."},
             status=status.HTTP_400_BAD_REQUEST
         )
- 
-    # ── Check 9: Vahan lookup — nothing saved before this succeeds ───
+
+    # ── Check 10: Vahan lookup — nothing saved before this succeeds ──
     vahan_data, vahan_error = call_vahan_api(imei, iccid)
     if vahan_error:
         return Response({"error": vahan_error}, status=status.HTTP_400_BAD_REQUEST)
- 
-    # ── Check 10: Vahan response carries every mandatory field ───────
+
     response_error = _validate_vahan_response(vahan_data)
     if response_error:
         return Response({"error": response_error}, status=status.HTTP_400_BAD_REQUEST)
- 
+
     # ── Check 11: Vahan ICCID must match the dealer's input ──────────
     vahan_iccid = str(vahan_data.get('iccId') or '').strip()
     if vahan_iccid and vahan_iccid != iccid:
@@ -39784,22 +39873,17 @@ def device_tagging_step1_create(request):
             },
             status=status.HTTP_400_BAD_REQUEST
         )
- 
-    # ── Check 12: vehicle identifiers not already tagged ─────────────
-    # vehicle_reg_no / engine_no / chassis_no are unique on DeviceTag.
-    # Checking now means the dealer fails here instead of after Step 5.
+
     reg_no = str(vahan_data.get('regNo') or '').strip()
     engine_no = str(vahan_data.get('engineNo') or '').strip()
     chassis_no = str(vahan_data.get('chassisNo') or '').strip()
- 
-    if reg_no and DeviceTag.objects.filter(vehicle_reg_no=reg_no).exists():
+
+    # ── Check 12: vehicle not already in the system ──────────────────
+    # Chassis number is the reliable identifier — registration number is
+    # not collected on the form and may not exist yet.
+    if DeviceStockMaster.objects.filter(vahan_chassis_no=chassis_no, is_deleted=False).exists():
         return Response(
-            {"error": f"Vehicle registration number {reg_no} is already tagged to a device."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    if DeviceTag.objects.filter(engine_no=engine_no).exists():
-        return Response(
-            {"error": "This engine number is already tagged to a device."},
+            {"error": "This chassis number is already in the tagging process."},
             status=status.HTTP_400_BAD_REQUEST
         )
     if DeviceTag.objects.filter(chassis_no=chassis_no).exists():
@@ -39807,7 +39891,40 @@ def device_tagging_step1_create(request):
             {"error": "This chassis number is already tagged to a device."},
             status=status.HTTP_400_BAD_REQUEST
         )
- 
+    if DeviceTag.objects.filter(engine_no=engine_no).exists():
+        return Response(
+            {"error": "This engine number is already tagged to a device."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if reg_no and DeviceTag.objects.filter(vehicle_reg_no=reg_no).exists():
+        return Response(
+            {"error": f"Vehicle registration number {reg_no} is already tagged to a device."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ── Check 13: vehicle category ───────────────────────────────────
+    category, category_error = _resolve_vehicle_category(vahan_data.get('vehClass'))
+    if category_error:
+        return Response({"error": category_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Check 14: registration number, real or temporary ─────────────
+    is_temp_reg_no = False
+    if not reg_no:
+        # Vehicle is not registered yet — build a temporary number so the
+        # unique column on DeviceTag can still be satisfied at step 5.
+        reg_no, temp_error = _build_temp_reg_no(district, chassis_no)
+        if temp_error:
+            return Response({"error": temp_error}, status=status.HTTP_400_BAD_REQUEST)
+        is_temp_reg_no = True
+
+    # ── Check 15: RC file upload ─────────────────────────────────────
+    rc_file_path = save_file(request, 'rc_file', 'fileuploads/rc_files')
+    if not rc_file_path:
+        return Response(
+            {"error": "Invalid RC file. Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     # ── All checks passed — save ─────────────────────────────────────
     now = timezone.now()
     record = DeviceStockMaster.objects.create(
@@ -39816,9 +39933,12 @@ def device_tagging_step1_create(request):
         device_model=device_model,
         esim_provider=esim_provider,
         vehicle_owner=vehicle_owner,
+        district=district,
+        category=category,
+        rc_file=rc_file_path,
         imei=imei,
         iccid=iccid,
- 
+
         vahan_chassis_no=chassis_no,
         vahan_date_of_registration=_parse_vahan_date(vahan_data.get('dateOfRegistration')),
         vahan_device_activation_status=vahan_data.get('deviceActivationStatus'),
@@ -39832,17 +39952,18 @@ def device_tagging_step1_create(request):
         vahan_model_name=vahan_data.get('modelName'),
         vahan_owner_name=vahan_data.get('ownerName'),
         vahan_reg_no=reg_no,
+        is_temp_reg_no=is_temp_reg_no,
         vahan_tac_no=vahan_data.get('tacNo'),
         vahan_tac_valid_upto=_parse_vahan_date(vahan_data.get('tacValidUpto')),
         vahan_veh_class=vahan_data.get('vehClass'),
         vahan_raw_response=vahan_data,
- 
+
         current_step=2,
         step1_completed_at=now,
         created_by=request.user,
         updated_by=request.user,
     )
- 
+
     return Response({
         "status": "success",
         "message": "Step 1 completed successfully. Vehicle details saved.",
@@ -39854,7 +39975,15 @@ def device_tagging_step1_create(request):
             "manufacturer": {"id": manufacturer.id, "company_name": manufacturer.company_name},
             "device_model": {"id": device_model.id, "model_name": device_model.model_name},
             "esim_provider": {"id": esim_provider.id, "company_name": esim_provider.company_name},
+            "district": {
+                "id": district.id,
+                "district": district.district,
+                "district_code": district.district_code,
+            },
+            "category": {"id": category.id, "category": category.category},
             "vehicle_owner_id": vehicle_owner.id,
+            "rc_file": record.rc_file,
+            "is_temp_reg_no": record.is_temp_reg_no,
             "vahan": {
                 "chassis_no": record.vahan_chassis_no,
                 "date_of_registration": record.vahan_date_of_registration,
@@ -39876,6 +40005,7 @@ def device_tagging_step1_create(request):
             "step1_completed_at": record.step1_completed_at,
         }
     }, status=status.HTTP_200_OK)
+
  
  
 # =====================================================================
@@ -40139,7 +40269,7 @@ def _tagging_otp_matches(stored_otp, submitted_otp):
  
  
 # =====================================================================
-# SECTION 4 — skytron_api/views.py
+# SECTION 4 
 # STEP 3 — RESEND DEALER OTP
 # =====================================================================
  
@@ -40215,7 +40345,7 @@ def device_tagging_step3_resend_otp(request):
  
  
 # =====================================================================
-# SECTION 5 — skytron_api/views.py
+# SECTION 5 
 # STEP 3 — VERIFY DEALER OTP
 # =====================================================================
  
@@ -40347,8 +40477,7 @@ TAGGING_REQUIRED_PACKETS = list(TAGGING_PACKET_TYPES)
  
  
 # =====================================================================
-# SECTION 2 — skytron_api/views.py
-# Packet matchers. Paste above the step 4 view.
+# SECTION 2
 # =====================================================================
  
 def _normalise_packet(raw):
@@ -40476,7 +40605,7 @@ def _extract_pvt_lat_lon(raw):
  
  
 # =====================================================================
-# SECTION 3 — skytron_api/views.py
+# SECTION 3
 # STEP 4 API
 # =====================================================================
  

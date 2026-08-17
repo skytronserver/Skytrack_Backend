@@ -5055,6 +5055,26 @@ class DeviceStockMaster(models.Model):
  
     imei = models.CharField(max_length=55, db_index=True)
     iccid = models.CharField(max_length=55, db_index=True)
+    
+    
+    # RC document, uploaded with the step 1 form. Stores the MinIO
+    # object path, same as every other file field in the project.
+    rc_file = models.CharField(max_length=255)
+
+    # District the vehicle is being registered in. Supplies the code
+    # used to build a temporary registration number.
+    district = models.ForeignKey('Settings_District', on_delete=models.PROTECT,related_name='stock_master_entries')
+
+    # Resolved from Vahan's vehClass.
+    category = models.ForeignKey(
+         'Settings_VehicleCategory', on_delete=models.PROTECT,
+         related_name='stock_master_entries'
+    )
+
+    # True when vahan_reg_no holds a temporary number we generated
+    # because the vehicle is not yet registered. These records need
+    # their real number filling in later.
+    is_temp_reg_no = models.BooleanField(default=False, db_index=True)
  
     # ── Group B: Vahan response (Step 1) — all mandatory ─────────────
     vahan_chassis_no = models.CharField(max_length=100)
