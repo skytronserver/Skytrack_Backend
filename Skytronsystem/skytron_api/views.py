@@ -28651,8 +28651,7 @@ from django.db.models import Avg, F, ExpressionWrapper, DateTimeField
 from django.db.models.functions import ExtractHour, ExtractMinute, ExtractSecond , TruncDate
 from rest_framework.decorators import parser_classes
 from rest_framework.parsers import MultiPartParser, FormParser
-
-
+from datetime import time as dtime
 
 import mimetypes
 import secrets
@@ -40769,7 +40768,69 @@ def device_tagging_step4_packet_check(request):
     }, status=status.HTTP_200_OK)
  
   
-  
+def _get_owner_mobile(vehicle_owner):
+    """Registered mobile of the vehicle owner's active user account."""
+    owner_user = vehicle_owner.users.filter(status='active').first()
+    if not owner_user or not owner_user.mobile:
+        return None, None
+    return owner_user.mobile, getattr(owner_user, 'email', None)
+
+
+def _check_step5_prerequisites(record):
+    """
+    The three checks the TL specified before the owner OTP is sent:
+
+      1. all required GPS packets were received
+      2. that check is still inside the freshness window
+      3. every earlier step completed properly
+
+    Returns an error message, or None when the record is ready.
+    """
+    if not record.step1_completed_at:
+        return "Step 1 is not complete for this entry."
+    if not record.step2_completed_at:
+        return "Step 2 is not complete for this entry."
+    if not record.step3_completed_at or not record.dealer_otp_verified_at:
+        return "Dealer OTP has not been verified for this entry."
+    if not record.step4_completed_at:
+        return "Step 4 is not complete for this entry."
+
+    if not record.packets_all_received:
+        return "Required GPS packets have not been received. Please complete step 4 again."
+
+    if not record.packets_checked_at:
+        return "GPS packets have not been checked. Please complete step 4 again."
+
+    age = timezone.now() - record.packets_checked_at
+    if age > timedelta(hours=GPS_PACKET_FRESHNESS_HOURS):
+        return (
+            f"The GPS packet check is more than {GPS_PACKET_FRESHNESS_HOURS} hours old. "
+            "Please run step 4 again before requesting the owner OTP."
+        )
+
+    return None
+
+
+def _as_end_of_day(d):
+    """
+    DeviceStock.esim_validity is a DateTimeField but the provider gives a
+    date. Store end of that day so a SIM is not treated as expired on its
+    own expiry date.
+    """
+    if not d:
+        return None
+    naive = datetime.combine(d, dtime(23, 59, 59))
+    return timezone.make_aware(naive) if timezone.is_naive(naive) else naive
+
+
+def _blank_to_none(value):
+    """
+    Several DeviceStock columns are unique AND nullable (msisdn2, iccid2).
+    Storing '' in them would collide between any two devices with no
+    fallback SIM, so blanks must become NULL.
+    """
+    value = (value or '').strip()
+    return value or None
   
 # =====================================================================
 # SECTION 4 
@@ -40862,8 +40923,8 @@ def device_tagging_step5_send_owner_otp(request):
  
  
 # =====================================================================
-# SECTION 5 — skytron_api/views.py
-# STEP 5 — VERIFY OWNER OTP + FINAL COMMIT
+# SECTION 5 
+# STEP 5
 # =====================================================================
  
 @api_view(['POST'])
