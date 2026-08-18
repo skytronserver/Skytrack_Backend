@@ -1092,4 +1092,8 @@ urlpatterns += [
     path('device-tagging/step5/send-otp/',   device_tagging_step5_send_owner_otp,   name='device-tagging-step5-send'),
     path('device-tagging/step5/verify-otp/', device_tagging_step5_verify_owner_otp, name='device-tagging-step5-verify'),
     
+    
+    path('device-tagging/my-entries/',      device_tagging_my_entries,      name='device-tagging-my-entries'),
+    path('device-tagging/my-manufacturer/', device_tagging_my_manufacturer, name='device-tagging-my-manufacturer'),
+    
 ]

@@ -41146,4 +41146,334 @@ def device_tagging_step5_verify_owner_otp(request):
             },
         }
     }, status=status.HTTP_200_OK)
- 
+
+
+
+
+
+
+
+
+
+# =====================================================================
+# TAGGING FLOW — SUPPORTING APIs
+# =====================================================================
+#   1. My entries with step status  (drives the resume feature)
+#   2. My manufacturer / models / providers  (feeds step 1 dropdowns)
+#
+# No model changes needed.
+# =====================================================================
+
+
+# =====================================================================
+# SECTION 1 — skytron_api/views.py
+# Add to the tagging constants block.
+# =====================================================================
+
+# Human-readable label for each step a record can be sitting at.
+TAGGING_STEP_LABELS = {
+    2: 'eSIM verification pending',
+    3: 'Dealer OTP pending',
+    4: 'GPS packet check pending',
+    5: 'Owner OTP pending',
+    6: 'Completed',
+}
+
+# Default and maximum page size for the entries list.
+TAGGING_LIST_PAGE_SIZE = 25
+TAGGING_LIST_MAX_PAGE_SIZE = 100
+
+
+# =====================================================================
+# SECTION 2 — skytron_api/views.py
+# Helper. Paste with the other tagging helpers.
+# =====================================================================
+
+def _tagging_step_progress(record):
+    """
+    Which steps are done and which are still pending for one record.
+
+    Reported from the per-step completion timestamps rather than from
+    current_step alone, so the response shows the actual audit trail.
+    """
+    completed_at = {
+        1: record.step1_completed_at,
+        2: record.step2_completed_at,
+        3: record.step3_completed_at,
+        4: record.step4_completed_at,
+        5: record.step5_completed_at,
+    }
+
+    steps = []
+    for number in range(1, 6):
+        steps.append({
+            'step': number,
+            'completed': bool(completed_at[number]),
+            'completed_at': completed_at[number],
+        })
+
+    return {
+        'steps': steps,
+        'completed_steps': [n for n in range(1, 6) if completed_at[n]],
+        'pending_steps': [n for n in range(1, 6) if not completed_at[n]],
+    }
+
+
+# =====================================================================
+# SECTION 3 — skytron_api/views.py
+# SUPPORTING API 1 — MY ENTRIES WITH STEP STATUS
+# =====================================================================
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def device_tagging_my_entries(request):
+    """
+    GET or POST /api/device-tagging/my-entries/
+
+    Every non-deleted DeviceStockMaster entry created by the calling
+    dealer, with which steps are complete and which are still pending.
+
+    This is what makes the flow resumable: a dealer who abandoned tagging
+    halfway can see exactly where each entry stopped and continue from
+    there, instead of starting again.
+
+    Optional filters (query string on GET, body on POST):
+        current_step  int   only entries sitting at this step
+        is_completed  bool  true = finished, false = still in progress
+        imei          str   partial match
+        iccid         str   partial match
+        vehicle_reg_no str  partial match
+        page          int   default 1
+        page_size     int   default 25, max 100
+    """
+    dealer, error = _get_tagging_dealer(request)
+    if error:
+        return error
+
+    params = request.data if request.method == 'POST' else request.query_params
+
+    entries = DeviceStockMaster.objects.filter(
+        created_by=request.user,
+        is_deleted=False,
+    ).select_related(
+        'manufacturer', 'device_model', 'esim_provider',
+        'district', 'category', 'vehicle_owner',
+        'created_device_stock', 'created_device_tag',
+    ).order_by('-created_at')
+
+    # ── Filters ──────────────────────────────────────────────────────
+    current_step = params.get('current_step')
+    if current_step not in (None, ''):
+        try:
+            entries = entries.filter(current_step=int(current_step))
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "current_step must be a number between 2 and 6."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    is_completed = params.get('is_completed')
+    if is_completed not in (None, ''):
+        wants_completed = str(is_completed).strip().lower() in ('true', '1', 'yes')
+        if wants_completed:
+            entries = entries.filter(current_step=6)
+        else:
+            entries = entries.exclude(current_step=6)
+
+    imei = str(params.get('imei') or '').strip()
+    if imei:
+        entries = entries.filter(imei__icontains=imei)
+
+    iccid = str(params.get('iccid') or '').strip()
+    if iccid:
+        entries = entries.filter(iccid__icontains=iccid)
+
+    reg_no = str(params.get('vehicle_reg_no') or '').strip()
+    if reg_no:
+        entries = entries.filter(vahan_reg_no__icontains=reg_no)
+
+    # ── Counts per step, before pagination ───────────────────────────
+    # Lets the UI show "3 waiting on owner OTP" without a second request.
+    step_counts = {label: 0 for label in TAGGING_STEP_LABELS.values()}
+    raw_counts = entries.values('current_step').annotate(total=Count('id'))
+    for row in raw_counts:
+        label = TAGGING_STEP_LABELS.get(row['current_step'])
+        if label:
+            step_counts[label] = row['total']
+
+    total_count = entries.count()
+
+    # ── Pagination ───────────────────────────────────────────────────
+    try:
+        page = max(1, int(params.get('page') or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(params.get('page_size') or TAGGING_LIST_PAGE_SIZE)
+    except (TypeError, ValueError):
+        page_size = TAGGING_LIST_PAGE_SIZE
+    page_size = max(1, min(page_size, TAGGING_LIST_MAX_PAGE_SIZE))
+
+    start = (page - 1) * page_size
+    page_entries = entries[start:start + page_size]
+
+    # ── Build the response ───────────────────────────────────────────
+    data = []
+    for record in page_entries:
+        progress = _tagging_step_progress(record)
+        data.append({
+            'id': record.id,
+            'current_step': record.current_step,
+            'current_step_label': TAGGING_STEP_LABELS.get(record.current_step),
+            'is_completed': record.current_step == 6,
+            'imei': record.imei,
+            'iccid': record.iccid,
+            'vehicle_reg_no': record.vahan_reg_no,
+            'is_temp_reg_no': record.is_temp_reg_no,
+            'chassis_no': record.vahan_chassis_no,
+            'manufacturer': {
+                'id': record.manufacturer_id,
+                'company_name': record.manufacturer.company_name,
+            },
+            'device_model': {
+                'id': record.device_model_id,
+                'model_name': record.device_model.model_name,
+            },
+            'esim_provider': {
+                'id': record.esim_provider_id,
+                'company_name': record.esim_provider.company_name,
+            },
+            'district': {
+                'id': record.district_id,
+                'district': record.district.district,
+                'district_code': record.district.district_code,
+            },
+            'category': {
+                'id': record.category_id,
+                'category': record.category.category,
+            },
+            'packets_all_received': record.packets_all_received,
+            'packets_checked_at': record.packets_checked_at,
+            'steps': progress['steps'],
+            'completed_steps': progress['completed_steps'],
+            'pending_steps': progress['pending_steps'],
+            'created_device_stock_id': record.created_device_stock_id,
+            'created_device_tag_id': record.created_device_tag_id,
+            'created_at': record.created_at,
+            'updated_at': record.updated_at,
+        })
+
+    total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+
+    return Response({
+        'status': 'success',
+        'data': data,
+        'summary': {
+            'total_entries': total_count,
+            'by_step': step_counts,
+        },
+        'pagination': {
+            'page': page,
+            'page_size': page_size,
+            'total_count': total_count,
+            'total_pages': total_pages,
+            'has_next': page < total_pages,
+            'has_previous': page > 1,
+        },
+    }, status=status.HTTP_200_OK)
+
+
+# =====================================================================
+# SECTION 4 — skytron_api/views.py
+# SUPPORTING API 2 — MY MANUFACTURER / MODELS / PROVIDERS
+# =====================================================================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def device_tagging_my_manufacturer(request):
+    """
+    GET /api/device-tagging/my-manufacturer/
+
+    No input. Returns the calling dealer's manufacturer, that
+    manufacturer's device models whose technical onboarding is complete,
+    and each model's M2M / eSIM providers.
+
+    Feeds the dropdowns on the step 1 form, so it only lists options that
+    would actually pass step 1's validation.
+    """
+    dealer, error = _get_tagging_dealer(request)
+    if error:
+        return error
+
+    manufacturer = dealer.manufacturer
+
+    # DeviceModel has no FK to Manufacturer — the link is through
+    # created_by. users.all(), not users.first(), so models created by a
+    # second manufacturer user are not silently missed.
+    models_qs = DeviceModel.objects.filter(
+        created_by__in=manufacturer.users.all()
+    ).prefetch_related('eSimProviders').order_by('model_name')
+
+    # One query for every approved onboarding, rather than one per model.
+    approved_model_ids = set(
+        DeviceModelTechnicalOnboardingRequest.objects.filter(
+            device_model__in=models_qs,
+            status='StateAdminApproved',
+        ).values_list('device_model_id', flat=True)
+    )
+
+    models_data = []
+    for device_model in models_qs:
+        if device_model.id not in approved_model_ids:
+            continue
+
+        providers = []
+        for provider in device_model.eSimProviders.all():
+            providers.append({
+                'id': provider.id,
+                'company_name': provider.company_name,
+                # A provider that has not passed M2M onboarding will be
+                # rejected at step 1, so the UI can grey it out.
+                'm2m_api_verified': bool(provider.m2m_api_verified),
+                'm2m_technical_onboarding_status': provider.m2m_technical_onboarding_status,
+            })
+
+        models_data.append({
+            'id': device_model.id,
+            'model_name': device_model.model_name,
+            'vendor_id': device_model.vendor_id,
+            'tac_no': device_model.tac_no,
+            'hardware_version': device_model.hardware_version,
+            'technical_onboarding_complete': True,
+            'esim_providers': providers,
+        })
+
+    districts = [
+        {
+            'id': d.id,
+            'district': d.district,
+            'district_code': d.district_code,
+        }
+        for d in dealer.districts.filter(status='active').order_by('district')
+    ]
+
+    return Response({
+        'status': 'success',
+        'data': {
+            'dealer': {
+                'id': dealer.id,
+                'company_name': dealer.company_name,
+            },
+            'manufacturer': {
+                'id': manufacturer.id,
+                'company_name': manufacturer.company_name,
+            },
+            # Step 1 needs a district when the dealer covers more than one.
+            'districts': districts,
+            'district_required': len(districts) > 1,
+            'device_models': models_data,
+        },
+    }, status=status.HTTP_200_OK)
+
