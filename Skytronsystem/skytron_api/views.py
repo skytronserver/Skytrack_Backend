@@ -2844,6 +2844,67 @@ def gps_track_data_api(request ):
 
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
+def gps_by_imei(request):
+    """
+    Public API: Get the latest GPS data for a device by IMEI.
+
+    GET /api/gps_by_imei/?imei=<15-digit-imei>
+
+    Returns the latest GPS packet for the device along with basic vehicle info.
+    No authentication required.
+    """
+    imei = (request.GET.get('imei') or '').strip()
+
+    if not imei:
+        return JsonResponse({'error': 'imei query parameter is required.'}, status=400)
+
+    if not imei.isdigit() or len(imei) != 15:
+        return JsonResponse({'error': 'imei must be exactly 15 digits.'}, status=400)
+
+    device_tag = DeviceTag.objects.filter(
+        device__imei=imei,
+        status='Owner_Final_OTP_Verified',
+    ).select_related('device', 'vehicle_owner', 'category', 'district', 'district__state').first()
+
+    if not device_tag:
+        return JsonResponse({'error': 'Device not found or not active.'}, status=404)
+
+    gps = (
+        GPSData.objects
+        .filter(device_tag=device_tag, gps_status='1')
+        .order_by('-entry_time', '-id')
+        .values(
+            'entry_time', 'packet_datetime', 'latitude', 'longitude',
+            'speed', 'heading', 'altitude', 'satellites',
+            'gps_status', 'ignition_status', 'main_power_status',
+            'emergency_status', 'network_operator', 'gsm_signal_strength',
+            'odometer', 'city', 'road', 'district', 'state',
+        )
+        .first()
+    )
+
+    owner_name = None
+    if device_tag.vehicle_owner:
+        u = device_tag.vehicle_owner.users.first()
+        if u:
+            owner_name = getattr(u, 'name', None) or getattr(u, 'mobile', None)
+
+    return JsonResponse({
+        'imei': imei,
+        'vehicle_reg_no': device_tag.vehicle_reg_no,
+        'vehicle_make': device_tag.vehicle_make,
+        'vehicle_model': device_tag.vehicle_model,
+        'category': device_tag.category.category if device_tag.category else None,
+        'owner_name': owner_name,
+        'district': device_tag.district.district if device_tag.district else None,
+        'state': device_tag.district.state.state if (device_tag.district and device_tag.district.state) else None,
+        'latest_gps': gps,
+    })
+
+
 @csrf_exempt   
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
@@ -11950,7 +12011,243 @@ def GetVahanAPIInfo(request):
             }, status=400)
 
 
- 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
+def vahan_by_imei(request):
+    """
+    Public GET API: Fetch VLTD info from Parivahan staging API by IMEI.
+
+    GET /api/pub/vahan_by_imei/?imei=861850060253610
+
+    Returns all 16 fields from VltdDetailsDobj as a clean JSON object.
+    No authentication required.
+    """
+    imei = (request.GET.get('imei') or '').strip()
+
+    if not imei:
+        return JsonResponse({'error': 'imei query parameter is required.'}, status=400)
+    if not imei.isdigit() or len(imei) != 15:
+        return JsonResponse({'error': 'imei must be exactly 15 digits.'}, status=400)
+
+    url = "https://staging.parivahan.gov.in/vltdmakerws/dataportws?wsdl"
+    payload = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.web.homologation.transport.nic/">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <ser:getVltdInfoByIMEI>
+         <userId>asbackendtest</userId>
+         <transactionPass>Asbackend@123</transactionPass>
+         <imeiNo>{imei}</imeiNo>
+      </ser:getVltdInfoByIMEI>
+   </soapenv:Body>
+</soapenv:Envelope>"""
+    headers = {'Content-Type': 'text/xml; charset=utf-8'}
+
+    try:
+        response = requests.post(url, headers=headers, data=payload, timeout=10)
+        response.raise_for_status()
+
+        root = ET.fromstring(response.text)
+        namespace = {
+            'S': 'http://schemas.xmlsoap.org/soap/envelope/',
+            'ns2': 'http://service.web.homologation.transport.nic/',
+        }
+        return_tag = root.find('.//ns2:getVltdInfoByIMEIResponse/return', namespace)
+
+        if return_tag is None or not return_tag.text:
+            return JsonResponse({'error': 'No data returned from Parivahan API.'}, status=404)
+
+        # Check for error messages like "Invalid IMEI"
+        raw_text = return_tag.text.strip()
+        if not raw_text.startswith('<') and not raw_text.startswith('&lt;'):
+            return JsonResponse({'error': raw_text}, status=404)
+
+        inner_xml = html.unescape(raw_text)
+        inner_root = ET.fromstring(inner_xml)
+        data = {child.tag: child.text for child in inner_root}
+
+        return JsonResponse({
+            'imei': imei,
+            'source': 'parivahan',
+            'data': {
+                'chassisNo':              data.get('chassisNo'),
+                'dateOfRegistration':     data.get('dateOfRegistration'),
+                'deviceActivationStatus': data.get('deviceActivationStatus'),
+                'deviceSerialno':         data.get('deviceSerialno'),
+                'engineNo':               data.get('engineNo'),
+                'fitmentCentreName':      data.get('fitmentCentreName'),
+                'gnssConstellationCode':  data.get('gnssConstellationCode'),
+                'iccId':                  data.get('iccId'),
+                'imeiNo':                 data.get('imeiNo'),
+                'makerName':              data.get('makerName'),
+                'modelName':              data.get('modelName'),
+                'ownerName':              data.get('ownerName'),
+                'regnNo':                 data.get('regnNo'),
+                'tacNo':                  data.get('tacNo'),
+                'tacValidUpto':           data.get('tacValidUpto'),
+                'vehClass':               data.get('vehClass'),
+            }
+        }, status=200)
+
+    except requests.exceptions.Timeout:
+        return JsonResponse({'error': 'Parivahan API timed out. Please try again.'}, status=504)
+    except Exception as e:
+        logger.warning(f"Parivahan vahan_by_imei error for {imei}: {e}")
+        return JsonResponse({'error': 'Parivahan API unavailable. Please try again later.'}, status=503)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
+def vahan_by_regno(request):
+    """
+    Public GET API: Fetch VLTD info from Parivahan using Registration Number + Chassis Number.
+
+    GET /api/pub/vahan_by_regno/?regno=AS01AB1234&chassis_no=MBJ11JV40074162900613
+    """
+    regno = (request.GET.get('regno') or '').strip().upper()
+    chassis_no = (request.GET.get('chassis_no') or '').strip().upper()
+
+    if not regno:
+        return JsonResponse({'error': 'regno query parameter is required.'}, status=400)
+    if not chassis_no:
+        return JsonResponse({'error': 'chassis_no query parameter is required.'}, status=400)
+
+    url = "https://staging.parivahan.gov.in/vltdmakerws/dataportws?wsdl"
+    payload = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.web.homologation.transport.nic/">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <ser:getVltdInfoByRegnNoAndChasisNo>
+         <userId>asbackendtest</userId>
+         <transactionPass>Asbackend@123</transactionPass>
+         <regnNo>{regno}</regnNo>
+         <chasisNo>{chassis_no}</chasisNo>
+      </ser:getVltdInfoByRegnNoAndChasisNo>
+   </soapenv:Body>
+</soapenv:Envelope>"""
+    headers = {'Content-Type': 'text/xml; charset=utf-8'}
+
+    try:
+        response = requests.post(url, headers=headers, data=payload, timeout=10)
+        response.raise_for_status()
+
+        root = ET.fromstring(response.text)
+        namespace = {
+            'S': 'http://schemas.xmlsoap.org/soap/envelope/',
+            'ns2': 'http://service.web.homologation.transport.nic/',
+        }
+        return_tag = root.find('.//ns2:getVltdInfoByRegnNoAndChasisNoResponse/return', namespace)
+
+        if return_tag is not None and return_tag.text:
+            inner_xml = html.unescape(return_tag.text)
+            inner_root = ET.fromstring(inner_xml)
+            vltd_details = xml_to_dict(inner_root)
+            json_output = json.dumps(vltd_details)
+            sanitized = json.loads(bleach.clean(json_output))
+            return JsonResponse({'source': 'parivahan', 'data': sanitized}, status=200)
+
+    except Exception as e:
+        logger.warning(f"Parivahan API (regno) error for {regno}: {e}")
+
+    return JsonResponse({
+        'source': 'parivahan',
+        'data': None,
+        'note': 'Parivahan API unavailable or no record found.',
+    }, status=200)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('vehicle_tagging', 'view')
+def GetVahanAPIInfoByRegnNo(request):
+    """
+    Fetch VLTD info from Parivahan staging API using Registration Number + Chassis Number.
+
+    POST body:
+      - regno    : vehicle registration number (e.g. AS01AB1234)
+      - chassis_no : chassis number (17-char VIN, e.g. MBJ11JV40074162900613)
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    regno = (request.data.get('regno') or request.data.get('vehicle_reg_no') or '').strip().upper()
+    chassis_no = (request.data.get('chassis_no') or request.data.get('chasisNo') or '').strip().upper()
+
+    if not regno:
+        return Response({'error': 'regno is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not chassis_no:
+        return Response({'error': 'chassis_no is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    url = "https://staging.parivahan.gov.in/vltdmakerws/dataportws?wsdl"
+    payload = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ser="http://service.web.homologation.transport.nic/">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <ser:getVltdInfoByRegnNoAndChasisNo>
+         <userId>asbackendtest</userId>
+         <transactionPass>Asbackend@123</transactionPass>
+         <regnNo>{regno}</regnNo>
+         <chasisNo>{chassis_no}</chasisNo>
+      </ser:getVltdInfoByRegnNoAndChasisNo>
+   </soapenv:Body>
+</soapenv:Envelope>"""
+    headers = {'Content-Type': 'text/xml; charset=utf-8'}
+
+    use_dummy_data = False
+    try:
+        response = requests.post(url, headers=headers, data=payload, timeout=10)
+        response.raise_for_status()
+
+        root = ET.fromstring(response.text)
+        namespace = {
+            'S': 'http://schemas.xmlsoap.org/soap/envelope/',
+            'ns2': 'http://service.web.homologation.transport.nic/',
+        }
+        return_tag = root.find('.//ns2:getVltdInfoByRegnNoAndChasisNoResponse/return', namespace)
+
+        if return_tag is None or not return_tag.text:
+            use_dummy_data = True
+        else:
+            inner_xml = html.unescape(return_tag.text)
+            inner_root = ET.fromstring(inner_xml)
+            vltd_details = xml_to_dict(inner_root)
+            json_output = json.dumps(vltd_details, indent=4)
+            sanitized_str = bleach.clean(json_output)
+            sanitized = json.loads(sanitized_str)
+            return JsonResponse({'vahan_data': sanitized, 'regno': regno, 'chassis_no': chassis_no}, status=200)
+
+    except (ET.ParseError, requests.RequestException, Exception) as e:
+        logger.warning(f"Parivahan API (regno) error for {regno}: {e}")
+        use_dummy_data = True
+
+    if use_dummy_data:
+        # Try to look up locally as a fallback
+        device_tag = DeviceTag.objects.filter(vehicle_reg_no__iexact=regno).select_related('device', 'vehicle_owner', 'category').first()
+        local_info = None
+        if device_tag:
+            local_info = {
+                'regnNo': device_tag.vehicle_reg_no,
+                'chassisNo': device_tag.chassis_no,
+                'engineNo': device_tag.engine_no,
+                'imeiNo': device_tag.device.imei if device_tag.device else None,
+                'makerName': device_tag.vehicle_make,
+                'modelName': device_tag.vehicle_model,
+                'vehClass': device_tag.category.category if getattr(device_tag, 'category', None) else None,
+            }
+        return JsonResponse({
+            'vahan_data': None,
+            'local_data': local_info,
+            'note': 'Parivahan API unavailable — local data returned where available.',
+            'regno': regno,
+            'chassis_no': chassis_no,
+        }, status=200)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
