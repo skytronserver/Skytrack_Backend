@@ -269,22 +269,25 @@ def get_active_session_count(user_id):
         # We'll use a workaround by storing a session count
         from django.core.cache import cache
         from django_redis import get_redis_connection
-        
+
         # Get Redis connection
         redis_conn = get_redis_connection("default")
-        
+
         # Get all keys matching pattern
         pattern = get_user_sessions_pattern(user_id)
         keys = redis_conn.keys(pattern)
-        
+
         count = len(keys) if keys else 0
         logger.debug(f"Active session count for user {user_id}: {count}")
         return count
-        
+
     except Exception as e:
         logger.error(f"Error getting active session count: {str(e)}")
-        # Fallback: return 0 to allow login if Redis fails
-        return 0
+        # Signal "unknown" with -1 rather than 0. Returning 0 here would make
+        # the concurrent-session limit fail OPEN (silently allow unlimited
+        # logins) whenever Redis is unreachable. Callers that enforce a
+        # max_simultaneous_sessions limit must treat -1 as "deny" (fail closed).
+        return -1
 
 
 # ==================== Validation Functions ====================
@@ -339,6 +342,12 @@ def validate_login_allowed(user_id, user_role):
         max_sessions = settings.get('max_simultaneous_sessions', 0)
         if max_sessions > 0:
             active_sessions = get_active_session_count(user_id)
+            if active_sessions < 0:
+                # Redis/session-count lookup failed - fail CLOSED for this
+                # specific check rather than silently allowing unlimited
+                # concurrent logins, since the limit can't be verified.
+                logger.error(f"Could not verify active session count for user {user_id}; denying login")
+                return False, "Unable to verify active session limit right now. Please try again shortly."
             if active_sessions >= max_sessions:
                 return False, f"Maximum simultaneous sessions ({max_sessions}) reached. Please logout from another device"
         

@@ -118,10 +118,13 @@ class SecureTokenManager:
         else:
             expiration_time = current_time + timedelta(seconds=self.default_access_token_lifetime)
         
-        # Create payload with user information and security features
+        # Create payload with the minimum claims needed for auth/authz.
+        # user_mobile is intentionally NOT embedded here even though callers
+        # still pass it in: the JWT payload is only Base64URL-encoded (readable
+        # by anyone holding the token), so PII must stay out of it. Callers
+        # that need the mobile number should look it up server-side via user_id.
         payload = {
             "user_id": user_id,
-            "user_mobile": user_mobile,
             "token_type": token_type,
             "iat": int(current_time.timestamp()),  # Issued at
             "exp": int(expiration_time.timestamp()),  # Expiration time

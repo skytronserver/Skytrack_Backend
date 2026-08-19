@@ -12319,7 +12319,7 @@ def TagVerifyOwnerOtp(request ):
     if device_tag:
         if timezone.now() > device_tag.otp_time + timedelta(hours=24):
             return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
-        if otp == device_tag.otp or otp=='685472':  
+        if otp == device_tag.otp or (settings.DEBUG and otp == '685472'):
             device_tag.status = 'Owner_OTP_Verified'
             device_tag.save()
             #add_sms_queue("ACTV,123456,+9194016334212",device_tag.device.msisdn1)
@@ -12358,7 +12358,7 @@ def TagVerifyOwnerOtpFinal(request ):
     if device_tag:
         if timezone.now() > device_tag.otp_time + timedelta(hours=24):
             return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
-        if otp == device_tag.otp or otp=='685472':  
+        if otp == device_tag.otp or (settings.DEBUG and otp == '685472'):
             device_tag.status = 'Owner_Final_OTP_Verified'
             
             device_tag.device.stock_status = 'Fitted'
@@ -12401,9 +12401,9 @@ def TagVerifyDealerOtp(request  ):
         if device_tag:
             if timezone.now() > device_tag.otp_time + timedelta(hours=24):
                 return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
-            if otp == device_tag.otp or otp=='685472':  
-                
-                #data = { 
+            if otp == device_tag.otp or (settings.DEBUG and otp == '685472'):
+
+                #data = {
                 #    'ceated_by':man,  
                 #    'status': 'pending',
                 #    'eSim_provider':device_tag.device.esim_provider,
@@ -14194,7 +14194,7 @@ def DeviceVerifyStateAdminOtp(request ):
     otp = request.data.get('otp')
     if timezone.now() > device_model.otp_time + timedelta(hours=24):
         return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
-    if device_model.otp!=otp and otp!="685472":
+    if device_model.otp != otp and not (settings.DEBUG and otp == "685472"):
             return JsonResponse({'error': "Invalid OTP"}, status=400)
 
 
@@ -14226,7 +14226,7 @@ def DeviceCreateManufacturerOtpVerify(request  ):
 
     if timezone.now() > device_model.otp_time + timedelta(hours=24):
         return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
-    if otp == device_model.otp or otp == '685472':
+    if otp == device_model.otp or (settings.DEBUG and otp == '685472'):
         device_model.status = 'Manufacturer_OTP_Verified'
         device_model.save()
         return Response({"message": "Manufacturer OTP verified successfully."}, status=200)
@@ -18440,13 +18440,49 @@ def is_valid_string(s):
         return True
     else:
         return False
-    
+
+def invalidate_user_sessions(user, reason="security"):
+    """
+    Blacklist every outstanding JWT and close every active Session for a user.
+    Called whenever the user's authentication state changes (password reset)
+    so tokens issued before the change stop working immediately, instead of
+    remaining valid until their original expiry.
+    """
+    from .login_settings_cache import remove_active_session
+
+    for session in Session.objects.filter(user=user).exclude(status='logout'):
+        token = session.token
+        if token:
+            try:
+                payload = decode_jwt_token(token)
+                if payload:
+                    jti = payload.get('jti', f"{reason}_{user.id}_{int(timezone.now().timestamp())}")
+                    expires_at = datetime.fromtimestamp(payload.get('exp', 0))
+                    TokenBlacklist.blacklist_token(
+                        token=token,
+                        user_id=user.id,
+                        jti=jti,
+                        expires_at=expires_at,
+                        reason=reason
+                    )
+            except Exception as e:
+                logger.error(f"Error blacklisting token for user {user.id}: {e}")
+            try:
+                remove_active_session(user.id, token)
+            except Exception:
+                pass
+        session.status = 'logout'
+        session.save(update_fields=['status'])
+
+    Token.objects.filter(user=user).delete()
+
+
 @csrf_exempt
 @api_view(['POST'])
 @throttle_classes([PasswordResetRateThrottle])  # 3 requests per minute, block IP for 5 min
 @permission_classes([AllowAny])
 @require_http_methods(['GET', 'POST'])
-def password_reset(request ): 
+def password_reset(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -18608,6 +18644,12 @@ def password_reset(request ):
         user.status='active'
         user.is_active = True
         user.save()
+
+        # Password changed: any token/session issued before this point must
+        # stop working immediately rather than remaining valid until its
+        # original expiry (prevents reuse of a token after the account's
+        # credentials have changed).
+        invalidate_user_sessions(user, reason="security")
 
         return Response({'message': 'Password reset successfully'})
 
@@ -18929,11 +18971,15 @@ def user_login(request ):
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
         
-        # Generate secure JWT token with custom expiry from login settings
+        # Generate secure JWT token with custom expiry from login settings.
+        # token_type="otp_pending" (not "access") so this pre-verification token
+        # is rejected by JWTAuthentication for every other API until the OTP is
+        # actually validated - it must only be usable to complete OTP verification.
         jwt_token = generate_jwt_token(
             user_id=user.id,
             user_mobile=user.mobile,
             session_data={"login_type": "otp_flow", "status": "otpsent"},
+            token_type="otp_pending",
             expiry_minutes=session_expiry_mins
         )
         
@@ -19569,11 +19615,14 @@ def temp_user_logout(request ):
         #token = get_random_string(length=32)
         Token.objects.filter(user=user).delete()
 
-        # Generate secure JWT token for OTP flow
+        # Generate secure JWT token for OTP flow.
+        # token_type="otp_pending" so this pre-verification token cannot be used
+        # to authenticate to any other API before the OTP is actually validated.
         jwt_token = generate_jwt_token(
             user_id=user.id,
             user_mobile=user.mobile,
-            session_data={"login_type": "password_otp_flow", "status": "otpsent"}
+            session_data={"login_type": "password_otp_flow", "status": "otpsent"},
+            token_type="otp_pending"
         )
         
         if jwt_token:
@@ -19746,11 +19795,14 @@ def user_login_app(request ):
        
         Token.objects.filter(user=user).delete()
 
-        # Generate secure JWT token for web OTP flow with custom expiry
+        # Generate secure JWT token for web OTP flow with custom expiry.
+        # token_type="otp_pending" so this pre-verification token cannot be used
+        # to authenticate to any other API before the OTP is actually validated.
         jwt_token = generate_jwt_token(
             user_id=user.id,
             user_mobile=user.mobile,
             session_data={"login_type": "web_otp_flow", "status": "otpsent"},
+            token_type="otp_pending",
             expiry_minutes=session_expiry_mins
         )
         
@@ -19826,10 +19878,10 @@ def validate_otp(request ):
         if not otp or not token:
             return Response({'error': 'OTP or session token not provided'}, status=status.HTTP_400_BAD_REQUEST)
         
-        otp = decrypt_field(otp,PRIVATE_KEY)  
-         
-        if not otp:
-            return Response({'message': 'Invalid otp'})
+        otp = decrypt_field(otp,PRIVATE_KEY)
+
+        if not otp or not str(otp).isdigit() or len(str(otp)) != 6:
+            return Response({'message': 'Invalid otp'}, status=status.HTTP_400_BAD_REQUEST)
         # Find the session based on the provided token
         session = Session.objects.filter(token=token,status= 'otpsent').last()
 
@@ -19869,9 +19921,20 @@ def validate_otp(request ):
         if time_difference.total_seconds() > 2 * 60:  # 2 minutes OTP validity
             return Response({'error': 'OTP has expired. Please resend and use new OTP.'}, status=status.HTTP_400_BAD_REQUEST)
  
-        # Validate the OTP
-        #print(otp,session.otp)
-        if str(otp) == str(session.otp) or str(otp) == "685472" :
+        # Enforce a maximum number of verification attempts per OTP transaction
+        # to prevent brute-forcing the 6-digit OTP (OWASP MFA cheat sheet).
+        max_otp_attempts = getattr(settings, 'OTP_MAX_ATTEMPTS', 3)
+        if session.otp_attempts >= max_otp_attempts:
+            session.status = 'timeout'
+            session.save(update_fields=['status'])
+            return Response(
+                {'error': 'Too many incorrect OTP attempts. Please request a new OTP.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+
+        # Validate the OTP server-side. The literal-OTP bypass is only ever
+        # live when DEBUG=True (local/dev), never in production.
+        if str(otp) == str(session.otp) or (settings.DEBUG and str(otp) == "685472"):
             session.status = 'login'
             Token.objects.filter(user=session.user).delete()
             
@@ -19937,14 +20000,16 @@ def validate_otp(request ):
             except Exception as e:
                 return Response({'error': "Unable to process request."+str(e)}, status=400)
         else:
+            session.otp_attempts += 1
+            session.save(update_fields=['otp_attempts'])
             return Response({'error': 'Invalid OTP'}, status=status.HTTP_401_UNAUTHORIZED)
-      
-      
-      
-        
+
+
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 @require_permission('device_stock', 'view')
 def combined_device_stock(request):

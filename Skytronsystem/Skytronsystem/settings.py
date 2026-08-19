@@ -304,6 +304,15 @@ REST_FRAMEWORK = {
     },
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # BrowsableAPIRenderer is only added when DEBUG=True. Left on by default,
+    # DRF renders an HTML/form UI for every endpoint that discloses available
+    # methods, serializer fields and API structure to anyone who hits an
+    # endpoint from a browser - unnecessary information exposure in production.
+    'DEFAULT_RENDERER_CLASSES': (
+        ['rest_framework.renderers.JSONRenderer', 'rest_framework.renderers.BrowsableAPIRenderer']
+        if DEBUG else
+        ['rest_framework.renderers.JSONRenderer']
+    ),
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
         'skytron_api.jwt_authentication.HybridAuthentication',   

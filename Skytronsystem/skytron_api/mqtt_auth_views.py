@@ -300,12 +300,21 @@ def mqtt_dual_auth(request):
                     'error': 'Unable to decode JWT token',
                     'auth_mode': 'jwt'
                 }, status=status.HTTP_403_FORBIDDEN)
+
+            # Reject anything that isn't a fully-authenticated access token
+            # (e.g. an "otp_pending" token issued before OTP verification).
+            if payload.get('token_type', 'access') != 'access':
+                logger.warning("MQTT Dual Auth: rejected non-access token_type=%s", payload.get('token_type'))
+                return Response({
+                    'success': False,
+                    'error': 'Token is not authorized for MQTT access',
+                    'auth_mode': 'jwt'
+                }, status=status.HTTP_403_FORBIDDEN)
             
             user_id = payload.get('user_id')
-            user_mobile = payload.get('user_mobile')
-            
-            logger.info(f"MQTT Dual Auth: JWT decoded - user_id={user_id}, mobile={user_mobile}")
-            
+
+            logger.info(f"MQTT Dual Auth: JWT decoded - user_id={user_id}")
+
             # Lookup user in Django database
             try:
                 user = User.objects.get(id=user_id, is_active=True)
