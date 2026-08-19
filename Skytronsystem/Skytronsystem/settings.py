@@ -343,6 +343,18 @@ EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'noreply@skytron.in')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 
 
+# OTP configuration
+OTP_EXPIRY_MINUTES = 5
+OTP_MAX_ATTEMPTS = 3
+
+# Only expose OTP in development
+SHOW_OTP_IN_RESPONSE = DEBUG
+
+# (for testing phase only)
+ALLOW_DEFAULT_TEST_OTP = True
+DEFAULT_TEST_OTP = "685472"
+
+
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
 ]

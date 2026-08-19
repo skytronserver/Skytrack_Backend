@@ -21,6 +21,12 @@ from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from .rbac import require_permission, check_permission, get_all_module_permissions, get_data_scope
 
+import re
+import requests
+from requests.exceptions import Timeout, RequestException
+from django.core.validators import URLValidator
+from django.core.exceptions import ValidationError as DjangoValidationError
+from decimal import Decimal, InvalidOperation
 import logging
 
 
@@ -24960,9 +24966,27 @@ def _is_tracking_packet(raw_data):
         return ',PVT,' in raw_data
 
 
-def _is_health_packet(raw_data):
-        return ',HLM,' in raw_data
+def _is_health_packet(raw, ble=None):
+    # VERIFIED — 1.5M rows in production.
+    return _packet_type_in_header(raw, 'HLM')
 
+def _packet_fields(raw):
+    """Split a packet into fields, with the leading '$' stripped."""
+    parts = [p.strip() for p in _normalise_packet(raw).split(',')]
+    if parts and parts[0].startswith('$'):
+        parts[0] = parts[0][1:]
+    return parts
+
+
+def _packet_type_in_header(raw, type_code):
+    """
+    True when the packet's type code appears in the first few fields.
+
+    Checks fields rather than substrings, so both header spellings work:
+      $,PVT,DTPL,...   ->  ['PVT', 'DTPL', ...]
+      $EPB,PVT,...     ->  ['EPB', 'PVT', ...]
+    """
+    return type_code.upper() in [f.upper() for f in _packet_fields(raw)[:3]]
 
 def _is_login_packet(raw_data):
         return raw_data.strip().startswith('$AS')
@@ -28577,3 +28601,12879 @@ def get_ota_command_value_suggestions(request):
             'status': 'error',
             'message': f'An error occurred: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+
+
+
+# =====================================================
+# School Bus Module — Added by Harshit
+# =====================================================
+
+
+
+
+
+
+
+
+
+
+
+from pickle import GET
+
+from django.shortcuts import get_object_or_404
+from rest_framework.views import APIView
+from rest_framework.generics import ListAPIView, ListCreateAPIView,  RetrieveAPIView   # RetrieveUpdateDestroyAPIView, 
+from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
+from django.db.models.deletion import ProtectedError
+from django.conf import settings
+from django.contrib.auth.hashers import make_password , check_password
+
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
+from django.db.models import Count, Q, Sum, Subquery, OuterRef
+from django.http import HttpResponse
+from django.db.models import Subquery, OuterRef, Prefetch
+from django.db.models import Sum, Avg, Max, Min
+from django.core.paginator import Paginator
+from django.utils.dateparse import parse_datetime
+from django.db.models import Avg, F, ExpressionWrapper, DateTimeField
+from django.db.models.functions import ExtractHour, ExtractMinute, ExtractSecond , TruncDate
+from rest_framework.decorators import parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser
+from datetime import time as dtime
+
+import mimetypes
+import secrets
+import math
+
+
+# from .permissions import IsStateAdmin, IsSchoolAdmin, IsParentUser, IsSuperAdmin
+
+# ── Permissions (pasted from old permissions.py) ──────────────────
+class IsParentUser(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == "parentuser"
+
+class IsSchoolAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == "schooladmin"
+
+class IsStateAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == "stateadmin"
+
+class IsSuperAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == "superadmin"
+    
+# from .utils import validate_bus_belongs_to_school
+
+# ── Utility (pasted from old utils.py) ─────────────────────────────
+def validate_bus_belongs_to_school(bus, school):
+    if not SchoolBusTag.objects.filter(
+        bus=bus, school=school, is_active=True, status='approved'
+    ).exists():
+        raise PermissionDenied("Bus is not tagged to this school")
+
+# from school_bus.minio_service import (
+#     upload_bus_document,
+#     upload_school_application_document,
+#     download_file_bytes,
+#     delete_ftp_file,
+# )
+
+from .minio_storage import upload_bytes, download_bytes, object_exists, _get_client, _BUCKET
+import os
+import secrets
+
+# ── School Bus Document Storage Helpers (wraps minio_storage.py) ──────────
+
+def _random_filename(original_name):
+    """Generate a 40-digit random numeric filename, preserving the extension."""
+    ext = os.path.splitext(original_name)[1].lower()
+    rand = "".join(secrets.choice("0123456789") for _ in range(40))
+    return rand + ext
+
+
+def upload_bus_document(file_obj, school_id, bus_id, document_type=""):
+    """
+    Upload a school bus document.
+    Remote key: fileuploads/school_bus_documents/school_<id>/bus_<id>/<random>.<ext>
+    Returns the full object key (stored in SchoolBusDocument.file_path).
+    """
+    filename = _random_filename(file_obj.name)
+    stored = f"{document_type.lower()}_{filename}" if document_type else filename
+    object_key = f"fileuploads/school_bus_documents/school_{school_id}/bus_{bus_id}/{stored}"
+
+    file_obj.seek(0)
+    content_type = getattr(file_obj, "content_type", None) or "application/octet-stream"
+    upload_bytes(object_key, file_obj.read(), content_type=content_type)
+    return object_key
+
+
+def upload_school_application_document(file_obj, application_id, label):
+    """
+    Upload a school application document.
+    Remote key: fileuploads/school_applications/application_<id>/<label>_<random>.<ext>
+    """
+    filename = _random_filename(file_obj.name)
+    stored = f"{label}_{filename}"
+    object_key = f"fileuploads/school_applications/application_{application_id}/{stored}"
+
+    file_obj.seek(0)
+    content_type = getattr(file_obj, "content_type", None) or "application/octet-stream"
+    upload_bytes(object_key, file_obj.read(), content_type=content_type)
+    return object_key
+
+
+def download_file_bytes(object_key):
+    """Fetch a file from MinIO and return its raw bytes."""
+    return download_bytes(object_key)
+
+
+def delete_ftp_file(object_key):
+    """
+    Delete a file from MinIO. Kept as `delete_ftp_file` so existing
+    call-sites (SchoolBusDocumentDeleteAPIView) work unchanged.
+    Returns True on success, False on any error (logged, not raised).
+    """
+    try:
+        client = _get_client()
+        client.remove_object(_BUCKET, object_key)
+        return True
+    except Exception as exc:
+        print(f"[MinIO] Could not delete {object_key}: {exc}")
+        return False
+
+
+from .models import (
+    School,
+    SchoolRoute,
+    RouteStop,
+    SchoolBusStop,
+    SchoolBusDocument,
+    ParentProfile,
+    Student,
+    RouteBusAssignment,
+    StudentBusAllocation,
+    SchoolHoliday,
+    SchoolBusTrip,
+    StudentAttendance,
+    SchoolBusTag,
+    BusAlert,
+    AlertsLog,
+    GPSData,
+    DeviceTag,
+    VehicleOwner,
+    ViolationReport,
+    PermitCondition,
+    StateAdmin,
+    dto_rto,
+    PublicBusStop,
+    PublicBusRoute,
+    PublicRouteStop,
+    BusSchedule,
+    BusScheduleStopETA,
+    Trip,
+    Settings_State,
+    Settings_District,
+    Settings_VehicleCategory,
+    Favorite,
+    Session,
+    CustomAlertRule,
+    CustomAlertLog,
+    CustomAlertSubrule,
+)
+
+from .serializers import (
+    
+    SchoolApplicationSubmitSerializer,
+    SchoolApplicationListSerializer,
+    SchoolApplicationDecisionSerializer,
+    SchoolDetailSerializer,
+    
+    
+    # Bus Tagging — NEW
+    BusTagInitiateSerializer,
+    BusTagOTPVerifySerializer,
+    BusTagDocumentUploadSerializer,
+    BusTagDecisionSerializer,
+    BusTagHistorySerializer,
+
+    DropLocationSerializer,
+   
+    SchoolApplicationDecisionSerializer,
+    
+    ParentCreateSerializer,
+    ParentDetailSerializer,
+    ParentStudentLinkSerializer,
+    SchoolBusDocumentSerializer,
+    StudentCreateSerializer,
+    StudentDetailSerializer,
+    BusAlertSerializer,
+    AdminBusAlertSerializer,
+    ParentAlertSerializer,
+    ParentWithStudentsSerializer,
+    StudentBusAllocationCreateSerializer,
+    StudentBusAllocationDetailSerializer,
+    RouteSerializer,
+    BusStopSerializer,
+    SchoolHolidaySerializer,
+  
+    SchoolBusTripSerializer,
+ 
+    ParentStudentAttendanceSerializer,
+    StudentAttendanceSerializer,
+   
+    SchoolBusTagSerializer,
+    RouteBusAssignmentSerializer,
+    StudentListUISerializer,
+    StudentPickupDropSerializer,
+    BusTagDocumentsBulkUploadSerializer,
+    ParentTripHistorySerializer,
+    
+    PermitConditionCreateSerializer,
+    PermitConditionUpdateSerializer,
+    PermitConditionListSerializer,
+    VehicleAlertSummarySerializer,
+    ViolationReportSerializer,
+    
+    PublicBusStopSerializer,
+    PublicBusRouteSerializer,
+    PublicRouteStopSerializer,
+    BusScheduleSerializer,
+    BusScheduleStopETASerializer,
+    PublicBusStopListSerializer,
+    PublicBusRouteListSerializer,
+    PublicScheduleStatusSerializer,
+    
+    MapSchoolBusStopSerializer,
+    MapSchoolRouteSerializer,
+    MapPISRouteSerializer,
+    MapSchoolBusLocationSerializer,
+    MapPISBusLocationSerializer,
+    
+    TripAnalyticsSerializer,
+    DrivingPatternAlertSerializer,
+    PISAnalyticsSummarySerializer,
+    AlertHeatmapSerializer,
+    
+    FavoriteCreateSerializer,
+    FavoriteUpdateSerializer,
+    FavoriteDetailSerializer,
+    
+    UserLoginReportSerializer,
+    
+    CustomAlertRuleCreateSerializer,
+    CustomAlertRuleUpdateSerializer,
+    CustomAlertRuleDetailSerializer,
+    CustomAlertLogSerializer,
+)
+
+
+User = get_user_model()
+
+
+# =====================================================
+# Response Helpers
+# Standardized response format across all APIs:
+# Success: {success, message, data}
+# List:    {success, message, count, data}
+# Error:   {success, message, errors}
+# =====================================================
+
+def success_response(data=None, message="Success", status_code=status.HTTP_200_OK):
+    return Response(
+        {"success": True, "message": message, "data": data},
+        status=status_code
+    )
+
+
+def list_response(data, count=None, message="Success"):
+    return Response(
+        {
+            "success": True,
+            "message": message,
+            "count": count if count is not None else len(data),
+            "data": data
+        },
+        status=status.HTTP_200_OK
+    )
+
+
+def error_response(message, errors=None, status_code=status.HTTP_400_BAD_REQUEST):
+    return Response(
+        {"success": False, "message": message, "errors": errors or {}},
+        status=status_code
+    )
+
+# =====================================================
+# Student APIs
+# =====================================================
+
+class StudentListCreateAPIView(ListCreateAPIView):
+    """
+    School admin can:
+    - GET: list students (UI optimized)
+    - POST: create student + optional parent link + optional bus allocation
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def get_queryset(self):
+        school = self.request.user.schooladmin_user.first()
+        if not school:
+            return Student.objects.none()
+
+        return Student.objects.filter(school=school)
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return StudentCreateSerializer
+        return StudentDetailSerializer
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+
+        serializer = StudentListUISerializer(queryset, many=True)
+
+        return list_response(
+            data=serializer.data,
+            message="Students fetched successfully"
+        )
+
+    def perform_create(self, serializer):
+        school = self.request.user.schooladmin_user.first()
+        serializer.save(school=school)
+
+    def create(self, request, *args, **kwargs):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        # -------------------------------
+        # STEP 1 — Extract & Basic Validate
+        # -------------------------------
+        name = request.data.get("name")
+        class_name = request.data.get("class_name") or request.data.get("class")
+        section = request.data.get("section", "")
+        roll_number = request.data.get("roll_number") or request.data.get("rollNo")
+
+        if not all([name, class_name, roll_number]):
+            return error_response(
+                "name, class_name and roll_number are required",
+                errors={"required": ["name", "class_name", "roll_number"]}
+            )
+
+        parent_id = request.data.get("parent_id") or request.data.get("parentId")
+
+        bus_id = request.data.get("bus")
+        route_id = request.data.get("route") or request.data.get("routeId")
+        pickup_stop_id = request.data.get("pickup_stop") or request.data.get("pickupStopId")
+        drop_stop_id = request.data.get("drop_stop") or request.data.get("dropStopId")
+        start_date = request.data.get("start_date")
+
+        allocation_fields = [
+            bus_id, route_id, pickup_stop_id, drop_stop_id, start_date
+        ]
+        allocation_requested = any(allocation_fields)
+
+        if allocation_requested and not all(allocation_fields):
+            return error_response(
+                "All allocation fields are required: bus, route, pickup_stop, drop_stop, start_date"
+            )
+
+        # -------------------------------
+        # STEP 2 — VALIDATIONS FIRST (NO DB WRITE)
+        # -------------------------------
+
+        # Validate Parent
+        parent = None
+        if parent_id:
+            parent = ParentProfile.objects.filter(
+                id=parent_id,
+                school=school,
+                is_active=True
+            ).first()
+
+            if not parent:
+                return error_response(
+                    f"Parent with id {parent_id} not found or inactive",
+                    status_code=404
+                )
+
+        # Validate Allocation (only validation, no save)
+        alloc_serializer = None
+        if allocation_requested:
+            alloc_serializer = StudentBusAllocationCreateSerializer(
+                data={
+                    "bus": bus_id,
+                    "route": route_id,
+                    "pickup_stop": pickup_stop_id,
+                    "drop_stop": drop_stop_id,
+                    "start_date": start_date,
+                }
+            )
+
+            if not alloc_serializer.is_valid():
+                return error_response(
+                    "Bus allocation validation failed",
+                    errors=alloc_serializer.errors
+                )
+
+        # Validate Student
+        student_serializer = StudentCreateSerializer(
+            data={
+                "name": name,
+                "class_name": class_name,
+                "section": section,
+                "roll_number": roll_number,
+            },
+            context={"request": request}
+        )
+
+        if not student_serializer.is_valid():
+            return error_response(
+                "Student validation failed",
+                errors=student_serializer.errors
+            )
+
+        # -------------------------------
+        # STEP 3 — DB OPERATIONS (ATOMIC)
+        # -------------------------------
+        with transaction.atomic():
+
+            # Create Student
+            student = student_serializer.save(school=school)
+
+            # Link Parent
+            parent_linked = False
+            if parent:
+                parent.students.add(student)
+                parent_linked = True
+
+            # Create Allocation
+            allocation_data = None
+            if allocation_requested:
+                allocation = alloc_serializer.save(
+                    student=student,
+                    is_active=True
+                )
+                allocation_data = StudentBusAllocationDetailSerializer(allocation).data
+
+        # -------------------------------
+        # STEP 4 — RESPONSE
+        # -------------------------------
+        return success_response(
+            data={
+                "student": StudentDetailSerializer(student).data,
+                "parent_linked": parent_linked,
+                "parent_id": parent_id if parent_linked else None,
+                "bus_allocation": allocation_data,
+            },
+            message="Student profile created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class StudentDetailAPIView(RetrieveAPIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+    serializer_class = StudentCreateSerializer
+    lookup_url_kwarg = "student_id"
+
+    def get_queryset(self):
+        school = self.request.user.schooladmin_user.first()
+        if not school:
+            return Student.objects.none()
+        return Student.objects.filter(school=school)
+
+    def retrieve(self, request, *args, **kwargs):
+        return success_response(
+            data=self.get_serializer(self.get_object()).data,
+            message="Student fetched successfully"
+        )
+
+class StudentUpdateAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def post(self, request, student_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        student = get_object_or_404(Student, id=student_id, school=school)
+        serializer = StudentCreateSerializer(
+            student, data=request.data,
+            partial=True,
+            context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return success_response(
+            data=StudentDetailSerializer(student).data,
+            message="Student updated successfully"
+        )
+
+class StudentDeleteAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def post(self, request, student_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        student = get_object_or_404(Student, id=student_id, school=school)
+        if StudentBusAllocation.objects.filter(student=student, is_active=True).exists():
+            return error_response("Student has active bus allocation")
+
+        student.delete()
+        return success_response(message="Student deleted successfully")
+    
+# =====================================================
+# Parent APIs
+# =====================================================
+
+class ParentListCreateAPIView(ListCreateAPIView):
+    """
+    School admin can list and create parent users for their school.
+
+    Parent creation has 3 cases:
+    CASE 1: User exists + active parent profile → Block (already exists)
+    CASE 2: User exists + inactive parent profile → Reactivate
+    CASE 3: User exists but no parent profile → Create profile
+    CASE 4: Brand new user → Create Skytron User + ParentProfile
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return ParentCreateSerializer
+        return ParentDetailSerializer
+
+    def get_queryset(self):
+        school = self.request.user.schooladmin_user.first()
+        if not school:
+            return ParentProfile.objects.none()
+        return ParentProfile.objects.filter(school=school, is_active=True)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = ParentDetailSerializer(queryset, many=True)
+        return list_response(
+            data=serializer.data,
+            message="Parents fetched successfully"
+        )
+
+    def create(self, request, *args, **kwargs):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        serializer = ParentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        password = data.get("password", "User@1234")
+        mobile = data["mobile"]
+        email = data.get("email", "")
+        name = data["name"]
+        dob = data["dob"]
+
+        with transaction.atomic():
+
+            # Check if user already exists by mobile (Skytron's unique identifier)
+            user = User.objects.filter(mobile=mobile).first()
+
+            # ----------------------------
+            # CASE 1, 2, 3: User already exists
+            # ----------------------------
+            if user:
+                # Check email uniqueness before updating (another user may own this email)
+                if email and email != user.email:
+                    if User.objects.filter(email=email).exclude(pk=user.pk).exists():
+                        return error_response(
+                            "A user with this email already exists",
+                            errors={"email": "This email is already registered to another account."},
+                            status_code=status.HTTP_400_BAD_REQUEST
+                        )
+                # Update basic info
+                user.name = name
+                user.email = email
+                user.save(update_fields=["name", "email"])
+
+                parent = ParentProfile.objects.filter(user=user, school=school).first()
+
+                # CASE 1: Parent profile exists and is active → Block
+                if parent and parent.is_active:
+                    return error_response("Parent already exists")
+
+                if parent and not parent.is_active:
+                    parent.address = data["address"]
+                    parent.latitude = data["latitude"]
+                    parent.longitude = data["longitude"]
+                    parent.is_active = True
+                    parent.save()
+
+                    # Restore parent role
+                    user.role = "parentuser"
+                    user.save(update_fields=["role"])
+                    return success_response(
+                        data=ParentDetailSerializer(parent).data,
+                        message="Parent reactivated successfully"
+                    )
+
+                # CASE 3: User exists but no ParentProfile for this school
+                parent = ParentProfile.objects.create(
+                    user=user, school=school,
+                    address=data["address"],
+                    latitude=data["latitude"],
+                    longitude=data["longitude"],
+                    is_active=True
+                )
+
+                # Assign parent role
+                user.role = "parentuser"
+                user.save(update_fields=["role"])
+                return success_response(
+                    data=ParentDetailSerializer(parent).data,
+                    message="Parent profile created successfully",
+                    status_code=status.HTTP_201_CREATED
+                )
+
+            # FIX: Check email before creating new user
+            if email and User.objects.filter(email=email).exists():
+                return error_response(
+                    "A user with this email already exists",
+                    errors={"email": "This email is already registered to another account."},
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+
+            user = User.objects.create(
+                email=email,
+                password=make_password(password),
+                name=name,
+                mobile=mobile,
+                dob=str(dob),
+                role="parentuser",
+                status="active",
+                createdby=str(request.user.id),
+            )
+            parent = ParentProfile.objects.create(
+                user=user, school=school,
+                address=data["address"],
+                latitude=data["latitude"],
+                longitude=data["longitude"],
+                is_active=True
+            )
+
+        return success_response(
+            data=ParentDetailSerializer(parent).data,
+            message="Parent created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class ParentDetailAPIView(RetrieveAPIView):
+    """
+    School admin can view, update or soft-delete a parent profile.
+    Soft delete sets is_active=False — user record is preserved in Skytron.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+    serializer_class = ParentDetailSerializer
+    lookup_url_kwarg = "pk"
+
+    def get_queryset(self):
+        school = self.request.user.schooladmin_user.first()
+        if not school:
+            return ParentProfile.objects.none()
+        return ParentProfile.objects.filter(school=school, is_active=True)
+
+    # def destroy(self, request, *args, **kwargs):
+    #     parent = self.get_object()
+    #     if not parent.is_active:
+    #         return error_response("Parent is already inactive")
+
+    #     # Soft delete — preserve user record in Skytron
+    #     parent.is_active = False
+    #     parent.save(update_fields=["is_active"])
+    #     return success_response(
+    #         data={"parent_id": parent.id, "is_active": parent.is_active},
+    #         message="Parent deleted successfully"
+    #     )
+        
+class ParentUpdateAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def post(self, request, pk):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        parent = get_object_or_404(ParentProfile, id=pk, school=school, is_active=True)
+        serializer = ParentCreateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        d = serializer.validated_data
+
+        if "address" in d:
+            parent.address = d["address"]
+        if "latitude" in d:
+            parent.latitude = d["latitude"]
+        if "longitude" in d:
+            parent.longitude = d["longitude"]
+        parent.save()
+
+        return success_response(
+            data=ParentDetailSerializer(parent).data,
+            message="Parent updated successfully"
+        )
+
+class ParentDeleteAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def post(self, request, pk):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        parent = get_object_or_404(ParentProfile, id=pk, school=school, is_active=True)
+        parent.is_active = False
+        parent.save(update_fields=["is_active"])
+        return success_response(
+            data={"parent_id": parent.id, "is_active": False},
+            message="Parent deleted successfully"
+        )
+
+class ParentStudentLinkAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def post(self, request, parent_id):  # Link
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        parent = get_object_or_404(
+            ParentProfile, id=parent_id, school=school, is_active=True
+        )
+        serializer = ParentStudentLinkSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        requested_ids = set(serializer.validated_data["student_ids"])
+        students = Student.objects.filter(id__in=requested_ids, school=school)
+
+        if set(students.values_list("id", flat=True)) != requested_ids:
+            return error_response("One or more students do not belong to this school")
+
+        already_linked = set(
+            parent.students.filter(id__in=requested_ids).values_list("id", flat=True)
+        )
+        new_students = students.filter(id__in=requested_ids - already_linked)
+        parent.students.add(*new_students)
+
+        return success_response(
+            data={
+                "parent_id": parent.id,
+                "linked_student_ids": list(requested_ids - already_linked),
+                "already_linked_student_ids": list(already_linked),
+            },
+            message="Students linked successfully"
+        )
+
+class ParentStudentUnlinkAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def post(self, request, parent_id):  # Unlink
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        parent = get_object_or_404(
+            ParentProfile, id=parent_id, school=school, is_active=True
+        )
+        serializer = ParentStudentLinkSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        requested_ids = set(serializer.validated_data["student_ids"])
+        linked_students = parent.students.filter(id__in=requested_ids, school=school)
+        linked_ids = set(linked_students.values_list("id", flat=True))
+
+        if not linked_ids:
+            return error_response("No specified students are linked to this parent")
+
+        parent.students.remove(*linked_students)
+        return success_response(
+            data={"parent_id": parent.id, "unlinked_student_ids": list(linked_ids)},
+            message="Students unlinked successfully"
+        )
+
+class ParentStudentsAPIView(APIView):
+    """
+    Parent can view their own profile and linked students.
+    Parents can only access their own profile (user=request.user).
+    """
+    permission_classes = [IsAuthenticated, IsParentUser | IsSuperAdmin]
+
+    def get(self, request, parent_id):
+        try:
+            parent = ParentProfile.objects.get(id=parent_id, user=request.user)
+        except ParentProfile.DoesNotExist:
+            return error_response("Parent not found", status_code=404)
+        return success_response(
+            data=ParentWithStudentsSerializer(parent).data,
+            message="Parent students fetched successfully"
+        )
+
+class ParentDropLocationsAPIView(APIView):
+    """
+    Returns drop locations for the parent's children.
+    Only returns stops where the parent's students have active allocations.
+    """
+    permission_classes = [IsAuthenticated, IsParentUser | IsSuperAdmin]
+
+    def get(self, request):
+        parent = get_object_or_404(ParentProfile, user=request.user, is_active=True)
+        drop_locations = SchoolBusStop.objects.filter(
+            drop_students__student__parents=parent,
+            drop_students__is_active=True
+        ).distinct()
+        serializer = DropLocationSerializer(drop_locations, many=True)
+        return success_response(
+            data={"parent_id": parent.id, "drop_locations": serializer.data},
+            message="Drop locations fetched successfully"
+        )
+
+class ParentMeAPIView(APIView):
+    """
+    Returns the authenticated parent's own profile.
+    Includes user details from Skytron User model.
+    """
+    permission_classes = [IsAuthenticated, IsParentUser ]
+
+    def get(self, request):
+        parent = request.user.parent_profile
+        return success_response(
+            data={
+                "id": parent.id,
+                "user_id": request.user.id,
+                "name": request.user.name,
+                "email": request.user.email,
+                "mobile": request.user.mobile,
+                "school": parent.school.school_name,
+                "address": parent.address,
+                "latitude": parent.latitude,
+                "longitude": parent.longitude,
+            },
+            message="Parent profile fetched successfully"
+        )
+
+class ParentMyStudentsAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsParentUser]
+
+    def get(self, request):
+        parent = request.user.parent_profile
+
+        students = parent.students.all()
+
+        data = {
+            "parent": {
+                "id": parent.id,
+                "name": request.user.name,
+                "email": request.user.email,
+                "mobile": request.user.mobile,
+            },
+            "students": [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "class_name": s.class_name,
+                    "section": s.section,
+                    "roll_number": s.roll_number,
+                }
+                for s in students
+            ]
+        }
+
+        return success_response(
+            data=data,
+            message="Parent and students fetched successfully"
+        )
+    
+class ParentBusTrackingAPIView(APIView):
+    """
+    Real-time bus tracking for parents.
+    TODO: Integrate with Skytron's GPSData table for live location.
+    """
+    permission_classes = [IsAuthenticated, IsParentUser]
+
+    def get(self, request):
+        return success_response(
+            data={"tracking_available": False, "message": "Live tracking integration pending"},
+            message="Tracking status fetched"
+        )
+
+# =====================================================
+# Parent-Student Mappings (Admin)
+# =====================================================
+
+class AdminParentStudentsAPIView(APIView):
+    """
+    School admin can view students linked to a specific parent.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def get(self, request, parent_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+        try:
+            parent = ParentProfile.objects.prefetch_related("students").get(
+                id=parent_id, school=school, is_active=True
+            )
+        except ParentProfile.DoesNotExist:
+            return error_response("Parent not found in your school", status_code=404)
+        return success_response(
+            data=ParentWithStudentsSerializer(parent).data,
+            message="Parent students fetched successfully"
+        )
+
+class AdminParentStudentMappingAPIView(APIView):
+    """
+    School admin can view all parent-student mappings for their school.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin |IsSuperAdmin]
+
+    def get(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+        parents = ParentProfile.objects.filter(
+            school=school, is_active=True
+        ).prefetch_related("students")
+        return list_response(
+            data=ParentWithStudentsSerializer(parents, many=True).data,
+            message="Parent-student mappings fetched successfully"
+        )
+
+# =====================================================
+# Student Bus Allocation (Admin)
+# =====================================================
+
+class StudentBusAllocationCreateAPIView(APIView):
+    """
+    School admin assigns a bus, route and stops to a student.
+
+    Case 1: Active allocation exists → Block
+    Case 2: Inactive allocation exists → Reactivate with new data
+    Case 3: No allocation exists → Create new
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, student_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school assigned")
+
+        student = get_object_or_404(Student, id=student_id, school=school)
+        serializer = StudentBusAllocationCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+
+            # Case 1: Active allocation exists → Block
+            active_allocation = StudentBusAllocation.objects.filter(
+                student=student, is_active=True
+            ).first()
+
+            if active_allocation:
+                return error_response("Student already has an active bus allocation")
+
+            # Case 2: Inactive allocation exists → Reactivate with new data
+            inactive_allocation = StudentBusAllocation.objects.filter(
+                student=student, is_active=False
+            ).order_by("-created_at").first()
+
+            if inactive_allocation:
+                inactive_allocation.bus = serializer.validated_data["bus"]
+                inactive_allocation.route = serializer.validated_data["route"]
+                inactive_allocation.pickup_stop = serializer.validated_data["pickup_stop"]
+                inactive_allocation.drop_stop = serializer.validated_data["drop_stop"]
+                inactive_allocation.start_date = serializer.validated_data["start_date"]
+                inactive_allocation.end_date = None
+                inactive_allocation.is_active = True
+                inactive_allocation.save()
+                return success_response(
+                    data=StudentBusAllocationDetailSerializer(inactive_allocation).data,
+                    message="Bus allocation reactivated successfully"
+                )
+
+            # Case 3: No allocation exists → Create new
+            allocation = serializer.save(student=student, is_active=True)
+
+        return success_response(
+            data=StudentBusAllocationDetailSerializer(allocation).data,
+            message="Bus allocation created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class StudentBusAllocationListAPIView(ListAPIView):
+    """
+    School admin can view all active bus allocations for their school.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+    serializer_class = StudentBusAllocationDetailSerializer
+
+    def get_queryset(self):
+        school = self.request.user.schooladmin_user.first()
+        if not school:
+            return StudentBusAllocation.objects.none()
+        return StudentBusAllocation.objects.filter(
+            student__school=school, is_active=True
+        ).select_related(
+            "student", "bus", "route", "pickup_stop", "drop_stop"
+        ).order_by("student__name")
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return list_response(
+            data=serializer.data,
+            message="Bus allocations fetched successfully"
+        )
+
+# =====================================================
+# School Admin – Device Tags (Buses from Skytron)
+# Note: DeviceTag is owned by Skytron's core app.
+# We only READ from this model — never create or modify.
+# Only buses with status="Owner_Final_OTP_Verified" are shown.
+# =====================================================
+
+# =====================================================
+# School Admin – Routes (SchoolRoute — our own model)
+# Note: Unlike core.Route, SchoolRoute is owned by this
+# module and scoped per school.
+# =====================================================
+
+
+def _save_route_stops(route, stops_data, school):
+    """
+    Replaces all RouteStop entries for a route with the provided stops_data.
+    stops_data: [{"stop_id": 1, "order": 1}, ...]
+    """
+    from skytron_api.models import RouteStop, SchoolBusStop
+
+    # Validate all stops belong to this school
+    stop_ids = [int(item["stop_id"]) for item in stops_data]
+    valid_stops = SchoolBusStop.objects.filter(
+        id__in=stop_ids, school=school, is_active=True
+    )
+    valid_ids = set(valid_stops.values_list("id", flat=True))
+    invalid = set(stop_ids) - valid_ids
+    if invalid:
+        raise ValidationError({"stops_data": f"Stop IDs not found or inactive: {invalid}"})
+
+    # Replace existing stops atomically
+    RouteStop.objects.filter(route=route).delete()
+    stop_map = {s.id: s for s in valid_stops}
+    RouteStop.objects.bulk_create([
+        RouteStop(
+            route=route,
+            stop=stop_map[int(item["stop_id"])],
+            order=int(item["order"])
+        )
+        for item in stops_data
+    ])
+    
+class RouteListCreateAPIView(ListCreateAPIView):
+    """
+    School admin can list and create routes for their school.
+    Routes are scoped to the admin's school.
+    Soft-deleted routes (status=deleted) are excluded.
+
+    Query Params:
+        - search    : filter by route name (case-insensitive)
+        - status    : filter by status (active / inactive)
+        - has_bus   : filter by bus assigned (true / false)
+        - stop_id   : filter by stop ID
+        - route_id  : filter by route ID
+        - ids       : filter by multiple route IDs (comma-separated e.g. 1,2,3)
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+    serializer_class = RouteSerializer
+
+    def get_queryset(self):
+        school = self.request.user.schooladmin_user.first()
+        if not school:
+            return SchoolRoute.objects.none()
+
+        queryset = SchoolRoute.objects.filter(
+            school=school,
+        ).exclude(status="deleted").order_by("id")
+
+        # Filter by route id
+        route_id = self.request.query_params.get("route_id")
+        if route_id:
+            queryset = queryset.filter(id=route_id)
+
+        # Filter by multiple route IDs
+        ids = self.request.query_params.get("ids")
+        if ids:
+            try:
+                id_list = [int(i) for i in ids.split(",")]
+                queryset = queryset.filter(id__in=id_list)
+            except ValueError:
+                pass
+
+        # Filter by name search
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+
+        # Filter by status (active / inactive)
+        status = self.request.query_params.get("status")
+        if status in ["active", "inactive"]:
+            queryset = queryset.filter(status=status)
+
+        # Filter by stop
+        stop_id = self.request.query_params.get("stop_id")
+        if stop_id:
+            queryset = queryset.filter(stops__id=stop_id)
+
+        # Filter by whether a bus is assigned
+        has_bus = self.request.query_params.get("has_bus")
+        if has_bus is not None:
+            assigned_route_ids = RouteBusAssignment.objects.filter(
+                school=school, is_active=True
+            ).values_list("route_id", flat=True)
+            if has_bus.lower() == "true":
+                queryset = queryset.filter(id__in=assigned_route_ids)
+            elif has_bus.lower() == "false":
+                queryset = queryset.exclude(id__in=assigned_route_ids)
+
+        return queryset.distinct()
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return list_response(data=serializer.data, message="Routes fetched successfully")
+
+    def perform_create(self, serializer):
+        school = self.request.user.schooladmin_user.first()
+        serializer.save(school=school, created_by=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        name = serializer.validated_data["name"]
+        stops_data = serializer.validated_data.pop("stops_data", [])
+
+        existing = SchoolRoute.objects.filter(
+            school=school, name__iexact=name, status="inactive"
+        ).first()
+
+        with transaction.atomic():
+            if existing:
+                existing.status = SchoolRoute.STATUS_ACTIVE
+                existing.route_points = serializer.validated_data.get("route_points", existing.route_points)
+                existing.description = serializer.validated_data.get("description", existing.description)
+                existing.created_by = request.user
+                existing.save(update_fields=["status", "route_points", "description", "created_by"])
+                route = existing
+            else:
+                self.perform_create(serializer)
+                route = serializer.instance
+
+            if stops_data:
+                _save_route_stops(route, stops_data, school)
+
+        return success_response(
+            data=RouteSerializer(route).data,
+            message="Route created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class RouteDetailAPIView(RetrieveAPIView):
+    """
+    School admin can view a route.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+    serializer_class = RouteSerializer
+
+    def get_queryset(self):
+        school = self.request.user.schooladmin_user.first()
+        if not school:
+            return SchoolRoute.objects.none()
+        return SchoolRoute.objects.filter(
+            school=school,
+        ).exclude(status="deleted").order_by("id")
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        return success_response(
+            data=self.get_serializer(instance).data,
+            message="Route fetched successfully"
+        )
+
+    # def update(self, request, *args, **kwargs):
+    #     partial = kwargs.pop("partial", False)
+    #     instance = self.get_object()
+    #     serializer = self.get_serializer(instance, data=request.data, partial=partial)
+    #     serializer.is_valid(raise_exception=True)
+    #     self.perform_update(serializer)
+    #     return success_response(data=serializer.data, message="Route updated successfully")
+
+    # def destroy(self, request, *args, **kwargs):
+    #     instance = self.get_object()
+    #     # UPDATED — UI uses "inactive" not "deleted"
+    #     instance.status = "deleted"
+    #     instance.save(update_fields=["status"])
+    #     return success_response(
+    #         data={"route": instance.name},
+    #         message="Route deleted successfully"
+    #     )
+        
+class RouteUpdateAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, pk):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        route = get_object_or_404(SchoolRoute, id=pk, school=school)
+        serializer = RouteSerializer(
+            route, data=request.data,
+            partial=True,
+            context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        stops_data = serializer.validated_data.pop("stops_data", None)
+
+        with transaction.atomic():
+            serializer.save()
+            if stops_data is not None:  # only update stops if provided
+                _save_route_stops(route, stops_data, school)
+
+        return success_response(
+            data=RouteSerializer(route).data,
+            message="Route updated successfully"
+        )
+        
+class RouteDeleteAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, pk):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        route = get_object_or_404(SchoolRoute, id=pk, school=school)
+        route.status = "deleted"
+        route.save(update_fields=["status"])
+        return success_response(
+            data={"route": route.name},
+            message="Route deleted successfully"
+        )
+
+class RouteCreateAndAddStopAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, route_id):
+        from skytron_api.models import RouteStop
+
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        route = get_object_or_404(SchoolRoute, id=route_id, school=school)
+
+        name      = request.data.get("name", "").strip()
+        latitude  = request.data.get("latitude")
+        longitude = request.data.get("longitude")
+        timing    = request.data.get("timing")
+        order     = request.data.get("order")
+
+        if not name:
+            return error_response("name is required")
+        if latitude is None or longitude is None:
+            return error_response("latitude and longitude are required")
+        if order is None:
+            last = RouteStop.objects.filter(route=route).order_by("-order").first()
+            order = (last.order + 1) if last else 1
+
+        if RouteStop.objects.filter(route=route, order=order).exists():
+            return error_response(f"Order {order} is already taken on this route")
+
+        with transaction.atomic():
+
+            # ── CASE 1: Active stop with same name exists → reuse it ──────────
+            active_stop = SchoolBusStop.objects.filter(
+                school=school, name__iexact=name, is_active=True
+            ).first()
+
+            if active_stop:
+                # Update coordinates and timing with latest values
+                active_stop.latitude  = latitude
+                active_stop.longitude = longitude
+                active_stop.timing    = timing
+                active_stop.save(update_fields=["latitude", "longitude", "timing"])
+                stop = active_stop
+
+            else:
+                # ── CASE 2: Soft-deleted stop exists → reactivate it ──────────
+                deleted_stop = SchoolBusStop.objects.filter(
+                    school=school, name__iexact=name, is_active=False
+                ).first()
+
+                if deleted_stop:
+                    deleted_stop.latitude   = latitude
+                    deleted_stop.longitude  = longitude
+                    deleted_stop.timing     = timing
+                    deleted_stop.is_active  = True
+                    deleted_stop.created_by = request.user
+                    deleted_stop.save(update_fields=[
+                        "latitude", "longitude", "timing", "is_active", "created_by"
+                    ])
+                    stop = deleted_stop
+
+                else:
+                    # ── CASE 3: No stop exists → create fresh ─────────────────
+                    stop = SchoolBusStop.objects.create(
+                        school=school,
+                        name=name,
+                        latitude=latitude,
+                        longitude=longitude,
+                        timing=timing,
+                        created_by=request.user,
+                        is_active=True,
+                    )
+
+            # ── Guard: stop already linked to this route ──────────────────────
+            if RouteStop.objects.filter(route=route, stop=stop).exists():
+                return error_response("This stop is already added to this route")
+
+            RouteStop.objects.create(route=route, stop=stop, order=order)
+
+        return success_response(
+            data={
+                "route_id":   route.id,
+                "route_name": route.name,
+                "stop": {
+                    "id":        stop.id,
+                    "name":      stop.name,
+                    "latitude":  stop.latitude,
+                    "longitude": stop.longitude,
+                    "timing":    stop.timing,
+                    "order":     order,
+                },
+            },
+            message="Bus stop created and added to route successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class RouteRemoveStopAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, route_id, stop_id):
+        from skytron_api.models import RouteStop
+
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        route = get_object_or_404(SchoolRoute, id=route_id, school=school)
+        route_stop = get_object_or_404(RouteStop, route=route, stop_id=stop_id)
+
+        # ── Guard: block if students have active allocations using this stop ──
+        active_allocations = StudentBusAllocation.objects.filter(
+            route=route,
+            is_active=True,
+        ).filter(
+            Q(pickup_stop_id=stop_id) | Q(drop_stop_id=stop_id)
+        )
+
+        if active_allocations.exists():
+            return error_response(
+                f"Cannot remove stop — {active_allocations.count()} student(s) "
+                f"have active allocations using this stop on this route",
+                errors={
+                    "affected_students": list(
+                        active_allocations.values_list("student__name", flat=True)
+                    )
+                }
+            )
+
+        route_stop.delete()
+
+        return success_response(
+            data={"route_id": route.id, "stop_id": stop_id},
+            message="Stop removed from route successfully"
+        )
+        
+# =====================================================
+# School Admin – Bus Stops (SchoolBusStop — our own model)
+# Note: Unlike core.pointofinterests, SchoolBusStop is
+# owned by this module and scoped per school.
+# =====================================================
+
+class BusStopListCreateAPIView(ListCreateAPIView):
+    """
+    School admin can list and create bus stops for their school.
+    Handles soft-delete reactivation — if a stop with the same
+    name was previously deleted, it gets reactivated instead of
+    creating a duplicate.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+    serializer_class = BusStopSerializer
+
+    def get_queryset(self):
+        school = self.request.user.schooladmin_user.first()
+        if not school:
+            return SchoolBusStop.objects.none()
+        return SchoolBusStop.objects.filter(school=school, is_active=True)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return list_response(data=serializer.data, message="Bus stops fetched successfully")
+
+    def create(self, request, *args, **kwargs):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        serializer = BusStopSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+
+        name = serializer.validated_data["name"]
+        latitude = serializer.validated_data.get("latitude")
+        longitude = serializer.validated_data.get("longitude")
+        timing = serializer.validated_data.get("timing")      # NEW
+
+        # Check for soft-deleted stop with same name → reactivate instead of creating new
+        existing = SchoolBusStop.objects.filter(
+            school=school, name__iexact=name, is_active=False
+        ).first()
+
+        if existing:
+            existing.is_active = True
+            existing.latitude = latitude
+            existing.longitude = longitude
+            existing.timing = timing                           # NEW
+            existing.created_by = request.user
+            existing.save(update_fields=[
+                "is_active", "latitude", "longitude", "timing", "created_by"
+            ])
+            return success_response(
+                data=BusStopSerializer(existing).data,
+                message="Bus stop reactivated successfully"
+            )
+
+        # Create fresh bus stop
+        stop = serializer.save(school=school, created_by=request.user)
+        return success_response(
+            data=BusStopSerializer(stop).data,
+            message="Bus stop created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class BusStopDetailAPIView(RetrieveAPIView):
+    """
+    School admin can view a bus stop.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+    serializer_class = BusStopSerializer
+
+    def get_queryset(self):
+        school = self.request.user.schooladmin_user.first()
+        if not school:
+            return SchoolBusStop.objects.none()
+        return SchoolBusStop.objects.filter(school=school, is_active=True)
+
+    def retrieve(self, request, *args, **kwargs):
+        return success_response(
+            data=self.get_serializer(self.get_object()).data,
+            message="Bus stop fetched successfully"
+        )
+
+    # def update(self, request, *args, **kwargs):
+    #     partial = kwargs.pop("partial", False)
+    #     instance = self.get_object()
+    #     serializer = self.get_serializer(instance, data=request.data, partial=partial)
+    #     serializer.is_valid(raise_exception=True)
+    #     self.perform_update(serializer)
+    #     return success_response(data=serializer.data, message="Bus stop updated successfully")
+
+    # def destroy(self, request, *args, **kwargs):
+    #     instance = self.get_object()
+    #     instance.is_active = False
+    #     instance.save(update_fields=["is_active"])
+    #     return success_response(
+    #         data={"bus_stop": instance.name},
+    #         message="Bus stop deleted successfully"
+    #     )
+        
+class BusStopUpdateAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, pk):
+        from skytron_api.models import RouteStop
+        from django.db.models import Max
+
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        stop = get_object_or_404(SchoolBusStop, id=pk, school=school, is_active=True)
+
+        # ── Update stop fields (name, lat, lng, timing) ───────────────────────
+        serializer = BusStopSerializer(
+            stop, data=request.data,
+            partial=True,
+            context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        # ── Optional: update order within a specific route ────────────────────
+        route_id   = request.data.get("route")
+        route_stop = None
+
+        if route_id:
+            try:
+                route_stop = RouteStop.objects.get(
+                    stop=stop,
+                    route__id=route_id,
+                    route__school=school,
+                )
+            except RouteStop.DoesNotExist:
+                return error_response(
+                    f"Stop is not linked to route {route_id}",
+                    status_code=404
+                )
+
+            order = request.data.get("order")
+
+            if order is not None:
+                new_order = int(order)
+
+                if RouteStop.objects.filter(
+                    route=route_stop.route,
+                    order=new_order
+                ).exclude(pk=route_stop.pk).exists():
+                    return error_response(
+                        f"Order {new_order} is already taken on this route"
+                    )
+
+                route_stop.order = new_order
+
+            else:
+                max_order = RouteStop.objects.filter(
+                    route=route_stop.route
+                ).exclude(pk=route_stop.pk).aggregate(
+                    max_order=Max("order")
+                )["max_order"] or 0
+                route_stop.order = max_order + 1
+
+            route_stop.save(update_fields=["order"])
+
+        # ── Response ──────────────────────────────────────────────────────────
+        response_data = serializer.data.copy()
+        if route_stop:
+            response_data["route"] = int(route_id)
+            response_data["order"] = route_stop.order
+
+        return success_response(
+            data=response_data,
+            message="Bus stop updated successfully"
+        )
+
+class BusStopDeleteAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, pk):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        stop = get_object_or_404(SchoolBusStop, id=pk, school=school, is_active=True)
+        stop.is_active = False
+        stop.save(update_fields=["is_active"])
+        return success_response(
+            data={"bus_stop": stop.name},
+            message="Bus stop deleted successfully"
+        )
+        
+# =====================================================
+# School Holidays
+# =====================================================
+
+class BaseSchoolHolidayView:
+    """
+    Base class for holiday views.
+    Provides school resolution helper used by both list and detail views.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+    serializer_class = SchoolHolidaySerializer
+
+    def get_admin_school(self):
+        school = self.request.user.schooladmin_user.first()
+        if not school:
+            raise ValidationError({"detail": "Admin has no school assigned"})
+        return school
+
+class SchoolHolidayListCreateAPIView(BaseSchoolHolidayView, ListCreateAPIView):
+    """
+    School admin can list and create holidays.
+    On create, checks for soft-deleted holiday on same date → reactivates.
+    """
+
+    def get_queryset(self):
+        school = self.get_admin_school()
+        return SchoolHoliday.objects.filter(school=school, is_active=True)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = SchoolHolidaySerializer(queryset, many=True)
+        return list_response(data=serializer.data, message="Holidays fetched successfully")
+
+    def perform_create(self, serializer):
+        school = self.get_admin_school()
+        user = self.request.user
+        date = serializer.validated_data.get("date")
+
+        # Check for soft-deleted holiday on same date → reactivate
+        existing = SchoolHoliday.objects.filter(
+            school=school, date=date, is_active=False
+        ).first()
+
+        if existing:
+            existing.is_active = True
+            existing.title = serializer.validated_data.get("title")
+            existing.type = serializer.validated_data.get("type")
+            existing.updated_by = user
+            existing.save()
+            serializer.instance = existing
+            return
+
+        serializer.save(school=school, created_by=user, updated_by=user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return success_response(
+            data=SchoolHolidaySerializer(serializer.instance).data,
+            message="Holiday created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class SchoolHolidayDetailAPIView(BaseSchoolHolidayView, RetrieveAPIView):
+    """
+    School admin can view, update or soft-delete a holiday.
+    """
+
+    def get_queryset(self):
+        school = self.get_admin_school()
+        return SchoolHoliday.objects.filter(school=school, is_active=True)
+
+    def retrieve(self, request, *args, **kwargs):
+        return success_response(
+            data=self.get_serializer(self.get_object()).data,
+            message="Holiday fetched successfully"
+        )
+
+    # def perform_update(self, serializer):
+    #     serializer.save(updated_by=self.request.user)
+
+    # def update(self, request, *args, **kwargs):
+    #     partial = kwargs.pop("partial", False)
+    #     instance = self.get_object()
+    #     serializer = self.get_serializer(instance, data=request.data, partial=partial)
+    #     serializer.is_valid(raise_exception=True)
+    #     self.perform_update(serializer)
+    #     return success_response(data=serializer.data, message="Holiday updated successfully")
+
+    # def destroy(self, request, *args, **kwargs):
+    #     instance = self.get_object()
+
+    #     # Soft delete
+    #     instance.is_active = False
+    #     instance.updated_by = request.user
+    #     instance.save()
+    #     return success_response(message="Holiday deactivated successfully")
+    
+class SchoolHolidayUpdateAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, pk):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        holiday = get_object_or_404(SchoolHoliday, id=pk, school=school, is_active=True)
+        serializer = SchoolHolidaySerializer(
+            holiday, data=request.data,
+            partial=True,
+            context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save(updated_by=request.user)
+        return success_response(data=serializer.data, message="Holiday updated successfully")
+
+class SchoolHolidayDeleteAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, pk):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        holiday = get_object_or_404(SchoolHoliday, id=pk, school=school, is_active=True)
+        holiday.is_active = False
+        holiday.updated_by = request.user
+        holiday.save()
+        return success_response(message="Holiday deactivated successfully")
+
+# =====================================================
+# Trips & Attendance & Reports
+# =====================================================
+
+class SchoolBusTripListCreateAPIView(APIView):
+    """
+    School admin can list and create bus trips.
+    On create, automatically sets status to UNSCHEDULED if trip_date is a holiday.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+        
+        trips = SchoolBusTrip.objects.filter(school=school).order_by("-trip_date", "-start_time")
+        
+        data = []
+        for trip in trips:
+            trip_data = SchoolBusTripSerializer(trip).data
+            trip_data["attendance_initialized"] = StudentAttendance.objects.filter(trip=trip).exists()
+            data.append(trip_data)
+        
+        return list_response(data=data, message="Trips fetched successfully")
+
+    def post(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        data = request.data.copy()
+        data.pop("school", None)
+        data.pop("status", None)
+
+        serializer = SchoolBusTripSerializer(data=data, context={"request": request})
+        if not serializer.is_valid():
+            return error_response("Invalid data", errors=serializer.errors)
+
+        trip_date = serializer.validated_data["trip_date"]
+
+        is_holiday = SchoolHoliday.objects.filter(
+            school=school, date=trip_date, is_active=True
+        ).exists()
+
+        trip = serializer.save(
+            school=school,
+            status=SchoolBusTrip.STATUS_UNSCHEDULED if is_holiday else SchoolBusTrip.STATUS_PLANNED
+        )
+
+        trip_data = SchoolBusTripSerializer(trip).data
+        trip_data["attendance_initialized"] = False  # new created trip
+
+        return success_response(
+            data=trip_data,
+            message="Trip created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class UnplannedTripReportAPIView(APIView):
+    """
+    Returns all UNSCHEDULED trips for the school.
+    Useful for reporting on trips that did not run as planned.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        trips = (
+            SchoolBusTrip.objects
+            .filter(school=school, status=SchoolBusTrip.STATUS_UNSCHEDULED)
+            .select_related("bus", "route")
+            .order_by("-trip_date")
+        )
+
+        trip_data = [
+            {
+                "trip_id": trip.id,
+                "trip_date": trip.trip_date,
+                "bus_id": trip.bus.id,
+                "vehicle_reg_no": trip.bus.vehicle_reg_no,
+                "route_id": trip.route.id,
+                "route_name": trip.route.name,
+                "status": trip.status,
+                "created_at": trip.created_at,
+            }
+            for trip in trips
+        ]
+
+        return success_response(
+            data={
+                "school": school.school_name,
+                "total_unplanned_trips": trips.count(),
+                "unplanned_trips": trip_data,
+            },
+            message="Unplanned trips fetched successfully"
+        )
+
+class TripAttendanceReportAPIView(APIView):
+    """
+    Returns attendance summary for a specific trip.
+    Presence is defined by pickup_status only.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request, trip_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            trip = SchoolBusTrip.objects.get(id=trip_id, school=school)
+        except SchoolBusTrip.DoesNotExist:
+            return error_response("Trip not found", status_code=404)
+
+        records = (
+            StudentAttendance.objects
+            .filter(trip=trip)
+            .select_related("student")
+            .order_by("student__name")
+        )
+
+        attendance_data = []
+        present_count = 0
+
+        for r in records:
+            # Presence is defined by pickup_status only
+            is_present = r.pickup_status
+            if is_present:
+                present_count += 1
+            attendance_data.append({
+                "attendance_id": r.id,
+                "student_id": r.student.id,
+                "student_name": r.student.name,
+                "pickup_status": r.pickup_status,
+                "drop_status": r.drop_status,
+                "pickup_time": r.pickup_time,
+                "drop_time": r.drop_time,
+                "is_present": is_present,
+            })
+
+        total_students = records.count()
+        return success_response(
+            data={
+                "trip_id": trip.id,
+                "total_students": total_students,
+                "present_count": present_count,
+                "absent_count": total_students - present_count,
+                "attendance": attendance_data,
+            },
+            message="Trip attendance report fetched successfully"
+        )
+
+class StudentAttendanceReportAPIView(APIView):
+    """
+    Returns full attendance history for a specific student.
+    Supports optional ?from_date=YYYY-MM-DD and ?to_date=YYYY-MM-DD filters.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request, student_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            student = Student.objects.get(id=student_id, school=school)
+        except Student.DoesNotExist:
+            return error_response("Student not found", status_code=404)
+
+        records = (
+            StudentAttendance.objects
+            .filter(student=student, is_active=True)
+            .select_related("trip", "pickup_stop", "drop_stop")
+            .order_by("-trip__trip_date")
+        )
+
+        # Optional date range filters
+        from_date = request.query_params.get("from_date")
+        to_date = request.query_params.get("to_date")
+        if from_date:
+            records = records.filter(trip__trip_date__gte=from_date)
+        if to_date:
+            records = records.filter(trip__trip_date__lte=to_date)
+
+        attendance_data = []
+        present_count = 0
+
+        for r in records:
+            is_present = r.is_present  # use model field, not derived from pickup_status
+            if is_present:
+                present_count += 1
+            attendance_data.append({
+                "attendance_id": r.id,
+                "trip_id":       r.trip.id,
+                "trip_date":     r.trip.trip_date,
+                "pickup_status": r.pickup_status,
+                "drop_status":   r.drop_status,
+                "pickup_time":   r.pickup_time,
+                "drop_time":     r.drop_time,
+                "pickup_stop":   r.pickup_stop.name if r.pickup_stop else None,
+                "drop_stop":     r.drop_stop.name if r.drop_stop else None,
+                "is_present":    is_present,
+            })
+
+        total_trips = len(attendance_data)  # avoids extra DB query
+
+        return success_response(
+            data={
+                "student_id":   student.id,
+                "student_name": student.name,
+                "class_name":   student.class_name,
+                "section":      student.section,
+                "roll_number":  student.roll_number,
+                "total_trips":  total_trips,
+                "present_count": present_count,
+                "absent_count":  total_trips - present_count,
+                "attendance":    attendance_data,
+            },
+            message="Student attendance report fetched successfully"
+        )
+
+class TripStudentStatusAPIView(APIView):
+    """
+    Returns real-time pickup/drop status for all students on a trip.
+    Filters allocations by route + bus + date range for accuracy.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request, trip_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            trip = SchoolBusTrip.objects.get(id=trip_id, school=school)
+        except SchoolBusTrip.DoesNotExist:
+            return error_response("Trip not found", status_code=404)
+
+        # Get allocations valid for this trip's bus, route and date
+        allocations = (
+            StudentBusAllocation.objects
+            .filter(
+                route=trip.route, bus=trip.bus,
+                is_active=True, start_date__lte=trip.trip_date
+            )
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=trip.trip_date))
+            .select_related("student", "pickup_stop", "drop_stop")
+            .order_by("student__name")
+        )
+
+        # Build attendance lookup map for O(1) access
+        attendance_records = StudentAttendance.objects.filter(trip=trip, is_active=True)
+        attendance_map = {a.student_id: a for a in attendance_records}
+
+        students = []
+        picked_count = 0
+        dropped_count = 0
+
+        for alloc in allocations:
+            attendance = attendance_map.get(alloc.student.id)
+            pickup_status = attendance.pickup_status if attendance else False
+            drop_status = attendance.drop_status if attendance else False
+
+            if pickup_status:
+                picked_count += 1
+            if drop_status:
+                dropped_count += 1
+
+            students.append({
+                "student_id": alloc.student.id,
+                "student_name": alloc.student.name,
+                "pickup_stop": alloc.pickup_stop.name if alloc.pickup_stop else None,
+                "drop_stop": alloc.drop_stop.name if alloc.drop_stop else None,
+                "pickup_status": pickup_status,
+                "drop_status": drop_status,
+                "is_present": pickup_status,
+            })
+
+        return success_response(
+            data={
+                "trip_id": trip.id,
+                "trip_date": trip.trip_date,
+                "route_id": trip.route.id,
+                "bus_id": trip.bus.id,
+                "total_students": len(students),
+                "picked_up": picked_count,
+                "dropped": dropped_count,
+                "absent": len(students) - picked_count,
+                "students": students,
+            },
+            message="Trip student status fetched successfully"
+        )
+
+
+class TripAttendanceInitAPIView(APIView):
+    """
+    Initializes attendance records for all allocated students on a trip.
+    Must be called before marking pickup/drop.
+    Only works for PLANNED trips.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    @transaction.atomic
+    def post(self, request, trip_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        trip = get_object_or_404(SchoolBusTrip, id=trip_id, school=school)
+
+        if trip.status != SchoolBusTrip.STATUS_PLANNED:
+            return error_response("Attendance can only be initialized for planned trips")
+
+        # Get all students allocated to this trip
+        allocations = StudentBusAllocation.objects.filter(
+            route=trip.route, bus=trip.bus,
+            is_active=True, start_date__lte=trip.trip_date
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=trip.trip_date)
+        ).select_related("student", "pickup_stop", "drop_stop")
+
+        created = 0
+        for alloc in allocations:
+            # get_or_create prevents duplicates if called multiple times
+            _, is_created = StudentAttendance.objects.get_or_create(
+                trip=trip, student=alloc.student,
+                defaults={
+                    "pickup_stop": alloc.pickup_stop,
+                    "drop_stop": alloc.drop_stop,
+                }
+            )
+            if is_created:
+                created += 1
+
+        # ── Change trip status to COMPLETED after initialization ──
+        trip.status = SchoolBusTrip.STATUS_COMPLETED
+        trip.save(update_fields=["status"])
+
+        # Return updated trip data with attendance_initialized
+        trip_data = SchoolBusTripSerializer(trip).data
+        trip_data["attendance_initialized"] = StudentAttendance.objects.filter(trip=trip).exists()
+
+        return success_response(
+            data={
+                "trip": trip_data,
+                "students_initialized": created,
+            },
+            message="Attendance initialized successfully"
+        )
+
+class TripRawAttendanceAPIView(APIView):
+    """
+    Returns raw attendance records for a trip with summary statistics.
+    Useful for admin dashboards showing pickup/drop progress.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request, trip_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            trip = SchoolBusTrip.objects.get(id=trip_id, school=school)
+        except SchoolBusTrip.DoesNotExist:
+            return error_response("Trip not found", status_code=404)
+
+        records = (
+            StudentAttendance.objects
+            .filter(trip=trip)
+            .select_related("student", "pickup_stop", "drop_stop")
+            .order_by("student__name")
+        )
+
+        total_students = records.count()
+        picked_up = records.filter(pickup_status=True).count()
+        dropped = records.filter(drop_status=True).count()
+
+        return success_response(
+            data={
+                "trip_id": trip.id,
+                "total_students": total_students,
+                "picked_up": picked_up,
+                "dropped": dropped,
+                "pending_pickup": total_students - picked_up,
+                "raw_attendance": StudentAttendanceSerializer(records, many=True).data,
+            },
+            message="Raw attendance fetched successfully"
+        )
+
+class StudentPickupAPIView(APIView):
+    """
+    Marks a student as picked up on a trip.
+    Validates:
+    - Trip is PLANNED
+    - Student is allocated to this trip's bus and route
+    - Pickup not already marked
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    @transaction.atomic
+    def post(self, request, trip_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        serializer = StudentPickupDropSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        student_id = serializer.validated_data["student_id"]
+        timestamp = serializer.validated_data.get("timestamp", timezone.now())
+
+        try:
+            trip = SchoolBusTrip.objects.get(id=trip_id, school=school)
+        except SchoolBusTrip.DoesNotExist:
+            return error_response("Trip not found", status_code=404)
+
+        if trip.status != SchoolBusTrip.STATUS_PLANNED:
+            return error_response("Pickup can only be marked for planned trips")
+
+        try:
+            student = Student.objects.get(id=student_id, school=school)
+        except Student.DoesNotExist:
+            return error_response("Student not found", status_code=404)
+
+        # Verify student has valid allocation for this trip
+        allocation_exists = StudentBusAllocation.objects.filter(
+            student=student, bus=trip.bus, route=trip.route,
+            is_active=True, start_date__lte=trip.trip_date
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=trip.trip_date)
+        ).exists()
+
+        if not allocation_exists:
+            return error_response("Student is not allocated to this trip")
+
+        attendance, created = StudentAttendance.objects.get_or_create(
+            trip=trip, student=student
+        )
+
+        if attendance.pickup_status:
+            return error_response("Pickup already marked for this student")
+
+        attendance.pickup_status = True
+        attendance.pickup_time = timestamp
+        attendance.is_present = True 
+        attendance.save(update_fields=["pickup_status", "pickup_time", "is_present"])
+
+        return success_response(
+            data={
+                "trip_id": trip.id,
+                "student_id": student.id,
+                "attendance_id": attendance.id,
+                "pickup_marked": True,
+                "attendance_record_created": created,
+                "pickup_time": attendance.pickup_time,
+            },
+            message="Pickup marked successfully"
+        )
+
+class TripStopStudentsAPIView(APIView):
+    """
+    Returns students at a specific stop for a trip.
+    Filters by both pickup_stop and drop_stop.
+    Used by driver/app to see who to pick up or drop at each stop.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request, trip_id, stop_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            trip = SchoolBusTrip.objects.get(id=trip_id, school=school)
+        except SchoolBusTrip.DoesNotExist:
+            return error_response("Trip not found", status_code=404)
+
+        try:
+            stop = SchoolBusStop.objects.get(id=stop_id)
+        except SchoolBusStop.DoesNotExist:
+            return error_response("Stop not found", status_code=404)
+
+        # Get allocations for this trip that include this stop
+        allocations = (
+            StudentBusAllocation.objects
+            .filter(
+                route=trip.route, bus=trip.bus,
+                is_active=True, start_date__lte=trip.trip_date
+            )
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=trip.trip_date))
+            .filter(Q(pickup_stop_id=stop_id) | Q(drop_stop_id=stop_id))
+            .select_related("student", "pickup_stop", "drop_stop")
+            .order_by("student__name")
+        )
+
+        # Build attendance lookup map
+        attendance_records = StudentAttendance.objects.filter(trip=trip, is_active=True)
+        attendance_map = {a.student_id: a for a in attendance_records}
+
+        students = []
+        picked_count = 0
+        dropped_count = 0
+
+        for alloc in allocations:
+            attendance = attendance_map.get(alloc.student.id)
+            pickup_status = attendance.pickup_status if attendance else False
+            drop_status = attendance.drop_status if attendance else False
+
+            if pickup_status:
+                picked_count += 1
+            if drop_status:
+                dropped_count += 1
+
+            students.append({
+                "student_id": alloc.student.id,
+                "student_name": alloc.student.name,
+                "pickup_stop": alloc.pickup_stop.name if alloc.pickup_stop else None,
+                "drop_stop": alloc.drop_stop.name if alloc.drop_stop else None,
+                "pickup_status": pickup_status,
+                "drop_status": drop_status,
+                "is_present": pickup_status,
+            })
+
+        total_students = len(students)
+        return success_response(
+            data={
+                "trip_id": trip.id,
+                "trip_date": trip.trip_date,
+                "stop_id": stop.id,
+                "stop_name": stop.name,
+                "total_students": total_students,
+                "picked_up": picked_count,
+                "dropped": dropped_count,
+                "absent": total_students - picked_count,
+                "students": students,
+            },
+            message="Stop students fetched successfully"
+        )
+
+class StudentDropAPIView(APIView):
+    """
+    Marks a student as dropped on a trip.
+    Validates:
+    - Trip is PLANNED
+    - Timestamp matches trip date
+    - Timestamp is not in the future
+    - Student is allocated to this trip
+    - Drop not already marked
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    @transaction.atomic
+    def post(self, request, trip_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        serializer = StudentPickupDropSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        student_id = serializer.validated_data["student_id"]
+        timestamp = serializer.validated_data.get("timestamp", timezone.now())
+
+        try:
+            trip = SchoolBusTrip.objects.get(id=trip_id, school=school)
+        except SchoolBusTrip.DoesNotExist:
+            return error_response("Trip not found", status_code=404)
+
+        if trip.status != SchoolBusTrip.STATUS_PLANNED:
+            return error_response("Drop can only be marked for planned trips")
+
+        # Timestamp validation
+        if timestamp.date() != trip.trip_date:
+            return error_response("Drop timestamp does not match trip date")
+
+        if timestamp > timezone.now():
+            return error_response("Drop time cannot be in the future")
+
+        try:
+            student = Student.objects.get(id=student_id, school=school)
+        except Student.DoesNotExist:
+            return error_response("Student not found", status_code=404)
+
+        allocation = StudentBusAllocation.objects.filter(
+            student=student, bus=trip.bus, route=trip.route,
+            is_active=True, start_date__lte=trip.trip_date
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=trip.trip_date)
+        ).first()
+
+        if not allocation:
+            return error_response("Student is not allocated to this trip")
+
+        attendance, created = StudentAttendance.objects.get_or_create(
+            trip=trip, student=student,
+            defaults={
+                "pickup_stop": allocation.pickup_stop,
+                "drop_stop": allocation.drop_stop,
+            }
+        )
+
+        if attendance.drop_status:
+            return error_response("Drop already marked for this student")
+
+        attendance.drop_status = True
+        attendance.drop_time = timestamp
+        attendance.drop_stop = allocation.drop_stop
+        attendance.save(update_fields=["drop_status", "drop_time", "drop_stop"])
+
+        return success_response(
+            data={
+                "trip_id": trip.id,
+                "student_id": student.id,
+                "attendance_id": attendance.id,
+                "drop_status": True,
+                "drop_time": attendance.drop_time,
+                "attendance_record_created": created,
+            },
+            message="Drop marked successfully"
+        )
+
+class ActiveTripAPIView(APIView):
+    """
+    Returns the active trip for a specific bus today.
+    Determines trip state (ACTIVE, UPCOMING, COMPLETED, UNKNOWN)
+    based on current time vs trip start/end times.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        bus_id = request.query_params.get("bus_id")
+        if not bus_id:
+            return error_response("bus_id is required")
+
+        try:
+            bus = DeviceTag.objects.get(id=bus_id)
+        except DeviceTag.DoesNotExist:
+            return error_response("Bus not found", status_code=404)
+
+        if not SchoolBusTag.objects.filter(
+            school=school, bus=bus, is_active=True, status="approved"   # UPDATED
+        ).exists():
+            raise PermissionDenied("Bus is not tagged to this school")
+
+        now = timezone.localtime()
+        trip = SchoolBusTrip.objects.filter(
+            school=school, bus=bus,
+            trip_date=now.date(),
+            status=SchoolBusTrip.STATUS_PLANNED,
+        ).first()
+
+        if not trip:
+            return success_response(data=None, message="No trip scheduled today")
+
+        # Determine trip state based on current time
+        current_time = now.time()
+        if trip.start_time and trip.end_time:
+            if trip.start_time <= current_time <= trip.end_time:
+                trip_state = "ACTIVE"
+            elif current_time < trip.start_time:
+                trip_state = "UPCOMING"
+            else:
+                trip_state = "COMPLETED"
+        else:
+            trip_state = "UNKNOWN"
+
+        data = SchoolBusTripSerializer(trip).data
+        data["trip_state"] = trip_state
+        return success_response(data=data, message="Active trip fetched successfully")
+
+class HolidayTripValidationAPIView(APIView):
+    """
+    Bulk validation — marks all PLANNED trips on holiday dates as UNSCHEDULED.
+    Should be called after adding new holidays to re-validate existing trips.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        holidays = SchoolHoliday.objects.filter(
+            school=school, is_active=True
+        ).values_list("date", flat=True)
+
+        # Bulk update all planned trips that fall on holidays
+        updated_count = SchoolBusTrip.objects.filter(
+            school=school,
+            trip_date__in=holidays,
+            status=SchoolBusTrip.STATUS_PLANNED
+        ).update(status=SchoolBusTrip.STATUS_UNSCHEDULED)
+
+        return success_response(
+            data={"unscheduled_trips": updated_count},
+            message="Holiday trip validation completed"
+        )
+
+class RouteAttendanceReportAPIView(APIView):
+    """
+    Aggregated attendance report for a specific route.
+    Shows pickup rate, drop rate and unique student count.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request, route_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            route = SchoolRoute.objects.get(id=route_id, school=school)
+        except SchoolRoute.DoesNotExist:
+            return error_response("Route not found", status_code=404)
+
+        records = StudentAttendance.objects.filter(
+            trip__school=school, trip__route=route, is_active=True
+        )
+        aggregated = records.aggregate(
+            total_attendance_records=Count("id"),
+            total_pickups=Count("id", filter=Q(pickup_status=True)),
+            total_drops=Count("id", filter=Q(drop_status=True)),
+            unique_students=Count("student", distinct=True),
+        )
+
+        total = aggregated["total_attendance_records"] or 0
+        pickups = aggregated["total_pickups"] or 0
+        drops = aggregated["total_drops"] or 0
+        unique_students = aggregated["unique_students"] or 0
+        pickup_rate = round((pickups / total) * 100, 2) if total > 0 else 0
+
+        return success_response(
+            data={
+                "route_id": route.id,
+                "route_name": route.name,
+                "unique_students": unique_students,
+                "total_attendance_records": total,
+                "total_pickups": pickups,
+                "total_drops": drops,
+                "total_absent_records": total - pickups,
+                "pickup_rate_percentage": pickup_rate,
+            },
+            message="Route attendance report fetched successfully"
+        )
+
+class StopAttendanceReportAPIView(APIView):
+    """
+    Aggregated attendance report for a specific bus stop.
+    Shows students who board or alight at this stop.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request, stop_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            stop = SchoolBusStop.objects.get(id=stop_id, school=school)
+        except SchoolBusStop.DoesNotExist:
+            return error_response("Stop not found", status_code=404)
+
+        records = (
+            StudentAttendance.objects
+            .filter(trip__school=school, is_active=True)
+            .filter(Q(pickup_stop_id=stop_id) | Q(drop_stop_id=stop_id))
+            .select_related("student", "trip")
+            .order_by("-trip__trip_date", "student__name")
+        )
+
+        aggregated = records.aggregate(
+            total_attendance_records=Count("id"),
+            pickup_count=Count("id", filter=Q(pickup_status=True)),
+            drop_count=Count("id", filter=Q(drop_status=True)),
+            unique_students=Count("student", distinct=True),
+        )
+
+        total = aggregated["total_attendance_records"] or 0
+        pickup_count = aggregated["pickup_count"] or 0
+        drop_count = aggregated["drop_count"] or 0
+        unique_students = aggregated["unique_students"] or 0
+
+        attendance_data = [
+            {
+                "attendance_id": r.id,
+                "student_id": r.student.id,
+                "student_name": r.student.name,
+                "trip_id": r.trip.id,
+                "trip_date": r.trip.trip_date,
+                "pickup_status": r.pickup_status,
+                "drop_status": r.drop_status,
+                "is_present": r.pickup_status,
+            }
+            for r in records
+        ]
+
+        return success_response(
+            data={
+                "stop_id": stop.id,
+                "stop_name": stop.name,
+                "unique_students": unique_students,
+                "total_attendance_records": total,
+                "pickup_count": pickup_count,
+                "drop_count": drop_count,
+                "absent_count": total - pickup_count,
+                "attendance": attendance_data,
+            },
+            message="Stop attendance report fetched successfully"
+        )
+
+class UnplannedTripListAPIView(APIView):
+    """
+    Returns unplanned trips with filtering support.
+    Combines trips with UNSCHEDULED status and trips on holiday dates.
+    Supports filtering by bus_id, from_date, to_date.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        # Get all holiday dates for this school
+        holiday_dates = SchoolHoliday.objects.filter(
+            school=school, is_active=True
+        ).values_list("date", flat=True)
+
+        # Combine UNSCHEDULED trips and trips on holiday dates
+        unplanned_trips = SchoolBusTrip.objects.filter(school=school).filter(
+            Q(status=SchoolBusTrip.STATUS_UNSCHEDULED) | Q(trip_date__in=holiday_dates)
+        )
+
+        # Optional filters
+        bus_id = request.query_params.get("bus")
+        from_date = request.query_params.get("from_date")
+        to_date = request.query_params.get("to_date")
+
+        if bus_id:
+            unplanned_trips = unplanned_trips.filter(bus_id=bus_id)
+        if from_date and to_date:
+            unplanned_trips = unplanned_trips.filter(trip_date__range=[from_date, to_date])
+
+        data = [
+            {
+                "trip_id": trip.id,
+                "bus_id": trip.bus.id,
+                "vehicle_reg_no": trip.bus.vehicle_reg_no,
+                "route_id": trip.route.id,
+                "route_name": trip.route.name,
+                "trip_date": trip.trip_date,
+                "status": trip.status,
+                "reason": "Holiday" if trip.trip_date in holiday_dates else "Unscheduled"
+            }
+            for trip in unplanned_trips.order_by("-trip_date")
+        ]
+
+        return list_response(data=data, message="Unplanned trips fetched successfully")
+
+# =====================================================
+# Alerts
+# =====================================================
+
+# class AdminAlertsAPIView(APIView):
+#     """
+#     School admin can view alerts for their school.
+#     Supports filtering by alert_type.
+#     """
+#     permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+#     def get(self, request):
+#         school_id = request.query_params.get("school_id")
+#         if not school_id:
+#             return error_response("school_id is required")
+
+#         try:
+#             school = request.user.schooladmin_user.get(id=school_id)
+#         except School.DoesNotExist:
+#             return error_response("Invalid school_id", status_code=403)
+
+#         alerts = BusAlert.objects.filter(school=school)
+#         alert_type = request.query_params.get("alert_type")
+#         if alert_type:
+#             valid_types = {choice[0] for choice in BusAlert.ALERT_CHOICES}
+#             if alert_type not in valid_types:
+#                 return error_response("Invalid alert_type")
+#             alerts = alerts.filter(alert_type=alert_type)
+
+#         alerts = alerts.order_by("-created_at")
+#         serializer = AdminBusAlertSerializer(alerts, many=True)
+#         return list_response(data=serializer.data, message="Alerts fetched successfully")
+
+# class ParentAlertsAPIView(APIView):
+#     """
+#     Parent can view alerts for buses that carry their children.
+#     Filtered by the buses that have active allocations for the parent's students.
+#     """
+#     permission_classes = [IsAuthenticated, IsParentUser]
+
+#     def get(self, request):
+#         parent = request.user.parent_profile
+#         parent_student_ids = parent.students.values_list("id", flat=True)
+
+#         # Only show alerts for buses carrying the parent's students
+#         alerts = (
+#             BusAlert.objects
+#             .filter(bus__student_allocations__student__in=parent_student_ids)
+#             .select_related("school", "bus")
+#             .distinct()
+#             .order_by("-created_at")
+#         )
+#         serializer = ParentAlertSerializer(alerts, many=True)
+#         return list_response(data=serializer.data, message="Alerts fetched successfully")
+
+class CaptureBusAlertAPIView(APIView):
+    """
+    Captures a bus alert from an external source (e.g. Skytron GPS device).
+    Auto-resolves school from the bus's active school tag.
+    alert_type is passed as a URL parameter.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, alert_type):
+        if alert_type not in dict(BusAlert.ALERT_CHOICES):
+            return error_response("Invalid alert type")
+
+        bus_id = request.data.get("bus")
+        if not bus_id:
+            return error_response("bus field is required")
+
+        bus = get_object_or_404(DeviceTag, id=bus_id)
+
+        # Resolve school from bus's active school tag
+        school_tag = SchoolBusTag.objects.filter(
+            bus=bus, is_active=True, status="approved"      # UPDATED
+        ).select_related("school").first()
+
+        if not school_tag:
+            return error_response("Bus is not assigned to any active school")
+
+        school = school_tag.school
+        serializer = BusAlertSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        alert = serializer.save(
+            school=school, bus=bus,
+            alert_type=alert_type,
+            created_by=request.user
+        )
+
+        return success_response(
+            data={
+                "alert_id": alert.id,
+                "alert_type": alert.alert_type,
+                "bus_id": alert.bus.id,
+                "school_id": alert.school.id,
+                "created_by": {"id": alert.created_by.id, "email": alert.created_by.email},
+                "created_at": alert.created_at,
+            },
+            message="Alert captured successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+# =====================================================
+# School Bus Tagging — 4-Step Workflow
+# =====================================================
+
+class BusTagInitiateAPIView(APIView):
+    """
+    Step 1 — School admin selects a vehicle registration number.
+    Creates a SchoolBusTag with status='pending'.
+    Sends OTP to the vehicle owner's registered mobile.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin ]
+
+    @transaction.atomic
+    def post(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        serializer = BusTagInitiateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        bus = serializer.get_bus()
+
+        # Block if already tagged and approved to another school
+        if SchoolBusTag.objects.filter(
+            bus=bus, is_active=True, status="approved"
+        ).exclude(school=school).exists():
+            return error_response("Bus is already approved and tagged to another school")
+
+        # Block duplicate pending/approved request for same school+bus
+        existing = SchoolBusTag.objects.filter(
+            bus=bus, school=school,
+            status__in=["pending", "approved"]
+        ).first()
+
+        if existing:
+            if existing.status == "approved":
+                return error_response("Bus is already approved and tagged to this school")
+            return error_response(
+                "A pending tagging request already exists for this bus",
+                errors={"tag_id": existing.id}
+            )
+
+        # Generate OTP
+        otp = str(secrets.randbelow(900000) + 100000)
+
+        tag = SchoolBusTag.objects.create(
+            school=school,
+            bus=bus,
+            is_active=False,                        # Only True after approval
+            status="pending",
+            otp=make_password(otp),
+            otp_verified=False,
+            otp_created_at=timezone.now(),
+            otp_attempts=0,
+            requested_by=request.user,
+            requested_at=timezone.now(),
+        )
+
+        data = {
+            "tag_id": tag.id,
+            "vehicle_reg_no": bus.vehicle_reg_no,
+            "otp_sent": True,
+        }
+
+        if settings.DEBUG:
+            data["dev_otp"] = otp
+
+        return success_response(
+            data=data,
+            message="Tagging request initiated. OTP sent to vehicle owner.",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class BusTagSendOTPAPIView(APIView):
+    """
+    Resend OTP to vehicle owner for an existing pending tag request.
+    Resets attempts counter and expiry.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, tag_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            tag = SchoolBusTag.objects.get(id=tag_id, school=school, status="pending")
+        except SchoolBusTag.DoesNotExist:
+            return error_response("Tagging request not found", status_code=404)
+
+        if tag.otp_verified:
+            return error_response("OTP already verified")
+
+        otp = str(secrets.randbelow(900000) + 100000)
+        tag.otp = make_password(otp)
+        tag.otp_created_at = timezone.now()
+        tag.otp_attempts = 0
+        tag.save(update_fields=["otp", "otp_created_at", "otp_attempts"])
+
+        # TODO: Send OTP via SMS to vehicle owner
+
+        data = {"tag_id": tag.id, "otp_sent": True}
+        if settings.DEBUG:
+            data["dev_otp"] = otp
+
+        return success_response(data=data, message="OTP resent successfully")
+
+class BusTagVerifyOTPAPIView(APIView):
+    """
+    Step 2 — Verify OTP entered by school admin (received by vehicle owner).
+    Supports temporary DEFAULT_TEST_OTP for testing (controlled via settings).
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, tag_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            tag = SchoolBusTag.objects.get(id=tag_id, school=school, status="pending")
+        except SchoolBusTag.DoesNotExist:
+            return error_response("Tagging request not found", status_code=404)
+
+        if tag.otp_verified:
+            return error_response("OTP already verified")
+
+        if not tag.otp or not tag.otp_created_at:
+            return error_response("OTP not generated. Please request a new OTP.")
+
+        # Check expiry
+        expiry_time = tag.otp_created_at + timedelta(minutes=settings.OTP_EXPIRY_MINUTES)
+        if timezone.now() > expiry_time:
+            return error_response("OTP expired. Please request a new OTP.")
+
+        # Check attempt limit
+        if tag.otp_attempts >= settings.OTP_MAX_ATTEMPTS:
+            return error_response("Maximum OTP attempts exceeded. Please request a new OTP.")
+
+        serializer = BusTagOTPVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        otp_input = serializer.validated_data["otp"]
+
+        # ================================
+        # DEFAULT OTP  (TESTING ONLY)
+        # ================================
+        is_default_otp = (
+            getattr(settings, "ALLOW_DEFAULT_TEST_OTP", False)
+            and otp_input == getattr(settings, "DEFAULT_TEST_OTP", "")
+        )
+
+        if is_default_otp:
+            is_valid_otp = True
+        else:
+            is_valid_otp = check_password(otp_input, tag.otp)
+
+        if not is_valid_otp:
+            tag.otp_attempts += 1
+            tag.save(update_fields=["otp_attempts"])
+            remaining = settings.OTP_MAX_ATTEMPTS - tag.otp_attempts
+            return error_response(
+                "Invalid OTP",
+                errors={"attempts_remaining": remaining}
+            )
+
+        # OTP correct — clear it
+        tag.otp_verified = True
+        tag.otp = ""
+        tag.otp_created_at = None
+        tag.otp_attempts = 0
+        tag.save(update_fields=["otp_verified", "otp", "otp_created_at", "otp_attempts"])
+
+        return success_response(
+            data={"tag_id": tag.id, "otp_verified": True},
+            message="OTP verified successfully"
+        )
+
+class BusTagSubmitDocumentsAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    REQUIRED_DOC_TYPES = ["PERMIT", "REQUEST_LETTER", "RC", "AUTH_LETTER", "VLTD_RECEIPT"]
+
+    def post(self, request, tag_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            tag = SchoolBusTag.objects.get(id=tag_id, school=school, status="pending")
+        except SchoolBusTag.DoesNotExist:
+            return error_response("Tagging request not found", status_code=404)
+
+        if not tag.otp_verified:
+            return error_response("OTP must be verified before uploading documents")
+
+        # ── Final submit (no files, just validation) ──────────────────────────
+        if request.data.get("submit", False):
+            existing_types = set(
+                SchoolBusDocument.objects.filter(
+                    school=school, bus=tag.bus, is_active=True
+                ).values_list("document_type", flat=True)
+            )
+            missing = [t for t in self.REQUIRED_DOC_TYPES if t not in existing_types]
+            if missing:
+                return error_response(
+                    "Fitment receipt is required" if "VLTD_RECEIPT" in missing
+                    else "Please upload all required documents",
+                    errors={"missing_documents": missing}
+                )
+            return success_response(
+                data={
+                    "tag_id": tag.id,
+                    "vehicle_reg_no": tag.bus.vehicle_reg_no,
+                    "documents_complete": True,
+                    "status": tag.status,
+                },
+                message=f"Tagging request for {tag.bus.vehicle_reg_no} submitted. Pending State Admin review."
+            )
+
+        # ── Detect mode: bulk (multiple keys) or single ───────────────────────
+        incoming_file_keys = [k for k in request.FILES if k in self.REQUIRED_DOC_TYPES]
+
+        if len(incoming_file_keys) > 1:
+            # ── BULK UPLOAD ───────────────────────────────────────────────────
+            serializer = BusTagDocumentsBulkUploadSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+
+            uploaded = []
+            with transaction.atomic():
+                for doc_type, file_obj in serializer.validated_data.items():
+                    path = upload_bus_document(file_obj, school.id, tag.bus.id, doc_type)
+                    doc, _ = SchoolBusDocument.objects.update_or_create(
+                        school=school, bus=tag.bus, document_type=doc_type,
+                        defaults={"file_path": path, "is_active": True}
+                    )
+                    uploaded.append({"document_type": doc_type, "document_id": doc.id})
+
+            uploaded_count = SchoolBusDocument.objects.filter(
+                school=school, bus=tag.bus, is_active=True,
+                document_type__in=self.REQUIRED_DOC_TYPES
+            ).count()
+
+            return success_response(
+                data={
+                    "tag_id": tag.id,
+                    "uploaded": uploaded,
+                    "uploaded_count": uploaded_count,
+                    "total_required": len(self.REQUIRED_DOC_TYPES),
+                    "all_uploaded": uploaded_count >= len(self.REQUIRED_DOC_TYPES),
+                },
+                message=f"{len(uploaded)} documents uploaded ({uploaded_count}/{len(self.REQUIRED_DOC_TYPES)})",
+                status_code=status.HTTP_201_CREATED
+            )
+
+        # ── SINGLE UPLOAD (existing behaviour, unchanged) ─────────────────────
+        serializer = BusTagDocumentUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        doc_type = serializer.validated_data["document_type"]
+        path = upload_bus_document(serializer.validated_data["file"], school.id, tag.bus.id, doc_type)
+
+        with transaction.atomic():
+            doc, _ = SchoolBusDocument.objects.update_or_create(
+                school=school, bus=tag.bus, document_type=doc_type,
+                defaults={"file_path": path, "is_active": True}
+            )
+
+        uploaded_count = SchoolBusDocument.objects.filter(
+            school=school, bus=tag.bus, is_active=True,
+            document_type__in=self.REQUIRED_DOC_TYPES
+        ).count()
+
+        return success_response(
+            data={
+                "tag_id": tag.id,
+                "document_id": doc.id,
+                "document_type": doc_type,
+                "uploaded_count": uploaded_count,
+                "total_required": len(self.REQUIRED_DOC_TYPES),
+                "all_uploaded": uploaded_count >= len(self.REQUIRED_DOC_TYPES),
+            },
+            message=f"Document uploaded successfully ({uploaded_count}/{len(self.REQUIRED_DOC_TYPES)})"
+        )
+
+class BusTagDecisionAPIView(APIView):
+    """
+    Step 4 — State admin approves or rejects the tagging request.
+    On APPROVE: SchoolBusTag.is_active=True, status='approved'
+    On REJECT:  status='rejected', remarks saved
+    """
+    permission_classes = [IsAuthenticated, IsStateAdmin | IsSuperAdmin]
+
+    @transaction.atomic
+    def post(self, request, tag_id):
+        serializer = BusTagDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        decision = serializer.validated_data["decision"]
+        remarks = serializer.validated_data.get("remarks", "")
+
+        try:
+            tag = SchoolBusTag.objects.select_for_update().get(
+                id=tag_id, status="pending"
+            )
+        except SchoolBusTag.DoesNotExist:
+            return error_response("Tagging request not found or already processed", status_code=404)
+
+        tag.reviewed_by = request.user
+        tag.reviewed_at = timezone.now()
+        tag.remarks = remarks
+
+        if decision == "APPROVE":
+            tag.status = "approved"
+            tag.is_active = True
+        else:
+            tag.status = "rejected"
+            tag.is_active = False
+
+        tag.save()
+
+        return success_response(
+            data={
+                "tag_id": tag.id,
+                "vehicle_reg_no": tag.bus.vehicle_reg_no,
+                "school": tag.school.school_name,
+                "status": tag.status,
+                "reviewed_by": request.user.name,
+                "reviewed_at": tag.reviewed_at,
+            },
+            message=f"Tagging request {decision.lower()}d successfully"
+        )
+
+class BusTagHistoryAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsStateAdmin | IsSuperAdmin]
+
+    def get(self, request):
+        user = request.user
+
+        if user.role in ["stateadmin", "superadmin"]:
+            tags = SchoolBusTag.objects.all()
+
+        else:
+            school = user.schooladmin_user.first()   
+
+            if not school:
+                return error_response("Admin has no school")
+
+            tags = SchoolBusTag.objects.filter(school=school)
+
+        tags = tags.select_related("bus", "school").order_by("-requested_at")
+
+        serializer = BusTagHistorySerializer(tags, many=True)
+        return list_response(
+            data=serializer.data,
+            message="Tagging history fetched successfully"
+        )
+
+class SchoolBusTagListAPIView(APIView):
+    """
+    Returns all approved+active bus tags for the school.
+    Used for the bus list inside the school admin panel.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin ]
+
+    def get(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        tags = SchoolBusTag.objects.filter(
+            school=school, is_active=True, status="approved"   # UPDATED
+        ).order_by("-tagged_at")
+
+        serializer = SchoolBusTagSerializer(tags, many=True)
+        return list_response(
+            data=serializer.data,
+            message="Tagged buses fetched successfully"
+        )
+
+class SchoolBusUnTagAPIView(APIView):
+    """
+    Untags a bus from a school.
+    Only approved tags can be untagged.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    @transaction.atomic
+    def post(self, request, bus_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            tag = SchoolBusTag.objects.get(
+                school=school, bus_id=bus_id,
+                is_active=True, status="approved"       # UPDATED
+            )
+        except SchoolBusTag.DoesNotExist:
+            return error_response("Bus not tagged to this school", status_code=404)
+
+        tag.is_active = False
+        tag.save(update_fields=["is_active"])
+        return success_response(message="Bus untagged successfully")
+
+class AvailableVLTDVehiclesAPIView(APIView):
+    """
+    Returns active Skytron buses not yet tagged (approved) to any school.
+    Powers the Step 1 dropdown in the tagging workflow.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def get(self, request):
+        tagged_bus_ids = SchoolBusTag.objects.filter(
+            is_active=True, status="approved"           # UPDATED
+        ).values_list("bus_id", flat=True)
+
+        buses = (
+            DeviceTag.objects
+            .filter(status="Owner_Final_OTP_Verified" , category__category="SCHOOL_BUS")
+            .exclude(id__in=tagged_bus_ids)
+            .order_by("vehicle_reg_no")
+        )
+
+        return list_response(
+            data=[{"id": b.id, "vehicle_reg_no": b.vehicle_reg_no} for b in buses],
+            message="Available VLTD vehicles fetched successfully"
+        )
+
+# =====================================================
+# Bus – Route Assignment
+# =====================================================
+
+class AssignBusToRouteAPIView(APIView):
+    """
+    Assigns a bus to a route for a school.
+    Bus must be tagged to this school first.
+    A bus can only be assigned to one active route per school.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        bus_id = request.data.get("bus")
+        route_id = request.data.get("route")
+
+        if not bus_id or not route_id:
+            return error_response("bus and route are required")
+
+        try:
+            route = SchoolRoute.objects.get(id=route_id, school=school)
+        except SchoolRoute.DoesNotExist:
+            return error_response("Route not found", status_code=404)
+
+        try:
+            bus = DeviceTag.objects.get(id=bus_id)
+        except DeviceTag.DoesNotExist:
+            return error_response("Bus not found", status_code=404)
+
+        # Only approved+tagged buses can be assigned to routes
+        validate_bus_belongs_to_school(bus, school)
+
+        assignment, created = RouteBusAssignment.objects.get_or_create(
+            school=school, bus=bus,
+            defaults={"route": route, "is_active": True, "status": "active"}
+        )
+
+        if not created and assignment.is_active:
+            return error_response("Bus already assigned to a route")
+
+        assignment.route = route
+        assignment.is_active = True
+        assignment.status = "active"
+        assignment.save()
+
+        return success_response(
+            data=RouteBusAssignmentSerializer(assignment).data,
+            message="Bus assigned to route successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class ReassignBusToRouteAPIView(APIView):
+    """
+    Changes the route assignment of a bus.
+    Bus must already have an active route assignment.
+    New route must belong to the same school.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, bus_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        route_id = request.data.get("route")
+        if not route_id:
+            return error_response("route is required")
+
+        try:
+            assignment = RouteBusAssignment.objects.get(
+                school=school, bus_id=bus_id, is_active=True
+            )
+        except RouteBusAssignment.DoesNotExist:
+            return error_response("Bus is not assigned to any route", status_code=404)
+
+        try:
+            route = SchoolRoute.objects.get(id=route_id, school=school)
+        except SchoolRoute.DoesNotExist:
+            return error_response("Route not found", status_code=404)
+
+        assignment.route = route
+        assignment.save()
+
+        return success_response(
+            data=RouteBusAssignmentSerializer(assignment).data,
+            message="Bus reassigned to route successfully"
+        )
+
+class RemoveBusFromRouteAPIView(APIView):
+    """
+    Removes a bus from its current route assignment (soft delete).
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def post(self, request, bus_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        try:
+            assignment = RouteBusAssignment.objects.get(
+                school=school, bus_id=bus_id, is_active=True
+            )
+        except RouteBusAssignment.DoesNotExist:
+            return error_response("Bus is not assigned to any route", status_code=404)
+
+        # Soft delete the assignment
+        assignment.is_active = False
+        assignment.status = "inactive"
+        assignment.save()
+
+        return success_response(message="Bus removed from route successfully")
+
+class RouteBusesAPIView(APIView):
+    """
+    Returns all buses assigned to a specific route.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request, route_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin is not associated with any school")
+
+        assignments = RouteBusAssignment.objects.filter(
+            school=school, route_id=route_id, is_active=True
+        )
+        serializer = RouteBusAssignmentSerializer(assignments, many=True)
+        return list_response(
+            data=serializer.data,
+            message="Route buses fetched successfully"
+        )
+        
+class RouteBusAssignmentListAPIView(APIView):
+    """
+    Returns all active bus-to-route assignments for the school.
+    Powers the 'Active Assignments' table in the UI.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    def get(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        assignments = RouteBusAssignment.objects.filter(
+            school=school,
+            is_active=True,
+            status="active"
+        ).select_related("route", "bus").order_by("-assigned_at")
+
+        serializer = RouteBusAssignmentSerializer(assignments, many=True)
+        return list_response(
+            data=serializer.data,
+            message="Active assignments fetched successfully"
+        )
+
+# =====================================================
+# Parent Student Attendance & Active Trip
+# =====================================================
+
+class ParentStudentAttendanceAPIView(APIView):
+    """
+    Parent can view attendance history for one of their children.
+    Parent can only access students linked to their profile.
+    """
+    permission_classes = [IsAuthenticated, IsParentUser]
+
+    def get(self, request, student_id):
+        parent = request.user.parent_profile
+
+        # Ensure student belongs to this parent
+        student = get_object_or_404(parent.students, id=student_id)
+
+        records = (
+            StudentAttendance.objects
+            .filter(student=student, is_active=True)
+            .select_related("trip")
+            .order_by("-trip__trip_date")
+        )
+
+        serializer = ParentStudentAttendanceSerializer({
+            "student_id": student.id,
+            "student_name": student.name,
+            "attendance": records
+        })
+
+        return success_response(
+            data=serializer.data,
+            message="Student attendance fetched successfully"
+        )
+
+class ParentActiveTripAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsParentUser]
+
+    def get(self, request):
+        parent = request.user.parent_profile
+        school = parent.school
+        now = timezone.localtime()
+        today = now.date()
+
+        # Find active allocation for any of parent's students
+        allocation = (
+            StudentBusAllocation.objects
+            .filter(
+                student__in=parent.students.all(),
+                is_active=True, start_date__lte=today
+            )
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .select_related("bus")
+            .first()
+        )
+
+        if not allocation:
+            return success_response(
+                data={"active": False, "trip": None},
+                message="No active bus allocation"
+            )
+
+        # Verify bus is still tagged to school
+        validate_bus_belongs_to_school(allocation.bus, school)
+
+        # Find trip currently running for this bus
+        trip = (
+            SchoolBusTrip.objects
+            .filter(
+                school=school, bus=allocation.bus,
+                trip_date=today,
+                start_time__lte=now.time(),
+                end_time__gte=now.time(),
+                status=SchoolBusTrip.STATUS_PLANNED,
+            )
+            .first()
+        )
+
+        if not trip:
+            return success_response(
+                data={"active": False, "trip": None},
+                message="No active trip"
+            )
+
+        return success_response(
+            data={
+                "active": True,
+                "trip": {
+                    "trip_id": trip.id,
+                    "bus": trip.bus.id,
+                    "route": trip.route.id,
+                    "trip_date": trip.trip_date,
+                }
+            },
+            message="Active trip fetched successfully"
+        )
+
+class ParentTripHistoryAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsParentUser]
+
+    def get(self, request):
+        parent = request.user.parent_profile
+        today = timezone.localdate()
+
+        allocations = (
+            StudentBusAllocation.objects
+            .filter(
+                student__in=parent.students.all(),
+                is_active=True,
+                start_date__lte=today
+            )
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .select_related("bus")
+        )
+
+        bus_ids = allocations.values_list("bus_id", flat=True)
+
+        trips = (
+            SchoolBusTrip.objects
+            .filter(
+                school=parent.school,
+                bus_id__in=bus_ids
+            )
+            .order_by("-trip_date", "-start_time")
+        )
+
+        serializer = ParentTripHistorySerializer(trips, many=True)
+
+        return list_response(serializer.data, message="Trip history fetched successfully")
+      
+# =====================================================
+# School Bus Documents
+# =====================================================
+
+class SchoolBusDocumentUploadAPIView(APIView):
+    """
+    School admin can upload documents for a tagged bus.
+    Files are stored on FTP server — only the path is stored in DB.
+    If document of same type already exists, file is replaced.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def post(self, request, bus_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        # Bus must be tagged to this school
+        bus = DeviceTag.objects.filter(
+            id=bus_id,
+            school_tags__school=school,
+            school_tags__is_active=True,
+            school_tags__status="approved"      # UPDATED
+        ).first()
+
+        if not bus:
+            return error_response("Bus not found or not tagged to this school", status_code=404)
+
+        serializer = SchoolBusDocumentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        document_type = serializer.validated_data["document_type"]
+        new_file = serializer.validated_data["file"]
+
+        # Upload to FTP and get the stored path
+        ftp_file_path = upload_bus_document(new_file, school.id, bus.id, document_type)
+
+        with transaction.atomic():
+            existing_document = SchoolBusDocument.objects.filter(
+                school=school, bus=bus, document_type=document_type
+            ).first()
+
+            if existing_document:
+                # Replace existing document path
+                existing_document.file_path = ftp_file_path
+                existing_document.save()
+                document = existing_document
+            else:
+                # Create new document record
+                document = SchoolBusDocument.objects.create(
+                    school=school, bus=bus,
+                    document_type=document_type,
+                    file_path=ftp_file_path
+                )
+
+        return success_response(
+            data={
+                "document_id": document.id,
+                "bus_id": bus.id,
+                "school_id": school.id,
+                "document_type": document.document_type,
+                "file_path": document.file_path,
+                "uploaded_by": request.user.id,
+                "uploaded_at": document.uploaded_at
+            },
+            message="Document uploaded successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class SchoolBusDocumentListAPIView(APIView):
+    """
+    School admin can list all documents for a specific bus.
+    Bus must be tagged to the admin's school.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def get(self, request, bus_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        bus = DeviceTag.objects.filter(
+            id=bus_id,
+            school_tags__school=school,
+            school_tags__is_active=True,
+            school_tags__status="approved"      # UPDATED
+        ).first()
+
+        if not bus:
+            return error_response("Bus not found or not tagged to this school", status_code=404)
+
+        documents = SchoolBusDocument.objects.filter(
+            school=school, bus=bus
+        ).order_by("-uploaded_at")
+
+        return list_response(
+            data=SchoolBusDocumentSerializer(documents, many=True).data,
+            message="Bus documents fetched successfully"
+        )
+
+class SchoolBusDocumentDownloadAPIView(APIView):
+    """
+    Downloads a document from FTP and streams it to the client.
+    File is fetched from FTP using stored path.
+    Content-Type is inferred from file extension.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+        # NEW — uses MinIO
+    def get(self, request, document_id):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        document = SchoolBusDocument.objects.filter(
+            id=document_id, school=school
+        ).first()
+
+        if not document:
+            return error_response("Document not found", status_code=404)
+
+        try:
+            file_bytes = download_file_bytes(document.file_path)
+        except Exception:
+            return error_response(
+                "Could not retrieve file from storage",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        filename = document.file_path.split("/")[-1]
+        content_type, _ = mimetypes.guess_type(filename)
+
+        response = HttpResponse(
+            file_bytes,
+            content_type=content_type or "application/octet-stream"
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+    
+class SchoolBusDocumentDeleteAPIView(APIView):
+    """
+    Deletes a document from both FTP and database.
+    If FTP deletion fails, database record is preserved and error is returned.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def post(self, request, document_id):  # changed from delete to post
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        document = SchoolBusDocument.objects.filter(
+            id=document_id, school=school
+        ).first()
+
+        if not document:
+            return error_response("Document not found", status_code=404)
+
+        file_path = document.file_path
+        document_id_val = document.id
+        bus_id = document.bus.id
+        document_type = document.document_type
+        deleted_by = request.user.id
+        deleted_at = timezone.now()
+
+        if not delete_ftp_file(file_path):
+            return error_response(
+                "Failed to delete file from storage",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        # Only delete DB record after FTP deletion succeeds
+        document.delete()
+
+        return success_response(
+            data={
+                "document_id": document_id_val,
+                "bus_id": bus_id,
+                "document_type": document_type,
+                "deleted_by": deleted_by,
+                "deleted_at": deleted_at
+            },
+            message="Document deleted successfully"
+        )
+
+# =====================================================
+# Dashboard API
+# =====================================================     
+        
+class DashboardAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            data = {
+                "total_schools": School.objects.filter(is_active=True).count(),
+                "registered_buses": DeviceTag.objects.filter(
+                    status="Owner_Final_OTP_Verified" , category__category="SCHOOL_BUS"
+                ).count(),
+                "active_students": Student.objects.count(),
+                "total_routes": SchoolRoute.objects.filter(
+                    status=SchoolRoute.STATUS_ACTIVE
+                ).count(),
+            }
+            return success_response(
+                data=data,
+                message="Dashboard data fetched successfully"
+            )
+        except Exception as e:
+            return error_response(
+                message="Failed to fetch dashboard data",
+                errors=str(e),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class SchoolWiseDistributionAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            schools = School.objects.filter(is_active=True).annotate(
+                students_count=Count(
+                    "students",
+                    distinct=True          
+                ),
+                buses_count=Count(
+                    "bus_tags",
+                    filter=Q(
+                        bus_tags__is_active=True,
+                        bus_tags__status="approved"   
+                    ),
+                    distinct=True
+                )
+            )
+
+            data = [
+                {
+                    "school_id":   school.id,
+                    "school_name": school.school_name,
+                    "students":    school.students_count,
+                    "buses":       school.buses_count,
+                }
+                for school in schools
+            ]
+
+            return success_response(
+                data=data,
+                message="School-wise distribution fetched successfully"
+            )
+
+        except Exception as e:
+            return error_response(
+                message="Failed to fetch data",
+                errors=str(e)
+            )
+
+class ActiveTripMonitorAPIView(APIView):
+    """
+    Returns all active trips for today (for dashboard table).
+    Includes vehicle, route, driver, contact and status.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_trip_state(self, trip, current_time):
+        if trip.start_time and trip.end_time:
+            if trip.start_time <= current_time <= trip.end_time:
+                return "ACTIVE"
+            elif current_time < trip.start_time:
+                return "UPCOMING"
+            else:
+                return "COMPLETED"
+        return "UNKNOWN"
+
+    def get(self, request):
+        try:
+            now = timezone.localtime()
+            today = now.date()
+            current_time = now.time()
+
+            trips = SchoolBusTrip.objects.filter(
+                trip_date=today,
+                status=SchoolBusTrip.STATUS_PLANNED
+            ).select_related("bus", "route").prefetch_related("bus__drivers")
+
+            data = []
+            for trip in trips:
+                driver = trip.bus.drivers.first()
+                trip_state = self.get_trip_state(trip, current_time)
+                status_label = "On-Time" if trip_state == "ACTIVE" else "Delayed"
+
+                data.append({
+                    "vehicle": trip.bus.vehicle_reg_no,
+                    "route": trip.route.name,
+                    "driver_name": driver.name if driver else None,
+                    "contact": driver.phone_no if driver else None,
+                    "status": status_label
+                })
+
+            return success_response(
+                data=data,
+                message="Active trips fetched successfully"
+            )
+        except Exception as e:
+            return error_response(message="Failed to fetch trips", errors=str(e))
+
+class BusOperationalStatusAPIView(APIView):
+    """
+    Returns bus operational distribution for dashboard
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            now = timezone.localtime()
+            today = now.date()
+            current_time = now.time()
+
+            buses = DeviceTag.objects.filter(status="Owner_Final_OTP_Verified" , category__category="SCHOOL_BUS")
+
+            on_trip = 0
+            idle = 0
+            off_duty = 0
+            maintenance = 0  # For now defalt to 0 as we don't have maintenance status in VLTD
+
+            for bus in buses:
+                trip = SchoolBusTrip.objects.filter(
+                    bus=bus, trip_date=today, status=SchoolBusTrip.STATUS_PLANNED
+                ).first()
+
+                if trip:
+                    if trip.start_time and trip.end_time:
+                        if trip.start_time <= current_time <= trip.end_time:
+                            on_trip += 1
+                        else:
+                            idle += 1
+                    else:
+                        idle += 1
+                else:
+                    off_duty += 1
+
+            return success_response(
+                data={
+                    "on_trip": on_trip,
+                    "idle": idle,
+                    "maintenance": maintenance,
+                    "off_duty": off_duty,
+                    "total_registered": buses.count()
+                },
+                message="Bus operational status fetched successfully"
+            )
+        except Exception as e:
+            return error_response(message="Failed to fetch status", errors=str(e))
+
+class LiveAlertsFeedAPIView(APIView):
+    """
+    Returns latest 10 alerts from AlertsLog
+    ONLY for buses tagged to school bus module (approved + active)
+    """
+    permission_classes = [IsAuthenticated]
+
+    EMERGENCY_TYPES = {
+        "Em", "EmPublicApp", "EmRegisteredApp",
+        "EmMonitorTripSOS", "EmMonitorTripInvalidPw",
+        "EmMonitorTripBLEDisconnect", "EmMonitorTripDeviated", "Incident"
+    }
+    DELAY_TYPES = {
+        "Route_overspeed", "Idling", "Overtime",
+        "UnauthorizedStop", "UnauthorizedSkip"
+    }
+    BUS_EMERGENCY_TYPES = {"sos"}
+
+    def get(self, request):
+        try:
+            # Only approved & active tagged buses
+            bus_ids = list(
+                SchoolBusTag.objects.filter(
+                    status="approved",
+                    is_active=True
+                ).values_list("bus_id", flat=True).distinct()
+            )
+
+            # Fetch latest alerts only for those buses
+            system_alerts = (
+                AlertsLog.objects
+                .filter(deviceTag_id__in=bus_ids)
+                .select_related("deviceTag")
+                .order_by("-timestamp")[:10]
+            )
+
+            data = []
+
+            for alert in system_alerts:
+                data.append({
+                    "id": alert.id,
+                    "type": self.map_system_type(alert.type),
+                    "title": self.map_title(alert.type),
+                    "message": alert.alert_details,
+                    "time": alert.timestamp,
+                    "bus": alert.deviceTag.vehicle_reg_no if alert.deviceTag else None,
+                    "source": "system"
+                })
+
+            # Format datetime AFTER sorting
+            for item in data:
+                item["time"] = item["time"].strftime("%d %b %Y, %I:%M %p")
+
+            return list_response(data=data, message="Live alerts fetched successfully")
+
+        except Exception as e:
+            return error_response(message="Failed to fetch alerts", errors=str(e))
+
+    def map_system_type(self, alert_type):
+        if alert_type in self.EMERGENCY_TYPES:
+            return "EMERGENCY"
+        if alert_type in self.DELAY_TYPES:
+            return "DELAY"
+        if "Geofence" in alert_type:
+            return "GEOFENCE"
+        return "INFO"
+
+    def map_bus_type(self, alert_type):
+        if alert_type in self.BUS_EMERGENCY_TYPES:
+            return "EMERGENCY"
+        if alert_type in {"overspeed", "harsh_braking", "harsh_acceleration"}:
+            return "DELAY"
+        return "INFO"
+
+    def map_title(self, alert_type):
+        mapping = {
+            "Geofence": "Geofence Entry",
+            "Route": "Route Alert",
+            "Em": "Emergency",
+            "EmPublicApp": "Emergency",
+            "EmRegisteredApp": "Emergency",
+            "EmMonitorTripSOS": "Emergency",
+            "EmMonitorTripInvalidPw": "Emergency",
+            "EmMonitorTripBLEDisconnect": "Emergency",
+            "EmMonitorTripDeviated": "Route Deviation",
+            "Incident": "Incident",
+            "OverSpeed": "Overspeed",
+            "Route_overspeed": "Overspeed",
+            "Idling": "Delay",
+            "Overtime": "Delay",
+            "UnauthorizedStop": "Delay",
+            "UnauthorizedSkip": "Delay",
+            "HarshBreak": "Harsh Braking",
+            "HarshTurn": "Harsh Turn",
+            "HarshAcceleration": "Harsh Acceleration",
+            "sos": "Emergency",
+            "overspeed": "Overspeed",
+            "harsh_braking": "Harsh Braking",
+            "harsh_acceleration": "Harsh Acceleration",
+            "route_deviation": "Route Deviation",
+        }
+        return mapping.get(alert_type, "Alert")
+    
+class ParentGeofenceAlertsAPIView(APIView):
+    """
+    Returns live geofence alerts for buses carrying the parent's children.
+
+    Columns served:
+    - alert_type   : type from AlertsLog (e.g. 'Geofence')
+    - direction    : 'in' / 'out' from AlertsLog.status
+    - bus_stop     : SchoolBusStop name matched from student's active allocation
+    - timestamp    : when the alert was logged
+    - vehicle_reg_no : bus registration number
+
+    Filters:
+    - Only AlertsLog records with type='Geofence'
+    - Only for buses that have active allocations for the parent's students
+    - Bus stop resolved only from student's allocated pickup/drop stops
+    - Optional query param: ?limit=N  (default 20, max 100)
+    """
+    permission_classes = [IsAuthenticated, IsParentUser]
+
+    def get(self, request):
+        parent = request.user.parent_profile
+        today = timezone.localdate()
+        limit = min(int(request.query_params.get("limit", 20)), 100)
+
+        # Step 1 — Resolve active allocations for parent's students
+        allocations = (
+            StudentBusAllocation.objects
+            .filter(
+                student__in=parent.students.all(),
+                is_active=True,
+                start_date__lte=today,
+            )
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .select_related("pickup_stop", "drop_stop")
+        )
+
+        if not allocations.exists():
+            return list_response(data=[], message="No active bus allocation found")
+
+        bus_ids = allocations.values_list("bus_id", flat=True).distinct()
+
+        # Build stop name lookup from student's actual allocated stops only
+        # key: lowercase stop name → value: original SchoolBusStop name
+        student_stop_map = {}
+        for alloc in allocations:
+            if alloc.pickup_stop:
+                student_stop_map[alloc.pickup_stop.name.strip().lower()] = alloc.pickup_stop.name
+            if alloc.drop_stop:
+                student_stop_map[alloc.drop_stop.name.strip().lower()] = alloc.drop_stop.name
+
+        # Step 2 — Fetch Geofence alerts for those buses only
+        alerts = (
+            AlertsLog.objects
+            .filter(
+                deviceTag_id__in=bus_ids,
+                type="Geofence",
+            )
+            .select_related("gps_ref", "poi_ref", "deviceTag")
+            .order_by("-timestamp")[:limit]
+        )
+
+        # Step 3 — Build response rows
+        data = []
+        for alert in alerts:
+            bus_stop_name = None
+
+            if alert.poi_ref:
+                poi_name_lower = alert.poi_ref.name.strip().lower()
+                # Only return stop name if it matches one of the student's stops
+                bus_stop_name = student_stop_map.get(poi_name_lower)
+
+            data.append({
+                "alert_id":       alert.id,
+                "alert_type":     alert.type,
+                "direction":      alert.status,   # 'in' / 'out'
+                "bus_stop":       bus_stop_name,  # None if not a student's stop
+                "timestamp":      alert.timestamp,
+                "vehicle_reg_no": alert.deviceTag.vehicle_reg_no if alert.deviceTag else None,
+            })
+
+        return list_response(
+            data=data,
+            message="Geofence alerts fetched successfully"
+        )
+        
+class ParentStudentLiveLocationAPIView(APIView):
+    """
+    Returns live GPS location of each student's bus — only when
+    the student is currently ON the bus (picked up but not yet dropped off).
+
+    Lookup chain:
+        Parent → Students → Active Allocation → Bus
+             → Today's Trip → Attendance check → Latest GPSData
+
+    Status cases per student:
+        - no_allocation        : No bus assigned to this student
+        - no_trip_today        : No trip scheduled for today
+        - not_boarded          : Student has not boarded yet
+        - already_dropped      : Student has already been dropped off
+        - on_bus               : Student is currently on the bus (location returned)
+        - no_gps_data          : Student is on bus but no GPS data available yet
+    """
+    permission_classes = [IsAuthenticated, IsParentUser]
+
+    def get(self, request):
+        parent = request.user.parent_profile
+        today  = timezone.localdate()
+        now    = timezone.localtime()
+
+        students = parent.students.all().select_related("school")
+
+        if not students.exists():
+            return success_response(
+                data=[],
+                message="No students linked to this parent"
+            )
+
+        # ── Helpers ───────────────────────────────────────────────────────────
+
+        def stop_info(stop):
+            if not stop:
+                return None
+            return {
+                "id":        stop.id,
+                "name":      stop.name,
+                "latitude":  float(stop.latitude)  if stop.latitude  else None,
+                "longitude": float(stop.longitude) if stop.longitude else None,
+                "timing":    stop.timing,
+            }
+
+        def route_detail(route):
+            """
+            Returns route_points + all ordered stops for the given route.
+            Called once per student — kept outside the loop for clarity,
+            but the RouteStop query is scoped tightly.
+            """
+            if not route:
+                return None
+
+            route_stops = (
+                RouteStop.objects
+                .filter(route=route)
+                .select_related("stop")
+                .order_by("order")
+            )
+
+            return {
+                "id":           route.id,
+                "name":         route.name,
+                "route_points": route.route_points,   # list of {lat, lng}
+                "stops": [
+                    {
+                        "id":        rs.stop.id,
+                        "name":      rs.stop.name,
+                        "order":     rs.order,
+                        "latitude":  float(rs.stop.latitude)  if rs.stop.latitude  else None,
+                        "longitude": float(rs.stop.longitude) if rs.stop.longitude else None,
+                        "timing":    rs.stop.timing,
+                    }
+                    for rs in route_stops
+                ],
+            }
+
+        def driver_info(bus):
+            driver = bus.drivers.first()
+            if not driver:
+                return None
+            return {
+                "id":         driver.id,
+                "name":       driver.name,
+                "phone_no":   driver.phone_no,
+                "license_no": driver.license_no,
+                "photo":      driver.photo,   # stored path — frontend must resolve URL
+            }
+
+        # ─────────────────────────────────────────────────────────────────────
+
+        data = []
+
+        for student in students:
+
+            # ── STEP 1: Active bus allocation ─────────────────────────────────
+            allocation = (
+                StudentBusAllocation.objects
+                .filter(
+                    student=student,
+                    is_active=True,
+                    start_date__lte=today,
+                )
+                .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+                .select_related("bus", "route", "pickup_stop", "drop_stop")
+                .first()
+            )
+
+            if not allocation:
+                data.append({
+                    "student_id":   student.id,
+                    "student_name": student.name,
+                    "class_name":   student.class_name,
+                    "section":      student.section,
+                    "status":       "no_allocation",
+                    "message":      "No bus assigned to this student",
+                    "bus":          None,
+                    "driver":       None,
+                    "route":        None,
+                    "pickup_stop":  None,
+                    "drop_stop":    None,
+                    "location":     None,
+                })
+                continue
+
+            bus         = allocation.bus
+            pickup_stop = stop_info(allocation.pickup_stop)
+            drop_stop   = stop_info(allocation.drop_stop)
+            route_data  = route_detail(allocation.route)
+            driver      = driver_info(bus)
+
+            # ── STEP 2: Today's planned trip ──────────────────────────────────
+            trip = (
+                SchoolBusTrip.objects
+                .filter(
+                    school=student.school,
+                    bus=bus,
+                    trip_date=today,
+                    status=SchoolBusTrip.STATUS_PLANNED,
+                )
+                .first()
+            )
+
+            if not trip:
+                data.append({
+                    "student_id":   student.id,
+                    "student_name": student.name,
+                    "class_name":   student.class_name,
+                    "section":      student.section,
+                    "status":       "no_trip_today",
+                    "message":      "No trip scheduled for today",
+                    "bus": {
+                        "id":             bus.id,
+                        "vehicle_reg_no": bus.vehicle_reg_no,
+                    },
+                    "driver":      driver,
+                    "route":       route_data,
+                    "pickup_stop": pickup_stop,
+                    "drop_stop":   drop_stop,
+                    "location":    None,
+                })
+                continue
+
+            # ── STEP 3: Attendance check ──────────────────────────────────────
+            attendance = (
+                StudentAttendance.objects
+                .filter(trip=trip, student=student, is_active=True)
+                .first()
+            )
+
+            pickup_done = attendance.pickup_status if attendance else False
+            drop_done   = attendance.drop_status   if attendance else False
+
+            if not pickup_done:
+                # Only share live location if the trip has already started
+                # so parent can track the bus approaching their child's stop
+                trip_has_started = (
+                    trip.start_time is not None
+                    and now.time() >= trip.start_time
+                )
+                
+                gps = None
+                if trip_has_started:
+                    gps = (
+                        GPSData.objects
+                        .filter(device_tag=bus)
+                        .order_by("-entry_time")
+                        .first()
+                    )
+
+                data.append({
+                    "student_id":   student.id,
+                    "student_name": student.name,
+                    "class_name":   student.class_name,
+                    "section":      student.section,
+                    "status":       "not_boarded",
+                    "message":      "Student has not boarded the bus yet",
+                    "bus": {
+                        "id":             bus.id,
+                        "vehicle_reg_no": bus.vehicle_reg_no,
+                    },
+                    "driver":      driver,
+                    "route":       route_data,
+                    "pickup_stop": pickup_stop,
+                    "drop_stop":   drop_stop,
+                    "location": {
+                        "latitude":     gps.latitude,
+                        "longitude":    gps.longitude,
+                        "speed":        gps.speed,
+                        "heading":      gps.heading,
+                        "last_updated": gps.entry_time,
+                    } if gps else None,
+                })
+                continue
+
+            if drop_done:
+                data.append({
+                    "student_id":   student.id,
+                    "student_name": student.name,
+                    "class_name":   student.class_name,
+                    "section":      student.section,
+                    "status":       "already_dropped",
+                    "message":      "Student has already been dropped off",
+                    "bus": {
+                        "id":             bus.id,
+                        "vehicle_reg_no": bus.vehicle_reg_no,
+                    },
+                    "driver":       driver,
+                    "route":        route_data,
+                    "pickup_stop":  pickup_stop,
+                    "pickup_time":  attendance.pickup_time,
+                    "drop_stop":    drop_stop,
+                    "drop_time":    attendance.drop_time,
+                    "location":     None,
+                })
+                continue
+
+            # ── STEP 4: Student IS on the bus — fetch latest GPS ──────────────
+            gps = (
+                GPSData.objects
+                .filter(device_tag=bus)
+                .order_by("-entry_time")
+                .first()
+            )
+
+            if not gps:
+                data.append({
+                    "student_id":   student.id,
+                    "student_name": student.name,
+                    "class_name":   student.class_name,
+                    "section":      student.section,
+                    "status":       "no_gps_data",
+                    "message":      "Student is on the bus but GPS data is unavailable",
+                    "bus": {
+                        "id":             bus.id,
+                        "vehicle_reg_no": bus.vehicle_reg_no,
+                    },
+                    "driver":      driver,
+                    "route":       route_data,
+                    "pickup_stop": pickup_stop,
+                    "drop_stop":   drop_stop,
+                    "location":    None,
+                })
+                continue
+
+            # ── STEP 5: All checks passed — return live location ──────────────
+            data.append({
+                "student_id":   student.id,
+                "student_name": student.name,
+                "class_name":   student.class_name,
+                "section":      student.section,
+                "status":       "on_bus",
+                "message":      "Student is currently on the bus",
+                "bus": {
+                    "id":             bus.id,
+                    "vehicle_reg_no": bus.vehicle_reg_no,
+                    "vehicle_make":   bus.vehicle_make,
+                    "vehicle_model":  bus.vehicle_model,
+                },
+                "driver":      driver,
+                "trip": {
+                    "trip_id":    trip.id,
+                    "trip_date":  trip.trip_date,
+                    "start_time": trip.start_time,
+                    "end_time":   trip.end_time,
+                },
+                "route":       route_data,
+                "pickup_stop": pickup_stop,
+                "drop_stop":   drop_stop,
+                "pickup_time": attendance.pickup_time,
+                "location": {
+                    "latitude":     gps.latitude,
+                    "longitude":    gps.longitude,
+                    "speed":        gps.speed,
+                    "heading":      gps.heading,
+                    "last_updated": gps.entry_time,
+                },
+            })
+
+        return success_response(
+            data=data,
+            message="Student live locations fetched successfully"
+        )
+        
+def get_admin_school(request):
+    """
+    Returns (school, None) if found, or (None, error_response) if not.
+    Use this in request.user.schooladmin_user.first().
+    """
+    school = School.objects.filter(users=request.user, is_active=True).first()
+    if not school:
+        return None, error_response("No active school found for this admin")
+    return school, None
+
+# =============================================================================
+# STEP 1 — PUBLIC — Single submission
+# POST /schools/apply/
+# =============================================================================
+
+class SchoolApplicationSubmitAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = SchoolApplicationSubmitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        d = serializer.validated_data
+
+        with transaction.atomic():
+
+            existing_user = d.get("existing_user")
+            temp_password = None  # only set for fresh / resubmission users
+
+            if existing_user:
+                # ── RESUBMISSION — reuse existing user, update their details ──
+                temp_password = secrets.token_urlsafe(10)
+                existing_user.name        = d["name"]
+                existing_user.email       = d["email"]
+                existing_user.dob         = d.get("dob") or ""
+                existing_user.address     = d.get("address", "")
+                existing_user.address_pin = d.get("pin", "")
+                existing_user.status      = "pending"
+                existing_user.is_active   = False
+                existing_user.password    = make_password(temp_password)
+                existing_user.save(update_fields=[
+                    "name", "email", "dob", "address",
+                    "address_pin", "status", "is_active", "password",
+                ])
+                user = existing_user
+            else:
+                # ── FRESH APPLICATION — create new user ───────────────────────
+                temp_password = secrets.token_urlsafe(10)
+                user = User.objects.create(
+                    email=d["email"],
+                    password=make_password(temp_password),
+                    name=d["name"],
+                    mobile=d["mobile"],
+                    dob=d.get("dob") or "",
+                    address=d.get("address", ""),
+                    address_pin=d.get("pin", ""),
+                    role="schooladmin",
+                    status="pending",
+                    is_active=False,
+                    createdby=str(request.user.id),
+                )
+
+            # ── Create fresh School application ───────────────────────────────
+            school = School.objects.create(
+                school_name=d["school_name"],
+                school_address=d["school_address"],
+                school_pin=d["school_pin"],
+                school_email=d["school_email"],
+                school_phone=d["school_phone"],
+                school_lat=d.get("school_lat"),
+                school_lon=d.get("school_lon"),
+                state=d["state_obj"],
+                district=d["district_obj"],
+                status=School.STATUS_SUBMITTED,
+                is_active=False,
+            )
+
+            school.users.add(user)
+
+            # ── MinIO Upload ──────────────────────────────────────────────────
+            id_path = upload_school_application_document(
+                d["file_idProof"], school.id, "id_proof"
+            )
+            auth_path = upload_school_application_document(
+                d["file_authorisation_letter"], school.id, "auth_letter"
+            )
+
+            school.file_id_proof = id_path
+            school.file_authorization_letter = auth_path
+            school.save(update_fields=["file_id_proof", "file_authorization_letter"])
+
+
+        return success_response(
+            data={
+                # ── School details ────────────────────────────────────────────
+                "application_id": school.id,
+                "status":         school.status,
+                "school_name":    school.school_name,
+                "school_address": school.school_address,
+                "school_pin":     school.school_pin,
+                "school_email":   school.school_email,
+                "school_phone":   school.school_phone,
+                "school_lat":     school.school_lat,
+                "school_lon":     school.school_lon,
+                "state":          school.state.state if school.state else None,
+                "district":       school.district.district if school.district else None,
+                "is_active":      school.is_active,
+                "created_at":     school.created_at,
+                "documents": {
+                    "id_proof": {
+                        "uploaded": bool(school.file_id_proof),
+                        "path":     school.file_id_proof,
+                    },
+                    "auth_letter": {
+                        "uploaded": bool(school.file_authorization_letter),
+                        "path":     school.file_authorization_letter,
+                    },
+                },
+
+                # ── kept for frontend backward compatibility ──────────────────
+                "applicant_name": user.name,
+
+                # ── User / applicant details ──────────────────────────────────
+                "applicant": {
+                    "id":      user.id,
+                    "name":    user.name,
+                    "email":   user.email,
+                    "mobile":  user.mobile,
+                    "role":    user.role,
+                    "status":  user.status,
+                    "address": user.address,
+                    "pin":     user.address_pin,
+                },
+            },
+            message="Application submitted successfully",
+            status_code=status.HTTP_201_CREATED,
+        )
+        
+# =============================================================================
+# STEP 2 — STATE ADMIN — List applications
+# GET /state-admin/schools/
+# =============================================================================
+
+class StateAdminSchoolApplicationListAPIView(APIView):
+    """
+    State admin — list all school applications.
+    Filter: ?status=SUBMITTED  (or any status value)
+    """
+    permission_classes = [IsAuthenticated, IsStateAdmin | IsSuperAdmin]
+
+    def get(self, request):
+        qs = School.objects.select_related("state", "district")\
+                   .prefetch_related("users")\
+                   .order_by("-created_at")
+
+        filter_status = request.query_params.get("status")
+        if filter_status:
+            qs = qs.filter(status=filter_status)
+
+        serializer = SchoolApplicationListSerializer(qs, many=True)
+        return list_response(
+            data=serializer.data,
+            message="Applications fetched successfully",
+        )
+
+# =============================================================================
+# STEP 2 — STATE ADMIN — Single application detail
+# GET /state-admin/schools/<pk>/
+# =============================================================================
+
+class StateAdminSchoolApplicationDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsStateAdmin | IsSuperAdmin]
+
+    def get(self, request, pk):
+        try:
+            school = School.objects.select_related(
+                "state", "district"
+            ).prefetch_related("users").get(pk=pk)
+        except School.DoesNotExist:
+            return error_response("Application not found", status_code=404)
+
+        # Auto move to UNDER_REVIEW
+        if school.status == School.STATUS_SUBMITTED:
+            school.status = School.STATUS_UNDER_REVIEW
+            school.save(update_fields=["status"])
+
+        return success_response(
+            data=SchoolDetailSerializer(school).data,
+            message="Application fetched successfully",
+        )
+
+# =============================================================================
+# STEP 3 — STATE ADMIN — Approve or reject
+# POST /state-admin/schools/<pk>/decision/
+# =============================================================================
+class StateAdminSchoolApplicationDecisionAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsStateAdmin | IsSuperAdmin]
+
+    def post(self, request, pk):
+        serializer = SchoolApplicationDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        decision = serializer.validated_data["decision"]
+        remarks  = serializer.validated_data.get("remarks", "")
+
+        with transaction.atomic():
+            try:
+                school = School.objects.select_for_update().get(pk=pk)
+            except School.DoesNotExist:
+                return error_response("Application not found", status_code=404)
+
+            if school.status not in [
+                School.STATUS_SUBMITTED,
+                School.STATUS_UNDER_REVIEW,
+            ]:
+                return error_response(
+                    f"Cannot decide on status: {school.status}"
+                )
+
+            if decision == "APPROVE":
+                school.status = School.STATUS_APPROVED
+                school.is_active = True
+            else:
+                school.status = School.STATUS_REJECTED
+                school.is_active = False
+
+            school.remarks = remarks
+            school.save(update_fields=["status", "is_active", "remarks"])
+
+        return success_response(
+            data={
+                "application_id": school.id,
+                "status": school.status,
+                "is_active": school.is_active,
+            },
+            message=f"Application {decision.lower()}d successfully",
+        )
+               
+# =============================================================================
+# STEP 4 — STATE ADMIN — Send setup link
+# POST /state-admin/schools/<pk>/send-setup-link/
+# =============================================================================
+    
+# =============================================================================
+# School list — state admin view
+# GET /state-admin/active-schools/
+# =============================================================================
+
+class StateAdminSchoolListAPIView(APIView):
+    """
+    State admin — list all active schools with their admin users.
+    """
+    permission_classes = [IsAuthenticated, IsStateAdmin | IsSuperAdmin]
+
+    def get(self, request):
+        schools = School.objects.filter(
+            is_active=True
+        ).select_related("state", "district").prefetch_related("users")
+        return list_response(
+            data=SchoolDetailSerializer(schools, many=True).data,
+            message="Schools fetched successfully",
+        )
+
+class SchoolSetupCompleteAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+
+        # ── Find school via users M2M ────────────────────────────
+        school = School.objects.filter(users=user).first()
+        if not school:
+            return error_response("School not found")
+
+        if school.status != School.STATUS_SETUP_SENT:
+            return error_response("Invalid state for setup")
+
+        user.set_password(request.data["password"])
+        user.is_active = True
+        user.status = "active"
+
+        school.status = School.STATUS_SETUP_LINK_APPROVED
+        school.is_active = True
+
+        user.save(update_fields=["password", "is_active", "status"])
+        school.save(update_fields=["status", "is_active"])
+
+        return success_response(message="Setup completed successfully")
+       
+# =====================================================
+# School Application Documents
+# =====================================================
+ 
+_SCHOOL_DOC_MAP = {
+    "id_proof":    ("ID Proof",              "file_id_proof"),
+    "auth_letter": ("Authorization Letter",  "file_authorization_letter"),
+}
+ 
+class SchoolDocumentListAPIView(APIView):
+    """
+    Lists all documents attached to a school application.
+ 
+    Access:
+        - State admin  : any school by pk  →  GET /state-admin/schools/<pk>/documents/
+        - School admin : own school only   →  GET /admin/school/documents/
+ 
+    Response shape per document:
+        {
+            "doc_type"   : "id_proof" | "auth_letter" | "extra_<index>",
+            "label"      : "ID Proof" | "Authorization Letter" | "Extra Document 1" …,
+            "available"  : true | false,
+            "download_url": "/state-admin/schools/<pk>/documents/<doc_type>/download/"
+                            or "/admin/school/documents/<doc_type>/download/"
+        }
+    """
+    permission_classes = [IsAuthenticated, IsStateAdmin | IsSchoolAdmin | IsSuperAdmin]
+ 
+    def _resolve_school(self, request, pk=None):
+        """Return (school, error_response | None)."""
+        if pk is not None:
+            # State-admin / superadmin path
+            try:
+                return School.objects.get(pk=pk), None
+            except School.DoesNotExist:
+                return None, error_response("School not found", status_code=404)
+        # School-admin path
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return None, error_response("Admin has no school assigned")
+        return school, None
+ 
+    def _build_list(self, school, base_download_url):
+        docs = []
+ 
+        # Fixed documents
+        for doc_type, (label, field) in _SCHOOL_DOC_MAP.items():
+            path = getattr(school, field, None)
+            docs.append({
+                "doc_type":     doc_type,
+                "label":        label,
+                "available":    bool(path),
+                "download_url": f"{base_download_url}{doc_type}/download/" if path else None,
+            })
+ 
+        # Extra documents (stored as a JSON list of object keys)
+        extras = school.extra_documents or []
+        for idx, path in enumerate(extras):
+            slug = f"extra_{idx}"
+            docs.append({
+                "doc_type":     slug,
+                "label":        f"Extra Document {idx + 1}",
+                "available":    bool(path),
+                "download_url": f"{base_download_url}{slug}/download/" if path else None,
+            })
+ 
+        return docs
+ 
+    # ── State-admin / superadmin ──────────────────────────────────────────────
+    def get(self, request, pk=None):
+        school, err = self._resolve_school(request, pk)
+        if err:
+            return err
+ 
+        if pk is not None:
+            base = f"/api/state-admin/schools/{pk}/documents/"
+        else:
+            base = "/api/admin/school/documents/"
+ 
+        return list_response(
+            data=self._build_list(school, base),
+            message="School documents listed successfully",
+        )
+ 
+class SchoolDocumentDownloadAPIView(APIView):
+    """
+    Downloads a single school application document from MinIO.
+ 
+    Access:
+        - State admin  →  GET /state-admin/schools/<pk>/documents/<doc_type>/download/
+        - School admin →  GET /admin/school/documents/<doc_type>/download/
+ 
+    <doc_type> is one of:  id_proof | auth_letter | extra_0 | extra_1 | …
+    """
+    permission_classes = [IsAuthenticated, IsStateAdmin | IsSchoolAdmin | IsSuperAdmin]
+ 
+    def _resolve_school_and_path(self, request, doc_type, pk=None):
+        """
+        Returns (object_key, filename, error_response | None).
+        """
+        # Resolve school
+        if pk is not None:
+            try:
+                school = School.objects.get(pk=pk)
+            except School.DoesNotExist:
+                return None, None, error_response("School not found", status_code=404)
+        else:
+            school = request.user.schooladmin_user.first()
+            if not school:
+                return None, None, error_response("Admin has no school assigned")
+ 
+        # Resolve object key from doc_type
+        if doc_type in _SCHOOL_DOC_MAP:
+            _, field = _SCHOOL_DOC_MAP[doc_type]
+            object_key = getattr(school, field, None)
+            label = _SCHOOL_DOC_MAP[doc_type][0]
+        elif doc_type.startswith("extra_"):
+            try:
+                idx = int(doc_type.split("_", 1)[1])
+            except (ValueError, IndexError):
+                return None, None, error_response("Invalid document type", status_code=404)
+            extras = school.extra_documents or []
+            if idx >= len(extras):
+                return None, None, error_response("Extra document not found", status_code=404)
+            object_key = extras[idx]
+            label = f"extra_document_{idx}"
+        else:
+            return None, None, error_response("Invalid document type", status_code=404)
+ 
+        if not object_key:
+            return None, None, error_response(
+                "Document not uploaded yet", status_code=404
+            )
+ 
+        # Derive a friendly filename from the stored key
+        filename = object_key.split("/")[-1]
+        return object_key, filename, None
+ 
+    def get(self, request, doc_type, pk=None):
+        object_key, filename, err = self._resolve_school_and_path(
+            request, doc_type, pk
+        )
+        if err:
+            return err
+ 
+        try:
+            file_bytes = download_file_bytes(object_key)
+        except Exception:
+            return error_response(
+                "Could not retrieve file from storage",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+ 
+        content_type, _ = mimetypes.guess_type(filename)
+        response = HttpResponse(
+            file_bytes,
+            content_type=content_type or "application/octet-stream",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+        
+# =====================================================
+# Dev Utility — Create Test Users
+# FOR TESTING ONLY — remove before production
+# =====================================================
+
+class CreateTestUserAPIView(APIView):
+    """
+    Creates a test user with specified role.
+    FOR DEVELOPMENT/TESTING ONLY.
+    Only works when DEBUG=True.
+    """
+    permission_classes = [IsSuperAdmin]  # No auth required — testing only
+
+    def post(self, request):
+        if not settings.DEBUG:
+            return error_response(
+                "This endpoint is only available in development",
+                status_code=403
+            )
+
+        name = request.data.get("name")
+        email = request.data.get("email")
+        mobile = request.data.get("mobile")
+        password = request.data.get("password", "User@1234")
+        role = request.data.get("role")
+        dob = request.data.get("dob", "1990-01-01")
+
+        if not all([name, email, mobile, role]):
+            return error_response(
+                "name, email, mobile, role are required",
+                errors={
+                    "required_fields": ["name", "email", "mobile", "role"],
+                    "valid_roles": [
+                        "superadmin", "stateadmin", "schooladmin",
+                        "parentuser", "dealer", "owner"
+                    ]
+                }
+            )
+
+        # Check if user already exists
+        if User.objects.filter(email=email).exists():
+            return error_response(f"User with email {email} already exists")
+
+        if User.objects.filter(mobile=mobile).exists():
+            return error_response(f"User with mobile {mobile} already exists")
+
+        try:
+            user = User.objects.create(
+                email=email,
+                password=make_password(password),
+                name=name,
+                mobile=mobile,
+                dob=dob,
+                role=role,
+                status="active",
+                createdby=str(request.user.id),
+            )
+        except Exception as e:
+            return error_response(f"Failed to create user: {str(e)}")
+
+        return success_response(
+            data={
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "mobile": user.mobile,
+                "role": user.role,
+                "status": user.status,
+            },
+            message="Test user created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+   
+
+class SchoolOverviewAPIView(APIView):
+    """
+    Returns all tagged buses with last GPS location, driver, owner,
+    assigned route reference, plus all school routes with full stop detail.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin | IsSuperAdmin]
+
+    def get(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        # ── Step 1: All approved + active tags ────────────────────────────────
+        tags = (
+            SchoolBusTag.objects
+            .filter(school=school, is_active=True, status="approved")
+            .select_related(
+                "bus",
+                "bus__vehicle_owner",
+            )
+            .prefetch_related(
+                "bus__drivers",
+                "bus__vehicle_owner__users",
+            )
+            .order_by("bus__vehicle_reg_no")
+        )
+
+        bus_ids = list(tags.values_list("bus_id", flat=True))
+
+        # ── Step 2: Route assignments — bus_id → route_id ─────────────────────
+        route_assignments = (
+            RouteBusAssignment.objects
+            .filter(school=school, bus_id__in=bus_ids, is_active=True, status="active")
+            .select_related("route")
+        )
+        route_assignment_map = {ra.bus_id: ra.route for ra in route_assignments}
+
+        # ── Step 3: All school routes with stops (prefetched, no N+1) ─────────
+        routes_qs = (
+            SchoolRoute.objects
+            .filter(school=school)
+            .exclude(status="deleted")
+            .prefetch_related(
+                Prefetch(
+                    "route_stops",
+                    queryset=RouteStop.objects.select_related("stop").order_by("order")
+                )
+            )
+            .order_by("name")
+        )
+
+        routes_data = []
+        routes_map  = {}
+
+        for route in routes_qs:
+            entry = {
+                "id":           route.id,
+                "name":         route.name,
+                "status":       route.status,
+                "route_points": route.route_points,
+                "stops": [
+                    {
+                        "id":        rs.stop.id,
+                        "name":      rs.stop.name,
+                        "order":     rs.order,
+                        "latitude":  float(rs.stop.latitude)  if rs.stop.latitude  else None,
+                        "longitude": float(rs.stop.longitude) if rs.stop.longitude else None,
+                        "timing":    rs.stop.timing,
+                        "is_active": rs.stop.is_active,
+                    }
+                    for rs in route.route_stops.all()
+                ],
+            }
+            routes_data.append(entry)
+            routes_map[route.id] = entry
+
+        # ── Step 4: Latest GPS per bus — bulk, 2 queries total ────────────────
+        latest_gps_id_per_bus = (
+            DeviceTag.objects
+            .filter(id__in=bus_ids)
+            .annotate(
+                latest_gps_id=Subquery(
+                    GPSData.objects
+                    .filter(device_tag=OuterRef("pk"))
+                    .order_by("-entry_time")
+                    .values("id")[:1]
+                )
+            )
+            .values_list("latest_gps_id", flat=True)
+        )
+
+        gps_records = GPSData.objects.filter(id__in=latest_gps_id_per_bus)
+        gps_map = {g.device_tag_id: g for g in gps_records}
+
+        # ── Step 5: Build per-bus data ────────────────────────────────────────
+        buses_data    = []
+        buses_with_gps = 0
+        buses_moving   = 0
+        buses_idle     = 0
+
+        for tag in tags:
+            bus = tag.bus
+
+            # Driver
+            driver      = bus.drivers.first()
+            driver_data = None
+            if driver:
+                driver_data = {
+                    "id":         driver.id,
+                    "name":       driver.name,
+                    "phone_no":   driver.phone_no,
+                    "license_no": driver.license_no,
+                    "photo":      driver.photo,
+                }
+
+            # Owner — VehicleOwner → User (M2M)
+            owner_data     = None
+            vehicle_owner  = getattr(bus, "vehicle_owner", None)
+            if vehicle_owner:
+                owner_user = vehicle_owner.users.first()
+                if owner_user:
+                    owner_data = {
+                        "id":           vehicle_owner.id,
+                        "name":         owner_user.name,
+                        "phone_number": owner_user.mobile,
+                        "address":      owner_user.address,
+                    }
+
+            # GPS
+            gps           = gps_map.get(bus.id)
+            location_data = None
+            if gps:
+                buses_with_gps += 1
+                if gps.speed > 0:
+                    buses_moving += 1
+                else:
+                    buses_idle += 1
+
+                location_data = {
+                    "latitude":           gps.latitude,
+                    "longitude":          gps.longitude,
+                    "speed":              gps.speed,
+                    "heading":            gps.heading,
+                    "gps_status":         gps.gps_status,
+                    "ignition_status":    gps.ignition_status,
+                    "main_power_status":  gps.main_power_status,
+                    "last_updated":       gps.entry_time,
+                }
+
+            # Assigned route — lightweight reference only
+            # Full route detail is in the top-level routes array
+            assigned_route    = route_assignment_map.get(bus.id)
+            assigned_route_ref = None
+            if assigned_route:
+                assigned_route_ref = {
+                    "id":   assigned_route.id,
+                    "name": assigned_route.name,
+                }
+
+            buses_data.append({
+                "tag_id":    tag.id,
+                "tagged_at": tag.tagged_at,
+                "bus": {
+                    "id":              bus.id,
+                    "vehicle_reg_no":  bus.vehicle_reg_no,
+                    "vehicle_make":    bus.vehicle_make,
+                    "vehicle_model":   bus.vehicle_model,
+                    "chassis_no":      bus.chassis_no,
+                    "engine_no":       bus.engine_no,
+                },
+                "driver":          driver_data,
+                "owner":           owner_data,
+                "assigned_route":  assigned_route_ref,
+                "location":        location_data,
+            })
+
+        total_buses = len(buses_data)
+
+        return success_response(
+            data={
+                "summary": {
+                    "total_buses":     total_buses,
+                    "buses_with_gps":  buses_with_gps,
+                    "buses_moving":    buses_moving,
+                    "buses_idle":      buses_idle,
+                    "buses_no_gps":    total_buses - buses_with_gps,
+                    "total_routes":    len(routes_data),
+                },
+                "routes": routes_data,
+                "buses":  buses_data,
+            },
+            message="School fleet overview fetched successfully"
+        )
+        
+
+# =====================================================
+# Permit Enforcement APIs
+# =====================================================
+
+class PermitConditionCreateAPIView(APIView):
+    """
+    POST /api/enforcement/permit-conditions/
+    Super admin creates a new permit condition.
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+
+    def post(self, request):
+        serializer = PermitConditionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        condition = serializer.save(created_by=request.user,status=PermitCondition.STATUS_CREATED)
+        return success_response(
+            data=PermitConditionListSerializer(condition).data,
+            message="Permit condition created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+
+class PermitConditionUpdateAPIView(APIView):
+    """
+    POST /api/enforcement/permit-conditions/<pk>/update/
+    Super admin updates status or dates.
+
+    Allowed transitions:
+      created → active
+      active  → deactive
+
+    Once active  : only status can change, dates are locked
+    Once deactive: nothing can change, must create new
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+
+    def post(self, request, pk):
+        condition = get_object_or_404(PermitCondition, pk=pk)
+        serializer = PermitConditionUpdateSerializer(
+            condition, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return success_response(
+            data=PermitConditionListSerializer(condition).data,
+            message="Permit condition updated successfully"
+        )
+
+
+class PermitConditionListAPIView(APIView):
+    """
+    GET /api/enforcement/permit-conditions/list/
+    Super admin only.
+
+    Filters:
+    ?status=active|created|deactive
+    ?violation_type=Permit|Permit_3day
+    ?vehicle_category=<id>
+    ?from_date=YYYY-MM-DD
+    ?to_date=YYYY-MM-DD
+    ?search=<permit_name>
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+
+    def get(self, request):
+        qs = PermitCondition.objects.select_related(
+            'vehicle_category', 'created_by'
+        ).order_by('-created_datetime')
+
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        violation_type = request.query_params.get('violation_type')
+        if violation_type:
+            qs = qs.filter(violation_type=violation_type)
+
+        vehicle_category = request.query_params.get('vehicle_category')
+        if vehicle_category:
+            qs = qs.filter(vehicle_category_id=vehicle_category)
+
+        from_date = request.query_params.get('from_date')
+        if from_date:
+            qs = qs.filter(activation_datetime__date__gte=from_date)
+
+        to_date = request.query_params.get('to_date')
+        if to_date:
+            qs = qs.filter(activation_datetime__date__lte=to_date)
+
+        search = request.query_params.get('search')
+        if search:
+            qs = qs.filter(permit_name__icontains=search)
+
+        serializer = PermitConditionListSerializer(qs, many=True)
+        return list_response(
+            data=serializer.data,
+            message="Permit conditions fetched successfully"
+        )
+
+
+class ViolationReportListAPIView(APIView):
+    """
+    GET /api/enforcement/violations/
+    SuperAdmin  → all violations
+    StateAdmin  → only their state's violations
+    DTO/RTO     → only their district's violations
+
+    Filters:
+    ?from_date=YYYY-MM-DD
+    ?to_date=YYYY-MM-DD
+    ?permit_condition=<id>
+    ?violation_type=Permit|Permit_3day
+    ?vehicle_category=<id>
+    ?reg_no=MH12AB1234
+    ?imei=123456789012345
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        # Access control
+        is_super    = user.role == 'superadmin'
+        is_state    = user.role == 'stateadmin'
+        is_dto      = user.role in ['dto', 'rto']
+
+        if not (is_super or is_state or is_dto):
+            return error_response("Access denied", status_code=403)
+
+        qs = ViolationReport.objects.select_related(
+            'permit_condition',
+            'permit_condition__vehicle_category',
+            'device_tag',
+            'device_tag__device',
+            'state',
+            'district',
+        ).order_by('-violation_datetime')
+
+        # Scope by role
+        if is_state:
+            state_admin_obj = StateAdmin.objects.filter(users=user).first()
+            if not state_admin_obj:
+                return error_response("No state found for this admin", status_code=403)
+            qs = qs.filter(state=state_admin_obj.state)
+
+        elif is_dto:
+            dto_obj = dto_rto.objects.filter(users=user).first()
+            if not dto_obj:
+                return error_response("No district found for this DTO/RTO", status_code=403)
+            qs = qs.filter(district__district=dto_obj.district)
+
+        # Filters
+        from_date = request.query_params.get('from_date')
+        if from_date:
+            qs = qs.filter(violation_datetime__date__gte=from_date)
+
+        to_date = request.query_params.get('to_date')
+        if to_date:
+            qs = qs.filter(violation_datetime__date__lte=to_date)
+
+        permit_condition = request.query_params.get('permit_condition')
+        if permit_condition:
+            qs = qs.filter(permit_condition_id=permit_condition)
+
+        violation_type = request.query_params.get('violation_type')
+        if violation_type:
+            qs = qs.filter(permit_condition__violation_type=violation_type)
+
+        vehicle_category = request.query_params.get('vehicle_category')
+        if vehicle_category:
+            qs = qs.filter(permit_condition__vehicle_category_id=vehicle_category)
+
+        reg_no = request.query_params.get('reg_no')
+        if reg_no:
+            qs = qs.filter(device_tag__vehicle_reg_no__icontains=reg_no)
+
+        imei = request.query_params.get('imei')
+        if imei:
+            qs = qs.filter(device_tag__device__imei__icontains=imei)
+
+        serializer = ViolationReportSerializer(qs, many=True)
+        return list_response(
+            data=serializer.data,
+            message="Violation reports fetched successfully"
+        )
+        
+        
+# =====================================================
+# Passenger Information System — Helper
+# =====================================================
+
+def _user_is_stateadmin(user):
+    return user.role == 'stateadmin'
+
+def _user_is_dtorto(user):
+    return user.role == 'dtorto'
+
+def _user_is_superadmin(user):
+    return user.role == 'superadmin'
+
+def _resolve_state_district(user):
+    """
+    Returns (state, district) based on user role.
+    StateAdmin → state from StateAdmin model, district=None
+    DTO/RTO    → state and district from dto_rto model
+    SuperAdmin → (None, None) — no scope restriction
+    """
+    if _user_is_stateadmin(user):
+        obj = StateAdmin.objects.filter(users=user).first()
+        if not obj:
+            return None, None
+        return obj.state, None
+
+    if _user_is_dtorto(user):
+        obj = dto_rto.objects.filter(users=user).first()
+        if not obj:
+            return None, None
+        return obj.state, obj.district
+
+    return None, None
+
+
+def _generate_stop_etas(schedule):
+    """
+    Auto-generates BusScheduleStopETA records for all stops on a schedule.
+    Called when a new BusSchedule is created.
+    scheduled_arrival  = start_datetime + arrival_time_min
+    scheduled_departure = scheduled_arrival + halt_time_min
+    """
+    from datetime import timedelta
+
+    route_stops = PublicRouteStop.objects.filter(
+        route=schedule.route
+    ).select_related('stop').order_by('order')
+
+    etas = []
+    for rs in route_stops:
+        scheduled_arrival = schedule.start_datetime + timedelta(minutes=rs.arrival_time_min)
+        scheduled_departure = scheduled_arrival + timedelta(minutes=rs.halt_time_min)
+        etas.append(
+            BusScheduleStopETA(
+                schedule=schedule,
+                route_stop=rs,
+                order=rs.order,
+                scheduled_arrival=scheduled_arrival,
+                scheduled_departure=scheduled_departure,
+            )
+        )
+
+    BusScheduleStopETA.objects.bulk_create(etas)
+
+
+def _save_public_route_stops(route, stops_data):
+    """
+    Replaces all PublicRouteStop entries for a route.
+    stops_data: [{"stop_id": 1, "order": 1, "arrival_time_min": 0, "halt_time_min": 2}, ...]
+    """
+    stop_ids    = [int(item['stop_id']) for item in stops_data]
+    valid_stops = PublicBusStop.objects.filter(id__in=stop_ids, status=PublicBusStop.STATUS_ACTIVE)
+    valid_ids   = set(valid_stops.values_list('id', flat=True))
+    invalid     = set(stop_ids) - valid_ids
+
+    if invalid:
+        raise ValidationError({'stops_data': f"Stop IDs not found or inactive: {invalid}"})
+
+    PublicRouteStop.objects.filter(route=route).delete()
+
+    stop_map = {s.id: s for s in valid_stops}
+    PublicRouteStop.objects.bulk_create([
+        PublicRouteStop(
+            route=route,
+            stop=stop_map[int(item['stop_id'])],
+            order=int(item['order']),
+            arrival_time_min=int(item['arrival_time_min']),
+            halt_time_min=int(item.get('halt_time_min', 0)),
+        )
+        for item in stops_data
+    ])
+
+
+# =====================================================
+# Bus Stop APIs
+# =====================================================
+
+class PISBusStopListCreateAPIView(APIView):
+    """
+    GET  /api/pis/bus-stops/       — list with filters
+    POST /api/pis/bus-stops/       — create new stop
+
+    Access: SuperAdmin, StateAdmin, DTO/RTO
+    StateAdmin → scoped to their state
+    DTO        → scoped to their district
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _check_access(self, user):
+        return (
+            _user_is_superadmin(user) or
+            _user_is_stateadmin(user) or
+            _user_is_dtorto(user)
+        )
+
+    def get(self, request):
+        if not self._check_access(request.user):
+            return error_response("Access denied", status_code=403)
+
+        state, district = _resolve_state_district(request.user)
+
+        qs = PublicBusStop.objects.select_related(
+            'state', 'district', 'created_by'
+        ).order_by('-created_at')
+
+        # Scope by role
+        if state:
+            qs = qs.filter(state=state)
+        if district:
+            qs = qs.filter(district__district_code=district)
+
+        # Filters
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        search = request.query_params.get('search')
+        if search:
+            qs = qs.filter(name__icontains=search)
+
+        state_id = request.query_params.get('state')
+        if state_id and _user_is_superadmin(request.user):
+            qs = qs.filter(state_id=state_id)
+
+        district_id = request.query_params.get('district')
+        if district_id:
+            qs = qs.filter(district_id=district_id)
+
+        serializer = PublicBusStopSerializer(qs, many=True)
+        return list_response(data=serializer.data, message="Bus stops fetched successfully")
+
+    def post(self, request):
+        if not self._check_access(request.user):
+            return error_response("Access denied", status_code=403)
+
+        serializer = PublicBusStopSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        state, district = _resolve_state_district(request.user)
+
+        # StateAdmin validation
+        if _user_is_stateadmin(request.user):
+            if serializer.validated_data['state'] != state:
+                return error_response(
+                    "You can create bus stops only in your assigned state",
+                    status_code=403
+                )
+
+        # DTO/RTO validation
+        if _user_is_dtorto(request.user):
+            if serializer.validated_data['state'] != state:
+                return error_response(
+                    "You can create bus stops only in your assigned state",
+                    status_code=403
+                )
+            if serializer.validated_data['district'].district_code != district:
+                return error_response(
+                    "You can create bus stops only in your assigned district",
+                    status_code=403
+                )
+
+        stop = serializer.save(
+            created_by=request.user,
+            status=PublicBusStop.STATUS_ACTIVE,
+            last_activation_date=timezone.now(),
+        )
+
+        return success_response(
+            data=PublicBusStopSerializer(stop).data,
+            message="Bus stop created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+class PISBusStopDetailAPIView(APIView):
+    """
+    GET  /api/pis/bus-stops/<pk>/        — retrieve
+    POST /api/pis/bus-stops/<pk>/update/ — update
+    POST /api/pis/bus-stops/<pk>/toggle/ — activate / deactivate
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _check_access(self, user):
+        return (
+            _user_is_superadmin(user) or
+            _user_is_stateadmin(user) or
+            _user_is_dtorto(user)
+        )
+
+    def get(self, request, pk):
+        if not self._check_access(request.user):
+            return error_response("Access denied", status_code=403)
+
+        state, district = _resolve_state_district(request.user)
+
+        qs = PublicBusStop.objects.select_related(
+            'state',
+            'district',
+            'created_by'
+        )
+
+        if state:
+            qs = qs.filter(state=state)
+
+        if district:
+            qs = qs.filter(district__district_code=district)
+
+        stop = get_object_or_404(qs, pk=pk)
+
+        return success_response(
+            data=PublicBusStopSerializer(stop).data,
+            message="Bus stop fetched successfully"
+        )
+
+class PISBusStopUpdateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        if not (
+            _user_is_superadmin(request.user) or
+            _user_is_stateadmin(request.user) or
+            _user_is_dtorto(request.user)
+        ):
+            return error_response("Access denied", status_code=403)
+
+        state, district = _resolve_state_district(request.user)
+
+        qs = PublicBusStop.objects.all()
+
+        if state:
+            qs = qs.filter(state=state)
+
+        if district:
+            qs = qs.filter(district__district_code=district)
+
+        stop = get_object_or_404(qs, pk=pk)
+
+        serializer = PublicBusStopSerializer(
+            stop,
+            data=request.data,
+            partial=True,
+            context={'request': request}
+        )
+
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return success_response(
+            data=PublicBusStopSerializer(stop).data,
+            message="Bus stop updated successfully"
+        )
+        
+class PISBusStopToggleAPIView(APIView):
+    """
+    Activate or deactivate a bus stop.
+    Tracks last_activation_date and last_deactivation_date.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        if not (
+            _user_is_superadmin(request.user) or
+            _user_is_stateadmin(request.user) or
+            _user_is_dtorto(request.user)
+        ):
+            return error_response("Access denied", status_code=403)
+
+        state, district = _resolve_state_district(request.user)
+
+        qs = PublicBusStop.objects.all()
+
+        if state:
+            qs = qs.filter(state=state)
+
+        if district:
+            qs = qs.filter(district__district_code=district)
+
+        stop = get_object_or_404(qs, pk=pk)
+
+        now = timezone.now()
+
+        if stop.status == PublicBusStop.STATUS_ACTIVE:
+            stop.status = PublicBusStop.STATUS_DEACTIVATED
+            stop.last_deactivation_date = now
+            stop.deactivation_date = now
+            message = "Bus stop deactivated successfully"
+        else:
+            stop.status = PublicBusStop.STATUS_ACTIVE
+            stop.last_activation_date = now
+            stop.deactivation_date = None
+            message = "Bus stop activated successfully"
+
+        stop.save()
+
+        return success_response(
+            data=PublicBusStopSerializer(stop).data,
+            message=message
+        )
+
+
+# =====================================================
+# Bus Route APIs
+# =====================================================
+
+class PISBusRouteListCreateAPIView(APIView):
+    """
+    GET  /api/pis/routes/  — list with filters
+    POST /api/pis/routes/  — create new route with stops
+
+    Access: SuperAdmin, StateAdmin, DTO/RTO
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _check_access(self, user):
+        return (
+            _user_is_superadmin(user) or
+            _user_is_stateadmin(user) or
+            _user_is_dtorto(user)
+        )
+
+    def get(self, request):
+        if not self._check_access(request.user):
+            return error_response("Access denied", status_code=403)
+
+        state, district = _resolve_state_district(request.user)
+
+        qs = PublicBusRoute.objects.select_related(
+            'state', 'district', 'source_stop', 'destination_stop', 'created_by'
+        ).prefetch_related(
+            'route_stops__stop'
+        ).order_by('-created_at')
+
+        # Scope by role
+        if state:
+            qs = qs.filter(state=state)
+        if district:
+            qs = qs.filter(district__district_code=district)
+
+        # Filters
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        search = request.query_params.get('search')
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search) |
+                Q(route_number__icontains=search)
+            )
+
+        state_id = request.query_params.get('state')
+        if state_id and _user_is_superadmin(request.user):
+            qs = qs.filter(state_id=state_id)
+
+        stop_id = request.query_params.get('stop')
+        if stop_id:
+            qs = qs.filter(route_stops__stop_id=stop_id).distinct()
+
+        serializer = PublicBusRouteSerializer(qs, many=True)
+        return list_response(data=serializer.data, message="Routes fetched successfully")
+
+    def post(self, request):
+        if not self._check_access(request.user):
+            return error_response("Access denied", status_code=403)
+
+        serializer = PublicBusRouteSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+
+        serializer.is_valid(raise_exception=True)
+
+        state, district = _resolve_state_district(request.user)
+
+        # StateAdmin -> only own state
+        if _user_is_stateadmin(request.user):
+            if serializer.validated_data['state'] != state:
+                return error_response(
+                    "You can create routes only in your assigned state",
+                    status_code=403
+                )
+
+        # DTO/RTO -> only own state + district
+        if _user_is_dtorto(request.user):
+            if serializer.validated_data['state'] != state:
+                return error_response(
+                    "You can create routes only in your assigned state",
+                    status_code=403
+                )
+            route_district = serializer.validated_data.get('district')
+            if not route_district or route_district.district_code != district:
+                return error_response(
+                    "You can create routes only in your assigned district",
+                    status_code=403
+                )
+
+        stops_data = serializer.validated_data.pop('stops_data', [])
+
+        with transaction.atomic():
+            route = serializer.save(
+                created_by=request.user,
+                status=PublicBusRoute.STATUS_ACTIVE,
+                last_activation_date=timezone.now(),
+            )
+
+            if stops_data:
+                _save_public_route_stops(route, stops_data)
+
+        return success_response(
+            data=PublicBusRouteSerializer(route).data,
+            message="Route created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+
+class PISBusRouteDetailAPIView(APIView):
+    """
+    GET  /api/pis/routes/<pk>/     — retrieve
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        if not (
+            _user_is_superadmin(request.user) or
+            _user_is_stateadmin(request.user) or
+            _user_is_dtorto(request.user)
+        ):
+            return error_response("Access denied", status_code=403)
+
+        state, district = _resolve_state_district(request.user)
+
+        qs = PublicBusRoute.objects.prefetch_related(
+            'route_stops__stop'
+        )
+
+        if state:
+            qs = qs.filter(state=state)
+
+        if district:
+            qs = qs.filter(district__district_code=district)
+
+        route = get_object_or_404(qs, pk=pk)
+
+        return success_response(
+            data=PublicBusRouteSerializer(route).data,
+            message="Route fetched successfully"
+        )
+
+
+class PISBusRouteUpdateAPIView(APIView):
+    """
+    POST /api/pis/routes/<pk>/update/
+    Updates route details and optionally replaces stops.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        if not (
+            _user_is_superadmin(request.user) or
+            _user_is_stateadmin(request.user) or
+            _user_is_dtorto(request.user)
+        ):
+            return error_response("Access denied", status_code=403)
+
+        state, district = _resolve_state_district(request.user)
+
+        qs = PublicBusRoute.objects.all()
+
+        if state:
+            qs = qs.filter(state=state)
+
+        if district:
+            qs = qs.filter(district__district_code=district)
+
+        route = get_object_or_404(qs, pk=pk)
+
+        serializer = PublicBusRouteSerializer(
+            route,
+            data=request.data,
+            partial=True,
+            context={'request': request}
+        )
+
+        serializer.is_valid(raise_exception=True)
+        stops_data = serializer.validated_data.pop('stops_data', None)
+
+        with transaction.atomic():
+            serializer.save()
+
+            if stops_data is not None:
+                _save_public_route_stops(route, stops_data)
+
+        return success_response(
+            data=PublicBusRouteSerializer(route).data,
+            message="Route updated successfully"
+        )
+
+
+class PISBusRouteToggleAPIView(APIView):
+    """
+    POST /api/pis/routes/<pk>/toggle/
+    Activate or deactivate a route.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        if not (
+            _user_is_superadmin(request.user) or
+            _user_is_stateadmin(request.user) or
+            _user_is_dtorto(request.user)
+        ):
+            return error_response("Access denied", status_code=403)
+
+        state, district = _resolve_state_district(request.user)
+
+        qs = PublicBusRoute.objects.all()
+
+        if state:
+            qs = qs.filter(state=state)
+
+        if district:
+            qs = qs.filter(district__district_code=district)
+
+        route = get_object_or_404(qs, pk=pk)
+
+        now = timezone.now()
+
+        if route.status == PublicBusRoute.STATUS_ACTIVE:
+            route.status = PublicBusRoute.STATUS_DEACTIVATED
+            route.last_deactivation_date = now
+            route.deactivation_date = now
+            message = "Route deactivated successfully"
+        else:
+            route.status = PublicBusRoute.STATUS_ACTIVE
+            route.last_activation_date = now
+            route.deactivation_date = None
+            message = "Route activated successfully"
+
+        route.save()
+
+        return success_response(
+            data=PublicBusRouteSerializer(route).data,
+            message=message
+        )
+
+
+# =====================================================
+# Bus Schedule APIs
+# =====================================================
+
+class PISBusScheduleListCreateAPIView(APIView):
+    """
+    GET  /api/pis/schedules/  — list with filters
+    POST /api/pis/schedules/  — create new schedule
+    Auto-generates BusScheduleStopETA on creation.
+
+    Access: SuperAdmin, StateAdmin, DTO/RTO, Owner (GET only — scoped to own buses)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _check_access(self, user):
+        return (
+            _user_is_superadmin(user) or
+            _user_is_stateadmin(user) or
+            _user_is_dtorto(user) or
+            user.role == 'owner'
+        )
+
+    def get(self, request):
+        if not self._check_access(request.user):
+            return error_response("Access denied", status_code=403)
+
+        qs = BusSchedule.objects.select_related(
+            'route',
+            'bus',
+            'created_by'
+        ).prefetch_related(
+            'stop_etas__route_stop__stop'
+        ).order_by('-start_datetime')
+
+        # Owner — scoped to their own buses only, no state/district filter
+        if request.user.role == 'owner':
+            vehicle_owner = VehicleOwner.objects.filter(users=request.user).first()
+            if not vehicle_owner:
+                return error_response("No vehicle owner profile found", status_code=403)
+            qs = qs.filter(bus__vehicle_owner=vehicle_owner)
+
+        else:
+            # RBAC scope for stateadmin / dtorto
+            state, district = _resolve_state_district(request.user)
+
+            if state:
+                qs = qs.filter(route__state=state)
+
+            if district:
+                qs = qs.filter(route__district__district_code=district)
+
+        # Filters
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        route_id = request.query_params.get('route')
+        if route_id:
+            qs = qs.filter(route_id=route_id)
+
+        bus_id = request.query_params.get('bus')
+        if bus_id:
+            qs = qs.filter(bus_id=bus_id)
+
+        date = request.query_params.get('date')
+        if date:
+            qs = qs.filter(start_datetime__date=date)
+
+        service_type = request.query_params.get('service_type')
+        if service_type:
+            qs = qs.filter(service_type=service_type)
+
+        serializer = BusScheduleSerializer(qs, many=True)
+
+        return list_response(
+            data=serializer.data,
+            message="Schedules fetched successfully"
+        )
+
+    def post(self, request):
+        if not (
+            _user_is_superadmin(request.user) or
+            _user_is_stateadmin(request.user) or
+            _user_is_dtorto(request.user)
+        ):
+            return error_response("Access denied", status_code=403)
+
+        serializer = BusScheduleSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+
+        serializer.is_valid(raise_exception=True)
+
+        state, district = _resolve_state_district(request.user)
+
+        route = serializer.validated_data['route']
+
+        # StateAdmin validation
+        if _user_is_stateadmin(request.user):
+            if route.state != state:
+                return error_response(
+                    "You can create schedules only in your assigned state",
+                    status_code=403
+                )
+
+        # DTO/RTO validation
+        if _user_is_dtorto(request.user):
+            if route.state != state:
+                return error_response(
+                    "You can create schedules only in your assigned state",
+                    status_code=403
+                )
+            if not route.district or route.district.district_code != district:
+                return error_response(
+                    "You can create schedules only in your assigned district",
+                    status_code=403
+                )
+
+        with transaction.atomic():
+            schedule = serializer.save(
+                created_by=request.user,
+                status=BusSchedule.STATUS_CREATED,
+            )
+
+            # Auto-generate stop ETAs
+            _generate_stop_etas(schedule)
+
+        return success_response(
+            data=BusScheduleSerializer(schedule).data,
+            message="Schedule created successfully",
+            status_code=status.HTTP_201_CREATED
+        )
+
+
+class PISBusScheduleDetailAPIView(APIView):
+    """
+    GET /api/pis/schedules/<pk>/
+
+    Access: SuperAdmin, StateAdmin, DTO/RTO, Owner (scoped to own buses)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        is_owner = request.user.role == 'owner'
+
+        if not (
+            _user_is_superadmin(request.user) or
+            _user_is_stateadmin(request.user) or
+            _user_is_dtorto(request.user) or
+            is_owner
+        ):
+            return error_response("Access denied", status_code=403)
+
+        qs = BusSchedule.objects.select_related(
+            'route',
+            'bus',
+            'created_by'
+        ).prefetch_related(
+            'stop_etas__route_stop__stop'
+        )
+
+        if is_owner:
+            vehicle_owner = VehicleOwner.objects.filter(users=request.user).first()
+            if not vehicle_owner:
+                return error_response("No vehicle owner profile found", status_code=403)
+            qs = qs.filter(bus__vehicle_owner=vehicle_owner)
+
+        else:
+            state, district = _resolve_state_district(request.user)
+
+            if state:
+                qs = qs.filter(route__state=state)
+
+            if district:
+                qs = qs.filter(route__district__district_code=district)
+
+        schedule = get_object_or_404(qs, pk=pk)
+
+        return success_response(
+            data=BusScheduleSerializer(schedule).data,
+            message="Schedule fetched successfully"
+        )
+
+
+class PISBusScheduleUpdateStatusAPIView(APIView):
+    """
+    POST /api/pis/schedules/<pk>/update-status/
+    Owner updates trip to started or completed.
+
+    started   → actual_start_time is set
+    completed → actual_end_time is set
+
+    Bus must be at the designated stop when starting
+    (checked via latest GPSData proximity to source stop).
+    """
+    permission_classes = [IsAuthenticated]
+
+    PROXIMITY_METERS = 50  # bus must be within 50m of source stop
+
+    def _haversine_distance(self, lat1, lon1, lat2, lon2):
+        """Returns distance in meters between two lat/lon points."""
+        R = 6371000
+        phi1 = math.radians(float(lat1))
+        phi2 = math.radians(float(lat2))
+        dphi = math.radians(float(lat2) - float(lat1))
+        dlam = math.radians(float(lon2) - float(lon1))
+        a = (
+            math.sin(dphi / 2) ** 2
+            + math.cos(phi1)
+            * math.cos(phi2)
+            * math.sin(dlam / 2) ** 2
+        )
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    def post(self, request, pk):
+        if request.user.role != 'owner':
+            return error_response("Access denied", status_code=403)
+
+        new_status = request.data.get('status')
+
+        if new_status not in [
+            BusSchedule.STATUS_STARTED,
+            BusSchedule.STATUS_COMPLETED,
+            BusSchedule.STATUS_CANCELED,
+        ]:
+            return error_response(
+                "Invalid status. Allowed: started, completed, canceled"
+            )
+
+        qs = BusSchedule.objects.select_related(
+            'route',
+            'route__source_stop',
+            'bus',
+            'bus__vehicle_owner',  
+        )
+
+        schedule = get_object_or_404(qs, pk=pk)
+
+        # Ensure owner can only update schedules for their own buses
+        vehicle_owner = VehicleOwner.objects.filter(users=request.user).first()
+        if not vehicle_owner:
+            return error_response("No vehicle owner profile found", status_code=403)
+
+        if schedule.bus.vehicle_owner != vehicle_owner:
+            return error_response(
+                "You can only update schedules for your own buses",
+                status_code=403
+            )
+
+        # Validate transitions
+        valid_transitions = {
+            BusSchedule.STATUS_CREATED: [
+                BusSchedule.STATUS_STARTED,
+                BusSchedule.STATUS_CANCELED,
+            ],
+            BusSchedule.STATUS_STARTED: [
+                BusSchedule.STATUS_COMPLETED,
+            ],
+        }
+
+        allowed = valid_transitions.get(schedule.status, [])
+
+        if new_status not in allowed:
+            return error_response(
+                f"Cannot transition from '{schedule.status}' to '{new_status}'"
+            )
+
+        now = timezone.now()
+
+        # When starting — check bus is near source stop
+        if new_status == BusSchedule.STATUS_STARTED:
+            source_stop = schedule.route.source_stop
+
+            if source_stop.latitude and source_stop.longitude:
+                gps = (
+                    GPSData.objects
+                    .filter(device_tag=schedule.bus)
+                    .order_by('-entry_time')
+                    .first()
+                )
+
+                if gps:
+                    distance = self._haversine_distance(
+                        gps.latitude,
+                        gps.longitude,
+                        source_stop.latitude,
+                        source_stop.longitude
+                    )
+
+                    if distance > self.PROXIMITY_METERS:
+                        return error_response(
+                            f"Bus is {int(distance)}m away from source stop "
+                            f"'{source_stop.name}'. Must be within "
+                            f"{self.PROXIMITY_METERS}m to start."
+                        )
+
+            schedule.actual_start_time = now
+
+        elif new_status == BusSchedule.STATUS_COMPLETED:
+            schedule.actual_end_time = now
+
+        schedule.status = new_status
+        schedule.save()
+
+        return success_response(
+            data=BusScheduleSerializer(schedule).data,
+            message=f"Schedule status updated to '{new_status}' successfully"
+        )
+
+
+# =====================================================
+# Public APIs (No Auth Required)
+# =====================================================
+
+class PISPublicBusStopListAPIView(APIView):
+    """
+    GET /api/pis/public/bus-stops/
+    Returns all active bus stops.
+    Supports search by name, state, district, lat/lon proximity.
+    No authentication required.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        qs = PublicBusStop.objects.filter(
+            status=PublicBusStop.STATUS_ACTIVE
+        ).select_related('state', 'district').order_by('name')
+
+        search = request.query_params.get('search')
+        if search:
+            qs = qs.filter(name__icontains=search)
+
+        state_id = request.query_params.get('state')
+        if state_id:
+            qs = qs.filter(state_id=state_id)
+
+        district_id = request.query_params.get('district')
+        if district_id:
+            qs = qs.filter(district_id=district_id)
+
+        serializer = PublicBusStopListSerializer(qs, many=True)
+        return list_response(data=serializer.data, message="Bus stops fetched successfully")
+
+
+class PISPublicBusRouteListAPIView(APIView):
+    """
+    GET /api/pis/public/routes/
+    Returns all active routes.
+    Supports search by route name, number, stop.
+    No authentication required.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        qs = PublicBusRoute.objects.filter(
+            status=PublicBusRoute.STATUS_ACTIVE
+        ).select_related(
+            'state', 'source_stop', 'destination_stop'
+        ).prefetch_related(
+            'route_stops__stop'
+        ).order_by('route_number')
+
+        search = request.query_params.get('search')
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search) |
+                Q(route_number__icontains=search)
+            )
+
+        stop_id = request.query_params.get('stop')
+        if stop_id:
+            qs = qs.filter(route_stops__stop_id=stop_id).distinct()
+
+        state_id = request.query_params.get('state')
+        if state_id:
+            qs = qs.filter(state_id=state_id)
+
+        serializer = PublicBusRouteListSerializer(qs, many=True)
+        return list_response(data=serializer.data, message="Routes fetched successfully")
+
+
+class PISPublicScheduleStatusAPIView(APIView):
+    """
+    GET /api/pis/public/schedules/
+    Public can view bus schedules with live status.
+    Supports search by route number, route name, date, stop, service type.
+    No authentication required.
+
+    If bus is started → includes live GPS location.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        qs = BusSchedule.objects.select_related(
+            'route', 'bus', 'route__source_stop', 'route__destination_stop'
+        ).prefetch_related(
+            'stop_etas__route_stop__stop'
+        ).order_by('start_datetime')
+
+        # Filters
+        route_number = request.query_params.get('route_number')
+        if route_number:
+            qs = qs.filter(route__route_number__icontains=route_number)
+
+        route_name = request.query_params.get('route_name')
+        if route_name:
+            qs = qs.filter(route__name__icontains=route_name)
+
+        date = request.query_params.get('date')
+        if date:
+            qs = qs.filter(start_datetime__date=date)
+
+        stop_id = request.query_params.get('stop')
+        if stop_id:
+            qs = qs.filter(
+                route__route_stops__stop_id=stop_id
+            ).distinct()
+
+        service_type = request.query_params.get('service_type')
+        if service_type:
+            qs = qs.filter(service_type=service_type)
+
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        serializer = PublicScheduleStatusSerializer(qs, many=True)
+        return list_response(data=serializer.data, message="Schedules fetched successfully")
+
+
+class PISAvailableBusListAPIView(APIView):
+    """
+    GET /api/pis/available-buses/
+    Returns list of available buses (DeviceTag) for schedule dropdown.
+    Access: SuperAdmin, StateAdmin, DTO/RTO
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not (
+            _user_is_superadmin(request.user) or
+            _user_is_stateadmin(request.user) or
+            _user_is_dtorto(request.user)
+        ):
+            return error_response("Access denied", status_code=403)
+
+        buses = DeviceTag.objects.filter(
+            status="Owner_Final_OTP_Verified"
+        ).order_by('vehicle_reg_no')
+
+        return list_response(
+            data=[
+                {'id': b.id, 'vehicle_reg_no': b.vehicle_reg_no}
+                for b in buses
+            ],
+            message="Available buses fetched successfully"
+        )
+        
+        
+        
+# =====================================================
+# Map / Public-Facing APIs — Views
+# =====================================================
+
+
+
+# ------------------------------------------------------------------
+# Shared bbox helper
+# ------------------------------------------------------------------
+
+def _parse_bbox(request):
+    """
+    Reads top_left_lat, top_left_lon, bottom_right_lat, bottom_right_lon
+    from query params.
+
+    Returns (lat_max, lat_min, lon_min, lon_max, error_response | None).
+    top_left    = north-west corner  → higher lat, lower lon
+    bottom_right = south-east corner → lower lat,  higher lon
+
+    Returns None for all four floats (no error) when none of the four
+    params are provided, so the caller can skip bbox filtering entirely.
+    """
+    tl_lat = request.query_params.get('top_left_lat')
+    tl_lon = request.query_params.get('top_left_lon')
+    br_lat = request.query_params.get('bottom_right_lat')
+    br_lon = request.query_params.get('bottom_right_lon')
+
+    # All four must be provided together or not at all
+    bbox_params = [tl_lat, tl_lon, br_lat, br_lon]
+    if any(p is not None for p in bbox_params):
+        if not all(p is not None for p in bbox_params):
+            return None, None, None, None, error_response(
+                "All four bbox params are required: "
+                "top_left_lat, top_left_lon, bottom_right_lat, bottom_right_lon"
+            )
+        try:
+            lat_max = float(tl_lat)   # top-left  = higher latitude
+            lat_min = float(br_lat)   # btm-right = lower  latitude
+            lon_min = float(tl_lon)   # top-left  = lower  longitude
+            lon_max = float(br_lon)   # btm-right = higher longitude
+        except ValueError:
+            return None, None, None, None, error_response(
+                "bbox params must be valid decimal numbers"
+            )
+        return lat_max, lat_min, lon_min, lon_max, None
+
+    # No bbox provided — caller skips spatial filter
+    return None, None, None, None, None
+
+
+# ==================================================================
+# API 1 — School Bus Module: All routes across all schools
+# GET /api/map/school-bus/routes/
+#
+# Query params:
+#   top_left_lat, top_left_lon, bottom_right_lat, bottom_right_lon
+#       → routes with at least one active stop inside the box
+#   school_name   → case-insensitive partial match on school name
+#   status        → active | inactive
+#   school_id     → exact school id
+# ==================================================================
+
+class MapSchoolBusRoutesAPIView(APIView):
+    """
+    Returns all SchoolRoutes across all active schools,
+    each with school details and ordered active stops.
+
+    Bbox filter: includes routes that have at least one active stop
+    whose lat/lon falls inside the bounding box.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        lat_max, lat_min, lon_min, lon_max, bbox_err = _parse_bbox(request)
+        if bbox_err:
+            return bbox_err
+
+        qs = (
+            SchoolRoute.objects
+            .exclude(status='deleted')
+            .select_related(
+                'school',
+                'school__state',
+                'school__district',
+            )
+            .prefetch_related(
+                Prefetch(
+                    'route_stops',
+                    queryset=RouteStop.objects.select_related('stop').order_by('order')
+                )
+            )
+            .order_by('school__school_name', 'name')
+        )
+
+        # --- Bbox filter ---
+        # Keep routes that have ≥1 active stop inside the box
+        if lat_max is not None:
+            from skytron_api.models import SchoolBusStop as _SBS
+            stops_in_box = _SBS.objects.filter(
+                is_active=True,
+                latitude__gte=lat_min,
+                latitude__lte=lat_max,
+                longitude__gte=lon_min,
+                longitude__lte=lon_max,
+            ).values_list('id', flat=True)
+
+            route_ids_in_box = (
+                RouteStop.objects
+                .filter(stop_id__in=stops_in_box)
+                .values_list('route_id', flat=True)
+                .distinct()
+            )
+            qs = qs.filter(id__in=route_ids_in_box)
+
+        # --- Other filters ---
+        school_name = request.query_params.get('school_name')
+        if school_name:
+            qs = qs.filter(school__school_name__icontains=school_name)
+
+        school_id = request.query_params.get('school_id')
+        if school_id:
+            qs = qs.filter(school_id=school_id)
+
+        status_filter = request.query_params.get('status')
+        if status_filter in ['active', 'inactive']:
+            qs = qs.filter(status=status_filter)
+
+        serializer = MapSchoolRouteSerializer(qs, many=True)
+        return list_response(
+            data=serializer.data,
+            message="School bus routes fetched successfully"
+        )
+
+
+# ==================================================================
+# API 2 — PIS: All public bus routes
+# GET /api/map/pis/routes/
+#
+# Query params:
+#   top_left_lat, top_left_lon, bottom_right_lat, bottom_right_lon
+#       → routes with at least one stop inside the box
+#   status        → active | deactivated
+#   state         → state id
+#   search        → partial match on name or route_number
+#   service_type  → (no service_type on route, but kept for future use)
+# ==================================================================
+
+class MapPISRoutesAPIView(APIView):
+    """
+    Returns all PublicBusRoutes with stops.
+    Bbox filter: includes routes that have ≥1 stop inside the box.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        lat_max, lat_min, lon_min, lon_max, bbox_err = _parse_bbox(request)
+        if bbox_err:
+            return bbox_err
+
+        qs = (
+            PublicBusRoute.objects
+            .select_related(
+                'state', 'district',
+                'source_stop', 'destination_stop',
+                'created_by',
+            )
+            .prefetch_related(
+                'route_stops__stop'
+            )
+            .order_by('route_number')
+        )
+
+        # --- Bbox filter ---
+        if lat_max is not None:
+            stops_in_box = (
+                PublicBusStop.objects
+                .filter(
+                    latitude__gte=lat_min,
+                    latitude__lte=lat_max,
+                    longitude__gte=lon_min,
+                    longitude__lte=lon_max,
+                )
+                .values_list('id', flat=True)
+            )
+
+            route_ids_in_box = (
+                PublicRouteStop.objects
+                .filter(stop_id__in=stops_in_box)
+                .values_list('route_id', flat=True)
+                .distinct()
+            )
+            qs = qs.filter(id__in=route_ids_in_box)
+
+        # --- Other filters ---
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        state_id = request.query_params.get('state')
+        if state_id:
+            qs = qs.filter(state_id=state_id)
+
+        district_id = request.query_params.get('district')
+        if district_id:
+            qs = qs.filter(district_id=district_id)
+
+        search = request.query_params.get('search')
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search) |
+                Q(route_number__icontains=search)
+            )
+
+        serializer = MapPISRouteSerializer(qs, many=True)
+        return list_response(
+            data=serializer.data,
+            message="PIS routes fetched successfully"
+        )
+
+
+# ==================================================================
+# API 3 — School Bus live locations (map pins)
+# GET /api/map/school-bus/buses/
+#
+# Query params:
+#   top_left_lat, top_left_lon, bottom_right_lat, bottom_right_lon
+#       → buses whose latest GPS lat/lon falls inside the box
+#   school_id     → exact school id
+#   school_name   → case-insensitive partial match
+# ==================================================================
+
+class MapSchoolBusLocationsAPIView(APIView):
+    """
+    Returns all school-module buses (approved + active tags) with their
+    latest GPS location.  Bbox filters on the GPS position.
+
+    Strategy for bbox on GPS:
+      1. Get all approved+active SchoolBusTag bus_ids.
+      2. Annotate each DeviceTag with its latest GPSData id via subquery.
+      3. Fetch those GPS records.
+      4. Apply bbox filter in Python (avoids a complex JOIN across partitioned
+         data; the candidate set is already small — only school buses).
+      For large fleets a DB-side filter can be added, but this is clean and safe.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        lat_max, lat_min, lon_min, lon_max, bbox_err = _parse_bbox(request)
+        if bbox_err:
+            return bbox_err
+
+        # --- School filter (optional) ---
+        school_qs = SchoolBusTag.objects.filter(
+            is_active=True, status='approved'
+        ).select_related(
+            'school', 'bus', 'bus__vehicle_owner'
+        ).prefetch_related('bus__drivers')
+
+        school_id = request.query_params.get('school_id')
+        if school_id:
+            school_qs = school_qs.filter(school_id=school_id)
+
+        school_name = request.query_params.get('school_name')
+        if school_name:
+            school_qs = school_qs.filter(school__school_name__icontains=school_name)
+
+        bus_ids = list(school_qs.values_list('bus_id', flat=True).distinct())
+
+        if not bus_ids:
+            return list_response(data=[], message="No buses found")
+
+        # --- Latest GPS per bus (subquery) ---
+        latest_gps_ids = (
+            GPSData.objects
+            .filter(device_tag=OuterRef('pk'))
+            .order_by('-entry_time')
+            .values('id')[:1]
+        )
+
+        buses_with_latest = (
+            DeviceTag.objects
+            .filter(id__in=bus_ids)
+            .annotate(latest_gps_id=Subquery(latest_gps_ids))
+        )
+
+        gps_id_list = [
+            b.latest_gps_id for b in buses_with_latest if b.latest_gps_id
+        ]
+        gps_map = {
+            g.device_tag_id: g
+            for g in GPSData.objects.filter(id__in=gps_id_list)
+        }
+
+        # Build school tag lookup: bus_id → tag
+        tag_map = {t.bus_id: t for t in school_qs}
+
+        data = []
+        for bus in buses_with_latest:
+            gps = gps_map.get(bus.id)
+
+            # Apply bbox filter on GPS position
+            if lat_max is not None:
+                if not gps:
+                    continue  # no location — skip
+                if not (lat_min <= gps.latitude <= lat_max and
+                        lon_min <= gps.longitude <= lon_max):
+                    continue
+
+            tag    = tag_map.get(bus.id)
+            school = tag.school if tag else None
+            driver = bus.drivers.first()
+
+            data.append({
+                'bus_id':          bus.id,
+                'vehicle_reg_no':  bus.vehicle_reg_no,
+                'vehicle_make':    bus.vehicle_make,
+                'vehicle_model':   bus.vehicle_model,
+                'school_id':       school.id          if school else None,
+                'school_name':     school.school_name if school else None,
+                'driver': {
+                    'id':       driver.id,
+                    'name':     driver.name,
+                    'phone_no': driver.phone_no,
+                } if driver else None,
+                'latitude':        gps.latitude     if gps else None,
+                'longitude':       gps.longitude    if gps else None,
+                'speed':           gps.speed        if gps else None,
+                'heading':         gps.heading      if gps else None,
+                'ignition_status': gps.ignition_status if gps else None,
+                'last_updated':    gps.entry_time   if gps else None,
+            })
+
+        return list_response(
+            data=data,
+            message="School bus locations fetched successfully"
+        )
+
+
+# ==================================================================
+# API 4 — PIS (Public) Bus live locations (map pins)
+# GET /api/map/pis/buses/
+#
+# "PIS buses" = DeviceTags that have at least one BusSchedule
+# on a PublicBusRoute (regardless of schedule status).
+#
+# Query params:
+#   top_left_lat, top_left_lon, bottom_right_lat, bottom_right_lon
+#       → buses whose latest GPS lat/lon falls inside the box
+#   route_id      → filter by PublicBusRoute id
+#   service_type  → filter by BusSchedule.service_type
+#   status        → filter by BusSchedule.status (created|started|completed|canceled)
+# ==================================================================
+
+class MapPISBusLocationsAPIView(APIView):
+    """
+    Returns all PIS buses (buses with at least one schedule on a
+    PublicBusRoute) with their latest GPS location.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        lat_max, lat_min, lon_min, lon_max, bbox_err = _parse_bbox(request)
+        if bbox_err:
+            return bbox_err
+
+        # --- Resolve PIS bus_ids (with optional filters) ---
+        schedule_qs = BusSchedule.objects.select_related('route', 'bus')
+
+        route_id = request.query_params.get('route_id')
+        if route_id:
+            schedule_qs = schedule_qs.filter(route_id=route_id)
+
+        service_type = request.query_params.get('service_type')
+        if service_type:
+            schedule_qs = schedule_qs.filter(service_type=service_type)
+
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            schedule_qs = schedule_qs.filter(status=status_filter)
+
+        # One entry per bus (latest schedule wins for display metadata)
+        bus_to_schedule = {}
+        for sched in schedule_qs.order_by('bus_id', '-start_datetime'):
+            if sched.bus_id not in bus_to_schedule:
+                bus_to_schedule[sched.bus_id] = sched
+
+        bus_ids = list(bus_to_schedule.keys())
+
+        if not bus_ids:
+            return list_response(data=[], message="No PIS buses found")
+
+        # --- Latest GPS per bus (subquery) ---
+        latest_gps_ids = (
+            GPSData.objects
+            .filter(device_tag=OuterRef('pk'))
+            .order_by('-entry_time')
+            .values('id')[:1]
+        )
+
+        buses_with_latest = (
+            DeviceTag.objects
+            .filter(id__in=bus_ids)
+            .annotate(latest_gps_id=Subquery(latest_gps_ids))
+        )
+
+        gps_id_list = [
+            b.latest_gps_id for b in buses_with_latest if b.latest_gps_id
+        ]
+        gps_map = {
+            g.device_tag_id: g
+            for g in GPSData.objects.filter(id__in=gps_id_list)
+        }
+
+        data = []
+        for bus in buses_with_latest:
+            gps    = gps_map.get(bus.id)
+            sched  = bus_to_schedule.get(bus.id)
+
+            # Apply bbox filter on GPS position
+            if lat_max is not None:
+                if not gps:
+                    continue
+                if not (lat_min <= gps.latitude <= lat_max and
+                        lon_min <= gps.longitude <= lon_max):
+                    continue
+
+            data.append({
+                'bus_id':          bus.id,
+                'vehicle_reg_no':  bus.vehicle_reg_no,
+                'schedule_id':     sched.id             if sched else None,
+                'schedule_status': sched.status         if sched else None,
+                'service_type':    sched.service_type   if sched else None,
+                'route_number':    sched.route.route_number if sched else None,
+                'route_name':      sched.route.name         if sched else None,
+                'latitude':        gps.latitude        if gps else None,
+                'longitude':       gps.longitude       if gps else None,
+                'speed':           gps.speed           if gps else None,
+                'heading':         gps.heading         if gps else None,
+                'ignition_status': gps.ignition_status if gps else None,
+                'last_updated':    gps.entry_time      if gps else None,
+            })
+
+        return list_response(
+            data=data,
+            message="PIS bus locations fetched successfully"
+        )
+
+
+# ==================================================================
+# API 5 — PIS Bus Stops (map pins)
+# GET /api/map/pis/bus-stops/
+#
+# Query params:
+#   top_left_lat, top_left_lon, bottom_right_lat, bottom_right_lon
+#       → stops whose own lat/lon falls inside the box
+#   name          → case-insensitive partial match on stop name
+#   status        → active | deactivated
+#   state         → state id
+#   district      → district id
+# ==================================================================
+
+class MapPISBusStopsAPIView(APIView):
+    """
+    Returns all PublicBusStops, bbox-filtered on the stop's own
+    lat/lon coordinates.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        lat_max, lat_min, lon_min, lon_max, bbox_err = _parse_bbox(request)
+        if bbox_err:
+            return bbox_err
+
+        qs = (
+            PublicBusStop.objects
+            .select_related('state', 'district')
+            .order_by('name')
+        )
+
+        # --- Bbox filter (on the stop's own position) ---
+        if lat_max is not None:
+            qs = qs.filter(
+                latitude__gte=lat_min,
+                latitude__lte=lat_max,
+                longitude__gte=lon_min,
+                longitude__lte=lon_max,
+            )
+
+        # --- Other filters ---
+        name = request.query_params.get('name')
+        if name:
+            qs = qs.filter(name__icontains=name)
+
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        state_id = request.query_params.get('state')
+        if state_id:
+            qs = qs.filter(state_id=state_id)
+
+        district_id = request.query_params.get('district')
+        if district_id:
+            qs = qs.filter(district_id=district_id)
+            
+        serializer = PublicBusStopListSerializer(qs, many=True)
+        return list_response(
+            data=serializer.data,
+            message="PIS bus stops fetched successfully"
+        )
+        
+# ----------------------------------------------------------------
+#  4.1 State Transport Analytics Platform 
+# ----------------------------------------------------------------
+        
+class TripAnalyticsAPIView(APIView):
+    """
+    GET /api/analytics/trips/
+ 
+    Required query params:
+        start_datetime  — ISO 8601, e.g. 2025-01-01T00:00:00
+        end_datetime    — ISO 8601, e.g. 2025-06-30T23:59:59
+ 
+    Optional query params:
+        vehicle_category_id — Settings_VehicleCategory id
+        status              — created | ended | canceled
+        page                — default 1
+        page_size           — default 20, max 100
+ 
+    Response:
+        summary    — aggregates over the full filtered set (before pagination)
+        pagination — page metadata
+        data       — serialized trip list for the current page
+    """
+    permission_classes = [IsAuthenticated]
+ 
+    MAX_PAGE_SIZE = 100
+ 
+    def get(self, request):
+ 
+        # ── 1. Validate required date params ──────────────────────────────
+        start_raw = request.query_params.get('start_datetime')
+        end_raw   = request.query_params.get('end_datetime')
+ 
+        if not start_raw or not end_raw:
+            return Response(
+                {
+                    "success": False,
+                    "message": "start_datetime and end_datetime are required",
+                    "errors": {
+                        "required": ["start_datetime", "end_datetime"],
+                        "format":   "ISO 8601 — e.g. 2025-01-01T00:00:00"
+                    }
+                },
+                status=400
+            )
+ 
+        start_dt = parse_datetime(start_raw)
+        end_dt   = parse_datetime(end_raw)
+ 
+        if start_dt is None or end_dt is None:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Invalid datetime format",
+                    "errors": {
+                        "format": "ISO 8601 — e.g. 2025-01-01T00:00:00"
+                    }
+                },
+                status=400
+            )
+ 
+        if start_dt > end_dt:
+            return Response(
+                {
+                    "success": False,
+                    "message": "start_datetime must be before end_datetime",
+                    "errors": {}
+                },
+                status=400
+            )
+ 
+        # ── 2. Base queryset — date range filter ──────────────────────────
+        trips = Trip.objects.filter(
+            created_at__gte=start_dt,
+            created_at__lte=end_dt,
+        )
+ 
+        # ── 3. Optional: vehicle category filter ──────────────────────────
+        vehicle_category_id = request.query_params.get('vehicle_category_id')
+        if vehicle_category_id:
+            try:
+                vehicle_category_id = int(vehicle_category_id)
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "vehicle_category_id must be an integer",
+                        "errors": {}
+                    },
+                    status=400
+                )
+ 
+            vehicle_regs = DeviceTag.objects.filter(
+                category_id=vehicle_category_id
+            ).values_list('vehicle_reg_no', flat=True)
+ 
+            trips = trips.filter(tripvehical_tag__in=vehicle_regs)
+ 
+        # ── 4. Optional: status filter ────────────────────────────────────
+        # Summary is computed BEFORE applying status filter so it always
+        # reflects counts across all statuses in the date+category scope.
+        summary = trips.aggregate(
+            total_distance_travel=Sum('distance_travel'),
+            average_distance_travel=Avg('distance_travel'),
+        )
+ 
+        status_summary = {
+            row['status']: row['count']
+            for row in trips.values('status').annotate(count=Count('id'))
+        }
+ 
+        full_summary = {
+            "total_trips":            trips.count(),
+            "created_trips":          status_summary.get('created',  0),
+            "ended_trips":            status_summary.get('ended',    0),
+            "canceled_trips":         status_summary.get('canceled', 0),
+            "total_distance_travel":  round(summary['total_distance_travel']   or 0, 2),
+            "average_distance_travel": round(summary['average_distance_travel'] or 0, 2),
+        }
+ 
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            valid_statuses = {'created', 'ended', 'canceled'}
+            if status_filter not in valid_statuses:
+                return Response(
+                    {
+                        "success": False,
+                        "message": f"Invalid status. Allowed: {', '.join(valid_statuses)}",
+                        "errors": {}
+                    },
+                    status=400
+                )
+            trips = trips.filter(status=status_filter)
+ 
+        # ── 5. Pagination params ──────────────────────────────────────────
+        try:
+            page      = max(1, int(request.query_params.get('page', 1)))
+            page_size = min(
+                max(1, int(request.query_params.get('page_size', 20))),
+                self.MAX_PAGE_SIZE
+            )
+        except ValueError:
+            return Response(
+                {
+                    "success": False,
+                    "message": "page and page_size must be integers",
+                    "errors": {}
+                },
+                status=400
+            )
+ 
+        # ── 6. Paginate ───────────────────────────────────────────────────
+        paginator = Paginator(
+            trips.select_related('created_by').order_by('-created_at'),
+            page_size
+        )
+        page_obj = paginator.get_page(page)
+ 
+        # ── 7. Build tag_map for serializer (single DB query) ─────────────
+        reg_nos_on_page = [t.tripvehical_tag for t in page_obj.object_list]
+        tag_map = {
+            dt.vehicle_reg_no: dt.category.category
+            for dt in DeviceTag.objects.filter(
+                vehicle_reg_no__in=reg_nos_on_page
+            ).select_related('category')
+            if dt.category
+        }
+ 
+        # ── 8. Serialize and respond ──────────────────────────────────────
+        serializer = TripAnalyticsSerializer(
+            page_obj.object_list,
+            many=True,
+            context={'tag_map': tag_map}
+        )
+ 
+        return Response({
+            "success":    True,
+            "message":    "Trips fetched successfully",
+            "summary":    full_summary,
+            "pagination": {
+                "page":          page,
+                "page_size":     page_size,
+                "total_records": paginator.count,
+                "total_pages":   paginator.num_pages,
+                "has_next":      page_obj.has_next(),
+                "has_previous":  page_obj.has_previous(),
+            },
+            "data": serializer.data,
+        })
+        
+
+
+class DrivingPatternAlertsAPIView(APIView):
+    """
+    GET /api/analytics/driving-pattern-alerts/
+ 
+    Returns driving-pattern alerts (harsh braking, harsh acceleration,
+    harsh turn and other violation types) from AlertsLog within a
+    datetime range.
+ 
+    Required query params:
+        start_datetime      — ISO 8601, e.g. 2025-01-01T00:00:00
+        end_datetime        — ISO 8601, e.g. 2025-06-30T23:59:59
+ 
+    Optional query params:
+        alert_type          — one of: HarshBreak | HarshTurn |
+                              HarshAcceleration | OverSpeed |
+                              Route_overspeed | Idling |
+                              UnauthorizedStop | UnauthorizedSkip | Tilt
+                              (omit to get ALL driving-pattern types)
+        vehicle_reg_no      — exact vehicle registration number
+        vehicle_category_id — Settings_VehicleCategory id
+        state_id            — Settings_State id
+        district_id         — Settings_District id
+        page                — default 1
+        page_size           — default 20, max 100
+ 
+    Response:
+        summary    — per-type counts + totals across full filtered set
+        pagination — page metadata
+        data       — alert list for the current page
+    """
+ 
+    permission_classes = [IsAuthenticated]
+    MAX_PAGE_SIZE = 100
+ 
+    # Alert types that belong to the "driving pattern" category
+    DRIVING_PATTERN_TYPES = [
+        'HarshBreak',
+        'HarshTurn',
+        'HarshAcceleration',
+        'OverSpeed',
+        'Route_overspeed',
+        'Idling',
+        'UnauthorizedStop',
+        'UnauthorizedSkip',
+        'Tilt',
+    ]
+ 
+    def get(self, request):
+ 
+        # ── 1. Validate required date params ──────────────────────────────
+        start_raw = request.query_params.get('start_datetime')
+        end_raw   = request.query_params.get('end_datetime')
+ 
+        if not start_raw or not end_raw:
+            return Response(
+                {
+                    "success": False,
+                    "message": "start_datetime and end_datetime are required",
+                    "errors": {
+                        "required": ["start_datetime", "end_datetime"],
+                        "format":   "ISO 8601 — e.g. 2025-01-01T00:00:00",
+                    }
+                },
+                status=400
+            )
+ 
+        start_dt = parse_datetime(start_raw)
+        end_dt   = parse_datetime(end_raw)
+ 
+        if start_dt is None or end_dt is None:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Invalid datetime format",
+                    "errors": {"format": "ISO 8601 — e.g. 2025-01-01T00:00:00"}
+                },
+                status=400
+            )
+ 
+        if start_dt > end_dt:
+            return Response(
+                {
+                    "success": False,
+                    "message": "start_datetime must be before end_datetime",
+                    "errors": {}
+                },
+                status=400
+            )
+ 
+        # ── 2. Base queryset — driving-pattern types + date range ─────────
+        alerts = AlertsLog.objects.filter(
+            type__in=self.DRIVING_PATTERN_TYPES,
+            timestamp__gte=start_dt,
+            timestamp__lte=end_dt,
+        )
+ 
+        # ── 3. Optional: alert_type filter ────────────────────────────────
+        alert_type = request.query_params.get('alert_type')
+        if alert_type:
+            if alert_type not in self.DRIVING_PATTERN_TYPES:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "Invalid alert_type",
+                        "errors": {
+                            "allowed": self.DRIVING_PATTERN_TYPES
+                        }
+                    },
+                    status=400
+                )
+            alerts = alerts.filter(type=alert_type)
+ 
+        # ── 4. Optional: vehicle_reg_no filter ────────────────────────────
+        vehicle_reg_no = request.query_params.get('vehicle_reg_no')
+        if vehicle_reg_no:
+            alerts = alerts.filter(
+                deviceTag__vehicle_reg_no__iexact=vehicle_reg_no
+            )
+ 
+        # ── 5. Optional: vehicle_category_id filter ───────────────────────
+        vehicle_category_id = request.query_params.get('vehicle_category_id')
+        if vehicle_category_id:
+            try:
+                vehicle_category_id = int(vehicle_category_id)
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "vehicle_category_id must be an integer",
+                        "errors": {}
+                    },
+                    status=400
+                )
+            device_tag_ids = DeviceTag.objects.filter(
+                category_id=vehicle_category_id
+            ).values_list('id', flat=True)
+ 
+            alerts = alerts.filter(deviceTag_id__in=device_tag_ids)
+ 
+        # ── 6. Optional: state_id filter ──────────────────────────────────
+        state_id = request.query_params.get('state_id')
+        if state_id:
+            try:
+                state_id = int(state_id)
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "state_id must be an integer",
+                        "errors": {}
+                    },
+                    status=400
+                )
+            alerts = alerts.filter(state_id=state_id)
+ 
+        # ── 7. Optional: district_id filter ─────────────────────────────────
+        # AlertsLog has no direct district FK — filter via DeviceTag.district
+        district_id = request.query_params.get('district_id')
+        if district_id:
+            try:
+                district_id = int(district_id)
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "district_id must be an integer",
+                        "errors": {}
+                    },
+                    status=400
+                )
+            alerts = alerts.filter(deviceTag__district_id=district_id)
+ 
+        # ── 8. Summary — computed before pagination ───────────────────────
+        # Per-type counts in a single aggregation query
+        type_counts = {
+            row['type']: row['count']
+            for row in alerts.values('type').annotate(count=Count('id'))
+        }
+ 
+        summary = {
+            "total_alerts":              alerts.count(),
+            "harsh_braking_count":       type_counts.get('HarshBreak',        0),
+            "harsh_turn_count":          type_counts.get('HarshTurn',         0),
+            "harsh_acceleration_count":  type_counts.get('HarshAcceleration', 0),
+            "overspeed_count":           type_counts.get('OverSpeed',         0),
+            "route_overspeed_count":     type_counts.get('Route_overspeed',   0),
+            "idling_count":              type_counts.get('Idling',            0),
+            "unauthorized_stop_count":   type_counts.get('UnauthorizedStop',  0),
+            "unauthorized_skip_count":   type_counts.get('UnauthorizedSkip',  0),
+            "tilt_count":                type_counts.get('Tilt',              0),
+        }
+ 
+        # ── 9. Pagination params ──────────────────────────────────────────
+        try:
+            page      = max(1, int(request.query_params.get('page', 1)))
+            page_size = min(
+                max(1, int(request.query_params.get('page_size', 20))),
+                self.MAX_PAGE_SIZE
+            )
+        except ValueError:
+            return Response(
+                {
+                    "success": False,
+                    "message": "page and page_size must be integers",
+                    "errors": {}
+                },
+                status=400
+            )
+ 
+        # ── 10. Paginate ───────────────────────────────────────────────────
+        paginator = Paginator(
+            alerts
+            .select_related('deviceTag', 'deviceTag__category', 'deviceTag__district', 'gps_ref', 'state')
+            .order_by('-timestamp'),
+            page_size
+        )
+        page_obj = paginator.get_page(page)
+ 
+        # ── 11. Build category_map for serializer (single DB query) ───────
+        device_tag_ids_on_page = [a.deviceTag_id for a in page_obj.object_list]
+        category_map = {
+            dt.id: dt.category.category
+            for dt in DeviceTag.objects.filter(
+                id__in=device_tag_ids_on_page
+            ).select_related('category')
+            if dt.category
+        }
+ 
+        # ── 12. Serialize and respond ─────────────────────────────────────
+        serializer = DrivingPatternAlertSerializer(
+            page_obj.object_list,
+            many=True,
+            context={'category_map': category_map}
+        )
+ 
+        return Response({
+            "success":    True,
+            "message":    "Driving pattern alerts fetched successfully",
+            "summary":    summary,
+            "pagination": {
+                "page":          page,
+                "page_size":     page_size,
+                "total_records": paginator.count,
+                "total_pages":   paginator.num_pages,
+                "has_next":      page_obj.has_next(),
+                "has_previous":  page_obj.has_previous(),
+            },
+            "data": serializer.data,
+        })
+        
+        
+class VehicleAlertSummaryAPIView(APIView):
+    """
+    GET /api/analytics/vehicle-alert-summary/
+
+    One row per vehicle — count of every alert type within a date range.
+
+    Required:
+        start_datetime, end_datetime  (ISO 8601)
+
+    Optional filters:
+        vehicle_category_id, state_id, district_id,
+        vehicle_reg_no, alert_type, min_total_alerts
+
+    Optional sort:
+        sort_by     — any count field or vehicle_reg_no (default: total_alerts)
+        sort_order  — asc | desc (default: desc)
+
+    Pagination:
+        page, page_size (max 100, default 20)
+    """
+
+    permission_classes = [IsAuthenticated]
+    MAX_PAGE_SIZE = 100
+
+    EMERGENCY_TYPES = [
+        'Em', 'EmPublicApp', 'EmRegisteredApp',
+        'EmMonitorTripSOS', 'EmMonitorTripInvalidPw',
+        'EmMonitorTripBLEDisconnect', 'EmMonitorTripDeviated',
+    ]
+    PERMIT_TYPES = ['Permit', 'Permit_3day']
+
+    SORTABLE_FIELDS = {
+        'total_alerts', 'vehicle_reg_no',
+        'harsh_braking_count', 'harsh_turn_count', 'harsh_acceleration_count',
+        'overspeed_count', 'route_overspeed_count', 'idling_count',
+        'unauthorized_stop_count', 'unauthorized_skip_count', 'tilt_count',
+        'overtime_count', 'state_border_cross_count', 'district_border_cross_count',
+        'city_border_cross_count', 'permit_count', 'unauthorized_parking_count',
+        'prohibited_area_count', 'offline_device_count', 'network_loss_count',
+        'gps_loss_count', 'low_int_bat_count', 'low_ext_bat_count',
+        'ext_bat_discnt_count', 'box_temp_count', 'em_temp_count', 'engine_count',
+        'geofence_count', 'route_deviation_count', 'incident_count', 'emergency_count',
+    }
+
+    def get(self, request):
+
+        # ── 1. Required date params ───────────────────────────────────────────
+        start_raw = request.query_params.get('start_datetime')
+        end_raw   = request.query_params.get('end_datetime')
+
+        if not start_raw or not end_raw:
+            return error_response(
+                "start_datetime and end_datetime are required",
+                errors={
+                    "required": ["start_datetime", "end_datetime"],
+                    "format":   "ISO 8601 — e.g. 2025-01-01T00:00:00",
+                }
+            )
+
+        start_dt = parse_datetime(start_raw)
+        end_dt   = parse_datetime(end_raw)
+
+        if start_dt is None or end_dt is None:
+            return error_response(
+                "Invalid datetime format",
+                errors={"format": "ISO 8601 — e.g. 2025-01-01T00:00:00"}
+            )
+
+        if start_dt > end_dt:
+            return error_response("start_datetime must be before end_datetime")
+
+        # ── 2. Sort params ────────────────────────────────────────────────────
+        sort_by    = request.query_params.get('sort_by', 'total_alerts')
+        sort_order = request.query_params.get('sort_order', 'desc').lower()
+
+        if sort_by not in self.SORTABLE_FIELDS:
+            return error_response(
+                "Invalid sort_by value",
+                errors={"allowed": sorted(self.SORTABLE_FIELDS)}
+            )
+
+        if sort_order not in ('asc', 'desc'):
+            return error_response("sort_order must be 'asc' or 'desc'")
+
+        # ── 3. Pagination params (validate early, fail fast) ──────────────────
+        try:
+            page      = max(1, int(request.query_params.get('page', 1)))
+            page_size = min(
+                max(1, int(request.query_params.get('page_size', 20))),
+                self.MAX_PAGE_SIZE
+            )
+        except ValueError:
+            return error_response("page and page_size must be integers")
+
+        # ── 4. Base queryset ──────────────────────────────────────────────────
+        base_alerts = AlertsLog.objects.filter(
+            timestamp__gte=start_dt,
+            timestamp__lte=end_dt,
+        )
+
+        # ── 5. Optional filters ───────────────────────────────────────────────
+
+        vehicle_category_id = request.query_params.get('vehicle_category_id')
+        if vehicle_category_id:
+            try:
+                vehicle_category_id = int(vehicle_category_id)
+            except ValueError:
+                return error_response("vehicle_category_id must be an integer")
+            tag_ids = DeviceTag.objects.filter(
+                category_id=vehicle_category_id
+            ).values_list('id', flat=True)
+            base_alerts = base_alerts.filter(deviceTag_id__in=tag_ids)
+
+        state_id = request.query_params.get('state_id')
+        if state_id:
+            try:
+                state_id = int(state_id)
+            except ValueError:
+                return error_response("state_id must be an integer")
+            # AlertsLog has a direct FK to Settings_State
+            base_alerts = base_alerts.filter(state_id=state_id)
+
+        district_id = request.query_params.get('district_id')
+        if district_id:
+            try:
+                district_id = int(district_id)
+            except ValueError:
+                return error_response("district_id must be an integer")
+            # AlertsLog has no district FK — go through DeviceTag
+            base_alerts = base_alerts.filter(deviceTag__district_id=district_id)
+
+        vehicle_reg_no = request.query_params.get('vehicle_reg_no')
+        if vehicle_reg_no:
+            base_alerts = base_alerts.filter(
+                deviceTag__vehicle_reg_no__icontains=vehicle_reg_no
+            )
+
+        alert_type_filter = request.query_params.get('alert_type')
+        if alert_type_filter:
+            # Only include vehicles that have at least one alert of this type
+            tag_ids_with_type = (
+                base_alerts
+                .filter(type=alert_type_filter)
+                .values_list('deviceTag_id', flat=True)
+                .distinct()
+            )
+            base_alerts = base_alerts.filter(deviceTag_id__in=tag_ids_with_type)
+
+        # ── 6. Core aggregation — single query, all type counts per vehicle ───
+        per_vehicle_qs = (
+            base_alerts
+            .values('deviceTag_id')
+            .annotate(
+                total_alerts                = Count('id'),
+
+                # Driving pattern
+                harsh_braking_count         = Count('id', filter=Q(type='HarshBreak')),
+                harsh_turn_count            = Count('id', filter=Q(type='HarshTurn')),
+                harsh_acceleration_count    = Count('id', filter=Q(type='HarshAcceleration')),
+                overspeed_count             = Count('id', filter=Q(type='OverSpeed')),
+                route_overspeed_count       = Count('id', filter=Q(type='Route_overspeed')),
+                idling_count                = Count('id', filter=Q(type='Idling')),
+                unauthorized_stop_count     = Count('id', filter=Q(type='UnauthorizedStop')),
+                unauthorized_skip_count     = Count('id', filter=Q(type='UnauthorizedSkip')),
+                tilt_count                  = Count('id', filter=Q(type='Tilt')),
+
+                # Boundary / compliance
+                overtime_count              = Count('id', filter=Q(type='Overtime')),
+                state_border_cross_count    = Count('id', filter=Q(type='state_border_cross')),
+                district_border_cross_count = Count('id', filter=Q(type='district_border_cross')),
+                city_border_cross_count     = Count('id', filter=Q(type='city_border_cross')),
+                permit_count                = Count('id', filter=Q(type__in=self.PERMIT_TYPES)),
+                unauthorized_parking_count  = Count('id', filter=Q(type='UnauthorizedParking')),
+                prohibited_area_count       = Count('id', filter=Q(type='Prohibited_Area')),
+
+                # Device health
+                offline_device_count        = Count('id', filter=Q(type='OfflineDevice')),
+                network_loss_count          = Count('id', filter=Q(type='NetworkLoss')),
+                gps_loss_count              = Count('id', filter=Q(type='GPSLoss')),
+                low_int_bat_count           = Count('id', filter=Q(type='LowIntBat')),
+                low_ext_bat_count           = Count('id', filter=Q(type='LowExtBat')),
+                ext_bat_discnt_count        = Count('id', filter=Q(type='ExtBatDiscnt')),
+                box_temp_count              = Count('id', filter=Q(type='BoxTemp')),
+                em_temp_count               = Count('id', filter=Q(type='EmTemp')),
+                engine_count                = Count('id', filter=Q(type='Eng')),
+
+                # Geofence / route
+                geofence_count              = Count('id', filter=Q(type='Geofence')),
+                route_deviation_count       = Count('id', filter=Q(type='Route')),
+                incident_count              = Count('id', filter=Q(type='Incident')),
+
+                # Emergency (grouped)
+                emergency_count             = Count('id', filter=Q(type__in=self.EMERGENCY_TYPES)),
+            )
+        )
+
+        # ── 7. min_total_alerts filter (applied after annotation) ─────────────
+        min_total = request.query_params.get('min_total_alerts')
+        if min_total:
+            try:
+                min_total = int(min_total)
+            except ValueError:
+                return error_response("min_total_alerts must be an integer")
+            per_vehicle_qs = per_vehicle_qs.filter(total_alerts__gte=min_total)
+
+        # ── 8. Fleet-level summary — computed before pagination ───────────────
+        summary_agg = per_vehicle_qs.aggregate(
+            fleet_total_vehicles          = Count('deviceTag_id'),
+            fleet_total_alerts            = Sum('total_alerts'),
+            fleet_harsh_braking           = Sum('harsh_braking_count'),
+            fleet_harsh_turn              = Sum('harsh_turn_count'),
+            fleet_harsh_acceleration      = Sum('harsh_acceleration_count'),
+            fleet_overspeed               = Sum('overspeed_count'),
+            fleet_route_overspeed         = Sum('route_overspeed_count'),
+            fleet_idling                  = Sum('idling_count'),
+            fleet_unauthorized_stop       = Sum('unauthorized_stop_count'),
+            fleet_unauthorized_skip       = Sum('unauthorized_skip_count'),
+            fleet_tilt                    = Sum('tilt_count'),
+            fleet_overtime                = Sum('overtime_count'),
+            fleet_state_border_cross      = Sum('state_border_cross_count'),
+            fleet_district_border_cross   = Sum('district_border_cross_count'),
+            fleet_city_border_cross       = Sum('city_border_cross_count'),
+            fleet_permit                  = Sum('permit_count'),
+            fleet_unauthorized_parking    = Sum('unauthorized_parking_count'),
+            fleet_prohibited_area         = Sum('prohibited_area_count'),
+            fleet_offline_device          = Sum('offline_device_count'),
+            fleet_network_loss            = Sum('network_loss_count'),
+            fleet_gps_loss                = Sum('gps_loss_count'),
+            fleet_low_int_bat             = Sum('low_int_bat_count'),
+            fleet_low_ext_bat             = Sum('low_ext_bat_count'),
+            fleet_ext_bat_discnt          = Sum('ext_bat_discnt_count'),
+            fleet_box_temp                = Sum('box_temp_count'),
+            fleet_em_temp                 = Sum('em_temp_count'),
+            fleet_engine                  = Sum('engine_count'),
+            fleet_geofence                = Sum('geofence_count'),
+            fleet_route_deviation         = Sum('route_deviation_count'),
+            fleet_incident                = Sum('incident_count'),
+            fleet_emergency               = Sum('emergency_count'),
+        )
+        summary = {k: (v or 0) for k, v in summary_agg.items()}
+
+        # ── 9. Sort ───────────────────────────────────────────────────────────
+        if sort_by == 'vehicle_reg_no':
+            per_vehicle_qs = per_vehicle_qs.annotate(
+                vehicle_reg_no_sort=Subquery(
+                    DeviceTag.objects.filter(
+                        id=OuterRef('deviceTag_id')
+                    ).values('vehicle_reg_no')[:1]
+                )
+            )
+            order_field = 'vehicle_reg_no_sort'
+        else:
+            order_field = sort_by
+
+        if sort_order == 'desc':
+            order_field = f'-{order_field}'
+
+        per_vehicle_qs = per_vehicle_qs.order_by(order_field)
+
+        # ── 10. Pagination — no list() conversion; slice the queryset ─────────
+        total_records = per_vehicle_qs.count()
+        total_pages   = max(1, (total_records + page_size - 1) // page_size)
+        offset        = (page - 1) * page_size
+        page_rows     = list(per_vehicle_qs[offset: offset + page_size])
+
+        # ── 11. Enrich page rows with DeviceTag details (one bulk query) ──────
+        page_tag_ids = [row['deviceTag_id'] for row in page_rows]
+
+        device_tags = {
+            dt.id: dt
+            for dt in DeviceTag.objects.filter(
+                id__in=page_tag_ids
+            ).select_related('category', 'district', 'district__state')
+        }
+
+        data = []
+        for row in page_rows:
+            dt = device_tags.get(row['deviceTag_id'])
+
+            state_name    = None
+            district_name = None
+            if dt and dt.district:
+                district_name = dt.district.district
+                if dt.district.state:
+                    state_name = dt.district.state.state
+
+            data.append({
+                'device_tag_id':              row['deviceTag_id'],
+                'vehicle_reg_no':             dt.vehicle_reg_no            if dt else None,
+                'vehicle_make':               dt.vehicle_make              if dt else None,
+                'vehicle_model':              dt.vehicle_model             if dt else None,
+                'vehicle_category':           dt.category.category         if dt and dt.category else None,
+                'state_name':                 state_name,
+                'district_name':              district_name,
+                'total_alerts':               row['total_alerts'],
+                'harsh_braking_count':        row['harsh_braking_count'],
+                'harsh_turn_count':           row['harsh_turn_count'],
+                'harsh_acceleration_count':   row['harsh_acceleration_count'],
+                'overspeed_count':            row['overspeed_count'],
+                'route_overspeed_count':      row['route_overspeed_count'],
+                'idling_count':               row['idling_count'],
+                'unauthorized_stop_count':    row['unauthorized_stop_count'],
+                'unauthorized_skip_count':    row['unauthorized_skip_count'],
+                'tilt_count':                 row['tilt_count'],
+                'overtime_count':             row['overtime_count'],
+                'state_border_cross_count':   row['state_border_cross_count'],
+                'district_border_cross_count':row['district_border_cross_count'],
+                'city_border_cross_count':    row['city_border_cross_count'],
+                'permit_count':               row['permit_count'],
+                'unauthorized_parking_count': row['unauthorized_parking_count'],
+                'prohibited_area_count':      row['prohibited_area_count'],
+                'offline_device_count':       row['offline_device_count'],
+                'network_loss_count':         row['network_loss_count'],
+                'gps_loss_count':             row['gps_loss_count'],
+                'low_int_bat_count':          row['low_int_bat_count'],
+                'low_ext_bat_count':          row['low_ext_bat_count'],
+                'ext_bat_discnt_count':       row['ext_bat_discnt_count'],
+                'box_temp_count':             row['box_temp_count'],
+                'em_temp_count':              row['em_temp_count'],
+                'engine_count':               row['engine_count'],
+                'geofence_count':             row['geofence_count'],
+                'route_deviation_count':      row['route_deviation_count'],
+                'incident_count':             row['incident_count'],
+                'emergency_count':            row['emergency_count'],
+            })
+
+        serializer = VehicleAlertSummarySerializer(data, many=True)
+
+        return Response({
+            "success":    True,
+            "message":    "Vehicle alert summary fetched successfully",
+            "summary":    summary,
+            "pagination": {
+                "page":          page,
+                "page_size":     page_size,
+                "total_records": total_records,
+                "total_pages":   total_pages,
+                "has_next":      page < total_pages,
+                "has_previous":  page > 1,
+            },
+            "data": serializer.data,
+        })
+        
+        
+class PISAnalyticsSummaryAPIView(APIView):
+    """
+    GET /api/analytics/pis-summary/
+
+    Summary dashboard for the Passenger Information System.
+    Returns counts of buses, stops, routes, and schedules.
+
+    Date range filters apply to schedules only (start_datetime).
+    State/district/vehicle_category filters apply to all counts.
+
+    Required:
+        start_datetime, end_datetime  (ISO 8601)
+
+    Optional:
+        state_id            — Settings_State id
+        district_id         — Settings_District id
+        vehicle_category_id — Settings_VehicleCategory id
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        # ── 1. Required date params ───────────────────────────────────────────
+        start_raw = request.query_params.get('start_datetime')
+        end_raw   = request.query_params.get('end_datetime')
+
+        if not start_raw or not end_raw:
+            return error_response(
+                "start_datetime and end_datetime are required",
+                errors={
+                    "required": ["start_datetime", "end_datetime"],
+                    "format":   "ISO 8601 — e.g. 2025-01-01T00:00:00",
+                }
+            )
+
+        start_dt = parse_datetime(start_raw)
+        end_dt   = parse_datetime(end_raw)
+
+        if start_dt is None or end_dt is None:
+            return error_response(
+                "Invalid datetime format",
+                errors={"format": "ISO 8601 — e.g. 2025-01-01T00:00:00"}
+            )
+
+        if start_dt > end_dt:
+            return error_response("start_datetime must be before end_datetime")
+
+        # ── 2. Optional scope filters ─────────────────────────────────────────
+        state_id = request.query_params.get('state_id')
+        district_id = request.query_params.get('district_id')
+        vehicle_category_id = request.query_params.get('vehicle_category_id')
+
+        # Resolve and validate each
+        state_obj    = None
+        district_obj = None
+        category_obj = None
+
+        if state_id:
+            try:
+                state_id = int(state_id)
+            except ValueError:
+                return error_response("state_id must be an integer")
+            state_obj = Settings_State.objects.filter(id=state_id).first()
+            if not state_obj:
+                return error_response("state_id not found", status_code=404)
+
+        if district_id:
+            try:
+                district_id = int(district_id)
+            except ValueError:
+                return error_response("district_id must be an integer")
+            district_obj = Settings_District.objects.filter(id=district_id).first()
+            if not district_obj:
+                return error_response("district_id not found", status_code=404)
+
+        if vehicle_category_id:
+            try:
+                vehicle_category_id = int(vehicle_category_id)
+            except ValueError:
+                return error_response("vehicle_category_id must be an integer")
+            category_obj = Settings_VehicleCategory.objects.filter(id=vehicle_category_id).first()
+            if not category_obj:
+                return error_response("vehicle_category_id not found", status_code=404)
+
+        # ── 3. Bus count ──────────────────────────────────────────────────────
+        # Buses = DeviceTags with Owner_Final_OTP_Verified status
+        # Filtered by vehicle category if provided
+        # No state/district filter here — DeviceTag.district is optional
+        # and not all buses are guaranteed to have it set.
+        # If state/district scope is needed, it comes in via schedule filtering.
+        bus_qs = DeviceTag.objects.filter(status='Owner_Final_OTP_Verified')
+        if category_obj:
+            bus_qs = bus_qs.filter(category=category_obj)
+        if district_obj:
+            bus_qs = bus_qs.filter(district=district_obj)
+        elif state_obj:
+            bus_qs = bus_qs.filter(district__state=state_obj)
+
+        total_buses = bus_qs.count()
+
+        # ── 4. Stop counts ────────────────────────────────────────────────────
+        stop_qs = PublicBusStop.objects.all()
+        if state_obj:
+            stop_qs = stop_qs.filter(state=state_obj)
+        if district_obj:
+            stop_qs = stop_qs.filter(district=district_obj)
+
+        stop_counts = stop_qs.aggregate(
+            total_active      = Count('id', filter=Q(status=PublicBusStop.STATUS_ACTIVE)),
+            total_deactivated = Count('id', filter=Q(status=PublicBusStop.STATUS_DEACTIVATED)),
+        )
+
+        # ── 5. Route counts ───────────────────────────────────────────────────
+        route_qs = PublicBusRoute.objects.all()
+        if state_obj:
+            route_qs = route_qs.filter(state=state_obj)
+        if district_obj:
+            route_qs = route_qs.filter(district=district_obj)
+
+        route_counts = route_qs.aggregate(
+            total_active      = Count('id', filter=Q(status=PublicBusRoute.STATUS_ACTIVE)),
+            total_deactivated = Count('id', filter=Q(status=PublicBusRoute.STATUS_DEACTIVATED)),
+        )
+
+        # ── 6. Schedule counts (date range + scope filters) ───────────────────
+        schedule_qs = BusSchedule.objects.filter(
+            start_datetime__gte=start_dt,
+            start_datetime__lte=end_dt,
+        )
+
+        if state_obj:
+            schedule_qs = schedule_qs.filter(route__state=state_obj)
+        if district_obj:
+            schedule_qs = schedule_qs.filter(route__district=district_obj)
+        if category_obj:
+            schedule_qs = schedule_qs.filter(bus__category=category_obj)
+
+        schedule_counts = schedule_qs.aggregate(
+            total     = Count('id'),
+            created   = Count('id', filter=Q(status=BusSchedule.STATUS_CREATED)),
+            started   = Count('id', filter=Q(status=BusSchedule.STATUS_STARTED)),
+            completed = Count('id', filter=Q(status=BusSchedule.STATUS_COMPLETED)),
+            canceled  = Count('id', filter=Q(status=BusSchedule.STATUS_CANCELED)),
+        )
+
+        # ── 7. Schedule breakdown by service type ─────────────────────────────
+        service_breakdown = list(
+            schedule_qs
+            .values('service_type')
+            .annotate(
+                count     = Count('id'),
+                completed = Count('id', filter=Q(status=BusSchedule.STATUS_COMPLETED)),
+                canceled  = Count('id', filter=Q(status=BusSchedule.STATUS_CANCELED)),
+            )
+            .order_by('-count')
+        )
+
+        # ── 8. Build response ─────────────────────────────────────────────────
+        data = {
+            # Echoed scope
+            'state_id':            state_obj.id       if state_obj    else None,
+            'state_name':          state_obj.state    if state_obj    else None,
+            'district_id':         district_obj.id    if district_obj else None,
+            'district_name':       district_obj.district if district_obj else None,
+            'vehicle_category_id': category_obj.id       if category_obj else None,
+            'vehicle_category':    category_obj.category if category_obj else None,
+            'date_from':           start_dt,
+            'date_to':             end_dt,
+
+            # Infrastructure
+            'total_buses':              total_buses,
+            'total_active_stops':       stop_counts['total_active']      or 0,
+            'total_deactivated_stops':  stop_counts['total_deactivated'] or 0,
+            'total_active_routes':      route_counts['total_active']      or 0,
+            'total_deactivated_routes': route_counts['total_deactivated'] or 0,
+
+            # Schedules
+            'schedules_total':     schedule_counts['total']     or 0,
+            'schedules_created':   schedule_counts['created']   or 0,
+            'schedules_started':   schedule_counts['started']   or 0,
+            'schedules_completed': schedule_counts['completed'] or 0,
+            'schedules_canceled':  schedule_counts['canceled']  or 0,
+
+            # Service type breakdown
+            'service_type_breakdown': service_breakdown,
+        }
+
+        serializer = PISAnalyticsSummarySerializer(data)
+        return success_response(
+            data=serializer.data,
+            message="PIS summary fetched successfully"
+        )
+        
+
+
+class ResourcePerformanceAPIView(APIView):
+    """
+    GET /api/analytics/resource-performance/
+ 
+    Owner-grouped fleet performance summary + per-bus KPIs.
+    Only includes buses that have at least one schedule in the date range.
+    Any authenticated user can access. No role restriction.
+ 
+    Required params:
+        start_datetime  — ISO 8601, e.g. 2025-01-01T00:00:00
+        end_datetime    — ISO 8601, e.g. 2025-06-30T23:59:59
+ 
+    Optional params:
+        owner_id            — filter by a specific VehicleOwner
+        service_type        — Express | Ordinary | AC | City_Bus | Sleeper | Deluxe
+        vehicle_category_id — Settings_VehicleCategory id
+ 
+    Response:
+        fleet_summary   — aggregated KPIs across all matching buses
+        buses           — per-bus KPIs (all at once, no pagination)
+    """
+    permission_classes = [IsAuthenticated]
+ 
+    ON_TIME_THRESHOLD_MINUTES = 5
+ 
+    def get(self, request):
+ 
+        # ── 1. Validate required date params ─────────────────────────────────
+        start_raw = request.query_params.get('start_datetime')
+        end_raw   = request.query_params.get('end_datetime')
+ 
+        if not start_raw or not end_raw:
+            return error_response(
+                "start_datetime and end_datetime are required",
+                errors={
+                    "required": ["start_datetime", "end_datetime"],
+                    "format":   "ISO 8601 — e.g. 2025-01-01T00:00:00",
+                }
+            )
+ 
+        start_dt = parse_datetime(start_raw)
+        end_dt   = parse_datetime(end_raw)
+ 
+        if start_dt is None or end_dt is None:
+            return error_response(
+                "Invalid datetime format",
+                errors={"format": "ISO 8601 — e.g. 2025-01-01T00:00:00"}
+            )
+ 
+        if start_dt > end_dt:
+            return error_response("start_datetime must be before end_datetime")
+ 
+        # ── 2. Build base schedule queryset first ─────────────────────────────
+        # All filters applied here so bus_ids derived below are already scoped
+        schedule_qs = BusSchedule.objects.filter(
+            start_datetime__gte=start_dt,
+            start_datetime__lte=end_dt,
+        )
+ 
+        # Optional: owner filter
+        owner_id = request.query_params.get('owner_id')
+        if owner_id:
+            try:
+                owner_id = int(owner_id)
+            except ValueError:
+                return error_response("owner_id must be an integer")
+            schedule_qs = schedule_qs.filter(bus__vehicle_owner_id=owner_id)
+ 
+        # Optional: vehicle category filter
+        vehicle_category_id = request.query_params.get('vehicle_category_id')
+        if vehicle_category_id:
+            try:
+                vehicle_category_id = int(vehicle_category_id)
+            except ValueError:
+                return error_response("vehicle_category_id must be an integer")
+            schedule_qs = schedule_qs.filter(bus__category_id=vehicle_category_id)
+ 
+        # Optional: service type filter
+        service_type = request.query_params.get('service_type')
+        if service_type:
+            schedule_qs = schedule_qs.filter(service_type=service_type)
+ 
+        # ── 3. Derive bus_ids — only buses with at least one schedule ─────────
+        bus_ids = list(
+            schedule_qs.values_list('bus_id', flat=True).distinct()
+        )
+ 
+        if not bus_ids:
+            return success_response(
+                data={
+                    "date_from":     start_dt,
+                    "date_to":       end_dt,
+                    "service_type":  service_type,
+                    "fleet_summary": self._empty_fleet_summary(),
+                    "buses":         [],
+                },
+                message="No schedules found for the given filters"
+            )
+ 
+        # ── 4. Fleet-level summary — single aggregation query ─────────────────
+        fleet_agg = schedule_qs.aggregate(
+            total_schedules     = Count('id'),
+            completed_count     = Count('id', filter=Q(status=BusSchedule.STATUS_COMPLETED)),
+            canceled_count      = Count('id', filter=Q(status=BusSchedule.STATUS_CANCELED)),
+            started_count       = Count('id', filter=Q(status=BusSchedule.STATUS_STARTED)),
+            pending_count       = Count('id', filter=Q(status=BusSchedule.STATUS_CREATED)),
+            on_time_count       = Count(
+                'id',
+                filter=Q(
+                    actual_start_time__isnull=False,
+                    actual_start_time__lte=ExpressionWrapper(
+                        F('start_datetime') + timedelta(minutes=self.ON_TIME_THRESHOLD_MINUTES),
+                        output_field=DateTimeField()
+                    )
+                )
+            ),
+            started_with_actual = Count('id', filter=Q(actual_start_time__isnull=False)),
+        )
+ 
+        total               = fleet_agg['total_schedules']     or 0
+        completed           = fleet_agg['completed_count']     or 0
+        canceled            = fleet_agg['canceled_count']      or 0
+        on_time             = fleet_agg['on_time_count']       or 0
+        started_with_actual = fleet_agg['started_with_actual'] or 0
+ 
+        fleet_summary = {
+            "total_buses":            len(bus_ids),
+            "total_schedules":        total,
+            "completed_count":        completed,
+            "canceled_count":         canceled,
+            "started_count":          fleet_agg['started_count'] or 0,
+            "pending_count":          fleet_agg['pending_count']  or 0,
+            "completion_rate_pct":    round(completed / total * 100, 2) if total > 0 else 0,
+            "cancellation_rate_pct":  round(canceled  / total * 100, 2) if total > 0 else 0,
+            "on_time_start_count":    on_time,
+            "on_time_start_rate_pct": round(on_time / started_with_actual * 100, 2) if started_with_actual > 0 else 0,
+            "on_time_threshold_minutes": self.ON_TIME_THRESHOLD_MINUTES,
+        }
+ 
+        # ── 5. Per-bus KPIs — single grouped aggregation query ────────────────
+        per_bus_agg = (
+            schedule_qs
+            .values('bus_id')
+            .annotate(
+                total_schedules     = Count('id'),
+                completed_count     = Count('id', filter=Q(status=BusSchedule.STATUS_COMPLETED)),
+                canceled_count      = Count('id', filter=Q(status=BusSchedule.STATUS_CANCELED)),
+                started_count       = Count('id', filter=Q(status=BusSchedule.STATUS_STARTED)),
+                pending_count       = Count('id', filter=Q(status=BusSchedule.STATUS_CREATED)),
+                on_time_count       = Count(
+                    'id',
+                    filter=Q(
+                        actual_start_time__isnull=False,
+                        actual_start_time__lte=ExpressionWrapper(
+                            F('start_datetime') + timedelta(minutes=self.ON_TIME_THRESHOLD_MINUTES),
+                            output_field=DateTimeField()
+                        )
+                    )
+                ),
+                started_with_actual = Count('id', filter=Q(actual_start_time__isnull=False)),
+            )
+        )
+        per_bus_map = {row['bus_id']: row for row in per_bus_agg}
+ 
+        # ── 6. Stop punctuality — avg delay per bus, single query ─────────────
+        stop_eta_qs = (
+            BusScheduleStopETA.objects
+            .filter(
+                schedule__bus_id__in=bus_ids,
+                schedule__start_datetime__gte=start_dt,
+                schedule__start_datetime__lte=end_dt,
+                actual_arrival__isnull=False,
+            )
+        )
+        if service_type:
+            stop_eta_qs = stop_eta_qs.filter(schedule__service_type=service_type)
+ 
+        stop_agg = (
+            stop_eta_qs
+            .values('schedule__bus_id')
+            .annotate(
+                total_stops_served = Count('id'),
+                avg_delay_seconds  = Avg(
+                    ExtractSecond(F('actual_arrival') - F('scheduled_arrival'))
+                    + ExtractMinute(F('actual_arrival') - F('scheduled_arrival')) * 60
+                    + ExtractHour(F('actual_arrival')  - F('scheduled_arrival')) * 3600
+                ),
+            )
+        )
+        stop_map = {row['schedule__bus_id']: row for row in stop_agg}
+ 
+        # ── 7. Bulk fetch bus details — single query ──────────────────────────
+        bus_details = {
+            b.id: b
+            for b in DeviceTag.objects
+                .filter(id__in=bus_ids)
+                .select_related('category', 'vehicle_owner')
+                .prefetch_related('drivers', 'vehicle_owner__users')
+        }
+ 
+        # ── 8. Build per-bus response rows ────────────────────────────────────
+        buses_data = []
+        for bus_id in bus_ids:
+            bus  = bus_details.get(bus_id)
+            agg  = per_bus_map.get(bus_id, {})
+            stop = stop_map.get(bus_id, {})
+ 
+            b_total          = agg.get('total_schedules',    0)
+            b_completed      = agg.get('completed_count',    0)
+            b_canceled       = agg.get('canceled_count',     0)
+            b_on_time        = agg.get('on_time_count',      0)
+            b_started_actual = agg.get('started_with_actual', 0)
+ 
+            driver     = bus.drivers.first() if bus else None
+            owner_user = bus.vehicle_owner.users.first() if bus and bus.vehicle_owner else None
+ 
+            avg_delay_sec = stop.get('avg_delay_seconds')
+            avg_delay_min = round(avg_delay_sec / 60, 2) if avg_delay_sec is not None else None
+ 
+            buses_data.append({
+                "bus_id":           bus_id,
+                "vehicle_reg_no":   bus.vehicle_reg_no      if bus else None,
+                "vehicle_make":     bus.vehicle_make        if bus else None,
+                "vehicle_model":    bus.vehicle_model       if bus else None,
+                "vehicle_category": bus.category.category   if bus and bus.category else None,
+                "owner": {
+                    "owner_id": bus.vehicle_owner.id,
+                    "name":     owner_user.name   if owner_user else None,
+                    "mobile":   owner_user.mobile if owner_user else None,
+                } if bus and bus.vehicle_owner else None,
+                "driver": {
+                    "id":       driver.id,
+                    "name":     driver.name,
+                    "phone_no": driver.phone_no,
+                } if driver else None,
+ 
+                # Schedule KPIs
+                "total_schedules":        b_total,
+                "completed_count":        b_completed,
+                "canceled_count":         b_canceled,
+                "started_count":          agg.get('started_count', 0),
+                "pending_count":          agg.get('pending_count',  0),
+                "completion_rate_pct":    round(b_completed / b_total * 100, 2) if b_total > 0 else 0,
+                "cancellation_rate_pct":  round(b_canceled  / b_total * 100, 2) if b_total > 0 else 0,
+                "on_time_start_count":    b_on_time,
+                "on_time_start_rate_pct": round(b_on_time / b_started_actual * 100, 2) if b_started_actual > 0 else 0,
+ 
+                # Stop punctuality KPIs
+                "total_stops_served":     stop.get('total_stops_served', 0),
+                "avg_stop_delay_minutes": avg_delay_min,
+            })
+ 
+        return success_response(
+            data={
+                "date_from":     start_dt,
+                "date_to":       end_dt,
+                "service_type":  service_type,
+                "fleet_summary": fleet_summary,
+                "buses":         buses_data,
+            },
+            message="Resource performance fetched successfully"
+        )
+ 
+    def _empty_fleet_summary(self):
+        return {
+            "total_buses": 0,
+            "total_schedules": 0,
+            "completed_count": 0,
+            "canceled_count": 0,
+            "started_count": 0,
+            "pending_count": 0,
+            "completion_rate_pct": 0,
+            "cancellation_rate_pct": 0,
+            "on_time_start_count": 0,
+            "on_time_start_rate_pct": 0,
+            "on_time_threshold_minutes": self.ON_TIME_THRESHOLD_MINUTES,
+        }
+        
+
+
+class OperationalAnalyticsAPIView(APIView):
+    """
+    GET /api/analytics/operational/
+ 
+    Two sections in one response:
+    1. Peak Hour Trends  — schedules grouped by hour of day
+    2. Cancellation Report — canceled schedules broken down multiple ways
+ 
+    Any authenticated user can access. No role restriction.
+ 
+    Required params:
+        start_datetime  — ISO 8601, e.g. 2025-01-01T00:00:00
+        end_datetime    — ISO 8601, e.g. 2025-06-30T23:59:59
+ 
+    Optional params:
+        owner_id            — filter by a specific VehicleOwner
+        service_type        — Express | Ordinary | AC | City_Bus | Sleeper | Deluxe
+        vehicle_category_id — Settings_VehicleCategory id
+    """
+    permission_classes = [IsAuthenticated]
+ 
+    def get(self, request):
+ 
+        # ── 1. Validate required date params ─────────────────────────────────
+        start_raw = request.query_params.get('start_datetime')
+        end_raw   = request.query_params.get('end_datetime')
+ 
+        if not start_raw or not end_raw:
+            return error_response(
+                "start_datetime and end_datetime are required",
+                errors={
+                    "required": ["start_datetime", "end_datetime"],
+                    "format":   "ISO 8601 — e.g. 2025-01-01T00:00:00",
+                }
+            )
+ 
+        start_dt = parse_datetime(start_raw)
+        end_dt   = parse_datetime(end_raw)
+ 
+        if start_dt is None or end_dt is None:
+            return error_response(
+                "Invalid datetime format",
+                errors={"format": "ISO 8601 — e.g. 2025-01-01T00:00:00"}
+            )
+ 
+        if start_dt > end_dt:
+            return error_response("start_datetime must be before end_datetime")
+ 
+        # ── 2. Base schedule queryset with all optional filters ───────────────
+        schedule_qs = BusSchedule.objects.filter(
+            start_datetime__gte=start_dt,
+            start_datetime__lte=end_dt,
+        ).select_related('route__source_stop')
+ 
+        owner_id = request.query_params.get('owner_id')
+        if owner_id:
+            try:
+                owner_id = int(owner_id)
+            except ValueError:
+                return error_response("owner_id must be an integer")
+            schedule_qs = schedule_qs.filter(bus__vehicle_owner_id=owner_id)
+ 
+        vehicle_category_id = request.query_params.get('vehicle_category_id')
+        if vehicle_category_id:
+            try:
+                vehicle_category_id = int(vehicle_category_id)
+            except ValueError:
+                return error_response("vehicle_category_id must be an integer")
+            schedule_qs = schedule_qs.filter(bus__category_id=vehicle_category_id)
+ 
+        service_type = request.query_params.get('service_type')
+        if service_type:
+            schedule_qs = schedule_qs.filter(service_type=service_type)
+ 
+        total_schedules = schedule_qs.count()
+ 
+        if total_schedules == 0:
+            return success_response(
+                data=self._empty_response(start_dt, end_dt, service_type),
+                message="No schedules found for the given filters"
+            )
+ 
+        # ── 3. PEAK HOUR TRENDS ───────────────────────────────────────────────
+ 
+        # 3a. By hour of day — counts per hour (0-23)
+        by_hour_qs = (
+            schedule_qs
+            .annotate(hour=ExtractHour('start_datetime'))
+            .values('hour')
+            .annotate(
+                total     = Count('id'),
+                completed = Count('id', filter=Q(status=BusSchedule.STATUS_COMPLETED)),
+                canceled  = Count('id', filter=Q(status=BusSchedule.STATUS_CANCELED)),
+                started   = Count('id', filter=Q(status=BusSchedule.STATUS_STARTED)),
+            )
+            .order_by('hour')
+        )
+ 
+        by_hour = []
+        peak_hour       = None
+        peak_hour_count = 0
+ 
+        for row in by_hour_qs:
+            total_h     = row['total']     or 0
+            completed_h = row['completed'] or 0
+            canceled_h  = row['canceled']  or 0
+ 
+            if total_h > peak_hour_count:
+                peak_hour_count = total_h
+                peak_hour       = row['hour']
+ 
+            by_hour.append({
+                "hour":                row['hour'],
+                "hour_label":          f"{row['hour']:02d}:00 - {row['hour']:02d}:59",
+                "total":               total_h,
+                "completed":           completed_h,
+                "canceled":            canceled_h,
+                "started":             row['started'] or 0,
+                "completion_rate_pct": round(completed_h / total_h * 100, 2) if total_h > 0 else 0,
+                "cancellation_rate_pct": round(canceled_h / total_h * 100, 2) if total_h > 0 else 0,
+            })
+ 
+        # 3b. Peak hour by source stop — busiest stops per hour
+        by_source_stop_hour_qs = (
+            schedule_qs
+            .filter(route__source_stop__isnull=False)
+            .annotate(hour=ExtractHour('start_datetime'))
+            .values(
+                'hour',
+                'route__source_stop__id',
+                'route__source_stop__name',
+            )
+            .annotate(
+                total     = Count('id'),
+                completed = Count('id', filter=Q(status=BusSchedule.STATUS_COMPLETED)),
+                canceled  = Count('id', filter=Q(status=BusSchedule.STATUS_CANCELED)),
+            )
+            .order_by('hour', '-total')
+        )
+ 
+        # Group by stop (aggregate across all hours for peak hour source stop summary)
+        by_source_stop_peak_qs = (
+            schedule_qs
+            .filter(route__source_stop__isnull=False)
+            .values(
+                'route__source_stop__id',
+                'route__source_stop__name',
+            )
+            .annotate(
+                total     = Count('id'),
+                completed = Count('id', filter=Q(status=BusSchedule.STATUS_COMPLETED)),
+                canceled  = Count('id', filter=Q(status=BusSchedule.STATUS_CANCELED)),
+            )
+            .order_by('-total')
+        )
+ 
+        peak_by_source_stop = [
+            {
+                "stop_id":               row['route__source_stop__id'],
+                "stop_name":             row['route__source_stop__name'],
+                "total":                 row['total']     or 0,
+                "completed":             row['completed'] or 0,
+                "canceled":              row['canceled']  or 0,
+                "completion_rate_pct":   round((row['completed'] or 0) / (row['total'] or 1) * 100, 2),
+                "cancellation_rate_pct": round((row['canceled']  or 0) / (row['total'] or 1) * 100, 2),
+            }
+            for row in by_source_stop_peak_qs
+        ]
+ 
+        peak_hour_trends = {
+            "summary": {
+                "peak_hour":                peak_hour,
+                "peak_hour_label":          f"{peak_hour:02d}:00 - {peak_hour:02d}:59" if peak_hour is not None else None,
+                "peak_hour_schedule_count": peak_hour_count,
+                "total_schedules":          total_schedules,
+            },
+            "by_hour":         by_hour,
+            "by_source_stop":  peak_by_source_stop,
+        }
+ 
+        # ── 4. CANCELLATION REPORT ────────────────────────────────────────────
+        canceled_qs    = schedule_qs.filter(status=BusSchedule.STATUS_CANCELED)
+        total_canceled = canceled_qs.count()
+        cancel_rate    = round(total_canceled / total_schedules * 100, 2) if total_schedules > 0 else 0
+ 
+        # 4a. By day
+        by_day_qs = (
+            canceled_qs
+            .annotate(day=TruncDate('start_datetime'))
+            .values('day')
+            .annotate(canceled_count=Count('id'))
+            .order_by('day')
+        )
+ 
+        by_day = [
+            {
+                "date":           row['day'],
+                "canceled_count": row['canceled_count'] or 0,
+            }
+            for row in by_day_qs
+        ]
+ 
+        # 4b. By route
+        by_route_qs = (
+            canceled_qs
+            .values(
+                'route__id',
+                'route__route_number',
+                'route__name',
+            )
+            .annotate(
+                canceled_count = Count('id'),
+                total_on_route = Count(
+                    'id',
+                    filter=Q(
+                        route_id=F('route_id')
+                    )
+                ),
+            )
+            .order_by('-canceled_count')
+        )
+ 
+        # For cancellation rate per route we need total schedules per route
+        total_per_route = {
+            row['route_id']: row['total']
+            for row in schedule_qs
+                .values('route_id')
+                .annotate(total=Count('id'))
+        }
+ 
+        by_route = [
+            {
+                "route_id":              row['route__id'],
+                "route_number":          row['route__route_number'],
+                "route_name":            row['route__name'],
+                "canceled_count":        row['canceled_count'] or 0,
+                "total_on_route":        total_per_route.get(row['route__id'], 0),
+                "cancellation_rate_pct": round(
+                    (row['canceled_count'] or 0) / total_per_route.get(row['route__id'], 1) * 100, 2
+                ),
+            }
+            for row in by_route_qs
+        ]
+ 
+        # 4c. By service type
+        by_service_type_qs = (
+            canceled_qs
+            .values('service_type')
+            .annotate(canceled_count=Count('id'))
+            .order_by('-canceled_count')
+        )
+ 
+        total_per_service = {
+            row['service_type']: row['total']
+            for row in schedule_qs
+                .values('service_type')
+                .annotate(total=Count('id'))
+        }
+ 
+        by_service_type = [
+            {
+                "service_type":          row['service_type'],
+                "canceled_count":        row['canceled_count'] or 0,
+                "total":                 total_per_service.get(row['service_type'], 0),
+                "cancellation_rate_pct": round(
+                    (row['canceled_count'] or 0) / total_per_service.get(row['service_type'], 1) * 100, 2
+                ),
+            }
+            for row in by_service_type_qs
+        ]
+ 
+        # 4d. By hour
+        by_hour_cancel_qs = (
+            canceled_qs
+            .annotate(hour=ExtractHour('start_datetime'))
+            .values('hour')
+            .annotate(canceled_count=Count('id'))
+            .order_by('hour')
+        )
+ 
+        total_per_hour = {row['hour']: row['total'] for row in by_hour_qs}
+ 
+        by_hour_cancel = [
+            {
+                "hour":                  row['hour'],
+                "hour_label":            f"{row['hour']:02d}:00 - {row['hour']:02d}:59",
+                "canceled_count":        row['canceled_count'] or 0,
+                "total_in_hour":         total_per_hour.get(row['hour'], 0),
+                "cancellation_rate_pct": round(
+                    (row['canceled_count'] or 0) / total_per_hour.get(row['hour'], 1) * 100, 2
+                ),
+            }
+            for row in by_hour_cancel_qs
+        ]
+ 
+        # 4e. By source stop
+        by_source_stop_cancel_qs = (
+            canceled_qs
+            .filter(route__source_stop__isnull=False)
+            .values(
+                'route__source_stop__id',
+                'route__source_stop__name',
+            )
+            .annotate(canceled_count=Count('id'))
+            .order_by('-canceled_count')
+        )
+ 
+        total_per_stop = {
+            row['route__source_stop__id']: row['total']
+            for row in schedule_qs
+                .filter(route__source_stop__isnull=False)
+                .values('route__source_stop__id')
+                .annotate(total=Count('id'))
+        }
+ 
+        by_source_stop_cancel = [
+            {
+                "stop_id":               row['route__source_stop__id'],
+                "stop_name":             row['route__source_stop__name'],
+                "canceled_count":        row['canceled_count'] or 0,
+                "total_from_stop":       total_per_stop.get(row['route__source_stop__id'], 0),
+                "cancellation_rate_pct": round(
+                    (row['canceled_count'] or 0) / total_per_stop.get(row['route__source_stop__id'], 1) * 100, 2
+                ),
+            }
+            for row in by_source_stop_cancel_qs
+        ]
+ 
+        cancellation_report = {
+            "summary": {
+                "total_schedules":       total_schedules,
+                "total_canceled":        total_canceled,
+                "cancellation_rate_pct": cancel_rate,
+            },
+            "by_day":          by_day,
+            "by_route":        by_route,
+            "by_service_type": by_service_type,
+            "by_hour":         by_hour_cancel,
+            "by_source_stop":  by_source_stop_cancel,
+        }
+ 
+        return success_response(
+            data={
+                "date_from":           start_dt,
+                "date_to":             end_dt,
+                "service_type_filter": service_type,
+                "peak_hour_trends":    peak_hour_trends,
+                "cancellation_report": cancellation_report,
+            },
+            message="Operational analytics fetched successfully"
+        )
+ 
+    def _empty_response(self, start_dt, end_dt, service_type):
+        return {
+            "date_from":           start_dt,
+            "date_to":             end_dt,
+            "service_type_filter": service_type,
+            "peak_hour_trends": {
+                "summary":        {"peak_hour": None, "peak_hour_label": None, "peak_hour_schedule_count": 0, "total_schedules": 0},
+                "by_hour":        [],
+                "by_source_stop": [],
+            },
+            "cancellation_report": {
+                "summary":         {"total_schedules": 0, "total_canceled": 0, "cancellation_rate_pct": 0},
+                "by_day":          [],
+                "by_route":        [],
+                "by_service_type": [],
+                "by_hour":         [],
+                "by_source_stop":  [],
+            },
+        }
+        
+        
+
+# ===========================================================================
+# Comparative Analysis
+# GET /api/analytics/comparative-analysis/
+#
+# Returns four comparison sections in one response:
+#   1. source_stop_comparison   — performance grouped by source stop (depot)
+#   2. inter_route_comparison   — performance per route
+#   3. inter_city_corridor      — cross-district route corridor pairs
+#   4. trip_analysis            — per-schedule trip breakdown with stop-level ETAs
+#
+# Required params:
+#     start_datetime   — ISO 8601, e.g. 2025-01-01T00:00:00
+#     end_datetime     — ISO 8601, e.g. 2025-06-30T23:59:59
+#
+# Optional params:
+#     state_id            — filter all sections by Settings_State id
+#     district_id         — filter all sections by Settings_District id
+#     service_type        — Express | Ordinary | AC | City_Bus | Sleeper | Deluxe
+#     route_id            — narrows trip_analysis to one route's schedules
+# ===========================================================================
+ 
+class ComparativeAnalysisAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+ 
+    ON_TIME_THRESHOLD  = timedelta(minutes=5)
+    STOP_ON_TIME_SECS  = 120  # ±2 minutes per stop
+ 
+    def get(self, request):
+ 
+        # ── 1. Validate date range ────────────────────────────────────────
+        start_raw = request.query_params.get('start_datetime')
+        end_raw   = request.query_params.get('end_datetime')
+ 
+        if not start_raw or not end_raw:
+            return error_response(
+                "start_datetime and end_datetime are required",
+                errors={
+                    "required": ["start_datetime", "end_datetime"],
+                    "format":   "ISO 8601 — e.g. 2025-01-01T00:00:00",
+                }
+            )
+ 
+        start_dt = parse_datetime(start_raw)
+        end_dt   = parse_datetime(end_raw)
+ 
+        if start_dt is None or end_dt is None:
+            return error_response(
+                "Invalid datetime format",
+                errors={"format": "ISO 8601 — e.g. 2025-01-01T00:00:00"}
+            )
+ 
+        if start_dt > end_dt:
+            return error_response("start_datetime must be before end_datetime")
+ 
+        # ── 2. Optional filters ───────────────────────────────────────────
+        state_id     = request.query_params.get('state_id')
+        district_id  = request.query_params.get('district_id')
+        service_type = request.query_params.get('service_type')
+        route_id     = request.query_params.get('route_id')
+ 
+        if state_id:
+            try:
+                state_id = int(state_id)
+            except ValueError:
+                return error_response("state_id must be an integer")
+ 
+        if district_id:
+            try:
+                district_id = int(district_id)
+            except ValueError:
+                return error_response("district_id must be an integer")
+ 
+        if route_id:
+            try:
+                route_id = int(route_id)
+            except ValueError:
+                return error_response("route_id must be an integer")
+ 
+        # ── 3. Base schedule queryset (shared by sections 1, 2, 3) ────────
+        schedule_qs = BusSchedule.objects.filter(
+            start_datetime__gte=start_dt,
+            start_datetime__lte=end_dt,
+        )
+ 
+        if state_id:
+            schedule_qs = schedule_qs.filter(route__state_id=state_id)
+        if district_id:
+            schedule_qs = schedule_qs.filter(route__district_id=district_id)
+        if service_type:
+            schedule_qs = schedule_qs.filter(service_type=service_type)
+ 
+        # ── 4. Shared annotated aggregation helpers ───────────────────────
+        def _schedule_annotations():
+            return dict(
+                total_schedules    = Count('id'),
+                completed_count    = Count('id', filter=Q(status=BusSchedule.STATUS_COMPLETED)),
+                canceled_count     = Count('id', filter=Q(status=BusSchedule.STATUS_CANCELED)),
+                started_count      = Count('id', filter=Q(status=BusSchedule.STATUS_STARTED)),
+                unique_buses       = Count('bus_id', distinct=True),
+                on_time_count      = Count(
+                    'id',
+                    filter=Q(
+                        actual_start_time__isnull=False,
+                        actual_start_time__lte=ExpressionWrapper(
+                            F('start_datetime') + self.ON_TIME_THRESHOLD,
+                            output_field=DateTimeField()
+                        )
+                    )
+                ),
+                started_with_actual = Count('id', filter=Q(actual_start_time__isnull=False)),
+            )
+ 
+        def _rates(row):
+            total     = row.get('total_schedules',    0) or 0
+            completed = row.get('completed_count',    0) or 0
+            canceled  = row.get('canceled_count',     0) or 0
+            on_time   = row.get('on_time_count',      0) or 0
+            started_a = row.get('started_with_actual', 0) or 0
+            return {
+                "completion_rate_pct":    round(completed / total * 100, 2) if total > 0 else 0,
+                "cancellation_rate_pct":  round(canceled  / total * 100, 2) if total > 0 else 0,
+                "on_time_start_rate_pct": round(on_time / started_a * 100, 2) if started_a > 0 else 0,
+            }
+ 
+        # ── 5. Avg stop delay per route (shared by sections 1 & 2) ────────
+        eta_qs = (
+            BusScheduleStopETA.objects
+            .filter(
+                schedule__start_datetime__gte=start_dt,
+                schedule__start_datetime__lte=end_dt,
+                actual_arrival__isnull=False,
+            )
+        )
+        if state_id:
+            eta_qs = eta_qs.filter(schedule__route__state_id=state_id)
+        if district_id:
+            eta_qs = eta_qs.filter(schedule__route__district_id=district_id)
+        if service_type:
+            eta_qs = eta_qs.filter(schedule__service_type=service_type)
+ 
+        stop_delay_by_route = {
+            row['schedule__route_id']: round(row['avg_delay_sec'] / 60, 2)
+            for row in (
+                eta_qs
+                .values('schedule__route_id')
+                .annotate(
+                    avg_delay_sec = Avg(
+                        ExtractSecond(F('actual_arrival') - F('scheduled_arrival'))
+                        + ExtractMinute(F('actual_arrival') - F('scheduled_arrival')) * 60
+                        + ExtractHour(F('actual_arrival')  - F('scheduled_arrival')) * 3600
+                    )
+                )
+            )
+            if row['avg_delay_sec'] is not None
+        }
+ 
+        # ═══════════════════════════════════════════════════════════════════
+        # SECTION 1 — Source Stop Comparison
+        # Groups schedules by route__source_stop — each source stop is
+        # treated as a depot.
+        # ═══════════════════════════════════════════════════════════════════
+        source_stop_qs = (
+            schedule_qs
+            .filter(route__source_stop__isnull=False)
+            .values(
+                'route__source_stop__id',
+                'route__source_stop__name',
+                'route__source_stop__district__district',
+                'route__state__state',
+            )
+            .annotate(**_schedule_annotations())
+            .annotate(unique_routes=Count('route_id', distinct=True))
+            .order_by('-total_schedules')
+        )
+ 
+        source_stop_comparison = []
+        for row in source_stop_qs:
+            source_stop_comparison.append({
+                "source_stop_id":    row['route__source_stop__id'],
+                "source_stop_name":  row['route__source_stop__name'],
+                "district":          row['route__source_stop__district__district'],
+                "state":             row['route__state__state'],
+                "unique_routes":     row.get('unique_routes', 0) or 0,
+                "unique_buses":      row.get('unique_buses',  0) or 0,
+                "total_schedules":   row.get('total_schedules', 0) or 0,
+                "completed_count":   row.get('completed_count', 0) or 0,
+                "canceled_count":    row.get('canceled_count',  0) or 0,
+                "started_count":     row.get('started_count',   0) or 0,
+                "on_time_start_count": row.get('on_time_count', 0) or 0,
+                **_rates(row),
+            })
+ 
+        # ═══════════════════════════════════════════════════════════════════
+        # SECTION 2 — Inter Route Comparison
+        # One row per route with schedule KPIs + avg stop delay.
+        # ═══════════════════════════════════════════════════════════════════
+        route_qs = (
+            schedule_qs
+            .values(
+                'route_id',
+                'route__route_number',
+                'route__name',
+                'route__source_stop__name',
+                'route__destination_stop__name',
+                'route__state__state',
+                'route__district__district',
+            )
+            .annotate(**_schedule_annotations())
+            .order_by('-total_schedules')
+        )
+ 
+        inter_route_comparison = []
+        for row in route_qs:
+            inter_route_comparison.append({
+                "route_id":               row['route_id'],
+                "route_number":           row['route__route_number'],
+                "route_name":             row['route__name'],
+                "source_stop":            row['route__source_stop__name'],
+                "destination_stop":       row['route__destination_stop__name'],
+                "state":                  row['route__state__state'],
+                "district":               row['route__district__district'],
+                "unique_buses":           row.get('unique_buses',    0) or 0,
+                "total_schedules":        row.get('total_schedules', 0) or 0,
+                "completed_count":        row.get('completed_count', 0) or 0,
+                "canceled_count":         row.get('canceled_count',  0) or 0,
+                "started_count":          row.get('started_count',   0) or 0,
+                "on_time_start_count":    row.get('on_time_count',   0) or 0,
+                "avg_stop_delay_minutes": stop_delay_by_route.get(row['route_id']),
+                **_rates(row),
+            })
+ 
+        # ═══════════════════════════════════════════════════════════════════
+        # SECTION 3 — Inter City Corridor
+        # Cross-district routes only (source district ≠ destination district).
+        # One row per source_district → destination_district pair.
+        # ═══════════════════════════════════════════════════════════════════
+ 
+        # Get cross-district route ids in scope
+        cross_district_route_ids = list(
+            PublicBusRoute.objects
+            .exclude(source_stop__district=F('destination_stop__district'))
+            .filter(status=PublicBusRoute.STATUS_ACTIVE)
+            .filter(
+                **({} if not state_id    else {'state_id': state_id}),
+                **({} if not district_id else {'district_id': district_id}),
+            )
+            .values_list('id', flat=True)
+        )
+ 
+        # Aggregate schedules per route for cross-district routes only
+        cross_schedule_qs = schedule_qs.filter(route_id__in=cross_district_route_ids)
+ 
+        per_route_cross = {
+            row['route_id']: row
+            for row in (
+                cross_schedule_qs
+                .values('route_id')
+                .annotate(**_schedule_annotations())
+            )
+        }
+ 
+        # Fetch route details to group into corridors
+        cross_routes = (
+            PublicBusRoute.objects
+            .filter(id__in=cross_district_route_ids)
+            .select_related(
+                'source_stop__district',
+                'destination_stop__district',
+                'state',
+            )
+        )
+ 
+        corridors = {}
+        for route in cross_routes:
+            src_d = route.source_stop.district
+            dst_d = route.destination_stop.district
+            key   = (src_d.id, dst_d.id)
+            agg   = per_route_cross.get(route.id, {})
+ 
+            if key not in corridors:
+                corridors[key] = {
+                    "source_district_id":        src_d.id,
+                    "source_district_name":      src_d.district,
+                    "destination_district_id":   dst_d.id,
+                    "destination_district_name": dst_d.district,
+                    "state":                     route.state.state if route.state else None,
+                    "total_routes":              0,
+                    "total_schedules":           0,
+                    "completed_count":           0,
+                    "canceled_count":            0,
+                    "unique_buses":              0,
+                    "on_time_count":             0,
+                    "started_with_actual":       0,
+                    "routes": [],
+                }
+ 
+            c = corridors[key]
+            c['total_routes']        += 1
+            c['total_schedules']     += agg.get('total_schedules',    0) or 0
+            c['completed_count']     += agg.get('completed_count',    0) or 0
+            c['canceled_count']      += agg.get('canceled_count',     0) or 0
+            c['unique_buses']        += agg.get('unique_buses',       0) or 0
+            c['on_time_count']       += agg.get('on_time_count',      0) or 0
+            c['started_with_actual'] += agg.get('started_with_actual', 0) or 0
+            c['routes'].append({
+                "route_id":     route.id,
+                "route_number": route.route_number,
+                "route_name":   route.name,
+                "schedules":    agg.get('total_schedules', 0) or 0,
+                "completed":    agg.get('completed_count', 0) or 0,
+                "canceled":     agg.get('canceled_count',  0) or 0,
+            })
+ 
+        inter_city_corridor = []
+        for c in sorted(corridors.values(), key=lambda x: x['total_schedules'], reverse=True):
+            inter_city_corridor.append({
+                "source_district_id":        c['source_district_id'],
+                "source_district_name":      c['source_district_name'],
+                "destination_district_id":   c['destination_district_id'],
+                "destination_district_name": c['destination_district_name'],
+                "state":                     c['state'],
+                "total_routes":              c['total_routes'],
+                "total_schedules":           c['total_schedules'],
+                "completed_count":           c['completed_count'],
+                "canceled_count":            c['canceled_count'],
+                "unique_buses":              c['unique_buses'],
+                "completion_rate_pct":       round(c['completed_count'] / c['total_schedules'] * 100, 2) if c['total_schedules'] > 0 else 0,
+                "cancellation_rate_pct":     round(c['canceled_count']  / c['total_schedules'] * 100, 2) if c['total_schedules'] > 0 else 0,
+                "on_time_start_rate_pct":    round(c['on_time_count'] / c['started_with_actual'] * 100, 2) if c['started_with_actual'] > 0 else 0,
+                "routes":                    c['routes'],
+            })
+ 
+        # ═══════════════════════════════════════════════════════════════════
+        # SECTION 4 — Trip Analysis
+        # Per-schedule breakdown with stop-level ETA vs actual.
+        # If route_id is provided, only that route's schedules are included.
+        # Each schedule shows stop-level delay + overall trip delay.
+        # ═══════════════════════════════════════════════════════════════════
+        trip_qs = schedule_qs.select_related(
+            'route', 'route__source_stop', 'route__destination_stop', 'bus'
+        ).order_by('route_id', 'start_datetime')
+ 
+        if route_id:
+            trip_qs = trip_qs.filter(route_id=route_id)
+ 
+        # Prefetch all ETAs for all relevant schedules — one query
+        schedule_ids = list(trip_qs.values_list('id', flat=True))
+        all_etas = (
+            BusScheduleStopETA.objects
+            .filter(schedule_id__in=schedule_ids)
+            .select_related('route_stop__stop')
+            .order_by('schedule_id', 'order')
+        )
+ 
+        # Group ETAs by schedule_id
+        etas_by_schedule = {}
+        for eta in all_etas:
+            etas_by_schedule.setdefault(eta.schedule_id, []).append(eta)
+ 
+        trip_analysis = []
+        for schedule in trip_qs:
+            etas        = etas_by_schedule.get(schedule.id, [])
+            stops_data  = []
+            total_delay = 0
+            stops_actual = late = early = on_time_s = 0
+ 
+            for eta in etas:
+                stop          = eta.route_stop.stop
+                delay_sec     = None
+                delay_min     = None
+                punctuality   = None
+ 
+                if eta.actual_arrival and eta.scheduled_arrival:
+                    diff      = eta.actual_arrival - eta.scheduled_arrival
+                    delay_sec = int(diff.total_seconds())
+                    delay_min = round(delay_sec / 60, 2)
+                    total_delay  += delay_sec
+                    stops_actual += 1
+ 
+                    if delay_sec > self.STOP_ON_TIME_SECS:
+                        late += 1;       punctuality = "late"
+                    elif delay_sec < -self.STOP_ON_TIME_SECS:
+                        early += 1;      punctuality = "early"
+                    else:
+                        on_time_s += 1;  punctuality = "on_time"
+ 
+                stops_data.append({
+                    "order":               eta.order,
+                    "stop_id":             stop.id,
+                    "stop_name":           stop.name,
+                    "scheduled_arrival":   eta.scheduled_arrival,
+                    "scheduled_departure": eta.scheduled_departure,
+                    "actual_arrival":      eta.actual_arrival,
+                    "actual_departure":    eta.actual_departure,
+                    "delay_seconds":       delay_sec,
+                    "delay_minutes":       delay_min,
+                    "punctuality":         punctuality,
+                })
+ 
+            avg_stop_delay = round((total_delay / stops_actual) / 60, 2) if stops_actual > 0 else None
+ 
+            # Trip-level delay vs last stop scheduled departure
+            trip_delay_min = None
+            if etas and schedule.actual_end_time and etas[-1].scheduled_departure:
+                diff = schedule.actual_end_time - etas[-1].scheduled_departure
+                trip_delay_min = round(diff.total_seconds() / 60, 2)
+ 
+            trip_analysis.append({
+                "schedule_id":       schedule.id,
+                "route_number":      schedule.route.route_number,
+                "route_name":        schedule.route.name,
+                "source_stop":       schedule.route.source_stop.name if schedule.route.source_stop else None,
+                "destination_stop":  schedule.route.destination_stop.name if schedule.route.destination_stop else None,
+                "bus_reg_no":        schedule.bus.vehicle_reg_no,
+                "service_type":      schedule.service_type,
+                "start_datetime":    schedule.start_datetime,
+                "actual_start_time": schedule.actual_start_time,
+                "actual_end_time":   schedule.actual_end_time,
+                "status":            schedule.status,
+                "trip_summary": {
+                    "total_stops":        len(stops_data),
+                    "stops_with_data":    stops_actual,
+                    "late_stops":         late,
+                    "early_stops":        early,
+                    "on_time_stops":      on_time_s,
+                    "avg_stop_delay_min": avg_stop_delay,
+                    "trip_delay_min":     trip_delay_min,
+                },
+                "stops": stops_data,
+            })
+ 
+        # ── Final response ─────────────────────────────────────────────────
+        return success_response(
+            data={
+                "date_from":              start_dt,
+                "date_to":                end_dt,
+                "filters_applied": {
+                    "state_id":     state_id,
+                    "district_id":  district_id,
+                    "service_type": service_type,
+                    "route_id":     route_id,
+                },
+                "source_stop_comparison": source_stop_comparison,
+                "inter_route_comparison": inter_route_comparison,
+                "inter_city_corridor":    inter_city_corridor,
+                "trip_analysis":          trip_analysis,
+            },
+            message="Comparative analysis fetched successfully"
+        )
+        
+        
+class AlertHeatmapAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    MAX_LIMIT = 10000
+    DEFAULT_LIMIT = 5000
+
+    def get(self, request):
+
+        start_raw = request.query_params.get('start_datetime')
+        end_raw = request.query_params.get('end_datetime')
+
+        if not start_raw or not end_raw:
+            return Response(
+                {
+                    "success": False,
+                    "message": "start_datetime and end_datetime are required",
+                    "errors": {}
+                },
+                status=400
+            )
+
+        start_dt = parse_datetime(start_raw)
+        end_dt = parse_datetime(end_raw)
+
+        if start_dt is None or end_dt is None:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Invalid datetime format",
+                    "errors": {}
+                },
+                status=400
+            )
+
+        if start_dt > end_dt:
+            return Response(
+                {
+                    "success": False,
+                    "message": "start_datetime must be before end_datetime",
+                    "errors": {}
+                },
+                status=400
+            )
+
+        alerts = (
+            AlertsLog.objects
+            .select_related(
+                'gps_ref',
+                'state',
+                'deviceTag',
+                'deviceTag__category',
+                'deviceTag__district',
+                'deviceTag__device',
+                'deviceTag__device__model',
+                'deviceTag__device__dealer',
+                'deviceTag__device__dealer__manufacturer',
+            )
+            .filter(
+                timestamp__gte=start_dt,
+                timestamp__lte=end_dt,
+                gps_ref__isnull=False
+            )
+        )
+
+        alert_type = request.query_params.get('alert_type')
+        if alert_type:
+            alerts = alerts.filter(type=alert_type)
+
+        vehicle_reg_no = request.query_params.get('vehicle_reg_no')
+        if vehicle_reg_no:
+            alerts = alerts.filter(
+                deviceTag__vehicle_reg_no__iexact=vehicle_reg_no
+            )
+
+        vehicle_category_id = request.query_params.get('vehicle_category_id')
+        if vehicle_category_id:
+            try:
+                vehicle_category_id = int(vehicle_category_id)
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "vehicle_category_id must be an integer",
+                        "errors": {}
+                    },
+                    status=400
+                )
+
+            alerts = alerts.filter(
+                deviceTag__category_id=vehicle_category_id
+            )
+
+        state_id = request.query_params.get('state_id')
+        if state_id:
+            try:
+                state_id = int(state_id)
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "state_id must be an integer",
+                        "errors": {}
+                    },
+                    status=400
+                )
+
+            alerts = alerts.filter(state_id=state_id)
+
+        district_id = request.query_params.get('district_id')
+        if district_id:
+            try:
+                district_id = int(district_id)
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "district_id must be an integer",
+                        "errors": {}
+                    },
+                    status=400
+                )
+
+            alerts = alerts.filter(
+                deviceTag__district_id=district_id
+            )
+
+        manufacturer_id = request.query_params.get('manufacturer_id')
+        if manufacturer_id:
+            try:
+                manufacturer_id = int(manufacturer_id)
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "manufacturer_id must be an integer",
+                        "errors": {}
+                    },
+                    status=400
+                )
+
+            alerts = alerts.filter(
+                deviceTag__device__dealer__manufacturer_id=manufacturer_id
+            )
+
+        model_id = request.query_params.get('model_id')
+        if model_id:
+            try:
+                model_id = int(model_id)
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "model_id must be an integer",
+                        "errors": {}
+                    },
+                    status=400
+                )
+
+            alerts = alerts.filter(
+                deviceTag__device__model_id=model_id
+            )
+
+        # BBOX Filter
+        tl_lat = request.query_params.get("top_left_lat")
+        tl_lon = request.query_params.get("top_left_lon")
+        br_lat = request.query_params.get("bottom_right_lat")
+        br_lon = request.query_params.get("bottom_right_lon")
+
+        bbox_params = [tl_lat, tl_lon, br_lat, br_lon]
+
+        if any(bbox_params) and not all(bbox_params):
+            return Response(
+                {
+                    "success": False,
+                    "message": "All bbox parameters are required together",
+                    "errors": {}
+                },
+                status=400
+            )
+
+        if all(bbox_params):
+            alerts = alerts.filter(
+                gps_ref__latitude__lte=float(tl_lat),
+                gps_ref__latitude__gte=float(br_lat),
+                gps_ref__longitude__gte=float(tl_lon),
+                gps_ref__longitude__lte=float(br_lon),
+            )
+
+        summary = {
+            row["type"]: row["count"]
+            for row in alerts.values("type").annotate(
+                count=Count("id")
+            )
+        }
+
+        total_alerts = alerts.count()
+
+        try:
+            limit = min(
+                int(
+                    request.query_params.get(
+                        "limit",
+                        self.DEFAULT_LIMIT
+                    )
+                ),
+                self.MAX_LIMIT
+            )
+        except ValueError:
+            limit = self.DEFAULT_LIMIT
+
+        alerts = alerts.order_by("-timestamp")[:limit]
+
+        serializer = AlertHeatmapSerializer(
+            alerts,
+            many=True
+        )
+
+        return Response({
+            "success": True,
+            "message": "Alert heatmap data fetched successfully",
+            "summary": summary,
+            "data": {
+                "total_alerts": total_alerts,
+                "returned_alerts": len(serializer.data),
+                "alerts": serializer.data,
+            }
+        })
+        
+
+class FavoriteListCreateAPIView(APIView):
+    """
+    GET  - List current user's favorites
+    POST - Create favorite
+
+    Optional GET params:
+        search - filter by label
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        favorites = (
+            Favorite.objects
+            .filter(user=request.user)
+            .select_related(
+                "bus",
+                "route",
+                "route__source_stop",
+                "route__destination_stop",
+                "route__state",
+                "bus_stop",
+                "bus_stop__state",
+                "bus_stop__district",
+            )
+            .order_by("-created_at")
+        )
+
+        search = request.query_params.get("search")
+
+        if search:
+            favorites = favorites.filter(
+                label__icontains=search
+            )
+
+        serializer = FavoriteDetailSerializer(
+            favorites,
+            many=True
+        )
+
+        return list_response(
+            data=serializer.data,
+            message="Favorites fetched successfully"
+        )
+
+    def post(self, request):
+
+        serializer = FavoriteCreateSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(raise_exception=True)
+
+        validated_data = serializer.validated_data
+
+        with transaction.atomic():
+
+            favorite = Favorite.objects.create(
+                user=request.user,
+                bus_id=validated_data.get("bus"),
+                route_id=validated_data.get("route"),
+                bus_stop_id=validated_data.get("bus_stop"),
+                label=validated_data.get("label", ""),
+            )
+
+        favorite = (
+            Favorite.objects
+            .select_related(
+                "bus",
+                "route",
+                "route__source_stop",
+                "route__destination_stop",
+                "route__state",
+                "bus_stop",
+                "bus_stop__state",
+                "bus_stop__district",
+            )
+            .get(pk=favorite.pk)
+        )
+
+        return success_response(
+            data=FavoriteDetailSerializer(
+                favorite
+            ).data,
+            message="Favorite added successfully",
+            status_code=status.HTTP_201_CREATED,
+        )
+        
+        
+class FavoriteDetailAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+
+        favorite = get_object_or_404(
+            Favorite.objects.select_related(
+                "bus",
+                "route",
+                "route__source_stop",
+                "route__destination_stop",
+                "route__state",
+                "bus_stop",
+                "bus_stop__state",
+                "bus_stop__district",
+            ),
+            pk=pk,
+            user=request.user
+        )
+
+        return success_response(
+            data=FavoriteDetailSerializer(
+                favorite
+            ).data,
+            message="Favorite fetched successfully",
+        )
+
+
+class FavoriteUpdateAPIView(APIView):
+    """
+    POST /api/favorites/<uuid:pk>/update/
+
+    Updates favorite label.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+
+        favorite = get_object_or_404(
+            Favorite,
+            pk=pk,
+            user=request.user
+        )
+
+        serializer = FavoriteUpdateSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(raise_exception=True)
+
+        favorite.label = serializer.validated_data["label"]
+
+        favorite.save(
+            update_fields=[
+                "label",
+                "updated_at",
+            ]
+        )
+
+        favorite = (
+            Favorite.objects
+            .select_related(
+                "bus",
+                "route",
+                "route__source_stop",
+                "route__destination_stop",
+                "route__state",
+                "bus_stop",
+                "bus_stop__state",
+                "bus_stop__district",
+            )
+            .get(pk=favorite.pk)
+        )
+
+        return success_response(
+            data=FavoriteDetailSerializer(
+                favorite
+            ).data,
+            message="Favorite updated successfully",
+        )
+        
+        
+class FavoriteDeleteAPIView(APIView):
+    """
+    POST /api/favorites/<uuid:pk>/delete/
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+
+        favorite = get_object_or_404(
+            Favorite,
+            pk=pk,
+            user=request.user
+        )
+
+        favorite.delete()
+
+        return success_response(
+            data={
+                "id": str(pk)
+            },
+            message="Favorite removed successfully",
+        )
+        
+        
+class UserLoginReportAPIView(APIView):
+    """
+    GET /api/admin/users/login-report/
+
+    Superadmin only.
+    Returns paginated user login stats with summary.
+
+    Filters:
+        ?role=schooladmin
+        ?search=name/email/mobile
+        ?is_online=true/false
+        ?status=active/deactive
+
+    Pagination:
+        ?page=1&page_size=20 (max 100)
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+
+    MAX_PAGE_SIZE = 100
+    ONLINE_THRESHOLD_SECONDS = 3600  # 1 hour
+
+    def get(self, request):
+
+        # ── 1. Pagination params ──────────────────────────────────────────────
+        try:
+            page      = max(1, int(request.query_params.get('page', 1)))
+            page_size = min(
+                max(1, int(request.query_params.get('page_size', 20))),
+                self.MAX_PAGE_SIZE
+            )
+        except ValueError:
+            return error_response("page and page_size must be integers")
+
+        # ── 2. Base queryset ──────────────────────────────────────────────────
+        qs = User.objects.all().order_by('-last_login', '-id')
+
+        # ── 3. Filters ────────────────────────────────────────────────────────
+        role = request.query_params.get('role')
+        if role:
+            qs = qs.filter(role=role)
+
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        search = request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search) |
+                Q(email__icontains=search) |
+                Q(mobile__icontains=search)
+            )
+
+        is_online_param = request.query_params.get('is_online')
+        online_threshold = timezone.now() - timedelta(seconds=self.ONLINE_THRESHOLD_SECONDS)
+
+        if is_online_param is not None:
+            if is_online_param.lower() == 'true':
+                qs = qs.filter(login=True, last_activity__gte=online_threshold)
+            elif is_online_param.lower() == 'false':
+                qs = qs.exclude(login=True, last_activity__gte=online_threshold)
+
+        # ── 4. Summary — computed on full filtered set before pagination ──────
+        total_users = qs.count()
+        online_now  = qs.filter(
+            login=True,
+            last_activity__gte=online_threshold
+        ).count()
+
+        summary = {
+            "total_users": total_users,
+            "online_now":  online_now,
+        }
+
+        # ── 5. Paginate ───────────────────────────────────────────────────────
+        paginator = Paginator(qs, page_size)
+        page_obj  = paginator.get_page(page)
+        page_users = list(page_obj.object_list)
+        page_user_ids = [u.id for u in page_users]
+
+        # ── 6. Bulk login counts — single query for all users on this page ────
+        now       = timezone.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start  = now - timedelta(days=7)
+        month_start = now - timedelta(days=30)
+
+        session_counts = (
+            Session.objects
+            .filter(
+                user_id__in=page_user_ids,
+                status='login',
+            )
+            .values('user_id')
+            .annotate(
+                login_count_today = Count(
+                    'id', filter=Q(loginTime__gte=today_start)
+                ),
+                login_count_week  = Count(
+                    'id', filter=Q(loginTime__gte=week_start)
+                ),
+                login_count_month = Count(
+                    'id', filter=Q(loginTime__gte=month_start)
+                ),
+                total_login_count = Count('id'),
+            )
+        )
+
+        counts_map = {
+            row['user_id']: row
+            for row in session_counts
+        }
+
+        # ── 7. Build response rows ────────────────────────────────────────────
+        data = []
+        for user in page_users:
+            counts  = counts_map.get(user.id, {})
+            is_online = (
+                bool(user.login) and
+                user.last_activity is not None and
+                user.last_activity >= online_threshold
+            )
+            data.append({
+                "user_id":           user.id,
+                "name":              user.name,
+                "email":             user.email,
+                "mobile":            user.mobile,
+                "role":              user.role,
+                "status":            user.status,
+                "is_online":         is_online,
+                "last_login":        user.last_login,
+                "login_count_today": counts.get('login_count_today', 0),
+                "login_count_week":  counts.get('login_count_week',  0),
+                "login_count_month": counts.get('login_count_month', 0),
+                "total_login_count": counts.get('total_login_count', 0),
+            })
+
+       
+        serializer = UserLoginReportSerializer(data, many=True)
+
+        return Response({
+            "success":    True,
+            "message":    "User login report fetched successfully",
+            "summary":    summary,
+            "pagination": {
+                "page":          page,
+                "page_size":     page_size,
+                "total_records": paginator.count,
+                "total_pages":   paginator.num_pages,
+                "has_next":      page_obj.has_next(),
+                "has_previous":  page_obj.has_previous(),
+            },
+            "data": serializer.data,
+        })
+        
+        
+        
+
+
+# =====================================================
+# Custom Alert Rule Views
+# =====================================================
+ 
+ 
+class CustomAlertRuleListCreateAPIView(APIView):
+    """
+    GET  /api/custom-alerts/rules/
+         List all rules visible to the requesting user.
+         SuperAdmin: all rules.
+         StateAdmin: rules scoped to their state + global rules.
+ 
+    POST /api/custom-alerts/rules/
+         Create a new rule.
+         SuperAdmin: can set state=null (global) or any specific state.
+         StateAdmin: state is auto-set to their assigned state; cannot override.
+ 
+    Query params (GET):
+        ?status=active|inactive
+        ?search=<name partial match>
+        ?state_id=<int>           (superadmin only)
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin | IsStateAdmin]
+ 
+    def _get_state_for_user(self, user):
+        """Returns the StateAdmin's state object, or None for superadmin."""
+        if user.role == 'stateadmin':
+            obj = StateAdmin.objects.filter(users=user).first()
+            return obj.state if obj else None
+        return None
+ 
+    def get(self, request):
+        user_state = self._get_state_for_user(request.user)
+ 
+        qs = CustomAlertRule.objects.prefetch_related('subrules').select_related(
+            'state', 'created_by'
+        ).order_by('-created_at')
+ 
+        if user_state:
+            # StateAdmin sees global + their state rules
+            qs = qs.filter(Q(state__isnull=True) | Q(state=user_state))
+ 
+        # Filters
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+ 
+        search = request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(name__icontains=search)
+ 
+        state_id = request.query_params.get('state_id')
+        if state_id and request.user.role == 'superadmin':
+            qs = qs.filter(state_id=state_id)
+ 
+        serializer = CustomAlertRuleDetailSerializer(qs, many=True)
+        return list_response(data=serializer.data, message="Custom alert rules fetched successfully")
+ 
+    def post(self, request):
+        user_state = self._get_state_for_user(request.user)
+ 
+        serializer = CustomAlertRuleCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+ 
+        with transaction.atomic():
+            rule = serializer.save(
+                created_by=request.user,
+                state=user_state,   # None for superadmin (global)
+            )
+ 
+        return success_response(
+            data=CustomAlertRuleDetailSerializer(rule).data,
+            message="Custom alert rule created successfully",
+            status_code=status.HTTP_201_CREATED,
+        )
+ 
+ 
+class CustomAlertRuleDetailAPIView(APIView):
+    """
+    GET  /api/custom-alerts/rules/<pk>/
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin | IsStateAdmin]
+ 
+    def _get_rule(self, pk, user):
+        qs = CustomAlertRule.objects.prefetch_related('subrules').select_related('state', 'created_by')
+        if user.role == 'stateadmin':
+            state_obj = StateAdmin.objects.filter(users=user).first()
+            user_state = state_obj.state if state_obj else None
+            if user_state:
+                qs = qs.filter(Q(state__isnull=True) | Q(state=user_state))
+        return get_object_or_404(qs, pk=pk)
+ 
+    def get(self, request, pk):
+        rule = self._get_rule(pk, request.user)
+        return success_response(
+            data=CustomAlertRuleDetailSerializer(rule).data,
+            message="Custom alert rule fetched successfully",
+        )
+ 
+ 
+class CustomAlertRuleUpdateAPIView(APIView):
+    """
+    POST /api/custom-alerts/rules/<pk>/update/
+ 
+    Top-level rule fields can be updated individually (partial=True).
+    If 'subrules' key is included, all existing subrules are replaced.
+    StateAdmin cannot change the scope (state field stays fixed).
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin | IsStateAdmin]
+ 
+    def post(self, request, pk):
+        qs = CustomAlertRule.objects.prefetch_related('subrules')
+ 
+        if request.user.role == 'stateadmin':
+            state_obj  = StateAdmin.objects.filter(users=request.user).first()
+            user_state = state_obj.state if state_obj else None
+            if user_state:
+                qs = qs.filter(Q(state__isnull=True) | Q(state=user_state))
+ 
+        rule = get_object_or_404(qs, pk=pk)
+ 
+        serializer = CustomAlertRuleUpdateSerializer(rule, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+ 
+        with transaction.atomic():
+            updated_rule = serializer.save()
+ 
+        return success_response(
+            data=CustomAlertRuleDetailSerializer(updated_rule).data,
+            message="Custom alert rule updated successfully",
+        )
+ 
+ 
+class CustomAlertRuleDeleteAPIView(APIView):
+    """
+    POST /api/custom-alerts/rules/<pk>/delete/
+    Soft-delete by setting status=inactive.
+    Hard delete not offered — logs reference the rule.
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin | IsStateAdmin]
+ 
+    def post(self, request, pk):
+        qs = CustomAlertRule.objects.all()
+ 
+        if request.user.role == 'stateadmin':
+            state_obj  = StateAdmin.objects.filter(users=request.user).first()
+            user_state = state_obj.state if state_obj else None
+            if user_state:
+                qs = qs.filter(Q(state__isnull=True) | Q(state=user_state))
+ 
+        rule = get_object_or_404(qs, pk=pk)
+        rule.status = CustomAlertRule.STATUS_INACTIVE
+        rule.save(update_fields=['status'])
+ 
+        return success_response(
+            data={'id': rule.id, 'status': rule.status},
+            message="Custom alert rule deactivated successfully",
+        )
+ 
+ 
+class CustomAlertLogListAPIView(APIView):
+    """
+    GET /api/custom-alerts/logs/
+ 
+    Returns fired custom alert logs.
+    SuperAdmin: all logs.
+    StateAdmin: only logs for their state.
+ 
+    Query params:
+        ?rule_id=<int>
+        ?vehicle_reg_no=<str>
+        ?from_datetime=<ISO 8601>
+        ?to_datetime=<ISO 8601>
+        ?state_id=<int>            (superadmin only)
+        ?page=1&page_size=20       (max 100)
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin | IsStateAdmin]
+    MAX_PAGE_SIZE = 100
+ 
+    def get(self, request):
+        qs = CustomAlertLog.objects.select_related(
+            'rule', 'device_tag', 'gps_ref', 'state'
+        ).order_by('-fired_at')
+ 
+        if request.user.role == 'stateadmin':
+            state_obj  = StateAdmin.objects.filter(users=request.user).first()
+            user_state = state_obj.state if state_obj else None
+            if user_state:
+                qs = qs.filter(Q(state=user_state) | Q(state__isnull=True))
+ 
+        rule_id = request.query_params.get('rule_id')
+        if rule_id:
+            qs = qs.filter(rule_id=rule_id)
+ 
+        vehicle_reg_no = request.query_params.get('vehicle_reg_no')
+        if vehicle_reg_no:
+            qs = qs.filter(device_tag__vehicle_reg_no__icontains=vehicle_reg_no)
+ 
+        from_dt = request.query_params.get('from_datetime')
+        if from_dt:
+            from skytron_api.utils import parse_datetime as _pd
+            from django.utils.dateparse import parse_datetime as _dp
+            dt = _dp(from_dt)
+            if dt:
+                qs = qs.filter(fired_at__gte=dt)
+ 
+        to_dt = request.query_params.get('to_datetime')
+        if to_dt:
+            from django.utils.dateparse import parse_datetime as _dp
+            dt = _dp(to_dt)
+            if dt:
+                qs = qs.filter(fired_at__lte=dt)
+ 
+        state_id = request.query_params.get('state_id')
+        if state_id and request.user.role == 'superadmin':
+            qs = qs.filter(state_id=state_id)
+ 
+        try:
+            page      = max(1, int(request.query_params.get('page', 1)))
+            page_size = min(max(1, int(request.query_params.get('page_size', 20))), self.MAX_PAGE_SIZE)
+        except ValueError:
+            return error_response("page and page_size must be integers")
+ 
+        paginator = Paginator(qs, page_size)
+        page_obj  = paginator.get_page(page)
+ 
+        serializer = CustomAlertLogSerializer(page_obj.object_list, many=True)
+ 
+        return Response({
+            "success": True,
+            "message": "Custom alert logs fetched successfully",
+            "pagination": {
+                "page":          page,
+                "page_size":     page_size,
+                "total_records": paginator.count,
+                "total_pages":   paginator.num_pages,
+                "has_next":      page_obj.has_next(),
+                "has_previous":  page_obj.has_previous(),
+            },
+            "data": serializer.data,
+        })
+ 
+ 
+class CustomAlertParameterListAPIView(APIView):
+    """
+    GET /api/custom-alerts/parameters/
+ 
+    Returns the list of available GPSData parameters and their types.
+    Used by the frontend to populate the parameter dropdown and determine
+    which operators are valid for each parameter.
+    """
+    permission_classes = [IsAuthenticated, IsSuperAdmin | IsStateAdmin]
+ 
+    def get(self, request):
+        numeric_params = [
+            p for p, _ in CustomAlertSubrule.PARAMETER_CHOICES
+            if p not in CustomAlertSubrule.TEXT_PARAMETERS
+        ]
+        text_params = list(CustomAlertSubrule.TEXT_PARAMETERS)
+ 
+        numeric_ops = [
+            {'value': op, 'label': label}
+            for op, label in CustomAlertSubrule.OPERATOR_CHOICES
+            if op not in {
+                CustomAlertSubrule.OPERATOR_CONTAINS,
+                CustomAlertSubrule.OPERATOR_NOT_CONTAINS,
+            }
+        ]
+        text_ops = [
+            {'value': op, 'label': label}
+            for op, label in CustomAlertSubrule.OPERATOR_CHOICES
+            if op in {
+                CustomAlertSubrule.OPERATOR_EQ,
+                CustomAlertSubrule.OPERATOR_NEQ,
+                CustomAlertSubrule.OPERATOR_CONTAINS,
+                CustomAlertSubrule.OPERATOR_NOT_CONTAINS,
+            }
+        ]
+ 
+        parameters = []
+        for code, label in CustomAlertSubrule.PARAMETER_CHOICES:
+            field_type = 'text' if code in CustomAlertSubrule.TEXT_PARAMETERS else 'numeric'
+            parameters.append({
+                'code':       code,
+                'label':      label,
+                'field_type': field_type,
+                'operators':  text_ops if field_type == 'text' else numeric_ops,
+            })
+ 
+        return success_response(
+            data={
+                'parameters': parameters,
+                'subrule_logic_choices': [
+                    {'value': v, 'label': l}
+                    for v, l in CustomAlertRule.SUBRULE_LOGIC_CHOICES
+                ],
+                'max_subrules': 4,
+            },
+            message="Alert parameters fetched successfully",
+        )
+        
+        
+class SchoolBusUnplannedMovementAPIView(APIView):
+    """
+    GET /admin/reports/unplanned-movement/
+
+    For each tagged bus of the admin's school, checks GPS points in the
+    given time range. If the bus is moving (speed > 1) but there's no
+    scheduled trip covering that time, it's unplanned movement.
+
+    Only episodes lasting 1 minute or more are included (filters out
+    GPS jitter / momentary speed noise while the bus is actually parked).
+
+    Required:
+        from_datetime, to_datetime   (ISO 8601, e.g. 2026-01-01T00:00:00)
+
+    Optional filters:
+        bus_id, vehicle_reg_no
+
+    Pagination:
+        page, page_size (max 100, default 20)
+
+    Response: one row per unplanned movement episode lasting >= 1 minute
+    (started/ongoing/stopped), with bus, driver, owner details.
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+
+    MIN_EPISODE_DURATION = timedelta(minutes=1)
+    MAX_PAGE_SIZE = 100
+
+    def get(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        from_raw = request.query_params.get("from_datetime")
+        to_raw   = request.query_params.get("to_datetime")
+
+        if not from_raw or not to_raw:
+            return error_response(
+                "from_datetime and to_datetime are required",
+                errors={"format": "ISO 8601 — e.g. 2026-01-01T00:00:00"}
+            )
+
+        start_dt = parse_datetime(from_raw)
+        end_dt   = parse_datetime(to_raw)
+
+        if start_dt is None or end_dt is None:
+            return error_response("Invalid datetime format")
+
+        # Make timezone-aware if a naive datetime was passed (e.g. date-only input)
+        if timezone.is_naive(start_dt):
+            start_dt = timezone.make_aware(start_dt)
+        if timezone.is_naive(end_dt):
+            end_dt = timezone.make_aware(end_dt)
+
+        if start_dt > end_dt:
+            return error_response("from_datetime must be before to_datetime")
+
+        # ── Pagination params — validated early, fail fast ──────────────────
+        try:
+            page      = max(1, int(request.query_params.get("page", 1)))
+            page_size = min(max(1, int(request.query_params.get("page_size", 20))), self.MAX_PAGE_SIZE)
+        except ValueError:
+            return error_response("page and page_size must be integers")
+
+        # ── Scope to this school's approved+active tagged buses ────────────────
+        bus_ids = list(
+            SchoolBusTag.objects.filter(
+                school=school, is_active=True, status="approved"
+            ).values_list("bus_id", flat=True)
+        )
+
+        bus_id_filter = request.query_params.get("bus_id")
+        if bus_id_filter:
+            try:
+                bus_id_filter = int(bus_id_filter)
+            except ValueError:
+                return error_response("bus_id must be an integer")
+            bus_ids = [b for b in bus_ids if b == bus_id_filter]
+
+        vehicle_reg_no = request.query_params.get("vehicle_reg_no")
+        if vehicle_reg_no:
+            bus_ids = list(
+                DeviceTag.objects.filter(
+                    id__in=bus_ids, vehicle_reg_no__icontains=vehicle_reg_no
+                ).values_list("id", flat=True)
+            )
+
+        if not bus_ids:
+            return Response({
+                "success": True,
+                "message": "No matching tagged buses found",
+                "pagination": {
+                    "page": page, "page_size": page_size,
+                    "total_records": 0, "total_pages": 1,
+                    "has_next": False, "has_previous": False,
+                },
+                "data": [],
+            })
+
+        # ── Holidays in range ────────────────────────────────────────────────
+        holidays = set(
+            SchoolHoliday.objects.filter(
+                school=school, is_active=True,
+                date__gte=start_dt.date(), date__lte=end_dt.date(),
+            ).values_list("date", flat=True)
+        )
+
+        # ── Scheduled trip windows in range ─────────────────────────────────
+        trips = SchoolBusTrip.objects.filter(
+            school=school, bus_id__in=bus_ids,
+            trip_date__gte=start_dt.date(), trip_date__lte=end_dt.date(),
+            status=SchoolBusTrip.STATUS_PLANNED,
+        ).values("bus_id", "trip_date", "start_time", "end_time")
+
+        windows = {}
+        for t in trips:
+            windows.setdefault((t["bus_id"], t["trip_date"]), []).append(
+                (t["start_time"], t["end_time"])
+            )
+
+        def has_scheduled_trip(bus_id, dt):
+            if dt.date() in holidays:
+                return False
+            for s, e in windows.get((bus_id, dt.date()), []):
+                if s <= dt.time() <= e:
+                    return True
+            return False
+
+        # ── Walk GPS points per bus, in time order, building episodes ──────
+        gps_points = GPSData.objects.filter(
+            device_tag_id__in=bus_ids,
+            entry_time__gte=start_dt, entry_time__lte=end_dt,
+        ).order_by("device_tag_id", "entry_time")
+
+        episodes = []
+        open_episode = {}
+
+        for gps in gps_points.iterator():
+            local_dt = timezone.localtime(gps.entry_time)
+            moving = gps.speed is not None and gps.speed > 1
+            scheduled = has_scheduled_trip(gps.device_tag_id, local_dt)
+            is_unplanned = moving and not scheduled
+
+            open_ep = open_episode.get(gps.device_tag_id)
+
+            if is_unplanned and not open_ep:
+                open_episode[gps.device_tag_id] = {
+                    "bus_id": gps.device_tag_id,
+                    "started_at": local_dt,
+                    "started_latitude": gps.latitude,
+                    "started_longitude": gps.longitude,
+                    "is_holiday": local_dt.date() in holidays,
+                    "stopped_at": None,
+                    "stopped_latitude": None,
+                    "stopped_longitude": None,
+                }
+            elif open_ep and not is_unplanned:
+                open_ep["stopped_at"] = local_dt
+                open_ep["stopped_latitude"] = gps.latitude
+                open_ep["stopped_longitude"] = gps.longitude
+                episodes.append(open_ep)
+                del open_episode[gps.device_tag_id]
+
+        # anything still open at the end of the range is "ongoing"
+        episodes.extend(open_episode.values())
+
+        # ── Keep only episodes lasting >= 1 minute ──────────────────────────
+        filtered_episodes = []
+        for ep in episodes:
+            if ep["stopped_at"] is None:
+                # ongoing — can't judge duration yet, keep it
+                filtered_episodes.append(ep)
+            else:
+                duration = ep["stopped_at"] - ep["started_at"]
+                if duration >= self.MIN_EPISODE_DURATION:
+                    filtered_episodes.append(ep)
+
+        episodes = filtered_episodes
+        episodes.sort(key=lambda e: e["started_at"], reverse=True)
+
+        # ── Paginate the assembled episode list ─────────────────────────────
+        paginator = Paginator(episodes, page_size)
+        page_obj  = paginator.get_page(page)
+        page_episodes = list(page_obj.object_list)
+
+        # ── Enrich only this page's episodes with bus / driver / owner ──────
+        episode_bus_ids = list({e["bus_id"] for e in page_episodes})
+        buses = {
+            b.id: b
+            for b in DeviceTag.objects.filter(id__in=episode_bus_ids)
+            .select_related("device", "vehicle_owner")
+            .prefetch_related("drivers", "vehicle_owner__users")
+        }
+
+        data = []
+        for ep in page_episodes:
+            bus = buses.get(ep["bus_id"])
+            if not bus:
+                continue
+
+            driver = bus.drivers.first()
+            owner_user = bus.vehicle_owner.users.first() if bus.vehicle_owner else None
+
+            duration_seconds = None
+            if ep["stopped_at"]:
+                duration_seconds = int((ep["stopped_at"] - ep["started_at"]).total_seconds())
+
+            data.append({
+                "bus": {
+                    "id": bus.id,
+                    "vehicle_reg_no": bus.vehicle_reg_no,
+                    "vehicle_make": bus.vehicle_make,
+                    "vehicle_model": bus.vehicle_model,
+                    "imei": bus.device.imei if bus.device else None,
+                },
+                "driver": {
+                    "id": driver.id,
+                    "name": driver.name,
+                    "phone_no": driver.phone_no,
+                } if driver else None,
+                "owner": {
+                    "name": owner_user.name if owner_user else None,
+                    "phone_no": owner_user.mobile if owner_user else None,
+                    "address": owner_user.address if owner_user else None,
+                } if owner_user else None,
+                "is_holiday": ep["is_holiday"],
+                "status": "ongoing" if ep["stopped_at"] is None else "stopped",
+                "duration_seconds": duration_seconds,
+                "unplanned_movement_started_at": ep["started_at"],
+                "started_location": {
+                    "latitude": ep["started_latitude"],
+                    "longitude": ep["started_longitude"],
+                },
+                "unplanned_movement_stopped_at": ep["stopped_at"],
+                "stopped_location": (
+                    {
+                        "latitude": ep["stopped_latitude"],
+                        "longitude": ep["stopped_longitude"],
+                    }
+                    if ep["stopped_at"] else None
+                ),
+            })
+
+        return Response({
+            "success": True,
+            "message": "Unplanned bus movement report fetched successfully",
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_records": paginator.count,
+                "total_pages": paginator.num_pages,
+                "has_next": page_obj.has_next(),
+                "has_previous": page_obj.has_previous(),
+            },
+            "data": data,
+        })
+        
+
+class SchoolBusAlertsListAPIView(APIView):
+    """
+    GET /admin/school/alerts/
+
+    List of all alerts for buses tagged to the admin's school.
+
+    Filters:
+        vehicle_reg_no   — partial match
+        imei             — partial match
+        alert_type       — exact match (e.g. OverSpeed, HarshBreak, Geofence, sos)
+        from_datetime, to_datetime — optional date range (ISO 8601)
+
+    Pagination:
+        page, page_size (max 100, default 20)
+    """
+    permission_classes = [IsAuthenticated, IsSchoolAdmin]
+    MAX_PAGE_SIZE = 100
+
+    def get(self, request):
+        school = request.user.schooladmin_user.first()
+        if not school:
+            return error_response("Admin has no school")
+
+        # ── Scope to this school's approved+active tagged buses ────────────
+        bus_ids = SchoolBusTag.objects.filter(
+            school=school, is_active=True, status="approved"
+        ).values_list("bus_id", flat=True)
+
+        alerts = AlertsLog.objects.filter(deviceTag_id__in=bus_ids).select_related(
+            "deviceTag", "deviceTag__district", "gps_ref", "state"
+        )
+
+        # ── Filters ──────────────────────────────────────────────────────
+        vehicle_reg_no = request.query_params.get("vehicle_reg_no")
+        if vehicle_reg_no:
+            alerts = alerts.filter(deviceTag__vehicle_reg_no__icontains=vehicle_reg_no)
+
+        imei = request.query_params.get("imei")
+        if imei:
+            alerts = alerts.filter(deviceTag__device__imei__icontains=imei)
+
+        alert_type = request.query_params.get("alert_type")
+        if alert_type:
+            alerts = alerts.filter(type=alert_type)
+
+        from_raw = request.query_params.get("from_datetime")
+        if from_raw:
+            dt = parse_datetime(from_raw)
+            if not dt:
+                return error_response("Invalid from_datetime format")
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt)
+            alerts = alerts.filter(timestamp__gte=dt)
+
+        to_raw = request.query_params.get("to_datetime")
+        if to_raw:
+            dt = parse_datetime(to_raw)
+            if not dt:
+                return error_response("Invalid to_datetime format")
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt)
+            alerts = alerts.filter(timestamp__lte=dt)
+
+        # ── Pagination ───────────────────────────────────────────────────
+        try:
+            page      = max(1, int(request.query_params.get("page", 1)))
+            page_size = min(max(1, int(request.query_params.get("page_size", 20))), self.MAX_PAGE_SIZE)
+        except ValueError:
+            return error_response("page and page_size must be integers")
+
+        paginator = Paginator(alerts.order_by("-timestamp"), page_size)
+        page_obj  = paginator.get_page(page)
+
+        live_feed_helper = LiveAlertsFeedAPIView()
+
+        data = []
+        for alert in page_obj.object_list:
+            data.append({
+                "id": alert.id,
+                "alert_type": alert.type,
+                "alert_title": live_feed_helper.map_title(alert.type),
+                "message": alert.alert_details,
+                "timestamp": alert.timestamp,
+                "vehicle_reg_no": alert.deviceTag.vehicle_reg_no if alert.deviceTag else None,
+                "imei": alert.deviceTag.device.imei if alert.deviceTag and alert.deviceTag.device else None,
+                "latitude": alert.gps_ref.latitude if alert.gps_ref else None,
+                "longitude": alert.gps_ref.longitude if alert.gps_ref else None,
+            })
+
+        return Response({
+            "success": True,
+            "message": "School bus alerts fetched successfully",
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_records": paginator.count,
+                "total_pages": paginator.num_pages,
+                "has_next": page_obj.has_next(),
+                "has_previous": page_obj.has_previous(),
+            },
+            "data": data,
+        })
+        
+
+class PISPublicBusStopsNearbyAPIView(APIView):
+    """
+    GET /api/pis/public/bus-stops/near/
+
+    Public — no authentication required.
+
+    Returns active bus stops within a given radius of the given lat/lon,
+    each with its scheduled (upcoming, today) buses and the live GPS
+    location of those buses if currently running.
+
+    Required query params:
+        lat, lon   — the search point (float)
+
+    Optional query params:
+        radius_km  — search radius in km (default 1.0, max 10.0)
+
+    Response: list of stops sorted nearest-first, each with:
+        - stop details + distance_km
+        - scheduled_buses: today's upcoming schedules touching this stop,
+          each with route info, ETA, and live location (if bus has started)
+    """
+    permission_classes = [AllowAny]
+
+    DEFAULT_RADIUS_KM = 1.0
+    MAX_RADIUS_KM = 10.0
+
+    def _haversine_km(self, lat1, lon1, lat2, lon2):
+        R = 6371.0
+        phi1 = math.radians(float(lat1))
+        phi2 = math.radians(float(lat2))
+        dphi = math.radians(float(lat2) - float(lat1))
+        dlam = math.radians(float(lon2) - float(lon1))
+        a = (
+            math.sin(dphi / 2) ** 2
+            + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+        )
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    def get(self, request):
+        lat_raw = request.query_params.get("lat")
+        lon_raw = request.query_params.get("lon")
+
+        if not lat_raw or not lon_raw:
+            return error_response("lat and lon are required")
+
+        try:
+            lat = float(lat_raw)
+            lon = float(lon_raw)
+        except ValueError:
+            return error_response("lat and lon must be valid numbers")
+
+        # ── Radius param — frontend can override, capped to a sane max ──────────
+        radius_raw = request.query_params.get("radius_km")
+        if radius_raw:
+            try:
+                radius_km = float(radius_raw)
+            except ValueError:
+                return error_response("radius_km must be a valid number")
+            if radius_km <= 0:
+                return error_response("radius_km must be greater than 0")
+            radius_km = min(radius_km, self.MAX_RADIUS_KM)
+        else:
+            radius_km = self.DEFAULT_RADIUS_KM
+
+        # ── Step 1: cheap DB-side bbox pre-filter (avoids scanning every stop) ──
+        lat_delta = radius_km / 111.0
+        lon_delta = radius_km / (111.0 * max(math.cos(math.radians(lat)), 0.01))
+
+        candidate_stops = PublicBusStop.objects.filter(
+            status=PublicBusStop.STATUS_ACTIVE,
+            latitude__gte=lat - lat_delta,
+            latitude__lte=lat + lat_delta,
+            longitude__gte=lon - lon_delta,
+            longitude__lte=lon + lon_delta,
+        ).select_related("state", "district")
+
+        # ── Step 2: exact haversine filter + sort ────────────────────────────
+        nearby = []
+        for stop in candidate_stops:
+            if stop.latitude is None or stop.longitude is None:
+                continue
+            distance = self._haversine_km(lat, lon, stop.latitude, stop.longitude)
+            if distance <= radius_km:
+                nearby.append((distance, stop))
+
+        nearby.sort(key=lambda x: x[0])
+
+        if not nearby:
+            return list_response(data=[], message="No bus stops found nearby")
+
+        stop_ids = [stop.id for _, stop in nearby]
+
+        # ── Step 3: today's upcoming scheduled buses touching these stops ────
+        now = timezone.now()
+        today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+
+        stop_etas = (
+            BusScheduleStopETA.objects
+            .filter(
+                route_stop__stop_id__in=stop_ids,
+                schedule__start_datetime__gte=today_start,
+                schedule__start_datetime__lt=today_end,
+                schedule__status__in=[BusSchedule.STATUS_CREATED, BusSchedule.STATUS_STARTED],
+                actual_departure__isnull=True,
+            )
+            .select_related(
+                "route_stop__stop",
+                "schedule__route",
+                "schedule__bus",
+            )
+            .order_by("scheduled_arrival")
+        )
+
+        # Group ETAs by stop_id
+        etas_by_stop = {}
+        for eta in stop_etas:
+            etas_by_stop.setdefault(eta.route_stop.stop_id, []).append(eta)
+
+        # ── Step 4: latest GPS per bus (single bulk query) ────────────────────
+        bus_ids_involved = list({eta.schedule.bus_id for eta in stop_etas})
+        gps_map = {}
+        if bus_ids_involved:
+            latest_gps_ids = (
+                GPSData.objects
+                .filter(device_tag=OuterRef("pk"))
+                .order_by("-entry_time")
+                .values("id")[:1]
+            )
+            buses_with_latest = (
+                DeviceTag.objects
+                .filter(id__in=bus_ids_involved)
+                .annotate(latest_gps_id=Subquery(latest_gps_ids))
+            )
+            gps_id_list = [b.latest_gps_id for b in buses_with_latest if b.latest_gps_id]
+            gps_map = {
+                g.device_tag_id: g
+                for g in GPSData.objects.filter(id__in=gps_id_list)
+            }
+
+        # ── Step 5: build response ─────────────────────────────────────────────
+        data = []
+        for distance, stop in nearby:
+            scheduled_buses = []
+            for eta in etas_by_stop.get(stop.id, []):
+                schedule = eta.schedule
+                gps = gps_map.get(schedule.bus_id) if schedule.status == BusSchedule.STATUS_STARTED else None
+
+                scheduled_buses.append({
+                    "scheduled_bus_id": schedule.id,
+                    "bus_id": schedule.bus_id,
+                    "bus_reg_no": schedule.bus.vehicle_reg_no,
+                    "route_id": schedule.route_id,
+                    "route_number": schedule.route.route_number,
+                    "route_name": schedule.route.name,
+                    "service_type": schedule.service_type,
+                    "schedule_status": schedule.status,
+                    "scheduled_arrival": eta.scheduled_arrival,
+                    "scheduled_departure": eta.scheduled_departure,
+                    "live_location": {
+                        "latitude": gps.latitude,
+                        "longitude": gps.longitude,
+                        "speed": gps.speed,
+                        "heading": gps.heading,
+                        "last_updated": gps.entry_time,
+                    } if gps else None,
+                })
+
+            data.append({
+                "bus_stop_id": stop.id,
+                "bus_stop_name": stop.name,
+                "bus_stop_address": stop.address,
+                "bus_stop_latitude": stop.latitude,
+                "bus_stop_longitude": stop.longitude,
+                "bus_stop_state_name": stop.state.state if stop.state else None,
+                "bus_stop_district_name": stop.district.district if stop.district else None,
+                "distance_from_your_location_in_meters": round(distance * 1000, 2),   # km → meters
+                "scheduled_buses": scheduled_buses,
+            })
+
+        return list_response(
+            data=data,
+            message=f"Nearby bus stops fetched successfully (radius: {radius_km} km)"
+        )
+        
+        
+class PISPublicBusesBetweenStopsAPIView(APIView):
+    """
+    GET /api/pis/public/buses/search-between-stops/
+
+    Public — no authentication required.
+
+    Returns currently active (started) buses running on routes that pass
+    through both given stops, in that direction — i.e. from_stop must
+    come before to_stop in the route's stop order. A route serving the
+    reverse direction on the same corridor will NOT match.
+
+    Required query params:
+        from_stop_id, to_stop_id   — PublicBusStop ids
+
+    Optional query params:
+        service_type  — Express | Ordinary | AC | City_Bus | Sleeper | Deluxe
+
+    Response: list of active buses on matching routes, with live GPS
+    location, route info, and the ETA at both the from/to stops.
+    """
+    permission_classes = [AllowAny]
+
+    VALID_SERVICE_TYPES = {
+        choice[0] for choice in BusSchedule.SERVICE_TYPE_CHOICES
+    }
+
+    def get(self, request):
+        from_stop_id = request.query_params.get("from_stop_id")
+        to_stop_id = request.query_params.get("to_stop_id")
+
+        if not from_stop_id or not to_stop_id:
+            return error_response("from_stop_id and to_stop_id are required")
+
+        try:
+            from_stop_id = int(from_stop_id)
+            to_stop_id = int(to_stop_id)
+        except ValueError:
+            return error_response("from_stop_id and to_stop_id must be integers")
+
+        if from_stop_id == to_stop_id:
+            return error_response("from_stop_id and to_stop_id must be different")
+
+        service_type = request.query_params.get("service_type")
+        if service_type and service_type not in self.VALID_SERVICE_TYPES:
+            return error_response(
+                "Invalid service_type",
+                errors={"allowed": sorted(self.VALID_SERVICE_TYPES)}
+            )
+
+        # ── Step 1: validate both stops exist and are active ─────────────────
+        stops = {
+            s.id: s for s in PublicBusStop.objects.filter(
+                id__in=[from_stop_id, to_stop_id],
+                status=PublicBusStop.STATUS_ACTIVE,
+            )
+        }
+        if from_stop_id not in stops:
+            return error_response("from_stop_id not found or inactive", status_code=404)
+        if to_stop_id not in stops:
+            return error_response("to_stop_id not found or inactive", status_code=404)
+
+        # ── Step 2: find routes where from_stop's order < to_stop's order ────
+        from_route_stops = PublicRouteStop.objects.filter(stop_id=from_stop_id).values(
+            "route_id", "order"
+        )
+        to_route_stops = PublicRouteStop.objects.filter(stop_id=to_stop_id).values(
+            "route_id", "order"
+        )
+
+        from_order_by_route = {rs["route_id"]: rs["order"] for rs in from_route_stops}
+        to_order_by_route = {rs["route_id"]: rs["order"] for rs in to_route_stops}
+
+        matching_route_ids = [
+            route_id
+            for route_id, from_order in from_order_by_route.items()
+            if route_id in to_order_by_route and from_order < to_order_by_route[route_id]
+        ]
+
+        if not matching_route_ids:
+            return list_response(
+                data=[],
+                message="No routes found running from the given stop to the given stop"
+            )
+
+        # ── Step 3: active (started) schedules on those routes today ────────
+        now = timezone.now()
+        today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+
+        schedules_qs = (
+            BusSchedule.objects
+            .filter(
+                route_id__in=matching_route_ids,
+                status=BusSchedule.STATUS_STARTED,
+                start_datetime__gte=today_start,
+                start_datetime__lt=today_end,
+            )
+            .select_related("route", "bus")
+        )
+
+        if service_type:
+            schedules_qs = schedules_qs.filter(service_type=service_type)
+
+        schedules = list(schedules_qs)
+
+        if not schedules:
+            return list_response(
+                data=[],
+                message="No active buses currently running between these stops"
+            )
+
+        # ── Step 4: ETA at from_stop and to_stop for each matching schedule ──
+        schedule_ids = [s.id for s in schedules]
+        etas = (
+            BusScheduleStopETA.objects
+            .filter(
+                schedule_id__in=schedule_ids,
+                route_stop__stop_id__in=[from_stop_id, to_stop_id],
+            )
+            .select_related("route_stop")
+        )
+
+        eta_map = {}  # (schedule_id, stop_id) -> eta
+        for eta in etas:
+            eta_map[(eta.schedule_id, eta.route_stop.stop_id)] = eta
+
+        # ── Step 5: latest GPS per bus (single bulk query) ────────────────────
+        bus_ids = list({s.bus_id for s in schedules})
+        latest_gps_ids = (
+            GPSData.objects
+            .filter(device_tag=OuterRef("pk"))
+            .order_by("-entry_time")
+            .values("id")[:1]
+        )
+        buses_with_latest = (
+            DeviceTag.objects
+            .filter(id__in=bus_ids)
+            .annotate(latest_gps_id=Subquery(latest_gps_ids))
+        )
+        gps_id_list = [b.latest_gps_id for b in buses_with_latest if b.latest_gps_id]
+        gps_map = {
+            g.device_tag_id: g
+            for g in GPSData.objects.filter(id__in=gps_id_list)
+        }
+
+        # ── Step 6: build response ─────────────────────────────────────────────
+        data = []
+        for schedule in schedules:
+            from_eta = eta_map.get((schedule.id, from_stop_id))
+            to_eta = eta_map.get((schedule.id, to_stop_id))
+            gps = gps_map.get(schedule.bus_id)
+
+            data.append({
+                "scheduled_bus_id": schedule.id,
+                "bus_id": schedule.bus_id,
+                "bus_reg_no": schedule.bus.vehicle_reg_no,
+                "route_id": schedule.route.id,
+                "route_number": schedule.route.route_number,
+                "route_name": schedule.route.name,
+                "service_type": schedule.service_type,
+                "from_bus_stop": {
+                    "bus_stop_id": from_stop_id,
+                    "bus_stop_name": stops[from_stop_id].name,
+                    "scheduled_arrival": from_eta.scheduled_arrival if from_eta else None,
+                    "scheduled_departure": from_eta.scheduled_departure if from_eta else None,
+                    "actual_arrival": from_eta.actual_arrival if from_eta else None,
+                    "actual_departure": from_eta.actual_departure if from_eta else None,
+                },
+                "to_bus_stop": {
+                    "bus_stop_id": to_stop_id,
+                    "bus_stop_name": stops[to_stop_id].name,
+                    "scheduled_arrival": to_eta.scheduled_arrival if to_eta else None,
+                    "scheduled_departure": to_eta.scheduled_departure if to_eta else None,
+                    "actual_arrival": to_eta.actual_arrival if to_eta else None,
+                    "actual_departure": to_eta.actual_departure if to_eta else None,
+                },
+
+                "live_location": {
+                    "latitude": gps.latitude,
+                    "longitude": gps.longitude,
+                    "speed": gps.speed,
+                    "heading": gps.heading,
+                    "last_updated": gps.entry_time,
+                } if gps else None,
+            })
+
+        return list_response(
+            data=data,
+            message="Active buses fetched successfully"
+        )
+        
+        
+class PISPublicBusLiveLocationByRegNoAPIView(APIView):
+    """
+    GET /api/pis/public/buses/live-location/
+
+    Public — no authentication required.
+
+    Returns the live GPS location of a bus, looked up by vehicle
+    registration number. "Bus" here means any DeviceTag that has at
+    least one BusSchedule on a PublicBusRoute (same definition used by
+    MapPISBusLocationsAPIView) — not filtered by vehicle category.
+
+    Required query params:
+        reg_no   — vehicle registration number (exact match, case-insensitive)
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        reg_no = request.query_params.get("reg_no")
+        if not reg_no:
+            return error_response("reg_no is required")
+
+        bus = DeviceTag.objects.filter(vehicle_reg_no__iexact=reg_no).first()
+        if not bus:
+            return error_response("Vehicle not found", status_code=404)
+
+        # ── Must have at least one schedule on a PublicBusRoute to count as PIS bus ──
+        latest_schedule = (
+            BusSchedule.objects
+            .filter(bus=bus)
+            .select_related("route")
+            .order_by("-start_datetime")
+            .first()
+        )
+
+        if not latest_schedule:
+            return error_response(
+                "This vehicle has no scheduled PIS routes and is not tracked as a bus",
+                status_code=404
+            )
+
+        # ── Latest GPS point for this bus ────────────────────────────────────
+        gps = (
+            GPSData.objects
+            .filter(device_tag=bus)
+            .order_by("-entry_time")
+            .first()
+        )
+
+        return success_response(
+            data={
+                "bus_id": bus.id,
+                "bus_reg_no": bus.vehicle_reg_no,
+                "bus_make": bus.vehicle_make,
+                "bus_model": bus.vehicle_model,
+                "latest_schedule": {
+                    "scheduled_bus_id": latest_schedule.id,
+                    "route_id": latest_schedule.route_id,
+                    "route_number": latest_schedule.route.route_number,
+                    "route_name": latest_schedule.route.name,
+                    "service_type": latest_schedule.service_type,
+                    "status": latest_schedule.status,
+                },
+              "live_location": {
+                    "latitude": gps.latitude,
+                    "longitude": gps.longitude,
+                    "speed": gps.speed,
+                    "heading": gps.heading,
+                    "ignition_status": gps.ignition_status,
+                    "last_updated": gps.entry_time,
+                } if gps else None,
+            },
+            message="Bus live location fetched successfully"
+        )
+        
+
+
+REQUIRED_M2M_RESPONSE_FIELDS = [
+    'iccid', 'imsi', 'msisdn', 'sim_status',
+    'activation_date', 'validity_date', 'telecom_provider'
+]
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def m2m_config_create_update(request):
+    """
+    POST /api/esim-provider/m2m-config/
+
+    Creates or updates the M2M API config (api_url, token, sample_iccid)
+    for the logged-in eSimProvider account.
+    Locked once m2m_api_verified=True — cannot be edited after that.
+    """
+    provider = eSimProvider.objects.filter(users=request.user).first()
+    if not provider:
+        return Response(
+            {"error": "No eSimProvider account found for this user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if provider.m2m_api_verified:
+        return Response(
+            {"error": "M2M API configuration is already verified and locked. It cannot be changed."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    api_url = request.data.get('api_url')
+    token = request.data.get('token')
+    sample_iccid = request.data.get('sample_iccid')
+
+    errors = {}
+
+    if not api_url:
+        errors['api_url'] = 'This field is required.'
+    else:
+        try:
+            URLValidator()(api_url)
+        except DjangoValidationError:
+            errors['api_url'] = 'api_url is not a valid URL.'
+
+    if not token:
+        errors['token'] = 'This field is required.'
+
+    if not sample_iccid:
+        errors['sample_iccid'] = 'This field is required.'
+    elif not re.fullmatch(r'\d{15}', str(sample_iccid)):
+        errors['sample_iccid'] = 'sample_iccid is not exactly 15 numeric digits.'
+
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    provider.m2m_api_url = api_url
+    provider.m2m_api_token = token
+    provider.m2m_sample_iccid = sample_iccid
+    # Any edit resets onboarding status — must be re-tested after changes
+    provider.m2m_technical_onboarding_status = 'incorrect_api'
+    provider.save(update_fields=[
+        'm2m_api_url', 'm2m_api_token', 'm2m_sample_iccid',
+        'm2m_technical_onboarding_status'
+    ])
+
+    return Response({
+        "status": "success",
+        "message": "M2M API configuration saved successfully.",
+        "data": {
+            "id": provider.id,
+            "m2m_api_url": provider.m2m_api_url,
+            "m2m_sample_iccid": provider.m2m_sample_iccid,
+            "m2m_technical_onboarding_status": provider.m2m_technical_onboarding_status,
+            "m2m_api_verified": provider.m2m_api_verified,
+        }
+    }, status=status.HTTP_200_OK)
+
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def m2m_config_test(request):
+    """
+    POST /api/esim-provider/m2m-config/test/
+
+    Calls the provider's own m2m_api_url (with their token + sample_iccid)
+    and checks the response. Can be called multiple times.
+
+    On the FIRST time the result is 'ok':
+      - m2m_api_verified is set True (permanently)
+      - config fields become locked for future edits
+    """
+    provider = eSimProvider.objects.filter(users=request.user).first()
+    if not provider:
+        return Response(
+            {"error": "No eSimProvider account found for this user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if provider.m2m_api_verified:
+        return Response(
+            {"error": "M2M API is already verified. No need to test again."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not provider.m2m_api_url or not provider.m2m_api_token or not provider.m2m_sample_iccid:
+        return Response(
+            {"error": "Please submit api_url, token and sample_iccid first."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    now = timezone.now()
+
+    try:
+        resp = requests.get(
+            provider.m2m_api_url,
+            headers={"Authorization": f"Bearer {provider.m2m_api_token}"},
+            params={"iccid": provider.m2m_sample_iccid},
+            timeout=10,
+        )
+    except Timeout:
+        return _save_test_result(
+            provider, now, 'incorrect_api', {"error": "timeout"},
+            "API timeout — either API is not available or IP whitelisting not done."
+        )
+    except RequestException as e:
+        return _save_test_result(
+            provider, now, 'incorrect_api', {"error": str(e)},
+            "Could not reach the API — please check the URL and try again."
+        )
+
+    if resp.status_code in (401, 403):
+        return _save_test_result(
+            provider, now, 'token_expired',
+            {"http_status": resp.status_code, "body": _safe_json(resp)},
+            "Token expired or unauthorized."
+        )
+
+    if resp.status_code != 200:
+        return _save_test_result(
+            provider, now, 'incorrect_api',
+            {"http_status": resp.status_code, "body": _safe_json(resp)},
+            f"API returned HTTP {resp.status_code}."
+        )
+
+    body = _safe_json(resp)
+    if body is None:
+        return _save_test_result(
+            provider, now, 'invalid_format', {"raw_text": resp.text[:2000]},
+            "API did not return valid JSON."
+        )
+
+    data = body.get('data') if isinstance(body, dict) else None
+    missing_fields = []
+    if body.get('status') != 'success' or not isinstance(data, dict):
+        missing_fields.append('data')
+    else:
+        missing_fields = [f for f in REQUIRED_M2M_RESPONSE_FIELDS if not data.get(f)]
+
+    if missing_fields:
+        provider.m2m_last_test_result = body
+        provider.m2m_api_last_tested_at = now
+        provider.m2m_technical_onboarding_status = 'invalid_format'
+        provider.save(update_fields=[
+            'm2m_technical_onboarding_status', 'm2m_last_test_result', 'm2m_api_last_tested_at'
+        ])
+        return Response({
+            "status": "error",
+            "message": "API response is missing required fields.",
+            "missing_fields": missing_fields,
+            "m2m_technical_onboarding_status": provider.m2m_technical_onboarding_status,
+        }, status=status.HTTP_200_OK)
+
+    # ── All checks passed ──────────────────────────────────────────────
+    first_time_verified = not provider.m2m_api_verified
+    provider.m2m_last_test_result = body
+    provider.m2m_api_last_tested_at = now
+    provider.m2m_technical_onboarding_status = 'ok'
+    if first_time_verified:
+        provider.m2m_api_verified = True
+        provider.m2m_api_verified_at = now
+
+    provider.save(update_fields=[
+        'm2m_technical_onboarding_status', 'm2m_last_test_result',
+        'm2m_api_last_tested_at', 'm2m_api_verified', 'm2m_api_verified_at'
+    ])
+
+    return Response({
+        "status": "success",
+        "message": "API verified successfully." + (
+            " Configuration is now locked." if first_time_verified else ""
+        ),
+        "m2m_technical_onboarding_status": provider.m2m_technical_onboarding_status,
+        "m2m_api_verified": provider.m2m_api_verified,
+    }, status=status.HTTP_200_OK)
+
+
+def _save_test_result(provider, now, onboarding_status, raw_result, message):
+    provider.m2m_technical_onboarding_status = onboarding_status
+    provider.m2m_last_test_result = raw_result
+    provider.m2m_api_last_tested_at = now
+    provider.save(update_fields=[
+        'm2m_technical_onboarding_status', 'm2m_last_test_result', 'm2m_api_last_tested_at'
+    ])
+    return Response({
+        "status": "error",
+        "message": message,
+        "m2m_technical_onboarding_status": provider.m2m_technical_onboarding_status,
+    }, status=status.HTTP_200_OK)
+
+
+def _safe_json(resp):
+    try:
+        return resp.json()
+    except ValueError:
+        return None
+
+
+
+
+
+# ── M2M / eSIM provider API (Mapwala format) ──────────────────────────
+# Success code returned by the provider when the lookup worked.
+M2M_SUCCESS_RESPONSE_CODES = {"LCM_001"}
+
+# Provider response codes that mean "bad credential" rather than "bad data".
+# Empty for now — fill in once the provider shares their error code list.
+M2M_AUTH_ERROR_RESPONSE_CODES = set()
+
+
+def _parse_ddmmyyyy(value):
+    """Provider sends dates as DD-MM-YYYY. Returns a date, or None."""
+    if not value:
+        return None
+    for fmt in ('%d-%m-%Y', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(str(value).strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _normalise_m2m_result(body):
+    """
+    Convert a provider's raw response into our internal shape.
+
+    Returns (normalised_dict, error_code, error_message).
+    Exactly one of normalised_dict / error_code is set.
+    """
+    if not isinstance(body, dict):
+        return None, 'invalid_format', "API did not return a JSON object."
+
+    response_code = body.get('apiResponseCode')
+    response_msg = body.get('apiResponseMsg') or ''
+
+    if not response_code:
+        return None, 'invalid_format', "API response is missing 'apiResponseCode'."
+
+    if response_code in M2M_AUTH_ERROR_RESPONSE_CODES:
+        return None, 'token_expired', f"Provider rejected the credential ({response_code})."
+
+    if response_code not in M2M_SUCCESS_RESPONSE_CODES:
+        return None, 'incorrect_api', f"API returned {response_code}. {response_msg}".strip()
+
+    result_obj = body.get('resultObj')
+    if not isinstance(result_obj, list):
+        return None, 'invalid_format', "API response is missing the 'resultObj' list."
+
+    if not result_obj:
+        return None, 'incorrect_api', "API returned no SIM record for this ICCID."
+
+    sim = result_obj[0]
+    if not isinstance(sim, dict):
+        return None, 'invalid_format', "'resultObj' does not contain a SIM object."
+
+    return {
+        'iccid': sim.get('iccid'),
+        'sim_status': sim.get('cardStatus'),
+        'card_state': sim.get('cardState'),
+        'activation_date': _parse_ddmmyyyy(sim.get('activateOn')),
+        'validity_date': _parse_ddmmyyyy(sim.get('expiredOn')),
+        'telecom_provider': sim.get('primaryTSP'),
+        'msisdn': sim.get('primaryMSISDN'),
+        'primary_status': sim.get('primaryStatus'),
+        'fallback_tsp': sim.get('fallbackTSP'),
+        'fallback_msisdn': sim.get('fallbackMSISDN'),
+        'fallback_status': sim.get('fallbackStatus'),
+        'data_usage': sim.get('dataUsage'),
+        'data_usage_date': _parse_ddmmyyyy(sim.get('dataUsageDate')),
+    }, None, None
+
+
+# =====================================================================
+# SECTION 2 
+# =====================================================================
+ 
+# ── New tagging flow: tunable thresholds ─────────────────────────────
+# Vehicle registered longer ago than this is treated as an "old" vehicle.
+REGISTRATION_AGE_THRESHOLD_YEARS = 2
+# Minimum remaining SIM validity required, by vehicle age.
+SIM_VALIDITY_OLD_VEHICLE_YEARS = 1
+SIM_VALIDITY_NEW_VEHICLE_YEARS = 2
+# GPS packets older than this are not counted as received (Step 4).
+GPS_PACKET_FRESHNESS_HOURS = 24
+# OTP validity — matches the existing tagging flow.
+TAGGING_OTP_EXPIRY_HOURS = 24
+# Minimum gap between OTP resend requests.
+TAGGING_OTP_RESEND_COOLDOWN_SECONDS = 60
+
+# Temporary registration number format:
+#   <district_code> + TEMP_REG_NO_MARKER + last 4 of chassis number
+# e.g. AS01Tmp8595
+TEMP_REG_NO_MARKER = 'TMP'
+TEMP_REG_NO_CHASSIS_DIGITS = 4
+
+# Device is physically fitted to a vehicle and tagging is complete.
+TAGGING_FINAL_STOCK_STATUS = 'Fitted'
+# The provider's API confirmed the SIM is active during step 2.
+TAGGING_FINAL_ESIM_STATUS = 'ESIM_Active_Confirmed'
+# Terminal state for a completed tag.
+TAGGING_FINAL_TAG_STATUS = 'Owner_Final_OTP_Verified'
+
+ 
+# Vahan response keys that must be present and non-empty. These map to
+# NOT NULL columns, so a missing one is rejected before we try to save.
+REQUIRED_VAHAN_FIELDS = [
+    'chassisNo', 'deviceActivationStatus', 'deviceSerialno', 'engineNo',
+    'fitmentCentreName', 'gnssConstellationCode', 'imeiNo', 'makerName',
+    'modelName', 'ownerName', 'tacNo', 'tacValidUpto', 'vehClass',
+]
+ 
+ 
+# =====================================================================
+# SECTION 3 
+# =====================================================================
+ 
+def _shift_years(d, years):
+    """Add/subtract whole years from a date, handling 29 Feb safely."""
+    try:
+        return d.replace(year=d.year + years)
+    except ValueError:
+        return d.replace(month=2, day=28, year=d.year + years)
+ 
+ 
+def _parse_vahan_date(value):
+    """Vahan sends dates as YYYY-MM-DD."""
+    if not value:
+        return None
+    for fmt in ('%Y-%m-%d', '%d-%m-%Y'):
+        try:
+            return datetime.strptime(str(value).strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+ 
+ 
+def call_vahan_api(imei, iccid=None):
+    """
+    Look up vehicle + device details by IMEI.
+ 
+    Vahan access is not available yet, so this returns dummy data matching
+    the documented response shape. Swap the body for the real HTTP call
+    when access is granted — the return contract stays the same.
+ 
+    NOTE: the `iccid` argument exists only so the dummy can echo back the
+    submitted value, which keeps the ICCID cross-check testable. The real
+    Vahan call takes IMEI only — drop the argument when swapping it in.
+ 
+    Returns (data_dict, error_message). Exactly one is non-None.
+    """
+    if not imei:
+        return None, "IMEI is required for the Vahan lookup."
+ 
+    # --- DUMMY DATA — replace with the real call ---------------------
+    return {
+        "chassisNo": "MD2A26AZ4EWF18595",
+        "dateOfRegistration": "2015-02-13",
+        "deviceActivationStatus": "PENDING",
+        "deviceSerialno": "ASMABC00000013",
+        "engineNo": "BAZWEF24719",
+        "fitmentCentreName": "SSSSSSSSS",
+        "gnssConstellationCode": "5,2,6,1,3",
+        "iccId": str(iccid) if iccid else "86185006025361000001",
+        "imeiNo": str(imei),
+        "makerName": "Pricol SGPCA SLD",
+        "modelName": "ASMTEST",
+        "ownerName": "TULSI SHARMA",
+        "regNo": "TN02372999",
+        "tacNo": "SKYTRON09",
+        "tacValidUpto": "2026-08-31",
+        "vehClass": "Motor Cab",
+    }, None
+    # -----------------------------------------------------------------
+ 
+ 
+def _validate_vahan_response(vahan_data):
+    """
+    Confirm the Vahan response carries everything the NOT NULL columns
+    need, before we attempt to save. Without this, a short response would
+    fail with a database IntegrityError instead of a readable message.
+ 
+    Returns an error message, or None when the response is usable.
+    """
+    if not isinstance(vahan_data, dict):
+        return "Vahan did not return a valid response."
+ 
+    missing = [f for f in REQUIRED_VAHAN_FIELDS if not str(vahan_data.get(f) or '').strip()]
+    if missing:
+        return f"Vahan response is missing required fields: {', '.join(missing)}."
+ 
+    if _parse_vahan_date(vahan_data.get('tacValidUpto')) is None:
+        return "Vahan returned an unreadable TAC validity date."
+ 
+    # A registered vehicle must carry a readable registration date. A
+    # vehicle with no registration number is a fresh vehicle and is
+    # allowed to have neither.
+    reg_no = str(vahan_data.get('regNo') or '').strip()
+    if reg_no and _parse_vahan_date(vahan_data.get('dateOfRegistration')) is None:
+        return "Vahan returned an unreadable vehicle registration date."
+ 
+    return None
+ 
+ 
+def _get_tagging_dealer(request):
+    """
+    Common check 1 — the caller must be a dealer.
+    Returns (dealer, error_response).
+    """
+    dealer = get_user_object(request.user, "dealer")
+    if not dealer:
+        return None, Response(
+            {"error": "Request must be from a dealer."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    return dealer, None
+ 
+ 
+def _get_tagging_record(request, record_id, expected_step):
+    """
+    Common checks 2-5, applied by every step API after Step 1:
+ 
+      - caller is a dealer
+      - record exists and is not soft deleted
+      - record was created by THIS user
+      - record is sitting at exactly the expected step
+ 
+    The step check blocks both skipping ahead and redoing a finished step.
+    Repeat calls WHILE on a step (OTP resend, re-checking packets) stay
+    allowed, because the step only advances on success.
+ 
+    Returns (record, dealer, error_response).
+    """
+    dealer, error = _get_tagging_dealer(request)
+    if error:
+        return None, None, error
+ 
+    if not record_id:
+        return None, None, Response(
+            {"error": "id is required."}, status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    record = DeviceStockMaster.objects.filter(id=record_id, is_deleted=False).first()
+    if not record:
+        return None, None, Response(
+            {"error": "No such entry found."}, status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if record.created_by_id != request.user.id:
+        return None, None, Response(
+            {"error": "This entry was created by another user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if record.current_step != expected_step:
+        if record.current_step > expected_step:
+            msg = f"Step {expected_step} is already completed for this entry."
+        else:
+            msg = (
+                f"Step {record.current_step - 1} must be completed first. "
+                f"This entry is currently at step {record.current_step}."
+            )
+        return None, None, Response(
+            {
+                "error": msg,
+                "current_step": record.current_step,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    return record, dealer, None
+ 
+ 
+def _send_tagging_otp(mobile, email, otp, vehicle_reg_no, imei):
+    """Send a tagging OTP by SMS (and email when available)."""
+    text = (
+        "Dear VLTD Dealer/ Manufacturer, we have received a request for tagging "
+        "and activation of following device and vehicle- Vehicle Reg No:{}, "
+        "Device IMEI No:{}. To confirm, please enter the OTP {}. - SkyTron"
+    ).format(vehicle_reg_no or '-', imei, otp)
+    tpid = "1007201930295888818"
+    try:
+        send_SMS(mobile, text, tpid)
+    except Exception as e:
+        logger.error(f"Tagging OTP SMS failed for {mobile}: {e}")
+    if email:
+        try:
+            send_mail('Tagging OTP', text, 'noreply@skytron.in', [email], fail_silently=True)
+        except Exception as e:
+            logger.error(f"Tagging OTP email failed for {email}: {e}")
+ 
+ 
+def _resolve_tagging_district(dealer, district_id):
+    """
+    Work out which district this tagging belongs to.
+
+    A dealer can be assigned several districts, so:
+      - district_id given  -> must be one of the dealer's own
+      - not given, one district -> use it
+      - not given, several      -> ask the dealer to choose
+
+    Returns (district, error_message).
+    """
+    dealer_districts = dealer.districts.filter(status='active')
+
+    if district_id:
+        district = dealer_districts.filter(id=district_id).first()
+        if not district:
+            return None, "This district is not assigned to your dealership."
+        return district, None
+
+    count = dealer_districts.count()
+    if count == 1:
+        return dealer_districts.first(), None
+    if count == 0:
+        return None, "No active district is assigned to your dealership."
+    return None, "Please select a district — your dealership covers more than one."
+
+
+def _resolve_vehicle_category(veh_class):
+    """
+    Match Vahan's vehClass against Settings_VehicleCategory by name.
+
+    Deliberately does NOT create a missing category. That model requires
+    maxSpeed and warnSpeed, which Vahan does not send — and those values
+    drive the over-speed alerts that become violation reports. Guessing
+    them would produce wrong enforcement records, so a missing category
+    is an error a human resolves once.
+
+    Returns (category, error_message).
+    """
+    veh_class = (veh_class or '').strip()
+    if not veh_class:
+        return None, "Vahan did not return a vehicle class."
+
+    category = Settings_VehicleCategory.objects.filter(category__iexact=veh_class).first()
+    if not category:
+        return None, (
+            f"Vehicle category '{veh_class}' is not set up in the system. "
+            "Please ask an administrator to add it with the correct speed limits."
+        )
+    return category, None
+
+
+def _build_temp_reg_no(district, chassis_no):
+    """
+    Build a temporary registration number for a vehicle that has not been
+    registered yet.
+
+        district_code + 'Tmp' + last 4 characters of the chassis number
+        e.g. AS01 + Tmp + 8595  ->  AS01Tmp8595
+
+    Returns (temp_reg_no, error_message).
+    """
+    code = (getattr(district, 'district_code', '') or '').strip().upper()
+    if not code:
+        return None, "This district has no district code configured."
+
+    chassis = (chassis_no or '').strip()
+    if len(chassis) < TEMP_REG_NO_CHASSIS_DIGITS:
+        return None, "Chassis number from Vahan is too short to build a temporary registration number."
+
+    temp_reg_no = f"{code}{TEMP_REG_NO_MARKER}{chassis[-TEMP_REG_NO_CHASSIS_DIGITS:].upper()}"
+
+    # vehicle_reg_no is unique on DeviceTag, so a collision would only
+    # surface at the step 5 commit. Catch it here instead.
+    if DeviceTag.objects.filter(vehicle_reg_no=temp_reg_no).exists():
+        return None, f"Temporary registration number {temp_reg_no} is already in use."
+    if DeviceStockMaster.objects.filter(vahan_reg_no=temp_reg_no, is_deleted=False).exists():
+        return None, f"Temporary registration number {temp_reg_no} is already in use."
+
+    return temp_reg_no, None
+
+ 
+ # Device is physically fitted to a vehicle and tagging is complete.
+TAGGING_FINAL_STOCK_STATUS = 'Fitted'
+# The provider's API confirmed the SIM is active during step 2.
+TAGGING_FINAL_ESIM_STATUS = 'ESIM_Active_Confirmed'
+# Terminal state for a completed tag.
+TAGGING_FINAL_TAG_STATUS = 'Owner_Final_OTP_Verified'
+
+
+# =====================================================================
+# SECTION 4 
+# STEP 1 API
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@parser_classes([MultiPartParser, FormParser])
+@transaction.atomic
+def device_tagging_step1_create(request):
+    """
+    POST /api/device-tagging/step1/
+
+    Content-Type: multipart/form-data (an RC file is uploaded).
+
+    Validates the dealer's inputs, looks the vehicle up on Vahan, and
+    creates the DeviceStockMaster record.
+
+    Nothing is written to the database until Vahan returns successfully
+    and its response is confirmed complete.
+    """
+    # ── Check 1: caller is a dealer ──────────────────────────────────
+    dealer, error = _get_tagging_dealer(request)
+    if error:
+        return error
+
+    manufacturer_id = request.data.get('manufacturer_id')
+    model_id = request.data.get('model_id')
+    esim_provider_id = request.data.get('esim_provider_id')
+    district_id = request.data.get('district_id')
+    imei = str(request.data.get('imei') or '').strip()
+    iccid = str(request.data.get('iccid') or '').strip()
+    owner_phone_number = str(request.data.get('owner_phone_number') or '').strip()
+
+    field_errors = {}
+    if not manufacturer_id:
+        field_errors['manufacturer_id'] = 'This field is required.'
+    if not model_id:
+        field_errors['model_id'] = 'This field is required.'
+    if not esim_provider_id:
+        field_errors['esim_provider_id'] = 'This field is required.'
+    if not imei:
+        field_errors['imei'] = 'This field is required.'
+    elif not re.fullmatch(r'\d{15}', imei):
+        field_errors['imei'] = 'imei must be exactly 15 numeric digits.'
+    if not iccid:
+        field_errors['iccid'] = 'This field is required.'
+    elif not re.fullmatch(r'\d{18,22}', iccid):
+        field_errors['iccid'] = 'iccid must be 18 to 22 numeric digits.'
+    if not owner_phone_number:
+        field_errors['owner_phone_number'] = 'This field is required.'
+    if not request.FILES.get('rc_file'):
+        field_errors['rc_file'] = 'RC document is required.'
+
+    if field_errors:
+        return Response({'errors': field_errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Check 2: dealer is under the given manufacturer ──────────────
+    if str(dealer.manufacturer_id) != str(manufacturer_id):
+        return Response(
+            {"error": "Dealer is not associated with this manufacturer."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    manufacturer = dealer.manufacturer
+
+    # ── Check 3: district ────────────────────────────────────────────
+    district, district_error = _resolve_tagging_district(dealer, district_id)
+    if district_error:
+        return Response({"error": district_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Check 4: model belongs to that manufacturer ──────────────────
+    device_model = DeviceModel.objects.filter(
+        id=model_id,
+        created_by__in=manufacturer.users.all()
+    ).first()
+    if not device_model:
+        return Response(
+            {"error": "This device model does not belong to your manufacturer."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ── Check 5: model's technical onboarding is complete ────────────
+    onboarding_done = DeviceModelTechnicalOnboardingRequest.objects.filter(
+        device_model_id=device_model.id,
+        status='StateAdminApproved'
+    ).exists()
+    if not onboarding_done:
+        return Response(
+            {"error": "Technical onboarding for this device model is not complete."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ── Check 6: eSIM provider is listed against the model ───────────
+    esim_provider = device_model.eSimProviders.filter(id=esim_provider_id).first()
+    if not esim_provider:
+        return Response(
+            {"error": "This eSIM provider is not listed against the given device model."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ── Check 7: provider has passed technical onboarding ────────────
+    if not esim_provider.m2m_api_verified:
+        return Response(
+            {"error": "This eSIM provider has not completed M2M technical onboarding."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ── Check 8: duplicates among NON-DELETED rows ───────────────────
+    duplicate = DeviceStockMaster.objects.filter(
+        Q(imei=imei) | Q(iccid=iccid),
+        is_deleted=False
+    ).first()
+    if duplicate:
+        if duplicate.imei == imei and duplicate.iccid == iccid:
+            msg = "This IMEI and ICCID combination is already in the tagging process."
+        elif duplicate.imei == imei:
+            msg = "This IMEI is already in the tagging process."
+        else:
+            msg = "This ICCID is already in the tagging process."
+        return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
+
+    if DeviceStock.objects.filter(imei=imei).exists():
+        return Response(
+            {"error": "This IMEI already exists in device stock."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if DeviceStock.objects.filter(iccid=iccid).exists():
+        return Response(
+            {"error": "This ICCID already exists in device stock."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ── Check 9: owner phone resolves to an active vehicle owner ─────
+    vehicle_owner = VehicleOwner.objects.filter(
+        users__mobile=owner_phone_number,
+        users__status='active'
+    ).last()
+    if not vehicle_owner:
+        return Response(
+            {"error": "No active vehicle owner found for this phone number."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ── Check 10: Vahan lookup — nothing saved before this succeeds ──
+    vahan_data, vahan_error = call_vahan_api(imei, iccid)
+    if vahan_error:
+        return Response({"error": vahan_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    response_error = _validate_vahan_response(vahan_data)
+    if response_error:
+        return Response({"error": response_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Check 11: Vahan ICCID must match the dealer's input ──────────
+    vahan_iccid = str(vahan_data.get('iccId') or '').strip()
+    if vahan_iccid and vahan_iccid != iccid:
+        return Response(
+            {
+                "error": "ICCID does not match the record on Vahan for this IMEI.",
+                "submitted_iccid": iccid,
+                "vahan_iccid": vahan_iccid,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    reg_no = str(vahan_data.get('regNo') or '').strip()
+    engine_no = str(vahan_data.get('engineNo') or '').strip()
+    chassis_no = str(vahan_data.get('chassisNo') or '').strip()
+
+    # ── Check 12: vehicle not already in the system ──────────────────
+    # Chassis number is the reliable identifier — registration number is
+    # not collected on the form and may not exist yet.
+    if DeviceStockMaster.objects.filter(vahan_chassis_no=chassis_no, is_deleted=False).exists():
+        return Response(
+            {"error": "This chassis number is already in the tagging process."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if DeviceTag.objects.filter(chassis_no=chassis_no).exists():
+        return Response(
+            {"error": "This chassis number is already tagged to a device."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if DeviceTag.objects.filter(engine_no=engine_no).exists():
+        return Response(
+            {"error": "This engine number is already tagged to a device."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if reg_no and DeviceTag.objects.filter(vehicle_reg_no=reg_no).exists():
+        return Response(
+            {"error": f"Vehicle registration number {reg_no} is already tagged to a device."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ── Check 13: vehicle category ───────────────────────────────────
+    category, category_error = _resolve_vehicle_category(vahan_data.get('vehClass'))
+    if category_error:
+        return Response({"error": category_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Check 14: registration number, real or temporary ─────────────
+    is_temp_reg_no = False
+    if not reg_no:
+        # Vehicle is not registered yet — build a temporary number so the
+        # unique column on DeviceTag can still be satisfied at step 5.
+        reg_no, temp_error = _build_temp_reg_no(district, chassis_no)
+        if temp_error:
+            return Response({"error": temp_error}, status=status.HTTP_400_BAD_REQUEST)
+        is_temp_reg_no = True
+
+    # ── Check 15: RC file upload ─────────────────────────────────────
+    rc_file_path = save_file(request, 'rc_file', 'fileuploads/rc_files')
+    if not rc_file_path:
+        return Response(
+            {"error": "Invalid RC file. Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ── All checks passed — save ─────────────────────────────────────
+    now = timezone.now()
+    record = DeviceStockMaster.objects.create(
+        dealer=dealer,
+        manufacturer=manufacturer,
+        device_model=device_model,
+        esim_provider=esim_provider,
+        vehicle_owner=vehicle_owner,
+        district=district,
+        category=category,
+        rc_file=rc_file_path,
+        imei=imei,
+        iccid=iccid,
+
+        vahan_chassis_no=chassis_no,
+        vahan_date_of_registration=_parse_vahan_date(vahan_data.get('dateOfRegistration')),
+        vahan_device_activation_status=vahan_data.get('deviceActivationStatus'),
+        vahan_device_serial_no=vahan_data.get('deviceSerialno'),
+        vahan_engine_no=engine_no,
+        vahan_fitment_centre_name=vahan_data.get('fitmentCentreName'),
+        vahan_gnss_constellation_code=vahan_data.get('gnssConstellationCode'),
+        vahan_iccid=vahan_iccid,
+        vahan_imei=vahan_data.get('imeiNo'),
+        vahan_maker_name=vahan_data.get('makerName'),
+        vahan_model_name=vahan_data.get('modelName'),
+        vahan_owner_name=vahan_data.get('ownerName'),
+        vahan_reg_no=reg_no,
+        is_temp_reg_no=is_temp_reg_no,
+        vahan_tac_no=vahan_data.get('tacNo'),
+        vahan_tac_valid_upto=_parse_vahan_date(vahan_data.get('tacValidUpto')),
+        vahan_veh_class=vahan_data.get('vehClass'),
+        vahan_raw_response=vahan_data,
+
+        current_step=2,
+        step1_completed_at=now,
+        created_by=request.user,
+        updated_by=request.user,
+    )
+
+    return Response({
+        "status": "success",
+        "message": "Step 1 completed successfully. Vehicle details saved.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "imei": record.imei,
+            "iccid": record.iccid,
+            "manufacturer": {"id": manufacturer.id, "company_name": manufacturer.company_name},
+            "device_model": {"id": device_model.id, "model_name": device_model.model_name},
+            "esim_provider": {"id": esim_provider.id, "company_name": esim_provider.company_name},
+            "district": {
+                "id": district.id,
+                "district": district.district,
+                "district_code": district.district_code,
+            },
+            "category": {"id": category.id, "category": category.category},
+            "vehicle_owner_id": vehicle_owner.id,
+            "rc_file": record.rc_file,
+            "is_temp_reg_no": record.is_temp_reg_no,
+            "vahan": {
+                "chassis_no": record.vahan_chassis_no,
+                "date_of_registration": record.vahan_date_of_registration,
+                "device_activation_status": record.vahan_device_activation_status,
+                "device_serial_no": record.vahan_device_serial_no,
+                "engine_no": record.vahan_engine_no,
+                "fitment_centre_name": record.vahan_fitment_centre_name,
+                "gnss_constellation_code": record.vahan_gnss_constellation_code,
+                "iccid": record.vahan_iccid,
+                "imei": record.vahan_imei,
+                "maker_name": record.vahan_maker_name,
+                "model_name": record.vahan_model_name,
+                "owner_name": record.vahan_owner_name,
+                "reg_no": record.vahan_reg_no,
+                "tac_no": record.vahan_tac_no,
+                "tac_valid_upto": record.vahan_tac_valid_upto,
+                "veh_class": record.vahan_veh_class,
+            },
+            "step1_completed_at": record.step1_completed_at,
+        }
+    }, status=status.HTTP_200_OK)
+
+ 
+ 
+# =====================================================================
+# STEP 2 API
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step2_esim(request):
+    """
+    POST /api/device-tagging/step2/
+ 
+    Queries the eSIM provider's M2M API for the SIM, validates its status
+    and remaining validity against the vehicle's registration age, and
+    stores the result.
+ 
+    On success, sends a 6-digit OTP to the dealer (start of Step 3).
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+ 
+    # ── Common checks + must be sitting at step 2 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=2)
+    if error:
+        return error
+ 
+    # ── Second guard: eSIM data must not already be stored ───────────
+    # Belt and braces alongside the step check, because this step has an
+    # external side effect (it sends the dealer OTP).
+    if record.step2_completed_at or record.m2m_raw_response:
+        return Response(
+            {"error": "eSIM data is already saved for this entry."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    provider = record.esim_provider
+    if not provider.m2m_api_url or not provider.m2m_api_token:
+        return Response(
+            {"error": "This eSIM provider has not configured their M2M API."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Call the provider's M2M API ──────────────────────────────────
+    try:
+        resp = requests.post(
+            provider.m2m_api_url,
+            json={"k1": provider.m2m_api_token, "k2": record.iccid},
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+    except Timeout:
+        return Response(
+            {"error": "eSIM provider API timed out. Please try again."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except RequestException as e:
+        logger.error(f"M2M API call failed for record {record.id}: {e}")
+        return Response(
+            {"error": "Could not reach the eSIM provider API."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if resp.status_code in (401, 403):
+        return Response(
+            {"error": "eSIM provider API rejected our credentials."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if resp.status_code != 200:
+        return Response(
+            {"error": f"eSIM provider API returned HTTP {resp.status_code}."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    body = _safe_json(resp)
+    if body is None:
+        return Response(
+            {"error": "eSIM provider API did not return valid JSON."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # Same normaliser used by the provider onboarding test — one place
+    # that knows the provider's response format.
+    normalised, error_code, error_message = _normalise_m2m_result(body)
+    if error_code:
+        return Response({"error": error_message}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    # ── Returned ICCID must be the one we asked about ────────────────
+    if str(normalised.get('iccid') or '').strip() != record.iccid:
+        return Response(
+            {"error": "eSIM provider returned details for a different ICCID."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    today = timezone.localdate()
+ 
+    # ── Check: activation date is today or earlier ───────────────────
+    activation_date = normalised.get('activation_date')
+    if not activation_date:
+        return Response(
+            {"error": "eSIM provider did not return an activation date."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if activation_date > today:
+        return Response(
+            {
+                "error": "eSIM activation date is in the future.",
+                "activation_date": activation_date,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Check: SIM is active ─────────────────────────────────────────
+    card_status = str(normalised.get('sim_status') or '').strip()
+    if card_status.lower() != 'active':
+        return Response(
+            {
+                "error": "eSIM is not active.",
+                "sim_status": card_status,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Check: remaining validity, by vehicle registration age ───────
+    expiry_date = normalised.get('validity_date')
+    if not expiry_date:
+        return Response(
+            {"error": "eSIM provider did not return an expiry date."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    reg_no = (record.vahan_reg_no or '').strip()
+    reg_date = record.vahan_date_of_registration
+    threshold_date = _shift_years(today, -REGISTRATION_AGE_THRESHOLD_YEARS)
+ 
+    if not reg_no:
+        # Case C — fresh vehicle, not registered yet.
+        required_years = SIM_VALIDITY_NEW_VEHICLE_YEARS
+        case_label = "fresh vehicle (no registration number)"
+    elif reg_date and reg_date < threshold_date:
+        # Case A — registered longer ago than the threshold.
+        required_years = SIM_VALIDITY_OLD_VEHICLE_YEARS
+        case_label = f"registered more than {REGISTRATION_AGE_THRESHOLD_YEARS} years ago"
+    else:
+        # Case B — registered within the threshold.
+        required_years = SIM_VALIDITY_NEW_VEHICLE_YEARS
+        case_label = f"registered within {REGISTRATION_AGE_THRESHOLD_YEARS} years"
+ 
+    required_expiry = _shift_years(today, required_years)
+    if expiry_date < required_expiry:
+        return Response(
+            {
+                "error": (
+                    f"eSIM validity is too short. Vehicle is {case_label}, "
+                    f"so at least {required_years} year(s) of validity is required."
+                ),
+                "expiry_date": expiry_date,
+                "minimum_required_expiry": required_expiry,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── All checks passed — save the eSIM data ───────────────────────
+    now = timezone.now()
+ 
+    record.m2m_iccid = normalised.get('iccid')
+    record.m2m_card_state = normalised.get('card_state')
+    record.m2m_card_status = normalised.get('sim_status')
+    record.m2m_activation_date = activation_date
+    record.m2m_expiry_date = expiry_date
+    record.m2m_primary_tsp = normalised.get('telecom_provider')
+    record.m2m_primary_msisdn = normalised.get('msisdn')
+    record.m2m_primary_status = normalised.get('primary_status')
+    record.m2m_fallback_tsp = normalised.get('fallback_tsp') or None
+    record.m2m_fallback_msisdn = normalised.get('fallback_msisdn') or None
+    record.m2m_fallback_status = normalised.get('fallback_status') or None
+    record.m2m_data_usage = normalised.get('data_usage')
+    record.m2m_data_usage_date = normalised.get('data_usage_date')
+    record.m2m_raw_response = body
+ 
+    # ── Generate and send the dealer OTP (start of Step 3) ───────────
+    otp = str(secrets.randbelow(1000000)).zfill(6)
+    record.dealer_otp = otp
+    record.dealer_otp_sent_at = now
+ 
+    record.step2_completed_at = now
+    record.current_step = 3
+    record.updated_by = request.user
+    record.save()
+ 
+    _send_tagging_otp(
+        mobile=request.user.mobile,
+        email=getattr(request.user, 'email', None),
+        otp=otp,
+        vehicle_reg_no=record.vahan_reg_no,
+        imei=record.imei,
+    )
+ 
+    return Response({
+        "status": "success",
+        "message": "Step 2 completed successfully. OTP has been sent to your registered mobile number.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "esim": {
+                "iccid": record.m2m_iccid,
+                "card_state": record.m2m_card_state,
+                "card_status": record.m2m_card_status,
+                "activation_date": record.m2m_activation_date,
+                "expiry_date": record.m2m_expiry_date,
+                "primary_tsp": record.m2m_primary_tsp,
+                "primary_msisdn": record.m2m_primary_msisdn,
+                "primary_status": record.m2m_primary_status,
+                "fallback_tsp": record.m2m_fallback_tsp,
+                "fallback_msisdn": record.m2m_fallback_msisdn,
+                "data_usage": record.m2m_data_usage,
+                "data_usage_date": record.m2m_data_usage_date,
+            },
+            "validity_case": case_label,
+            "step2_completed_at": record.step2_completed_at,
+        }
+    }, status=status.HTTP_200_OK)
+ 
+ 
+ # Wrong OTP submissions allowed before the OTP is invalidated.
+TAGGING_OTP_MAX_ATTEMPTS = 5
+ 
+ 
+ 
+def _tagging_otp_matches(stored_otp, submitted_otp):
+    """
+    Compare a submitted OTP against the stored one.
+ 
+    For local development a configured test OTP is also accepted, so the
+    flow can be exercised without waiting for a real SMS. This is gated on
+    settings.DEBUG as well as the env flag, so it cannot be switched on by
+    config alone on a production server.
+ 
+    To match the school bus module's behaviour instead (env flag only),
+    drop `settings.DEBUG and` from the condition below.
+    """
+    if not stored_otp or not submitted_otp:
+        return False
+ 
+    if secrets.compare_digest(str(stored_otp), str(submitted_otp)):
+        return True
+ 
+    if settings.DEBUG and os.environ.get('ALLOW_DEFAULT_TEST_OTP', '').lower() == 'true':
+        test_otp = os.environ.get('DEFAULT_TEST_OTP', '')
+        if test_otp and secrets.compare_digest(str(test_otp), str(submitted_otp)):
+            logger.warning(
+                "Tagging OTP accepted via DEFAULT_TEST_OTP — development only."
+            )
+            return True
+ 
+    return False
+ 
+ 
+# =====================================================================
+# SECTION 4 
+# STEP 3 — RESEND DEALER OTP
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step3_resend_otp(request):
+    """
+    POST /api/device-tagging/step3/resend-otp/
+ 
+    Generates a fresh OTP and sends it to the dealer's registered mobile.
+ 
+    Can be called repeatedly while the record sits at step 3, subject to a
+    cooldown. Once step 3 is verified the record moves on and this endpoint
+    rejects it.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+ 
+    # ── Common checks + must be sitting at step 3 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=3)
+    if error:
+        return error
+ 
+    now = timezone.now()
+ 
+    # ── Cooldown — stops the endpoint being hammered ─────────────────
+    if record.dealer_otp_sent_at:
+        elapsed = (now - record.dealer_otp_sent_at).total_seconds()
+        if elapsed < TAGGING_OTP_RESEND_COOLDOWN_SECONDS:
+            wait = int(TAGGING_OTP_RESEND_COOLDOWN_SECONDS - elapsed)
+            return Response(
+                {
+                    "error": f"Please wait {wait} more second(s) before requesting a new OTP.",
+                    "retry_after_seconds": wait,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+    # ── Fresh OTP, attempt counter reset ─────────────────────────────
+    otp = str(secrets.randbelow(1000000)).zfill(6)
+    record.dealer_otp = otp
+    record.dealer_otp_sent_at = now
+    record.dealer_otp_attempts = 0
+    record.updated_by = request.user
+    record.save(update_fields=[
+        'dealer_otp', 'dealer_otp_sent_at', 'dealer_otp_attempts',
+        'updated_by', 'updated_at'
+    ])
+ 
+    _send_tagging_otp(
+        mobile=request.user.mobile,
+        email=getattr(request.user, 'email', None),
+        otp=otp,
+        vehicle_reg_no=record.vahan_reg_no,
+        imei=record.imei,
+    )
+ 
+    return Response({
+        "status": "success",
+        "message": "OTP has been sent to your registered mobile number.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "otp_sent_at": record.dealer_otp_sent_at,
+            "otp_expires_in_hours": TAGGING_OTP_EXPIRY_HOURS,
+        }
+    }, status=status.HTTP_200_OK)
+ 
+ 
+# =====================================================================
+# SECTION 5 
+# STEP 3 — VERIFY DEALER OTP
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step3_verify_otp(request):
+    """
+    POST /api/device-tagging/step3/verify-otp/
+ 
+    Verifies the dealer OTP. On success the record advances to step 4.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+    submitted_otp = str(request.data.get('otp') or '').strip()
+ 
+    # ── Common checks + must be sitting at step 3 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=3)
+    if error:
+        return error
+ 
+    if not submitted_otp:
+        return Response(
+            {"error": "otp is required."}, status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── An OTP must actually be outstanding ──────────────────────────
+    if not record.dealer_otp or not record.dealer_otp_sent_at:
+        return Response(
+            {"error": "No OTP is pending for this entry. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    now = timezone.now()
+ 
+    # ── Expiry ───────────────────────────────────────────────────────
+    if now > record.dealer_otp_sent_at + timedelta(hours=TAGGING_OTP_EXPIRY_HOURS):
+        return Response(
+            {"error": "This OTP has expired. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Attempt limit ────────────────────────────────────────────────
+    if record.dealer_otp_attempts >= TAGGING_OTP_MAX_ATTEMPTS:
+        return Response(
+            {"error": "Too many incorrect attempts. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Compare ──────────────────────────────────────────────────────
+    if not _tagging_otp_matches(record.dealer_otp, submitted_otp):
+        record.dealer_otp_attempts += 1
+        remaining = TAGGING_OTP_MAX_ATTEMPTS - record.dealer_otp_attempts
+ 
+        if remaining <= 0:
+            # Burn the OTP so the counter cannot simply be waited out.
+            record.dealer_otp = None
+            record.save(update_fields=['dealer_otp', 'dealer_otp_attempts', 'updated_at'])
+            return Response(
+                {"error": "Too many incorrect attempts. Please request a new OTP."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        record.save(update_fields=['dealer_otp_attempts', 'updated_at'])
+        return Response(
+            {
+                "error": "Incorrect OTP.",
+                "attempts_remaining": remaining,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Verified — advance to step 4 ─────────────────────────────────
+    record.dealer_otp_verified_at = now
+    record.dealer_otp_attempts = 0
+    record.step3_completed_at = now
+    record.current_step = 4
+    record.updated_by = request.user
+    record.save(update_fields=[
+        'dealer_otp_verified_at', 'dealer_otp_attempts', 'step3_completed_at',
+        'current_step', 'updated_by', 'updated_at'
+    ])
+ 
+    return Response({
+        "status": "success",
+        "message": "OTP verified successfully. Step 3 completed.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "dealer_otp_verified_at": record.dealer_otp_verified_at,
+            "step3_completed_at": record.step3_completed_at,
+        }
+    }, status=status.HTTP_200_OK)
+
+
+
+
+
+
+
+# Packets older than this are not counted as received.
+# Also bounds the query: only this window is scanned.
+GPS_PACKET_FRESHNESS_HOURS = 24
+ 
+# Safety cap on how many rows are pulled per table for one device.
+GPS_PACKET_SCAN_LIMIT = 5000
+ 
+# The 9 packet types, in display order.
+TAGGING_PACKET_TYPES = [
+    'login_packet',
+    'health_packet',
+    'pvt_packet',
+    'emergency_start',
+    'ble_emergency_start',
+    'emergency_stop',
+    'sos_start',
+    'sos_start_ble',
+    'sos_stop',
+]
+ 
+# Which of the 9 must be received before step 4 can pass.
+# All 9 per TL. Trim this list to relax the requirement without
+# touching any logic — the others are still checked and reported.
+TAGGING_REQUIRED_PACKETS = list(TAGGING_PACKET_TYPES)
+ 
+ 
+# =====================================================================
+# SECTION 2
+# =====================================================================
+ 
+def _normalise_packet(raw):
+    """
+    Packets arrive with two header spellings — '$EPB,...' and '$,EPB,...'.
+    Normalise so field positions line up.
+    """
+    return (raw or '').strip().replace('$,', '$', 1)
+ 
+ 
+def _packet_has_ble_marker(raw):
+    """
+    True when the packet carries the BLE source marker.
+ 
+    Per TL: BLE-triggered alerts are marked by a 'BLE' source string at
+    the end of the packet.
+ 
+    UNVERIFIED — no BLE packet exists in the data yet, so the exact
+    spelling and position could not be confirmed. Checked case-insensitively
+    against the tail of the packet to be tolerant. Correct this once a real
+    BLE packet is available.
+    """
+    tail = _normalise_packet(raw)[-40:].upper()
+    return 'BLE' in tail
+ 
+ 
+def _is_login_packet(raw, ble=None):
+    # VERIFIED — 487,707 rows in production start with '$AS'.
+    return _normalise_packet(raw).startswith('$AS')
+ 
+ 
+def _is_health_packet(raw, ble=None):
+    # VERIFIED — 1.5M rows in production.
+    return ',HLM,' in _normalise_packet(raw)
+ 
+ 
+def _is_pvt_packet(raw, ble=None):
+    # VERIFIED — 24.7M rows in production.
+    return _packet_type_in_header(raw, 'PVT')
+ 
+ 
+def _is_emergency_start(raw, ble=False):
+    """
+    Emergency start in GPSDataLog, alert type EM,10 per TL.
+    UNVERIFIED — no EM,10 rows exist in the data yet.
+    """
+    packet = _normalise_packet(raw)
+    if 'EM,10' not in packet:
+        return False
+    return _packet_has_ble_marker(packet) == ble
+ 
+ 
+def _is_emergency_stop(raw, ble=None):
+    """
+    Emergency stop in GPSDataLog, alert type EM,11 per TL.
+    UNVERIFIED — no EM,11 rows exist in the data yet.
+    """
+    return 'EM,11' in _normalise_packet(raw)
+ 
+ 
+def _is_sos_packet(raw, msg_type, ble=False):
+    """
+    SOS packets in GPSemDataLog. EMR = start, SEM = stop.
+
+    VERIFIED — EMR 6.2M rows, SEM 48K rows in production.
+    The BLE split is UNVERIFIED.
+    """
+    if not _packet_type_in_header(raw, msg_type):
+        return False
+    return _packet_has_ble_marker(raw) == ble
+ 
+# Which table each packet type lives in, and how to recognise it.
+# One place to correct a matcher — nothing else needs touching.
+TAGGING_PACKET_MATCHERS = {
+    'login_packet':        ('gps',   lambda r: _is_login_packet(r)),
+    'health_packet':       ('gps',   lambda r: _is_health_packet(r)),
+    'pvt_packet':          ('gps',   lambda r: _is_pvt_packet(r)),
+    'emergency_start':     ('gps',   lambda r: _is_emergency_start(r, ble=False)),
+    'ble_emergency_start': ('gps',   lambda r: _is_emergency_start(r, ble=True)),
+    'emergency_stop':      ('gps',   lambda r: _is_emergency_stop(r)),
+    'sos_start':           ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=False)),
+    'sos_start_ble':       ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=True)),
+    'sos_stop':            ('gpsem', lambda r: _is_sos_packet(r, 'SEM')),
+}
+ 
+ 
+def _extract_pvt_lat_lon(raw):
+    """
+    Pull latitude and longitude out of a PVT packet.
+
+    Real format:
+      $PVT,DTPL,1.0.0,NR,01,L,<imei>,<reg>,0,<date>,<time>,<lat>,N,<lon>,E,...
+                                                            +11  +12 +13 +14
+
+    The N/E direction fields are checked as an anchor, so if the layout
+    ever shifts we return None instead of a wrong coordinate.
+    """
+    parts = _packet_fields(raw)
+    try:
+        idx = next(i for i, p in enumerate(parts) if p.upper() == 'PVT')
+    except StopIteration:
+        return None, None
+
+    try:
+        lat_raw, lat_dir = parts[idx + 11], parts[idx + 12].upper()
+        lon_raw, lon_dir = parts[idx + 13], parts[idx + 14].upper()
+
+        if lat_dir not in ('N', 'S') or lon_dir not in ('E', 'W'):
+            return None, None
+
+        lat = Decimal(lat_raw)
+        lon = Decimal(lon_raw)
+    except (IndexError, InvalidOperation, ValueError):
+        return None, None
+
+    if lat == 0 and lon == 0:
+        return None, None
+
+    if lat_dir == 'S':
+        lat = -lat
+    if lon_dir == 'W':
+        lon = -lon
+
+    return lat, lon
+ 
+ 
+# =====================================================================
+# SECTION 3
+# STEP 4 API
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step4_packet_check(request):
+    """
+    POST /api/device-tagging/step4/
+ 
+    Checks whether the fitted device is transmitting all required packet
+    types, and records the result.
+ 
+    Re-runnable: the dealer will typically call this several times while
+    triggering alerts on the device. Each call re-checks live and
+    overwrites the stored result. The record only advances to step 5 once
+    every required packet has been seen inside the freshness window.
+ 
+    Query strategy: the GPS log tables have no IMEI column and no index on
+    raw_data, so matching by IMEI alone would mean a full scan of tables
+    holding tens of millions of rows. Restricting to the freshness window
+    first bounds the work — which is why the threshold is not just a
+    validation rule.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+ 
+    # ── Common checks + must be sitting at step 4 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=4)
+    if error:
+        return error
+ 
+    now = timezone.now()
+    cutoff = now - timedelta(hours=GPS_PACKET_FRESHNESS_HOURS)
+    imei = record.imei
+    reg_no = (record.vahan_reg_no or '').strip()
+ 
+    # ── Pull this device's recent packets — two queries, not eighteen ─
+    gps_rows = list(
+        GPSDataLog.objects
+        .filter(timestamp__gte=cutoff, raw_data__contains=imei)
+        .order_by('-timestamp')
+        .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+    )
+    gpsem_rows = list(
+        GPSemDataLog.objects
+        .filter(timestamp__gte=cutoff, raw_data__contains=imei)
+        .order_by('-timestamp')
+        .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+    )
+ 
+    rows_by_table = {'gps': gps_rows, 'gpsem': gpsem_rows}
+ 
+    # ── Classify — rows are already newest first, so the first match
+    #    for each type is the latest one ─────────────────────────────
+    results = {}
+    latest_pvt_raw = None
+ 
+    for packet_type in TAGGING_PACKET_TYPES:
+        table, matcher = TAGGING_PACKET_MATCHERS[packet_type]
+        found = None
+ 
+        for raw_data, packet_time in rows_by_table[table]:
+            # A packet carrying a different vehicle's registration number
+            # is not this device's traffic.
+            if reg_no and reg_no not in raw_data:
+                continue
+            try:
+                if matcher(raw_data):
+                    found = (raw_data, packet_time)
+                    break
+            except Exception:
+                # A malformed packet is simply not a match.
+                continue
+ 
+        if found:
+            raw_data, packet_time = found
+            results[packet_type] = {
+                'received': True,
+                'timestamp': packet_time.isoformat(),
+                'raw_data': raw_data,
+            }
+            if packet_type == 'pvt_packet':
+                latest_pvt_raw = raw_data
+        else:
+            results[packet_type] = {
+                'received': False,
+                'timestamp': None,
+                'raw_data': None,
+            }
+ 
+    # ── Latitude / longitude from the latest PVT packet ───────────────
+    latitude, longitude = (None, None)
+    if latest_pvt_raw:
+        latitude, longitude = _extract_pvt_lat_lon(latest_pvt_raw)
+ 
+    # ── Did everything required arrive? ──────────────────────────────
+    missing = [p for p in TAGGING_REQUIRED_PACKETS if not results[p]['received']]
+    all_received = not missing
+ 
+    # ── Store — every call overwrites, so the record always holds the
+    #    most recent check ────────────────────────────────────────────
+    record.packet_results = results
+    record.packets_all_received = all_received
+    record.packets_checked_at = now
+    record.packet_latitude = latitude
+    record.packet_longitude = longitude
+    record.updated_by = request.user
+ 
+    update_fields = [
+        'packet_results', 'packets_all_received', 'packets_checked_at',
+        'packet_latitude', 'packet_longitude', 'updated_by', 'updated_at',
+    ]
+ 
+    if all_received:
+        record.step4_completed_at = now
+        record.current_step = 5
+        update_fields += ['step4_completed_at', 'current_step']
+ 
+    record.save(update_fields=update_fields)
+ 
+    return Response({
+        "status": "success" if all_received else "pending",
+        "message": (
+            "All required packets received. Step 4 completed."
+            if all_received else
+            "Some packets have not been received yet. Trigger them on the device and check again."
+        ),
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "imei": record.imei,
+            "vehicle_reg_no": record.vahan_reg_no,
+            "checked_at": record.packets_checked_at,
+            "freshness_window_hours": GPS_PACKET_FRESHNESS_HOURS,
+            "all_received": all_received,
+            "missing_packets": missing,
+            "latitude": record.packet_latitude,
+            "longitude": record.packet_longitude,
+            "packets": results,
+        }
+    }, status=status.HTTP_200_OK)
+ 
+  
+def _get_owner_mobile(vehicle_owner):
+    """Registered mobile of the vehicle owner's active user account."""
+    owner_user = vehicle_owner.users.filter(status='active').first()
+    if not owner_user or not owner_user.mobile:
+        return None, None
+    return owner_user.mobile, getattr(owner_user, 'email', None)
+
+
+def _check_step5_prerequisites(record):
+    """
+    The three checks the TL specified before the owner OTP is sent:
+
+      1. all required GPS packets were received
+      2. that check is still inside the freshness window
+      3. every earlier step completed properly
+
+    Returns an error message, or None when the record is ready.
+    """
+    if not record.step1_completed_at:
+        return "Step 1 is not complete for this entry."
+    if not record.step2_completed_at:
+        return "Step 2 is not complete for this entry."
+    if not record.step3_completed_at or not record.dealer_otp_verified_at:
+        return "Dealer OTP has not been verified for this entry."
+    if not record.step4_completed_at:
+        return "Step 4 is not complete for this entry."
+
+    if not record.packets_all_received:
+        return "Required GPS packets have not been received. Please complete step 4 again."
+
+    if not record.packets_checked_at:
+        return "GPS packets have not been checked. Please complete step 4 again."
+
+    age = timezone.now() - record.packets_checked_at
+    if age > timedelta(hours=GPS_PACKET_FRESHNESS_HOURS):
+        return (
+            f"The GPS packet check is more than {GPS_PACKET_FRESHNESS_HOURS} hours old. "
+            "Please run step 4 again before requesting the owner OTP."
+        )
+
+    return None
+
+
+def _as_end_of_day(d):
+    """
+    DeviceStock.esim_validity is a DateTimeField but the provider gives a
+    date. Store end of that day so a SIM is not treated as expired on its
+    own expiry date.
+    """
+    if not d:
+        return None
+    naive = datetime.combine(d, dtime(23, 59, 59))
+    return timezone.make_aware(naive) if timezone.is_naive(naive) else naive
+
+
+def _blank_to_none(value):
+    """
+    Several DeviceStock columns are unique AND nullable (msisdn2, iccid2).
+    Storing '' in them would collide between any two devices with no
+    fallback SIM, so blanks must become NULL.
+    """
+    value = (value or '').strip()
+    return value or None
+  
+# =====================================================================
+# SECTION 4 
+# STEP 5 
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step5_send_owner_otp(request):
+    """
+    POST /api/device-tagging/step5/send-otp/
+ 
+    Sends a 6-digit OTP to the vehicle owner's registered mobile — the
+    owner resolved from the phone number given in step 1.
+ 
+    Callable repeatedly while the record sits at step 5, subject to a
+    cooldown. Also serves as the resend endpoint.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+ 
+    # ── Common checks + must be sitting at step 5 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=5)
+    if error:
+        return error
+ 
+    # ── Everything before this step must genuinely be complete ───────
+    prerequisite_error = _check_step5_prerequisites(record)
+    if prerequisite_error:
+        return Response({"error": prerequisite_error}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    owner_mobile, owner_email = _get_owner_mobile(record.vehicle_owner)
+    if not owner_mobile:
+        return Response(
+            {"error": "The vehicle owner has no active account with a registered mobile number."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    now = timezone.now()
+ 
+    # ── Cooldown ─────────────────────────────────────────────────────
+    if record.owner_otp_sent_at:
+        elapsed = (now - record.owner_otp_sent_at).total_seconds()
+        if elapsed < TAGGING_OTP_RESEND_COOLDOWN_SECONDS:
+            wait = int(TAGGING_OTP_RESEND_COOLDOWN_SECONDS - elapsed)
+            return Response(
+                {
+                    "error": f"Please wait {wait} more second(s) before requesting a new OTP.",
+                    "retry_after_seconds": wait,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+    otp = str(secrets.randbelow(1000000)).zfill(6)
+    record.owner_otp = otp
+    record.owner_otp_sent_at = now
+    record.owner_otp_attempts = 0
+    record.updated_by = request.user
+    record.save(update_fields=[
+        'owner_otp', 'owner_otp_sent_at', 'owner_otp_attempts',
+        'updated_by', 'updated_at'
+    ])
+ 
+    _send_tagging_otp(
+        mobile=owner_mobile,
+        email=owner_email,
+        otp=otp,
+        vehicle_reg_no=record.vahan_reg_no,
+        imei=record.imei,
+    )
+ 
+    return Response({
+        "status": "success",
+        "message": "OTP has been sent to the vehicle owner's registered mobile number.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            # Masked — the dealer should not be able to read the owner's number
+            # off this endpoint.
+            "owner_mobile": f"{owner_mobile[:2]}xxxxxx{owner_mobile[-2:]}",
+            "otp_sent_at": record.owner_otp_sent_at,
+            "otp_expires_in_hours": TAGGING_OTP_EXPIRY_HOURS,
+        }
+    }, status=status.HTTP_200_OK)
+ 
+ 
+# =====================================================================
+# SECTION 5 
+# STEP 5
+# =====================================================================
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step5_verify_owner_otp(request):
+    """
+    POST /api/device-tagging/step5/verify-otp/
+ 
+    The owner receives the OTP and passes it to the dealer, who submits it
+    here. On success this creates the real records:
+ 
+      - one DeviceStock row  (device + SIM details)
+      - one DeviceTag row    (vehicle details, linked to the stock row)
+ 
+    Both are created in a single transaction with the record update, so a
+    failure part-way leaves nothing behind.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    record_id = request.data.get('id')
+    submitted_otp = str(request.data.get('otp') or '').strip()
+ 
+    # ── Common checks + must be sitting at step 5 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=5)
+    if error:
+        return error
+ 
+    if not submitted_otp:
+        return Response({"error": "otp is required."}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    prerequisite_error = _check_step5_prerequisites(record)
+    if prerequisite_error:
+        return Response({"error": prerequisite_error}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    if not record.owner_otp or not record.owner_otp_sent_at:
+        return Response(
+            {"error": "No OTP is pending for this entry. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    now = timezone.now()
+ 
+    if now > record.owner_otp_sent_at + timedelta(hours=TAGGING_OTP_EXPIRY_HOURS):
+        return Response(
+            {"error": "This OTP has expired. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if record.owner_otp_attempts >= TAGGING_OTP_MAX_ATTEMPTS:
+        return Response(
+            {"error": "Too many incorrect attempts. Please request a new OTP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if not _tagging_otp_matches(record.owner_otp, submitted_otp):
+        record.owner_otp_attempts += 1
+        remaining = TAGGING_OTP_MAX_ATTEMPTS - record.owner_otp_attempts
+ 
+        if remaining <= 0:
+            record.owner_otp = None
+            record.save(update_fields=['owner_otp', 'owner_otp_attempts', 'updated_at'])
+            return Response(
+                {"error": "Too many incorrect attempts. Please request a new OTP."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        record.save(update_fields=['owner_otp_attempts', 'updated_at'])
+        return Response(
+            {"error": "Incorrect OTP.", "attempts_remaining": remaining},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── OTP verified. Build the final records. ───────────────────────
+ 
+    reg_no = (record.vahan_reg_no or '').strip().upper()
+    engine_no = (record.vahan_engine_no or '').strip().upper()
+    chassis_no = (record.vahan_chassis_no or '').strip().upper()
+    device_esn = (record.vahan_device_serial_no or '').strip()
+    msisdn1 = (record.m2m_primary_msisdn or '').strip()
+    msisdn2 = _blank_to_none(record.m2m_fallback_msisdn)
+ 
+    # ── Last-moment uniqueness check ─────────────────────────────────
+    # Step 1 checked what it could, but another dealer may have tagged the
+    # same device in the meantime. Checking here turns a database
+    # IntegrityError into a readable message.
+    conflicts = {}
+    if DeviceStock.objects.filter(imei=record.imei).exists():
+        conflicts['imei'] = "already exists in device stock"
+    if DeviceStock.objects.filter(iccid=record.iccid).exists():
+        conflicts['iccid'] = "already exists in device stock"
+    if device_esn and DeviceStock.objects.filter(device_esn=device_esn).exists():
+        conflicts['device_esn'] = "already exists in device stock"
+    if msisdn1 and DeviceStock.objects.filter(msisdn1=msisdn1).exists():
+        conflicts['msisdn1'] = "already exists in device stock"
+    if msisdn2 and DeviceStock.objects.filter(msisdn2=msisdn2).exists():
+        conflicts['msisdn2'] = "already exists in device stock"
+    if reg_no and DeviceTag.objects.filter(vehicle_reg_no=reg_no).exists():
+        conflicts['vehicle_reg_no'] = "already tagged to a device"
+    if engine_no and DeviceTag.objects.filter(engine_no=engine_no).exists():
+        conflicts['engine_no'] = "already tagged to a device"
+    if chassis_no and DeviceTag.objects.filter(chassis_no=chassis_no).exists():
+        conflicts['chassis_no'] = "already tagged to a device"
+ 
+    if conflicts:
+        return Response(
+            {
+                "error": "This device or vehicle has already been registered elsewhere.",
+                "conflicts": conflicts,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    if not msisdn1:
+        return Response(
+            {"error": "No primary MSISDN was returned by the eSIM provider. Please run step 2 again."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if not device_esn:
+        return Response(
+            {"error": "No device serial number is stored for this entry."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+ 
+    # ── Create DeviceStock — device and SIM ──────────────────────────
+    device_stock = DeviceStock.objects.create(
+        model=record.device_model,
+        device_esn=device_esn,
+        imei=record.imei,
+        iccid=record.iccid,
+        iccid2=None,
+        telecom_provider1=(record.m2m_primary_tsp or '')[:25],
+        telecom_provider2=(_blank_to_none(record.m2m_fallback_tsp) or None),
+        msisdn1=msisdn1,
+        msisdn2=msisdn2,
+        imsi1=None,   # the provider API does not return IMSI
+        imsi2=None,
+        esim_validity=_as_end_of_day(record.m2m_expiry_date),
+        remarks=f"Created by tagging flow from DeviceStockMaster #{record.id}",
+        created=now,
+        created_by=request.user,
+        dealer=record.dealer,
+        stock_status=TAGGING_FINAL_STOCK_STATUS,
+        esim_status=TAGGING_FINAL_ESIM_STATUS,
+    )
+    device_stock.esim_provider.add(record.esim_provider)
+ 
+    # ── Create DeviceTag — vehicle, linked to the stock row ──────────
+    # vehicle_make / vehicle_model are 55 chars on DeviceTag but 255 on
+    # DeviceStockMaster, so they are trimmed rather than risking a failure
+    # at the very last step of a five-step flow.
+    device_tag = DeviceTag.objects.create(
+        device=device_stock,
+        vehicle_owner=record.vehicle_owner,
+        vehicle_reg_no=reg_no,
+        engine_no=engine_no,
+        chassis_no=chassis_no,
+        vehicle_make=(record.vahan_maker_name or '')[:55],
+        vehicle_model=(record.vahan_model_name or '')[:55],
+        category=record.category,
+        district=record.district,
+        rc_file=record.rc_file,
+        receipt_file_or='',   # not collected in this flow, per TL
+        receipt_file_ul='',   # not collected in this flow, per TL
+        status=TAGGING_FINAL_TAG_STATUS,
+        tagged_by=request.user,
+        tagged=now,
+    )
+ 
+    # ── Close out the staging record ─────────────────────────────────
+    record.owner_otp_verified_at = now
+    record.owner_otp_attempts = 0
+    record.step5_completed_at = now
+    record.current_step = 6          # 6 = Completed
+    record.created_device_stock = device_stock
+    record.created_device_tag = device_tag
+    record.updated_by = request.user
+    record.save(update_fields=[
+        'owner_otp_verified_at', 'owner_otp_attempts', 'step5_completed_at',
+        'current_step', 'created_device_stock', 'created_device_tag',
+        'updated_by', 'updated_at'
+    ])
+ 
+    return Response({
+        "status": "success",
+        "message": "Owner OTP verified. Tagging completed successfully.",
+        "data": {
+            "id": record.id,
+            "current_step": record.current_step,
+            "owner_otp_verified_at": record.owner_otp_verified_at,
+            "step5_completed_at": record.step5_completed_at,
+            "device_stock": {
+                "id": device_stock.id,
+                "device_esn": device_stock.device_esn,
+                "imei": device_stock.imei,
+                "iccid": device_stock.iccid,
+                "msisdn1": device_stock.msisdn1,
+                "msisdn2": device_stock.msisdn2,
+                "telecom_provider1": device_stock.telecom_provider1,
+                "esim_validity": device_stock.esim_validity,
+                "stock_status": device_stock.stock_status,
+                "esim_status": device_stock.esim_status,
+            },
+            "device_tag": {
+                "id": device_tag.id,
+                "vehicle_reg_no": device_tag.vehicle_reg_no,
+                "is_temp_reg_no": record.is_temp_reg_no,
+                "engine_no": device_tag.engine_no,
+                "chassis_no": device_tag.chassis_no,
+                "vehicle_make": device_tag.vehicle_make,
+                "vehicle_model": device_tag.vehicle_model,
+                "category": device_tag.category.category,
+                "district": device_tag.district.district if device_tag.district else None,
+                "rc_file": device_tag.rc_file,
+                "status": device_tag.status,
+            },
+        }
+    }, status=status.HTTP_200_OK)
+
+
+
+
+
+
+
+
+
+# =====================================================================
+# TAGGING FLOW — SUPPORTING APIs
+# =====================================================================
+#   1. My entries with step status  (drives the resume feature)
+#   2. My manufacturer / models / providers  (feeds step 1 dropdowns)
+#
+# No model changes needed.
+# =====================================================================
+
+
+# =====================================================================
+# SECTION 1 — skytron_api/views.py
+# Add to the tagging constants block.
+# =====================================================================
+
+# Human-readable label for each step a record can be sitting at.
+TAGGING_STEP_LABELS = {
+    2: 'eSIM verification pending',
+    3: 'Dealer OTP pending',
+    4: 'GPS packet check pending',
+    5: 'Owner OTP pending',
+    6: 'Completed',
+}
+
+# Default and maximum page size for the entries list.
+TAGGING_LIST_PAGE_SIZE = 25
+TAGGING_LIST_MAX_PAGE_SIZE = 100
+
+
+# =====================================================================
+# SECTION 2 — skytron_api/views.py
+# Helper. Paste with the other tagging helpers.
+# =====================================================================
+
+def _tagging_step_progress(record):
+    """
+    Which steps are done and which are still pending for one record.
+
+    Reported from the per-step completion timestamps rather than from
+    current_step alone, so the response shows the actual audit trail.
+    """
+    completed_at = {
+        1: record.step1_completed_at,
+        2: record.step2_completed_at,
+        3: record.step3_completed_at,
+        4: record.step4_completed_at,
+        5: record.step5_completed_at,
+    }
+
+    steps = []
+    for number in range(1, 6):
+        steps.append({
+            'step': number,
+            'completed': bool(completed_at[number]),
+            'completed_at': completed_at[number],
+        })
+
+    return {
+        'steps': steps,
+        'completed_steps': [n for n in range(1, 6) if completed_at[n]],
+        'pending_steps': [n for n in range(1, 6) if not completed_at[n]],
+    }
+
+
+# =====================================================================
+# SECTION 3 — skytron_api/views.py
+# SUPPORTING API 1 — MY ENTRIES WITH STEP STATUS
+# =====================================================================
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def device_tagging_my_entries(request):
+    """
+    GET or POST /api/device-tagging/my-entries/
+
+    Every non-deleted DeviceStockMaster entry created by the calling
+    dealer, with which steps are complete and which are still pending.
+
+    This is what makes the flow resumable: a dealer who abandoned tagging
+    halfway can see exactly where each entry stopped and continue from
+    there, instead of starting again.
+
+    Optional filters (query string on GET, body on POST):
+        current_step  int   only entries sitting at this step
+        is_completed  bool  true = finished, false = still in progress
+        imei          str   partial match
+        iccid         str   partial match
+        vehicle_reg_no str  partial match
+        page          int   default 1
+        page_size     int   default 25, max 100
+    """
+    dealer, error = _get_tagging_dealer(request)
+    if error:
+        return error
+
+    params = request.data if request.method == 'POST' else request.query_params
+
+    entries = DeviceStockMaster.objects.filter(
+        created_by=request.user,
+        is_deleted=False,
+    ).select_related(
+        'manufacturer', 'device_model', 'esim_provider',
+        'district', 'category', 'vehicle_owner',
+        'created_device_stock', 'created_device_tag',
+    ).order_by('-created_at')
+
+    # ── Filters ──────────────────────────────────────────────────────
+    current_step = params.get('current_step')
+    if current_step not in (None, ''):
+        try:
+            entries = entries.filter(current_step=int(current_step))
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "current_step must be a number between 2 and 6."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    is_completed = params.get('is_completed')
+    if is_completed not in (None, ''):
+        wants_completed = str(is_completed).strip().lower() in ('true', '1', 'yes')
+        if wants_completed:
+            entries = entries.filter(current_step=6)
+        else:
+            entries = entries.exclude(current_step=6)
+
+    imei = str(params.get('imei') or '').strip()
+    if imei:
+        entries = entries.filter(imei__icontains=imei)
+
+    iccid = str(params.get('iccid') or '').strip()
+    if iccid:
+        entries = entries.filter(iccid__icontains=iccid)
+
+    reg_no = str(params.get('vehicle_reg_no') or '').strip()
+    if reg_no:
+        entries = entries.filter(vahan_reg_no__icontains=reg_no)
+
+    # ── Counts per step, before pagination ───────────────────────────
+    # Lets the UI show "3 waiting on owner OTP" without a second request.
+    step_counts = {label: 0 for label in TAGGING_STEP_LABELS.values()}
+    raw_counts = entries.values('current_step').annotate(total=Count('id'))
+    for row in raw_counts:
+        label = TAGGING_STEP_LABELS.get(row['current_step'])
+        if label:
+            step_counts[label] = row['total']
+
+    total_count = entries.count()
+
+    # ── Pagination ───────────────────────────────────────────────────
+    try:
+        page = max(1, int(params.get('page') or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(params.get('page_size') or TAGGING_LIST_PAGE_SIZE)
+    except (TypeError, ValueError):
+        page_size = TAGGING_LIST_PAGE_SIZE
+    page_size = max(1, min(page_size, TAGGING_LIST_MAX_PAGE_SIZE))
+
+    start = (page - 1) * page_size
+    page_entries = entries[start:start + page_size]
+
+    # ── Build the response ───────────────────────────────────────────
+    data = []
+    for record in page_entries:
+        progress = _tagging_step_progress(record)
+        data.append({
+            'id': record.id,
+            'current_step': record.current_step,
+            'current_step_label': TAGGING_STEP_LABELS.get(record.current_step),
+            'is_completed': record.current_step == 6,
+            'imei': record.imei,
+            'iccid': record.iccid,
+            'vehicle_reg_no': record.vahan_reg_no,
+            'is_temp_reg_no': record.is_temp_reg_no,
+            'chassis_no': record.vahan_chassis_no,
+            'manufacturer': {
+                'id': record.manufacturer_id,
+                'company_name': record.manufacturer.company_name,
+            },
+            'device_model': {
+                'id': record.device_model_id,
+                'model_name': record.device_model.model_name,
+            },
+            'esim_provider': {
+                'id': record.esim_provider_id,
+                'company_name': record.esim_provider.company_name,
+            },
+            'district': {
+                'id': record.district_id,
+                'district': record.district.district,
+                'district_code': record.district.district_code,
+            },
+            'category': {
+                'id': record.category_id,
+                'category': record.category.category,
+            },
+            'packets_all_received': record.packets_all_received,
+            'packets_checked_at': record.packets_checked_at,
+            'steps': progress['steps'],
+            'completed_steps': progress['completed_steps'],
+            'pending_steps': progress['pending_steps'],
+            'created_device_stock_id': record.created_device_stock_id,
+            'created_device_tag_id': record.created_device_tag_id,
+            'created_at': record.created_at,
+            'updated_at': record.updated_at,
+        })
+
+    total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+
+    return Response({
+        'status': 'success',
+        'data': data,
+        'summary': {
+            'total_entries': total_count,
+            'by_step': step_counts,
+        },
+        'pagination': {
+            'page': page,
+            'page_size': page_size,
+            'total_count': total_count,
+            'total_pages': total_pages,
+            'has_next': page < total_pages,
+            'has_previous': page > 1,
+        },
+    }, status=status.HTTP_200_OK)
+
+
+# =====================================================================
+# SECTION 4 — skytron_api/views.py
+# SUPPORTING API 2 — MY MANUFACTURER / MODELS / PROVIDERS
+# =====================================================================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def device_tagging_my_manufacturer(request):
+    """
+    GET /api/device-tagging/my-manufacturer/
+
+    No input. Returns the calling dealer's manufacturer, that
+    manufacturer's device models whose technical onboarding is complete,
+    and each model's M2M / eSIM providers.
+
+    Feeds the dropdowns on the step 1 form, so it only lists options that
+    would actually pass step 1's validation.
+    """
+    dealer, error = _get_tagging_dealer(request)
+    if error:
+        return error
+
+    manufacturer = dealer.manufacturer
+
+    # DeviceModel has no FK to Manufacturer — the link is through
+    # created_by. users.all(), not users.first(), so models created by a
+    # second manufacturer user are not silently missed.
+    models_qs = DeviceModel.objects.filter(
+        created_by__in=manufacturer.users.all()
+    ).prefetch_related('eSimProviders').order_by('model_name')
+
+    # One query for every approved onboarding, rather than one per model.
+    approved_model_ids = set(
+        DeviceModelTechnicalOnboardingRequest.objects.filter(
+            device_model__in=models_qs,
+            status='StateAdminApproved',
+        ).values_list('device_model_id', flat=True)
+    )
+
+    models_data = []
+    for device_model in models_qs:
+        if device_model.id not in approved_model_ids:
+            continue
+
+        providers = []
+        for provider in device_model.eSimProviders.all():
+            providers.append({
+                'id': provider.id,
+                'company_name': provider.company_name,
+                # A provider that has not passed M2M onboarding will be
+                # rejected at step 1, so the UI can grey it out.
+                'm2m_api_verified': bool(provider.m2m_api_verified),
+                'm2m_technical_onboarding_status': provider.m2m_technical_onboarding_status,
+            })
+
+        models_data.append({
+            'id': device_model.id,
+            'model_name': device_model.model_name,
+            'vendor_id': device_model.vendor_id,
+            'tac_no': device_model.tac_no,
+            'hardware_version': device_model.hardware_version,
+            'technical_onboarding_complete': True,
+            'esim_providers': providers,
+        })
+
+    districts = [
+        {
+            'id': d.id,
+            'district': d.district,
+            'district_code': d.district_code,
+        }
+        for d in dealer.districts.filter(status='active').order_by('district')
+    ]
+
+    return Response({
+        'status': 'success',
+        'data': {
+            'dealer': {
+                'id': dealer.id,
+                'company_name': dealer.company_name,
+            },
+            'manufacturer': {
+                'id': manufacturer.id,
+                'company_name': manufacturer.company_name,
+            },
+            # Step 1 needs a district when the dealer covers more than one.
+            'districts': districts,
+            'district_required': len(districts) > 1,
+            'device_models': models_data,
+        },
+    }, status=status.HTTP_200_OK)
+

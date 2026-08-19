@@ -714,3 +714,386 @@ urlpatterns += staticfiles_urlpatterns()
 urlpatterns += [
     path('fota/SKTN/<path:filepath>', serve_firmware_file, name='serve_firmware_file'),
 ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+urlpatterns += [
+
+    # =========================
+    # School Onboarding
+    # =========================
+
+
+    path("schools/apply/", SchoolApplicationSubmitAPIView.as_view(), name="school-apply"),
+    path("state-admin/schools/", StateAdminSchoolApplicationListAPIView.as_view(), name="state-admin-school-list"),
+    path("state-admin/schools/<int:pk>/", StateAdminSchoolApplicationDetailAPIView.as_view(), name="state-admin-school-detail"),
+    path("state-admin/schools/<int:pk>/decision/", StateAdminSchoolApplicationDecisionAPIView.as_view(), name="state-admin-school-decision"),
+    # path("state-admin/schools/<int:pk>/send-setup-link/", StateAdminSendSetupLinkAPIView.as_view(), name="state-admin-school-send-setup-link"),
+    path("state-admin/active-schools/", StateAdminSchoolListAPIView.as_view(), name="state-admin-active-schools"),
+   
+    # ==========================================
+    # State Admin – Bus Tagging Decision (NEW)
+    # ==========================================
+
+    path("state-admin/bus-tags/<int:tag_id>/decision/", BusTagDecisionAPIView.as_view(), name="bus-tag-decision"),
+
+    # =========================
+    # Student CRUD (Admin)
+    # =========================
+
+    path("admin/students/", StudentListCreateAPIView.as_view(), name="admin-student-list-create"),
+    path("admin/students/<int:student_id>/", StudentDetailAPIView.as_view(), name="admin-student-detail"),
+   
+    path("admin/students/<int:student_id>/update/", StudentUpdateAPIView.as_view()),
+    path("admin/students/<int:student_id>/delete/", StudentDeleteAPIView.as_view()),
+
+    # =========================
+    # Parent CRUD (Admin)
+    # =========================
+
+    path("admin/parents/", ParentListCreateAPIView.as_view(), name="admin-parent-list-create"),
+    path("admin/parents/<int:pk>/", ParentDetailAPIView.as_view(), name="admin-parent-detail"),
+    
+    path("admin/parents/<int:pk>/update/", ParentUpdateAPIView.as_view()),
+    path("admin/parents/<int:pk>/delete/", ParentDeleteAPIView.as_view()),
+
+    # =========================
+    # Parent Student Link (Admin)
+    # =========================
+
+    path("admin/parents/<int:parent_id>/students/", ParentStudentLinkAPIView.as_view(), name="admin-parent-student-link"),
+    path("admin/parents/students/", AdminParentStudentMappingAPIView.as_view(), name="admin-parent-student-mapping"),
+    path("admin/parents/<int:parent_id>/students/view/", AdminParentStudentsAPIView.as_view(), name="admin-parent-wise-students"),
+    
+    path("admin/parents/<int:parent_id>/students/link/", ParentStudentLinkAPIView.as_view()),
+    path("admin/parents/<int:parent_id>/students/unlink/", ParentStudentUnlinkAPIView.as_view()),
+
+
+    # =========================
+    # Parent APIs
+    # =========================
+
+    path("parents/<int:parent_id>/students/", ParentStudentsAPIView.as_view(), name="parent-students"),
+    path("parents/me/drop-locations/", ParentDropLocationsAPIView.as_view(), name="parent-drop-locations"),
+    path("parents/me/", ParentMeAPIView.as_view(), name="parent-me"),
+    path("parents/me/students/", ParentMyStudentsAPIView.as_view(), name="parent-my-students"),
+    path("parents/tracking/", ParentBusTrackingAPIView.as_view(), name="parent-tracking"),
+    # path("parents/alerts/", ParentAlertsAPIView.as_view(), name="parent-alerts"),
+    path("parents/students/<int:student_id>/attendance/", ParentStudentAttendanceAPIView.as_view(), name="parent-student-attendance"),
+    path("parents/trips/active/", ParentActiveTripAPIView.as_view(), name="parent-active-trip"),
+    path("parents/trip/history/",ParentTripHistoryAPIView.as_view(), name="parent-trip-history"),
+    
+    # =========================
+    # Alert Capture
+    # =========================
+
+    path("alerts/<str:alert_type>/", CaptureBusAlertAPIView.as_view(), name="capture-alert"),
+
+    # =========================
+    # Student Bus Allocation
+    # =========================
+
+    path("students/<int:student_id>/bus-allocation/", StudentBusAllocationCreateAPIView.as_view(), name="student-bus-allocation"),
+    path("admin/bus-allocations/", StudentBusAllocationListAPIView.as_view(), name="student-bus-allocation-list"),
+
+    # =========================
+    # School Admin – Master Data
+    # =========================
+
+
+    path("admin/routes/", RouteListCreateAPIView.as_view(), name="route-list-create"),
+    path("admin/routes/<int:pk>/", RouteDetailAPIView.as_view(), name="route-detail"),
+    
+    path("admin/routes/<int:pk>/update/", RouteUpdateAPIView.as_view()),
+    path("admin/routes/<int:pk>/delete/", RouteDeleteAPIView.as_view()),
+    
+
+    path("admin/bus-stops/", BusStopListCreateAPIView.as_view(), name="bus-stop-list-create"),
+    path("admin/bus-stops/<int:pk>/", BusStopDetailAPIView.as_view(), name="bus-stop-detail"),
+    
+    path("admin/bus-stops/<int:pk>/update/", BusStopUpdateAPIView.as_view()),
+    path("admin/bus-stops/<int:pk>/delete/", BusStopDeleteAPIView.as_view()),
+    
+    path("admin/routes/<int:route_id>/stops/add/", RouteCreateAndAddStopAPIView.as_view(), name="route-add-stop"),
+    path("admin/routes/<int:route_id>/stops/<int:stop_id>/remove/", RouteRemoveStopAPIView.as_view(), name="route-remove-stop"),
+
+    path("admin/holidays/", SchoolHolidayListCreateAPIView.as_view(), name="holiday-list-create"),
+    path("admin/holidays/<int:pk>/", SchoolHolidayDetailAPIView.as_view(), name="holiday-detail"),
+    
+    path("admin/holidays/<int:pk>/update/", SchoolHolidayUpdateAPIView.as_view()),
+    path("admin/holidays/<int:pk>/delete/", SchoolHolidayDeleteAPIView.as_view()),
+
+    # =========================
+    # Bus Documents
+    # =========================
+
+    path("admin/buses/<int:bus_id>/documents/", SchoolBusDocumentUploadAPIView.as_view(), name="bus-document-upload"),
+    path("admin/buses/<int:bus_id>/documents/list/", SchoolBusDocumentListAPIView.as_view(), name="bus-document-list"),
+    path("admin/bus-documents/<int:document_id>/download/", SchoolBusDocumentDownloadAPIView.as_view(), name="bus-document-download"),
+    path("admin/bus-documents/<int:document_id>/delete/", SchoolBusDocumentDeleteAPIView.as_view(), name="bus-document-delete"),
+
+    # =================================
+    # Trips & Attendance & Reports
+    # =================================
+
+    path("admin/trips/", SchoolBusTripListCreateAPIView.as_view(), name="school-trip-list-create"),
+    path("admin/trips/active/", ActiveTripAPIView.as_view(), name="active-trip"),
+    path("admin/trips/validate-holidays/", HolidayTripValidationAPIView.as_view(), name="holiday-trip-validation"),
+    path("admin/trips/<int:trip_id>/attendance/init/", TripAttendanceInitAPIView.as_view(), name="trip-attendance-init"),
+    path("admin/trips/<int:trip_id>/attendance/pickup/", StudentPickupAPIView.as_view(), name="student-pickup"),
+    path("admin/trips/<int:trip_id>/attendance/drop/", StudentDropAPIView.as_view(), name="student-drop"),
+    path("admin/trips/<int:trip_id>/attendance/raw/", TripRawAttendanceAPIView.as_view(), name="trip-raw-attendance"),
+
+    # =========================
+    # Reports
+    # =========================
+
+    path("admin/reports/unplanned-trips/", UnplannedTripListAPIView.as_view(), name="unplanned-trip-list"),
+    path("admin/reports/unplanned-trips/summary/", UnplannedTripReportAPIView.as_view(), name="unplanned-trip-report"),
+    path("admin/reports/trips/<int:trip_id>/attendance/", TripAttendanceReportAPIView.as_view(), name="trip-attendance-report"),
+    path("admin/reports/trips/<int:trip_id>/student-status/", TripStudentStatusAPIView.as_view(), name="trip-student-status"),
+    path("admin/reports/trips/<int:trip_id>/stops/<int:stop_id>/students/", TripStopStudentsAPIView.as_view(), name="trip-stop-students"),
+    path("admin/reports/students/<int:student_id>/attendance/", StudentAttendanceReportAPIView.as_view(), name="student-attendance-report"),
+    path("admin/reports/routes/<int:route_id>/attendance/", RouteAttendanceReportAPIView.as_view(), name="route-attendance-report"),
+    path("admin/reports/stops/<int:stop_id>/attendance/", StopAttendanceReportAPIView.as_view(), name="stop-attendance-report"),
+
+    # =========================
+    # Alerts
+    # =========================
+
+    # path("admin/alerts/", AdminAlertsAPIView.as_view(), name="admin-alerts"),
+
+    # =============================================
+    # School Bus Tagging — 4-Step Workflow (NEW)
+    # =============================================
+
+    # Step 1 — Initiate tagging request (select vehicle reg no)
+    path("admin/buses/tag/initiate/", BusTagInitiateAPIView.as_view(), name="bus-tag-initiate"),
+
+    # Step 2 — OTP: resend + verify
+    path("admin/buses/tag/<int:tag_id>/send-otp/", BusTagSendOTPAPIView.as_view(), name="bus-tag-send-otp"),
+    path("admin/buses/tag/<int:tag_id>/verify-otp/", BusTagVerifyOTPAPIView.as_view(), name="bus-tag-verify-otp"),
+
+    # Step 3 — Upload documents (one per call) + final submit (submit=true)
+    path("admin/buses/tag/<int:tag_id>/documents/", BusTagSubmitDocumentsAPIView.as_view(), name="bus-tag-documents"),
+
+    # Tagging history table — school admin sees own school, state admin sees all
+    path("admin/buses/tag/history/", BusTagHistoryAPIView.as_view(), name="bus-tag-history"),
+
+    # NOTE: order matters — specific paths before parameterised paths
+    # "tag/initiate/" and "tag/history/" must come before "<int:bus_id>/untag/"
+    # and "available/" must come before "<int:bus_id>/" — Django matches top-down
+
+    # Approved buses list for this school
+    path("admin/buses/", SchoolBusTagListAPIView.as_view(), name="school-bus-list"),
+
+    # Available (untagged) buses — powers Step 1 dropdown
+    path("admin/buses/available/", AvailableVLTDVehiclesAPIView.as_view(), name="available-vltd-buses"),
+
+    # Untag a bus
+    path("admin/buses/<int:bus_id>/untag/", SchoolBusUnTagAPIView.as_view(), name="school-bus-untag"),
+
+    # =========================
+    # Bus – Route Assignment
+    # =========================
+
+    path("admin/routes/assign-bus/", AssignBusToRouteAPIView.as_view(), name="assign-bus-to-route"),
+    path("admin/routes/<int:bus_id>/reassign/", ReassignBusToRouteAPIView.as_view(), name="reassign-bus-route"),
+    path("admin/routes/<int:bus_id>/remove-bus/", RemoveBusFromRouteAPIView.as_view(), name="remove-bus-from-route"),
+    path("admin/routes/<int:route_id>/buses/", RouteBusesAPIView.as_view(), name="route-buses"),
+    path("admin/routes/assignments/", RouteBusAssignmentListAPIView.as_view(), name="route-bus-assignment-list"),
+
+    # =========================
+    # Dev Utility
+    # =========================
+
+    path("dev/create-user/", CreateTestUserAPIView.as_view(), name="dev-create-user"),
+
+    # =========================
+    # Dashboard
+    # =========================
+
+    path("dashboard/", DashboardAPIView.as_view(), name="dashboard"),
+    path("school-distribution/", SchoolWiseDistributionAPIView.as_view(), name="school-distribution"),
+    path("active-trips/", ActiveTripMonitorAPIView.as_view(), name="active-trips"),
+    path("bus-operational-status/", BusOperationalStatusAPIView.as_view(), name="bus-operational-status"),
+    path("live-alerts/", LiveAlertsFeedAPIView.as_view(), name="live-alerts"),
+    
+    path("parents/alerts/geofence/", ParentGeofenceAlertsAPIView.as_view(), name="parent-geofence-alerts"),
+    
+    path("parents/students/live-location/", ParentStudentLiveLocationAPIView.as_view(), name="parent-student-live-location"),
+    
+    
+    # =============================================
+    # School Application Documents
+    # =============================================
+ 
+    # State admin — any school by pk
+    path("state-admin/schools/<int:pk>/documents/", SchoolDocumentListAPIView.as_view(), name="state-admin-school-document-list"),
+    path("state-admin/schools/<int:pk>/documents/<str:doc_type>/download/", SchoolDocumentDownloadAPIView.as_view(), name="state-admin-school-document-download"),
+ 
+    # School admin — own school only (no pk in URL)
+    path("admin/school/documents/", SchoolDocumentListAPIView.as_view(), name="school-admin-document-list"),
+    path("admin/school/documents/<str:doc_type>/download/", SchoolDocumentDownloadAPIView.as_view(), name="school-admin-document-download"),
+    
+    path("admin/school/overview/", SchoolOverviewAPIView.as_view(), name="school-fleet-overview"),
+    
+    # =====================================================
+    # Permit Enforcement
+    # =====================================================
+    
+    path('enforcement/permit-conditions/', PermitConditionCreateAPIView.as_view(), name='permit-condition-create'),
+    path('enforcement/permit-conditions/list/', PermitConditionListAPIView.as_view(), name='permit-condition-list'),
+    path('enforcement/permit-conditions/<int:pk>/update/', PermitConditionUpdateAPIView.as_view(), name='permit-condition-update'),
+    path('enforcement/violations/', ViolationReportListAPIView.as_view(), name='violation-list'),
+    
+    # =====================================================
+    # Passenger Information System — Admin APIs
+    # =====================================================
+
+    # Bus Stops
+    path('pis/bus-stops/', PISBusStopListCreateAPIView.as_view(), name='pis-bus-stop-list-create'),
+    path('pis/bus-stops/<int:pk>/', PISBusStopDetailAPIView.as_view(), name='pis-bus-stop-detail'),
+    path('pis/bus-stops/<int:pk>/update/', PISBusStopUpdateAPIView.as_view(), name='pis-bus-stop-update'),
+    path('pis/bus-stops/<int:pk>/toggle/', PISBusStopToggleAPIView.as_view(), name='pis-bus-stop-toggle'),
+
+    # Bus Routes
+    path('pis/routes/', PISBusRouteListCreateAPIView.as_view(), name='pis-route-list-create'),
+    path('pis/routes/<int:pk>/', PISBusRouteDetailAPIView.as_view(), name='pis-route-detail'),
+    path('pis/routes/<int:pk>/update/', PISBusRouteUpdateAPIView.as_view(), name='pis-route-update'),
+    path('pis/routes/<int:pk>/toggle/', PISBusRouteToggleAPIView.as_view(), name='pis-route-toggle'),
+
+    # Bus Schedules
+    path('pis/schedules/', PISBusScheduleListCreateAPIView.as_view(), name='pis-schedule-list-create'),
+    path('pis/schedules/<int:pk>/', PISBusScheduleDetailAPIView.as_view(), name='pis-schedule-detail'),
+    path('pis/schedules/<int:pk>/update-status/', PISBusScheduleUpdateStatusAPIView.as_view(), name='pis-schedule-update-status'),
+
+    # Available buses dropdown
+    path('pis/available-buses/', PISAvailableBusListAPIView.as_view(), name='pis-available-buses'),
+    
+    path("admin/reports/unplanned-movement/", SchoolBusUnplannedMovementAPIView.as_view(), name="unplanned-movement-report"),
+    
+    path("admin/school/alerts/", SchoolBusAlertsListAPIView.as_view(), name="school-bus-alerts-list"),
+
+    # =====================================================
+    # Passenger Information System — Public APIs (No Auth)
+    # =====================================================
+
+    path('pis/public/bus-stops/', PISPublicBusStopListAPIView.as_view(), name='pis-public-bus-stops'),
+    path('pis/public/routes/', PISPublicBusRouteListAPIView.as_view(), name='pis-public-routes'),
+    path('pis/public/schedules/', PISPublicScheduleStatusAPIView.as_view(), name='pis-public-schedules'),
+    
+    
+    
+    # ------------------------------------------------------------------
+    # API 1 — School Bus Module: all routes (across all schools)
+    # ------------------------------------------------------------------
+    path('map/school-bus/routes/',MapSchoolBusRoutesAPIView.as_view(),name='map-school-bus-routes',),
+ 
+    # ------------------------------------------------------------------
+    # API 2 — PIS: all public bus routes with stops
+    # ------------------------------------------------------------------
+    path('map/pis/routes/',MapPISRoutesAPIView.as_view(),name='map-pis-routes',),
+ 
+    # ------------------------------------------------------------------
+    # API 3 — School Bus live locations (map pins)
+    # ------------------------------------------------------------------
+    path('map/school-bus/buses/',MapSchoolBusLocationsAPIView.as_view(),name='map-school-bus-locations',),
+ 
+    # ------------------------------------------------------------------
+    # API 4 — PIS (Public) Bus live locations (map pins)
+    # ------------------------------------------------------------------
+    path('map/pis/buses/',MapPISBusLocationsAPIView.as_view(),name='map-pis-bus-locations',),
+ 
+    # ------------------------------------------------------------------
+    # API 5 — PIS Bus Stops (map pins)
+    # ------------------------------------------------------------------
+    path('map/pis/bus-stops/', MapPISBusStopsAPIView.as_view(), name='map-pis-bus-stops',),
+    
+    # ----------------------------------------------------------------
+    #  4.1 State Transport Analytics Platform 
+    # ----------------------------------------------------------------
+    
+    path('analytics/trips/', TripAnalyticsAPIView.as_view(), name='analytics-trips'),
+    
+    path('analytics/driving-pattern-alerts/', DrivingPatternAlertsAPIView.as_view(),name='analytics-driving-pattern-alerts',),
+    
+    path('analytics/vehicle-alert-summary/',VehicleAlertSummaryAPIView.as_view(),name='analytics-vehicle-alert-summary',),
+    
+    path('analytics/pis-summary/',PISAnalyticsSummaryAPIView.as_view(),name='analytics-pis-summary',),
+    
+    path('analytics/resource-performance/', ResourcePerformanceAPIView.as_view(), name='analytics-resource-performance'),
+    
+    path('analytics/operational/', OperationalAnalyticsAPIView.as_view(), name='analytics-operational'),
+    
+    path('analytics/comparative-analysis/',ComparativeAnalysisAPIView.as_view(),name='analytics-comparative-analysis',),
+    
+    
+    path("analytics/alert-heatmap/",AlertHeatmapAPIView.as_view(),name="alert-heatmap",),
+    
+    
+    path("favorites/",FavoriteListCreateAPIView.as_view(),name="favorite-list-create",),
+
+    path("favorites/<uuid:pk>/",FavoriteDetailAPIView.as_view(),name="favorite-detail",),
+
+    path("favorites/<uuid:pk>/update/",FavoriteUpdateAPIView.as_view(),name="favorite-update",),
+
+    path("favorites/<uuid:pk>/delete/",FavoriteDeleteAPIView.as_view(),name="favorite-delete",),
+
+    # path("favorites/bulk-delete/",FavoriteBulkDeleteAPIView.as_view(),name="favorite-bulk-delete",),
+    
+    path('admin/users/login-report/', UserLoginReportAPIView.as_view(), name='user-login-report'),
+    
+    
+    # =====================================================
+    # Custom Alert Rules
+    # =====================================================
+ 
+    # Metadata — available parameters and operators 
+    path('custom-alerts/parameters/', CustomAlertParameterListAPIView.as_view(), name='custom-alert-parameters'),
+ 
+    # Rule CRUD
+    path('custom-alerts/rules/', CustomAlertRuleListCreateAPIView.as_view(), name='custom-alert-rule-list-create'),
+    path('custom-alerts/rules/<int:pk>/', CustomAlertRuleDetailAPIView.as_view(), name='custom-alert-rule-detail'),
+    path('custom-alerts/rules/<int:pk>/update/', CustomAlertRuleUpdateAPIView.as_view(), name='custom-alert-rule-update'),
+    path('custom-alerts/rules/<int:pk>/delete/', CustomAlertRuleDeleteAPIView.as_view(), name='custom-alert-rule-delete'),
+ 
+    # Fired alert logs
+    path('custom-alerts/logs/', CustomAlertLogListAPIView.as_view(), name='custom-alert-log-list'),
+    
+    path('pis/public/bus-stops/near/', PISPublicBusStopsNearbyAPIView.as_view(), name='pis-public-bus-stops-near'),
+    
+    path('pis/public/buses/search-between-stops/', PISPublicBusesBetweenStopsAPIView.as_view(), name='pis-public-buses-between-stops'),
+    
+    path('pis/public/buses/live-location/', PISPublicBusLiveLocationByRegNoAPIView.as_view(), name='pis-public-bus-live-location'),
+    
+    path('esim-provider/m2m-config/', m2m_config_create_update, name='m2m_config_create_update'),
+    path('esim-provider/m2m-config/test/', m2m_config_test, name='m2m_config_test'),
+    
+    
+    path('device-tagging/step1/', device_tagging_step1_create, name='device-tagging-step1'),
+    path('device-tagging/step2/', device_tagging_step2_esim,   name='device-tagging-step2'),
+    
+    path('device-tagging/step3/resend-otp/', device_tagging_step3_resend_otp, name='device-tagging-step3-resend'),
+    path('device-tagging/step3/verify-otp/', device_tagging_step3_verify_otp, name='device-tagging-step3-verify'),
+    
+    path('device-tagging/step4/', device_tagging_step4_packet_check, name='device-tagging-step4'),
+    
+    path('device-tagging/step5/send-otp/',   device_tagging_step5_send_owner_otp,   name='device-tagging-step5-send'),
+    path('device-tagging/step5/verify-otp/', device_tagging_step5_verify_owner_otp, name='device-tagging-step5-verify'),
+    
+    
+    path('device-tagging/my-entries/',      device_tagging_my_entries,      name='device-tagging-my-entries'),
+    path('device-tagging/my-manufacturer/', device_tagging_my_manufacturer, name='device-tagging-my-manufacturer'),
+    
+]

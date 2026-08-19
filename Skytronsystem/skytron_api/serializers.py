@@ -1141,3 +1141,2542 @@ class DeviceModelForTestAgencySerializer(SanitizingModelSerializer):
             technical_onboarding_requests__status='accepted'
         ).distinct()
         return ManufacturerSerializer(manufacturers, many=True).data
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# =====================================================
+# School Bus Module — Added by Harshit
+# =====================================================
+
+
+
+
+
+import os
+from rest_framework.exceptions import ValidationError
+
+
+
+
+
+# =====================================================
+# Student
+# =====================================================
+
+class StudentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Student
+        fields = [
+            "id",
+            "name",
+            "roll_number",
+            "class_name",
+            "section",          # NEW
+            "school",
+        ]
+
+class StudentCreateSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Student
+        fields = [
+            "id",
+            "name",
+            "roll_number",
+            "class_name",
+            "section",          # NEW
+        ]
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        school = request.user.schooladmin_user.first()
+
+        class_name = attrs.get("class_name")
+        roll_number = attrs.get("roll_number")
+
+        queryset = Student.objects.filter(
+            school=school,
+            class_name=class_name,
+            roll_number=roll_number,
+        )
+
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+
+        if queryset.exists():
+            raise serializers.ValidationError({
+                "roll_number": "Roll number already exists in this class."
+            })
+
+        return attrs
+
+class StudentDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Student
+        fields = [
+            "id",
+            "name",
+            "roll_number",
+            "class_name",
+            "section",          # NEW
+            "school",
+        ]
+        read_only_fields = ["school"]
+
+# =====================================================
+# Parent
+# =====================================================
+
+class ParentCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=255)
+    mobile = serializers.CharField(max_length=15)
+    email = serializers.EmailField(required=False)
+    address = serializers.CharField()
+    latitude = serializers.DecimalField(max_digits=9, decimal_places=6)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6)
+    dob = serializers.DateField()
+
+    def validate_mobile(self, value):
+        if len(value) != 10:
+            raise serializers.ValidationError(
+                "Mobile number must be exactly 10 digits"
+            )
+        if not value.isdigit():
+            raise serializers.ValidationError(
+                "Mobile number must contain only digits"
+            )
+        return value
+
+class ParentDetailSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source="user.name", read_only=True)
+    mobile = serializers.CharField(source="user.mobile", read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    student_count = serializers.IntegerField(source="students.count", read_only=True)
+    students = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ParentProfile
+        fields = [
+            "id",
+            "name",
+            "mobile",
+            "email",
+            "address",
+            "latitude",
+            "longitude",
+            "is_active",
+            "student_count",
+            "students",
+        ]
+
+    def get_students(self, obj):
+        return [
+            {
+                "id": s.id,
+                "name": s.name,
+                "class_name": s.class_name,
+                "section": s.section,       # NEW
+                "roll_number": s.roll_number,
+            }
+            for s in obj.students.all()
+        ]
+
+class ParentWithStudentsSerializer(serializers.ModelSerializer):
+    students = StudentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ParentProfile
+        fields = [
+            "id",
+            "user",
+            "school",
+            "students",
+        ]
+
+class ParentStudentLinkSerializer(serializers.Serializer):
+    student_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        allow_empty=False
+    )
+
+# =====================================================
+# School Route
+# =====================================================
+
+class RouteSerializer(serializers.ModelSerializer):
+    stops = serializers.SerializerMethodField()
+    stop_count = serializers.SerializerMethodField()     # NEW — "No. of Stops" column in list
+    
+    stops_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        default=list,
+    )
+
+    class Meta:
+        model = SchoolRoute
+        fields = [
+            "id",
+            "name",
+            "description",      # NEW
+            "status",
+            "route_points",
+            "stops",
+            "stop_count", 
+            "stops_data", # NEW
+            "created_at",
+        ]
+        read_only_fields = ["created_at"]
+
+    def get_stops(self, obj):
+        return [
+            {
+                "id": rs.stop.id,
+                "name": rs.stop.name,
+                "latitude": rs.stop.latitude,
+                "longitude": rs.stop.longitude,
+                "timing": rs.stop.timing,       # NEW
+                "order": rs.order,
+            }
+            for rs in obj.route_stops.select_related("stop").order_by("order")
+        ]
+
+    def get_stop_count(self, obj):
+        return obj.route_stops.count()
+
+    def validate_name(self, value):
+        request = self.context.get("request")
+        school = request.user.schooladmin_user.first()
+
+        queryset = SchoolRoute.objects.filter(
+            school=school,
+            name__iexact=value,
+            # Remove: status=SchoolRoute.STATUS_ACTIVE
+        )
+
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+
+        if queryset.exists():
+            raise serializers.ValidationError(
+                "Route with this name already exists in your school."
+            )
+
+        return value
+
+    def validate_route_points(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("route_points must be a list.")
+
+        for i, point in enumerate(value):
+            if not isinstance(point, dict):
+                raise serializers.ValidationError(
+                    f"Each point must be an object. Invalid at index {i}."
+                )
+            if "lat" not in point or "lng" not in point:
+                raise serializers.ValidationError(
+                    f"Each point must have 'lat' and 'lng'. Invalid at index {i}."
+                )
+            try:
+                lat = float(point["lat"])
+                lng = float(point["lng"])
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(
+                    f"'lat' and 'lng' must be numbers. Invalid at index {i}."
+                )
+            if not (-90 <= lat <= 90):
+                raise serializers.ValidationError(
+                    f"Invalid latitude {lat} at index {i}."
+                )
+            if not (-180 <= lng <= 180):
+                raise serializers.ValidationError(
+                    f"Invalid longitude {lng} at index {i}."
+                )
+
+        return value
+    
+    def validate_stops_data(self, value):
+        for i, item in enumerate(value):
+            if "stop_id" not in item or "order" not in item:
+                raise serializers.ValidationError(
+                    f"Each stop must have 'stop_id' and 'order'. Invalid at index {i}."
+                )
+            try:
+                int(item["stop_id"])
+                int(item["order"])
+            except (ValueError, TypeError):
+                raise serializers.ValidationError(
+                    f"'stop_id' and 'order' must be integers. Invalid at index {i}."
+                )
+        # Check for duplicate orders
+        orders = [int(item["order"]) for item in value]
+        if len(orders) != len(set(orders)):
+            raise serializers.ValidationError("Duplicate order values are not allowed.")
+        return value
+
+# =====================================================
+# School Bus Stop
+# =====================================================
+
+class BusStopSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SchoolBusStop
+        fields = [
+            "id",
+            "name",
+            "latitude",
+            "longitude",
+            "timing",           # NEW — visible in stops table and Add Bus Stop modal
+            "is_active",
+            "created_at",
+        ]
+        read_only_fields = ["is_active", "created_at"]
+
+    def validate_name(self, value):
+        request = self.context.get("request")
+        school = request.user.schooladmin_user.first()
+
+        queryset = SchoolBusStop.objects.filter(
+            school=school,
+            name__iexact=value,
+            # Remove: is_active=True
+        )
+
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+
+        if queryset.exists():
+            raise serializers.ValidationError(
+                "Bus stop with this name already exists in your school."
+            )
+
+        return value
+
+# =====================================================
+# Student Bus Allocation
+# =====================================================
+
+class StudentBusAllocationCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StudentBusAllocation
+        fields = [
+            "bus",
+            "route",
+            "pickup_stop",
+            "drop_stop",
+            "start_date",
+        ]
+
+    def validate(self, attrs):
+        if attrs["pickup_stop"] == attrs["drop_stop"]:
+            raise serializers.ValidationError(
+                {"detail": "Pickup and drop stop cannot be the same."}
+            )
+        return attrs
+
+class StudentBusAllocationDetailSerializer(serializers.ModelSerializer):
+    student_id = serializers.IntegerField(source="student.id", read_only=True)
+    bus = serializers.SerializerMethodField()
+    route = serializers.SerializerMethodField()
+    pickup_stop = serializers.SerializerMethodField()
+    drop_stop = serializers.SerializerMethodField()
+
+    class Meta:
+        model = StudentBusAllocation
+        fields = [
+            "id",
+            "student_id",
+            "bus",
+            "route",
+            "pickup_stop",
+            "drop_stop",
+            "start_date",
+            "end_date",
+            "is_active",
+            "created_at",
+        ]
+
+    def get_bus(self, obj):
+        return {
+            "id": obj.bus.id,
+            "vehicle_reg_no": obj.bus.vehicle_reg_no,
+        }
+
+    def get_route(self, obj):
+        return {
+            "id": obj.route.id,
+            "name": obj.route.name,
+        }
+
+    def get_pickup_stop(self, obj):
+        return {
+            "id": obj.pickup_stop.id,
+            "name": obj.pickup_stop.name,
+        }
+
+    def get_drop_stop(self, obj):
+        return {
+            "id": obj.drop_stop.id,
+            "name": obj.drop_stop.name,
+        }
+
+# =====================================================
+# School Holiday
+# =====================================================
+
+class SchoolHolidaySerializer(serializers.ModelSerializer):
+    created_by = serializers.SerializerMethodField()
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    school_id = serializers.IntegerField(source="school.id", read_only=True)
+
+    class Meta:
+        model = SchoolHoliday
+        fields = [
+            "id",
+            "school_id",
+            "date",
+            "title",
+            "type",
+            "type_display",
+            "is_active",
+            "created_by",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["is_active", "created_at", "updated_at"]
+
+    def get_created_by(self, obj):
+        if obj.created_by:
+            return {
+                "id": obj.created_by.id,
+                "email": obj.created_by.email,
+            }
+        return None
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        school = request.user.schooladmin_user.first()
+        date = attrs.get("date")
+
+        if not date:
+            return attrs
+
+        qs = SchoolHoliday.objects.filter(
+            school=school,
+            date=date,
+            is_active=True
+        )
+
+        # Exclude current instance on PATCH/PUT to allow updating without false conflict
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        if qs.exists():
+            raise serializers.ValidationError(
+                {"date": "Holiday already exists for this date"}
+            )
+
+        return attrs
+
+# =====================================================
+# School Application
+# =====================================================
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 1 — Submit application
+# Single multipart/form-data request containing school info + user info + files
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SchoolApplicationSubmitSerializer(serializers.Serializer):
+
+    # ── School fields ──────────────────────────────────────────────────────────
+    school_name    = serializers.CharField(max_length=255)
+    school_address = serializers.CharField(max_length=255)
+    school_pin     = serializers.CharField(max_length=20)
+    school_email   = serializers.EmailField()
+    school_phone   = serializers.CharField(max_length=20)
+    school_lat     = serializers.FloatField(required=False, allow_null=True)
+    school_lon     = serializers.FloatField(required=False, allow_null=True)
+    state          = serializers.IntegerField()
+    district_code  = serializers.CharField(max_length=8)
+
+    # ── Applicant (User) fields ────────────────────────────────────────────────
+    name    = serializers.CharField(max_length=255)
+    email   = serializers.EmailField()
+    mobile  = serializers.CharField(max_length=15)
+    dob     = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    address = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    pin     = serializers.CharField(max_length=20, required=False, allow_blank=True)
+
+    # ── Documents ──────────────────────────────────────────────────────────────
+    file_idProof              = serializers.FileField()
+    file_authorisation_letter = serializers.FileField()
+
+    # ── FIELD VALIDATION ──────────────────────────────────────────────────────
+    def validate_mobile(self, value):
+        if not value.isdigit() or len(value) != 10:
+            raise serializers.ValidationError("Mobile must be exactly 10 digits.")
+        return value
+
+    def validate_file_idProof(self, file):
+        return self._validate_file(file)
+
+    def validate_file_authorisation_letter(self, file):
+        return self._validate_file(file)
+
+    def _validate_file(self, file):
+        if file.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("File size must be ≤ 5 MB.")
+        ext = os.path.splitext(file.name)[1].lower()
+        if ext not in [".pdf", ".jpg", ".jpeg", ".png"]:
+            raise serializers.ValidationError("Allowed types: PDF, JPG, JPEG, PNG.")
+        return file
+
+    # ── MAIN VALIDATION ───────────────────────────────────────────────────────
+    def validate(self, attrs):
+        mobile = attrs["mobile"]
+        email  = attrs["email"].lower()
+        attrs["email"] = email
+
+        ACTIVE_STATUSES = [
+            School.STATUS_SUBMITTED,
+            School.STATUS_UNDER_REVIEW,
+            School.STATUS_APPROVED,
+            School.STATUS_SETUP_SENT,
+            School.STATUS_SETUP_LINK_APPROVED,
+        ]
+
+        existing_user = None  # Will be set if this is a resubmission
+
+        # ── Check mobile ──────────────────────────────────────────────────────
+        user_by_mobile = User.objects.filter(mobile=mobile).first()
+        if user_by_mobile:
+            has_active_application = School.objects.filter(
+                users=user_by_mobile,
+                status__in=ACTIVE_STATUSES
+            ).exists()
+            if has_active_application:
+                raise serializers.ValidationError({
+                    "mobile": "An active application already exists for this mobile number."
+                })
+            # User exists but all schools were rejected — allow resubmission
+            existing_user = user_by_mobile
+
+        # ── Check email ───────────────────────────────────────────────────────
+        user_by_email = User.objects.filter(email=email).first()
+        if user_by_email:
+            # Different user already owns this email — hard block
+            if existing_user and user_by_email.id != existing_user.id:
+                raise serializers.ValidationError({
+                    "email": "This email is already registered to a different account."
+                })
+            # Same user (found by both mobile and email) — check active school
+            has_active_application = School.objects.filter(
+                users=user_by_email,
+                status__in=ACTIVE_STATUSES
+            ).exists()
+            if has_active_application:
+                raise serializers.ValidationError({
+                    "email": "An active application already exists for this email."
+                })
+            existing_user = user_by_email
+
+        # ── If email changed on resubmission, ensure new email is free ────────
+        if existing_user and user_by_email is None:
+            # Mobile matched an existing user but they're submitting with a new email
+            # user_by_email is None means no one owns the new email yet — safe to proceed
+            pass
+
+        # Store for the view to consume
+        attrs["existing_user"] = existing_user  # None = brand new user
+
+        # ── Duplicate School check ────────────────────────────────────────────
+        school_email = attrs.get("school_email", "").lower()
+        school_phone = attrs.get("school_phone", "")
+
+        if School.objects.filter(
+            school_email__iexact=school_email,
+            status__in=ACTIVE_STATUSES
+        ).exists():
+            raise serializers.ValidationError({
+                "school_email": "An active application already exists for this school email."
+            })
+
+        if School.objects.filter(
+            school_phone=school_phone,
+            status__in=ACTIVE_STATUSES
+        ).exists():
+            raise serializers.ValidationError({
+                "school_phone": "An active application already exists for this school phone number."
+            })
+
+        # ── State validation ──────────────────────────────────────────────────
+        try:
+            attrs["state_obj"] = Settings_State.objects.get(pk=attrs["state"])
+        except Settings_State.DoesNotExist:
+            raise serializers.ValidationError({"state": "Invalid state ID."})
+
+        # ── District validation ───────────────────────────────────────────────
+        try:
+            attrs["district_obj"] = Settings_District.objects.get(
+                district_code=attrs["district_code"]
+            )
+        except Settings_District.DoesNotExist:
+            raise serializers.ValidationError({
+                "district_code": f"No district found with code '{attrs['district_code']}'"
+            })
+
+        return attrs
+
+# ─────────────────────────────────────────────────────────────────────────────
+# State admin — list serializer
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SchoolApplicationListSerializer(serializers.ModelSerializer):
+
+    # ── Derived fields ────────────────────────────────────────────────────────
+    state_name    = serializers.CharField(source="state.state", read_only=True)
+    district_name = serializers.CharField(source="district.district", read_only=True)
+
+    applicant_name = serializers.SerializerMethodField()
+    applicant_email = serializers.SerializerMethodField()
+    applicant_mobile = serializers.SerializerMethodField()
+
+    has_id_proof   = serializers.SerializerMethodField()
+    has_auth_letter = serializers.SerializerMethodField()
+
+    class Meta:
+        model = School
+        fields = [
+            "id",
+
+            # school
+            "school_name",
+            "school_address",
+            "school_pin",
+            "school_email",
+            "school_phone",
+            "school_lat",
+            "school_lon",
+
+            # location
+            "state",
+            "state_name",
+            "district",
+            "district_name",
+
+            # applicant (from User)
+            "applicant_name",
+            "applicant_email",
+            "applicant_mobile",
+
+            # documents
+            "has_id_proof",
+            "has_auth_letter",
+            "extra_documents",
+
+            # meta
+            "status",
+            "remarks",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_has_id_proof(self, obj):
+        return bool(obj.file_id_proof)
+
+    def get_has_auth_letter(self, obj):
+        return bool(obj.file_authorization_letter)
+    
+    def get_primary_user(self, obj):
+        return obj.users.first() if obj.users.exists() else None
+
+    def get_applicant_name(self, obj):
+        user = self.get_primary_user(obj)
+        return user.name if user else None
+
+    def get_applicant_email(self, obj):
+        user = self.get_primary_user(obj)
+        return user.email if user else None
+
+    def get_applicant_mobile(self, obj):
+        user = self.get_primary_user(obj)
+        return user.mobile if user else None
+
+# ─────────────────────────────────────────────────────────────────────────────
+# State admin — approve / reject
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SchoolApplicationDecisionSerializer(serializers.Serializer):
+    decision = serializers.ChoiceField(choices=["APPROVE", "REJECT"])
+    remarks  = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if attrs["decision"] == "REJECT" and not attrs.get("remarks", "").strip():
+            raise serializers.ValidationError(
+                {"remarks": "Remarks are required when rejecting."}
+            )
+        return attrs
+
+# ─────────────────────────────────────────────────────────────────────────────
+# School detail (used in responses after approval)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SchoolDetailSerializer(serializers.ModelSerializer):
+
+    state_name    = serializers.CharField(source="state.state", read_only=True)
+    district_name = serializers.CharField(source="district.district", read_only=True)
+
+    applicant = serializers.SerializerMethodField()
+    admin_users = serializers.SerializerMethodField()
+
+    has_id_proof    = serializers.SerializerMethodField()
+    has_auth_letter = serializers.SerializerMethodField()
+
+    class Meta:
+        model = School
+        fields = [
+            "id",
+            "school_name",
+            "school_address",
+            "school_pin",
+            "school_email",
+            "school_phone",
+            "school_lat",
+            "school_lon",
+
+            "state",
+            "state_name",
+            "district",
+            "district_name",
+
+            "applicant",
+            "admin_users",
+
+            "has_id_proof",
+            "has_auth_letter",
+            "extra_documents",
+
+            "status",
+            "remarks",
+            "is_active",
+
+            "created_at",
+            "updated_at",
+        ]
+
+    # ── Primary user (treated as applicant) ───────────────────────────────────
+    def get_primary_user(self, obj):
+        return obj.users.first() if obj.users.exists() else None
+
+    # ── Applicant (derived) ───────────────────────────────────────────────────
+    def get_applicant(self, obj):
+        user = self.get_primary_user(obj)
+        if not user:
+            return None
+        return {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "mobile": user.mobile,
+        }
+
+    # ── Admin users ───────────────────────────────────────────────────────────
+    def get_admin_users(self, obj):
+        return [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "mobile": u.mobile
+            }
+            for u in obj.users.all()
+        ]
+
+    # ── Documents ─────────────────────────────────────────────────────────────
+    def get_has_id_proof(self, obj):
+        return bool(obj.file_id_proof)
+
+    def get_has_auth_letter(self, obj):
+        return bool(obj.file_authorization_letter)
+
+# =====================================================
+# School Bus Document
+# =====================================================
+
+class SchoolBusDocumentSerializer(serializers.ModelSerializer):
+    file = serializers.FileField(write_only=True, required=True)
+
+    class Meta:
+        model = SchoolBusDocument
+        fields = [
+            "id",
+            "document_type",
+            "file",
+            "file_path",
+            "uploaded_at",
+        ]
+        read_only_fields = ["file_path", "uploaded_at"]
+
+    def validate_file(self, file):
+        max_size = 5 * 1024 * 1024
+
+        if file.size > max_size:
+            raise serializers.ValidationError(
+                "File size must be less than or equal to 5 MB."
+            )
+
+        allowed_extensions = [".pdf", ".jpg", ".jpeg", ".png"]
+        ext = os.path.splitext(file.name)[1].lower()
+
+        if ext not in allowed_extensions:
+            raise serializers.ValidationError(
+                "Invalid file type. Allowed types: PDF, JPG, JPEG, PNG."
+            )
+
+        return file
+
+# =====================================================
+# School Bus Trip
+# =====================================================
+
+class SchoolBusTripSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = SchoolBusTrip
+        fields = [
+            "id",
+            "bus",
+            "route",
+            "trip_date",
+            "start_time",
+            "end_time",
+            "status",
+            "created_at",
+        ]
+        read_only_fields = ["status", "created_at"]
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        if not request:
+            raise ValidationError("Request context is missing.")
+
+        school = request.user.schooladmin_user.first()
+        if not school:
+            raise ValidationError("Admin has no school.")
+
+        start = attrs.get("start_time")
+        end = attrs.get("end_time")
+        bus = attrs.get("bus")
+        route = attrs.get("route")
+        trip_date = attrs.get("trip_date")
+
+        # Validate time range
+        if start and end and start >= end:
+            raise ValidationError({
+                "end_time": "End time must be after start time."
+            })
+
+        # Validate route belongs to school
+        if route and route.school != school:
+            raise ValidationError({
+                "route": "Invalid route for this school."
+            })
+
+        # Only approved + active tagged buses can be used
+        if bus and not SchoolBusTag.objects.filter(
+            school=school,
+            bus=bus,
+            is_active=True,
+            status="approved"
+        ).exists():
+            raise ValidationError({
+                "bus": "Bus is not tagged and approved for this school."
+            })
+
+        # Validate bus is assigned to selected route
+        if bus and route and not RouteBusAssignment.objects.filter(
+            school=school,
+            bus=bus,
+            route=route,
+            is_active=True,
+            status="active"
+        ).exists():
+            raise ValidationError({
+                "bus": "Bus is not assigned to this route."
+            })
+
+        # Prevent overlapping trips for same bus
+        if start and end and bus and trip_date:
+            conflict_qs = SchoolBusTrip.objects.filter(
+                school=school,
+                bus=bus,
+                trip_date=trip_date,
+                start_time__lt=end,
+                end_time__gt=start
+            )
+
+            # Exclude self during update
+            if self.instance:
+                conflict_qs = conflict_qs.exclude(pk=self.instance.pk)
+
+            if conflict_qs.exists():
+                raise ValidationError({
+                    "start_time": "Bus already has a trip in this time range."
+                })
+
+        return attrs
+
+# =====================================================
+# Student Attendance
+# =====================================================
+
+class StudentBasicSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Student
+        fields = ["id", "name", "roll_number", "class_name", "section"]  # section NEW
+
+class StudentAttendanceSerializer(serializers.ModelSerializer):
+    student = StudentBasicSerializer(read_only=True)
+    attendance_id = serializers.IntegerField(source="id", read_only=True)
+
+    class Meta:
+        model = StudentAttendance
+        fields = [
+            "attendance_id",
+            "student",
+            "pickup_status",
+            "drop_status",
+            "pickup_time",
+            "drop_time",
+            "pickup_stop",
+            "drop_stop",
+            "created_at",
+        ]
+
+class ParentStudentAttendanceItemSerializer(serializers.ModelSerializer):
+    trip_date = serializers.DateField(source="trip.trip_date")
+
+    class Meta:
+        model = StudentAttendance
+        fields = [
+            "trip_date",
+            "pickup_status",
+            "drop_status",
+            "is_present",
+        ]
+
+class ParentStudentAttendanceSerializer(serializers.Serializer):
+    student_id = serializers.IntegerField()
+    student_name = serializers.CharField()
+    attendance = ParentStudentAttendanceItemSerializer(many=True)
+
+# =====================================================
+# School Bus Tag — UPDATED + NEW serializers
+# =====================================================
+
+class SchoolBusTagSerializer(serializers.ModelSerializer):
+    bus_number = serializers.CharField(source="bus.vehicle_reg_no", read_only=True)
+    # NEW fields surfaced from updated SchoolBusTag model
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    requested_by_name = serializers.SerializerMethodField()
+    reviewed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SchoolBusTag
+        fields = [
+            "id",
+            "bus",
+            "bus_number",
+            "is_active",
+            "tagged_at",
+            "status",               # NEW
+            "status_display",       # NEW
+            "remarks",              # NEW
+            "requested_by",         # NEW
+            "requested_by_name",    # NEW
+            "requested_at",         # NEW
+            "reviewed_by",          # NEW
+            "reviewed_by_name",     # NEW
+            "reviewed_at",          # NEW
+        ]
+        read_only_fields = [
+            "is_active", "tagged_at", "status_display",
+            "requested_by_name", "reviewed_by_name",
+        ]
+
+    def get_requested_by_name(self, obj):
+        if obj.requested_by:
+            return obj.requested_by.name
+        return None
+
+    def get_reviewed_by_name(self, obj):
+        if obj.reviewed_by:
+            return obj.reviewed_by.name
+        return None
+
+# Step 1 — Initiate tagging request
+class BusTagInitiateSerializer(serializers.Serializer):
+    """
+    Step 1: School admin selects a bus by vehicle_reg_no.
+    UI shows a dropdown of available (untagged) buses.
+    """
+    vehicle_reg_no = serializers.CharField(max_length=55)
+
+    def validate_vehicle_reg_no(self, value):
+        try:
+            bus = DeviceTag.objects.get(
+                vehicle_reg_no=value,
+                status="Owner_Final_OTP_Verified"
+            )
+        except DeviceTag.DoesNotExist:
+            raise serializers.ValidationError(
+                "Vehicle not found or not active in Skytron."
+            )
+        self._bus = bus
+        return value
+
+    def get_bus(self):
+        return self._bus
+
+# Step 2 — Verify OTP sent to vehicle owner
+class BusTagOTPVerifySerializer(serializers.Serializer):
+    """
+    Step 2: School admin enters OTP received by the vehicle owner.
+    """
+    otp = serializers.CharField(max_length=6, min_length=6)
+
+    def validate_otp(self, value):
+        if not value.isdigit():
+            raise serializers.ValidationError("OTP must be 6 digits.")
+        return value
+
+# Step 3 — Upload documents
+class BusTagDocumentUploadSerializer(serializers.Serializer):
+    """
+    Step 3: Upload each of the 5 mandatory documents.
+    Called once per document — UI uploads them individually.
+    document_type choices match SchoolBusDocument.DOC_CHOICES
+    including the new REQUEST_LETTER type.
+    """
+    DOCUMENT_CHOICES = [
+        ("PERMIT", "School Bus Permit"),
+        ("REQUEST_LETTER", "Request Letter From School Principal"),
+        ("RC", "Vehicle Registration Certificate"),
+        ("AUTH_LETTER", "Authorization Letter From Vehicle Owner"),
+        ("VLTD_RECEIPT", "Skytron VLTD Fitment Receipt"),
+    ]
+    document_type = serializers.ChoiceField(choices=DOCUMENT_CHOICES)
+    file = serializers.FileField()
+
+    def validate_file(self, file):
+        max_size = 5 * 1024 * 1024
+        if file.size > max_size:
+            raise serializers.ValidationError(
+                "File size must be less than or equal to 5 MB."
+            )
+        allowed_extensions = [".pdf", ".jpg", ".jpeg", ".png"]
+        ext = os.path.splitext(file.name)[1].lower()
+        if ext not in allowed_extensions:
+            raise serializers.ValidationError(
+                "Invalid file type. Allowed: PDF, JPG, JPEG, PNG."
+            )
+        return file
+
+class BusTagDocumentsBulkUploadSerializer(serializers.Serializer):
+    PERMIT = serializers.FileField(required=False)
+    REQUEST_LETTER = serializers.FileField(required=False)
+    RC = serializers.FileField(required=False)
+    AUTH_LETTER = serializers.FileField(required=False)
+    VLTD_RECEIPT = serializers.FileField(required=True)  # always mandatory
+
+    def _validate_file(self, file):
+        if file.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("File size must be ≤ 5 MB.")
+        ext = os.path.splitext(file.name)[1].lower()
+        if ext not in [".pdf", ".jpg", ".jpeg", ".png"]:
+            raise serializers.ValidationError("Allowed: PDF, JPG, JPEG, PNG.")
+        return file
+
+    def validate_PERMIT(self, f):        return self._validate_file(f)
+    def validate_REQUEST_LETTER(self, f): return self._validate_file(f)
+    def validate_RC(self, f):            return self._validate_file(f)
+    def validate_AUTH_LETTER(self, f):   return self._validate_file(f)
+    def validate_VLTD_RECEIPT(self, f):  return self._validate_file(f)
+
+# Step 4 — State admin approve/reject
+class BusTagDecisionSerializer(serializers.Serializer):
+    """
+    Step 4: State admin approves or rejects the tagging request.
+    On APPROVE — SchoolBusTag.is_active becomes True.
+    On REJECT  — remarks are mandatory.
+    """
+    decision = serializers.ChoiceField(choices=["APPROVE", "REJECT"])
+    remarks = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if attrs["decision"] == "REJECT" and not attrs.get("remarks", "").strip():
+            raise serializers.ValidationError(
+                {"remarks": "Remarks are required when rejecting."}
+            )
+        return attrs
+
+# Tagging History list — bottom table in UI
+class BusTagHistorySerializer(serializers.ModelSerializer):
+    """
+    Powers the 'Tagging History & Status' table.
+    Columns: Vehicle Reg No | School Name | Status | Requested Date
+    """
+    vehicle_reg_no = serializers.CharField(source="bus.vehicle_reg_no", read_only=True)
+    school_name = serializers.CharField(source="school.school_name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta:
+        model = SchoolBusTag
+        fields = [
+            "id",
+            "vehicle_reg_no",   # "Vehicle Reg No" column
+            "school_name",      # "School Name" column
+            "status",           # raw value for filtering
+            "status_display",   # "Status" column display
+            "requested_at",     # "Requested Date" column
+        ]
+
+# =====================================================
+# Route Bus Assignment — UPDATED
+# =====================================================
+
+class RouteBusAssignmentSerializer(serializers.ModelSerializer):
+    route_name = serializers.CharField(source="route.name", read_only=True)
+    bus_number = serializers.CharField(source="bus.vehicle_reg_no", read_only=True)
+    # Driver info — shown in Bus-to-Route Assignment list table
+    driver = serializers.SerializerMethodField()
+    assigned_date = serializers.DateTimeField(
+        source="assigned_at", read_only=True
+    )
+
+    class Meta:
+        model = RouteBusAssignment
+        fields = [
+            "id",
+            "school",
+            "route",
+            "route_name",
+            "bus",
+            "bus_number",
+            "driver",           # NEW — shown in assignment list
+            "status",           # NEW — Active badge in UI
+            "is_active",
+            "assigned_date",    # "Assigned Date" column
+        ]
+        read_only_fields = ["school", "is_active", "assigned_at"]
+
+    def get_driver(self, obj):
+        # Driver comes from DeviceTag.drivers M2M (Skytron model)
+        driver = obj.bus.drivers.first()
+        if driver:
+            return {
+                "id": driver.id,
+                "name": driver.name,
+                "phone_no": driver.phone_no,
+            }
+        return None
+
+# =====================================================
+# Bus Alerts
+# =====================================================
+
+class BusAlertSerializer(serializers.ModelSerializer):
+    created_by = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BusAlert
+        fields = [
+            "id",
+            "description",
+            "latitude",
+            "longitude",
+            "created_by",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+
+    def get_created_by(self, obj):
+        if obj.created_by:
+            return obj.created_by.id
+        return None
+
+class AdminBusAlertSerializer(serializers.ModelSerializer):
+    alert_type = serializers.CharField(read_only=True)
+    alert_type_display = serializers.CharField(
+        source="get_alert_type_display", read_only=True
+    )
+    created_by = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BusAlert
+        fields = [
+            "id",
+            "alert_type",
+            "alert_type_display",
+            "description",
+            "latitude",
+            "longitude",
+            "created_by",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+
+    def get_created_by(self, obj):
+        if obj.created_by:
+            return {
+                "id": obj.created_by.id,
+                "email": obj.created_by.email,
+            }
+        return None
+
+class ParentAlertSerializer(serializers.ModelSerializer):
+    alert_type_display = serializers.CharField(
+        source="get_alert_type_display", read_only=True
+    )
+    school_id = serializers.IntegerField(source="school.id", read_only=True)
+    school_name = serializers.CharField(source="school.school_name", read_only=True)
+    bus_id = serializers.IntegerField(source="bus.id", read_only=True)
+
+    class Meta:
+        model = BusAlert
+        fields = [
+            "id",
+            "school_id",
+            "school_name",
+            "bus_id",
+            "alert_type",
+            "alert_type_display",
+            "description",
+            "latitude",
+            "longitude",
+            "created_at",
+        ]
+
+# =====================================================
+# Parent Tracking & Active Trip
+# =====================================================
+
+class DropLocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SchoolBusStop
+        fields = ["id", "name", "timing"]   # timing NEW
+
+class ActiveTripSerializer(serializers.Serializer):
+    trip_id = serializers.IntegerField()
+    bus = serializers.IntegerField()
+    route = serializers.IntegerField()
+    trip_date = serializers.DateField()
+
+# =====================================================
+# Misc
+# =====================================================
+
+class TripAttendanceInitSerializer(serializers.Serializer):
+    trip_id = serializers.IntegerField()
+
+class StudentPickupDropSerializer(serializers.Serializer):
+    student_id = serializers.IntegerField()
+    timestamp = serializers.DateTimeField(required=False)
+    
+class StudentListUISerializer(serializers.ModelSerializer):
+    linked_parent = serializers.SerializerMethodField()
+    assigned_route = serializers.SerializerMethodField()
+    pickup_stop = serializers.SerializerMethodField()
+    drop_stop = serializers.SerializerMethodField()
+    class_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Student
+        fields = [
+            "id",
+            "name",
+            "class_display",
+            "section",
+            "roll_number",
+            "linked_parent",
+            "assigned_route",
+            "pickup_stop",
+            "drop_stop",
+        ]
+
+    def get_class_display(self, obj):
+        return f"{obj.class_name}th"
+
+    def get_linked_parent(self, obj):
+        parent = obj.parents.first()
+        return str(parent.user.name) if parent else None
+
+    def get_allocation(self, obj):
+        return obj.bus_allocations.filter(is_active=True).first()
+
+
+    def get_assigned_route(self, obj):
+        allocation = self.get_allocation(obj)
+        return allocation.route.name if allocation and allocation.route else None
+
+
+    def get_pickup_stop(self, obj):
+        allocation = self.get_allocation(obj)
+        return allocation.pickup_stop.name if allocation and allocation.pickup_stop else None
+
+
+    def get_drop_stop(self, obj):
+        allocation = self.get_allocation(obj)
+        return allocation.drop_stop.name if allocation and allocation.drop_stop else None
+    
+class ParentTripHistorySerializer(serializers.ModelSerializer):
+    trip_type = serializers.SerializerMethodField()
+    start_time = serializers.TimeField(format="%I:%M %p")
+    end_time = serializers.TimeField(format="%I:%M %p")
+
+    class Meta:
+        model = SchoolBusTrip
+        fields = [
+            "trip_date",
+            "trip_type",
+            "start_time",
+            "end_time",
+            "status"
+        ]
+
+    def get_trip_type(self, obj):
+        if not obj.start_time:
+            return None
+
+        if obj.start_time.hour < 12:
+            return "Morning Pickup"
+        return "Evening Drop"
+    
+    
+# =====================================================
+# Permit Enforcement Serializers
+# =====================================================
+
+
+class PermitConditionCreateSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model  = PermitCondition
+        fields = [
+            'id',
+            'permit_name',
+            'vehicle_category',
+            'violation_type',
+            'rule_details',
+            'penalty',
+            'penalty_amount',
+            'challan_code',
+            'activation_datetime',
+            'deactivation_datetime',
+        ]
+
+    def validate(self, attrs):
+        activation   = attrs.get('activation_datetime')
+        deactivation = attrs.get('deactivation_datetime')
+
+        if activation and deactivation:
+            if deactivation <= activation:
+                raise serializers.ValidationError({
+                    'deactivation_datetime': 'Deactivation must be after activation datetime.'
+                })
+
+        return attrs
+
+
+class PermitConditionUpdateSerializer(serializers.ModelSerializer):
+    """
+    Only allowed transitions:
+    created → active → deactive
+    Once active  → cannot edit any field except status
+    Once deactive → nothing can change, create new instead
+    """
+
+    class Meta:
+        model  = PermitCondition
+        fields = [
+            'id',
+            'status',
+            'penalty_amount',
+            'activation_datetime',
+            'deactivation_datetime',
+        ]
+
+    def validate(self, attrs):
+        instance = self.instance
+        new_status = attrs.get('status', instance.status)
+        activation = attrs.get('activation_datetime', instance.activation_datetime)
+        deactivation = attrs.get('deactivation_datetime', instance.deactivation_datetime)
+
+        # Once deactive — nothing can change
+        if instance.status == PermitCondition.STATUS_DEACTIVE:
+            raise serializers.ValidationError(
+                'A deactivated condition cannot be modified. Please create a new one.'
+            )
+
+        # Validate transition
+        valid_transitions = {
+            PermitCondition.STATUS_CREATED: [PermitCondition.STATUS_ACTIVE],
+            PermitCondition.STATUS_ACTIVE:  [PermitCondition.STATUS_DEACTIVE],
+        }
+        
+        allowed = valid_transitions.get(instance.status, [])
+        if new_status != instance.status and new_status not in allowed:
+            raise serializers.ValidationError({
+                'status': f"Cannot transition from '{instance.status}' to '{new_status}'."
+            })
+
+        # Once active — cannot edit dates
+        if instance.status == PermitCondition.STATUS_ACTIVE:
+            if (
+                activation   != instance.activation_datetime or
+                deactivation != instance.deactivation_datetime
+            ):
+                raise serializers.ValidationError(
+                    'Cannot edit dates after activation.'
+                )
+
+        if activation and deactivation and deactivation <= activation:
+            raise serializers.ValidationError({
+                'deactivation_datetime': 'Deactivation must be after activation datetime.'
+            })
+
+        return attrs
+
+
+class PermitConditionListSerializer(serializers.ModelSerializer):
+    vehicle_category_name = serializers.CharField(source='vehicle_category.category', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.name', read_only=True)
+    violation_type_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = PermitCondition
+        fields = [
+            'id',
+            'permit_name',
+            'vehicle_category',
+            'vehicle_category_name',
+            'violation_type',
+            'violation_type_display',
+            'rule_details',
+            'penalty',
+            'status',
+            'activation_datetime',
+            'deactivation_datetime',
+            'created_datetime',
+            'created_by',
+            'created_by_name',
+        ]
+
+    def get_violation_type_display(self, obj):
+        return dict(PermitCondition.PERMIT_VIOLATION_CHOICES).get(obj.violation_type, obj.violation_type)
+
+
+class ViolationReportSerializer(serializers.ModelSerializer):
+    permit_condition_name = serializers.CharField(source='permit_condition.permit_name', read_only=True)
+    violation_type = serializers.CharField(source='permit_condition.violation_type', read_only=True)
+    vehicle_category_name = serializers.CharField(source='permit_condition.vehicle_category.category', read_only=True)
+    challan_code = serializers.CharField(source='permit_condition.challan_code', read_only=True)
+    state_name = serializers.CharField(source='state.state', read_only=True)
+    district_name = serializers.CharField(source='district.district', read_only=True)
+
+    # From device_tag directly
+    vehicle_reg_no = serializers.CharField(source='device_tag.vehicle_reg_no', read_only=True)
+
+    # From device_tag.device (DeviceStock)
+    imei = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = ViolationReport
+        fields = [
+            'id',
+            'permit_condition',
+            'permit_condition_name',
+            'violation_type',
+            'vehicle_category_name',
+            'challan_code',
+            'device_tag',
+            'vehicle_reg_no',
+            'imei',
+            'penalty_amount',
+            'violation_datetime',
+            'state',
+            'state_name',
+            'district',
+            'district_name',
+            'created_at',
+        ]
+
+    def get_imei(self, obj):
+        try:
+            return obj.device_tag.device.imei
+        except Exception:
+            return None
+        
+        
+        
+# =====================================================
+# Passenger Information System Serializers
+# =====================================================
+
+
+class PublicBusStopSerializer(serializers.ModelSerializer):
+    state_name    = serializers.CharField(source='state.state',       read_only=True)
+    district_name = serializers.CharField(source='district.district', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.name', read_only=True)
+
+    class Meta:
+        model  = PublicBusStop
+        fields = [
+            'id',
+            'name',
+            'address',
+            'latitude',
+            'longitude',
+            'state',
+            'state_name',
+            'district',
+            'district_name',
+            'status',
+            'last_activation_date',
+            'last_deactivation_date',
+            'deactivation_date',
+            'created_by',
+            'created_by_name',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'created_by', 'created_at', 'updated_at',
+            'last_activation_date', 'last_deactivation_date',
+        ]
+
+    def validate_name(self, value):
+        # No duplicate stop name in same state+district
+        request = self.context.get('request')
+        state_id    = request.data.get('state')
+        district_id = request.data.get('district')
+
+        qs = PublicBusStop.objects.filter(
+            name__iexact=value,
+            state_id=state_id,
+            district_id=district_id,
+        )
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                'A bus stop with this name already exists in this district.'
+            )
+        return value
+
+
+class PublicRouteStopSerializer(serializers.ModelSerializer):
+    stop_name  = serializers.CharField(source='stop.name',      read_only=True)
+    latitude   = serializers.DecimalField(source='stop.latitude',  max_digits=9, decimal_places=6, read_only=True)
+    longitude  = serializers.DecimalField(source='stop.longitude', max_digits=9, decimal_places=6, read_only=True)
+
+    class Meta:
+        model  = PublicRouteStop
+        fields = [
+            'id',
+            'stop',
+            'stop_name',
+            'latitude',
+            'longitude',
+            'order',
+            'arrival_time_min',
+            'halt_time_min',
+        ]
+
+
+class PublicBusRouteSerializer(serializers.ModelSerializer):
+    state_name        = serializers.CharField(source='state.state',              read_only=True)
+    district_name     = serializers.CharField(source='district.district',        read_only=True)
+    source_stop_name  = serializers.CharField(source='source_stop.name',         read_only=True)
+    destination_stop_name = serializers.CharField(source='destination_stop.name', read_only=True)
+    created_by_name   = serializers.CharField(source='created_by.name',          read_only=True)
+    route_stops       = PublicRouteStopSerializer(many=True, read_only=True)
+
+    # Write only — for creating/updating stops along with route
+    stops_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        default=list,
+    )
+
+    class Meta:
+        model  = PublicBusRoute
+        fields = [
+            'id',
+            'name',
+            'route_number',
+            'route_path',
+            'source_stop',
+            'source_stop_name',
+            'destination_stop',
+            'destination_stop_name',
+            'state',
+            'state_name',
+            'district',
+            'district_name',
+            'status',
+            'last_activation_date',
+            'last_deactivation_date',
+            'deactivation_date',
+            'created_by',
+            'created_by_name',
+            'created_at',
+            'updated_at',
+            'route_stops',
+            'stops_data',
+        ]
+        read_only_fields = [
+            'created_by', 'created_at', 'updated_at',
+            'last_activation_date', 'last_deactivation_date',
+        ]
+
+    def validate_stops_data(self, value):
+        for i, item in enumerate(value):
+            if 'stop_id' not in item or 'order' not in item or 'arrival_time_min' not in item:
+                raise serializers.ValidationError(
+                    f"Each stop must have 'stop_id', 'order', 'arrival_time_min'. Invalid at index {i}."
+                )
+            try:
+                int(item['stop_id'])
+                int(item['order'])
+                int(item['arrival_time_min'])
+                int(item.get('halt_time_min', 0))
+            except (ValueError, TypeError):
+                raise serializers.ValidationError(
+                    f"'stop_id', 'order', 'arrival_time_min' must be integers. Invalid at index {i}."
+                )
+        # Check for duplicate orders
+        orders = [int(item['order']) for item in value]
+        if len(orders) != len(set(orders)):
+            raise serializers.ValidationError("Duplicate order values are not allowed.")
+        return value
+
+    def validate(self, attrs):
+        state = attrs.get('state')
+        district = attrs.get('district')
+
+        source_stop = attrs.get('source_stop')
+        destination_stop = attrs.get('destination_stop')
+
+        # Source stop validation
+        if source_stop:
+            if source_stop.state != state:
+                raise serializers.ValidationError({
+                    'source_stop': 'Source stop must belong to selected state.'
+                })
+
+            if district and source_stop.district != district:
+                raise serializers.ValidationError({
+                    'source_stop': 'Source stop must belong to selected district.'
+                })
+
+        # Destination stop validation
+        if destination_stop:
+            if destination_stop.state != state:
+                raise serializers.ValidationError({
+                    'destination_stop': 'Destination stop must belong to selected state.'
+                })
+
+            if district and destination_stop.district != district:
+                raise serializers.ValidationError({
+                    'destination_stop': 'Destination stop must belong to selected district.'
+                })
+
+        return attrs
+
+class BusScheduleStopETASerializer(serializers.ModelSerializer):
+    stop_name  = serializers.CharField(source='route_stop.stop.name',     read_only=True)
+    latitude   = serializers.DecimalField(source='route_stop.stop.latitude',  max_digits=9, decimal_places=6, read_only=True)
+    longitude  = serializers.DecimalField(source='route_stop.stop.longitude', max_digits=9, decimal_places=6, read_only=True)
+
+    class Meta:
+        model  = BusScheduleStopETA
+        fields = [
+            'id',
+            'order',
+            'stop_name',
+            'latitude',
+            'longitude',
+            'scheduled_arrival',
+            'scheduled_departure',
+            'actual_arrival',
+            'actual_departure',
+        ]
+
+
+class BusScheduleSerializer(serializers.ModelSerializer):
+    route_number    = serializers.CharField(source='route.route_number', read_only=True)
+    route_name      = serializers.CharField(source='route.name',         read_only=True)
+    vehicle_reg_no  = serializers.CharField(source='bus.vehicle_reg_no', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.name',    read_only=True)
+    stop_etas       = BusScheduleStopETASerializer(many=True, read_only=True)
+
+    class Meta:
+        model  = BusSchedule
+        fields = [
+            'id',
+            'service_type',
+            'route',
+            'route_number',
+            'route_name',
+            'bus',
+            'vehicle_reg_no',
+            'start_datetime',
+            'status',
+            'actual_start_time',
+            'actual_end_time',
+            'created_by',
+            'created_by_name',
+            'created_at',
+            'updated_at',
+            'stop_etas',
+        ]
+        read_only_fields = [
+            'created_by', 'created_at', 'updated_at',
+            'actual_start_time', 'actual_end_time', 'status',
+        ]
+
+    def validate(self, attrs):
+        route = attrs.get('route', getattr(self.instance, 'route', None))
+        bus   = attrs.get('bus',   getattr(self.instance, 'bus',   None))
+        start = attrs.get('start_datetime', getattr(self.instance, 'start_datetime', None))
+
+        # Bus must have active route stops defined
+        if route and not PublicRouteStop.objects.filter(route=route).exists():
+            raise serializers.ValidationError({
+                'route': 'This route has no stops defined. Add stops before scheduling.'
+            })
+
+        return attrs
+
+
+# Public (no auth) serializers — minimal fields only
+
+class PublicBusStopListSerializer(serializers.ModelSerializer):
+    state_name    = serializers.CharField(source='state.state',       read_only=True)
+    district_name = serializers.CharField(source='district.district', read_only=True)
+
+    class Meta:
+        model  = PublicBusStop
+        fields = ['id', 'name', 'address', 'latitude', 'longitude', 'state_name', 'district_name']
+
+
+class PublicBusRouteListSerializer(serializers.ModelSerializer):
+    source_stop_name      = serializers.CharField(source='source_stop.name',      read_only=True)
+    destination_stop_name = serializers.CharField(source='destination_stop.name', read_only=True)
+    state_name            = serializers.CharField(source='state.state',            read_only=True)
+    stops                 = PublicRouteStopSerializer(source='route_stops', many=True, read_only=True)
+
+    class Meta:
+        model  = PublicBusRoute
+        fields = [
+            'id', 'name', 'route_number',
+            'source_stop_name', 'destination_stop_name',
+            'state_name', 'stops',
+        ]
+
+
+class PublicScheduleStatusSerializer(serializers.ModelSerializer):
+    route_number   = serializers.CharField(source='route.route_number', read_only=True)
+    route_name     = serializers.CharField(source='route.name',         read_only=True)
+    vehicle_reg_no = serializers.CharField(source='bus.vehicle_reg_no', read_only=True)
+    stop_etas      = BusScheduleStopETASerializer(many=True, read_only=True)
+
+    # Live GPS location — only when status=started
+    live_location = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = BusSchedule
+        fields = [
+            'id',
+            'service_type',
+            'route_number',
+            'route_name',
+            'vehicle_reg_no',
+            'start_datetime',
+            'status',
+            'actual_start_time',
+            'stop_etas',
+            'live_location',
+        ]
+
+    def get_live_location(self, obj):
+        if obj.status != BusSchedule.STATUS_STARTED:
+            return None
+        from skytron_api.models import GPSData
+        gps = (
+            GPSData.objects
+            .filter(device_tag=obj.bus)
+            .order_by('-entry_time')
+            .first()
+        )
+        if not gps:
+            return None
+        return {
+            'latitude':     gps.latitude,
+            'longitude':    gps.longitude,
+            'speed':        gps.speed,
+            'heading':      gps.heading,
+            'last_updated': gps.entry_time,
+        }
+        
+        
+# =====================================================
+# Map / Public-Facing APIs — Serializers
+# =====================================================
+
+
+# ------------------------------------------------------------------
+# API 1 — School Bus Module: All routes across all schools
+# ------------------------------------------------------------------
+
+class MapSchoolBusStopSerializer(serializers.ModelSerializer):
+    """Minimal stop info for map display."""
+    latitude  = serializers.DecimalField(max_digits=9, decimal_places=6)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6)
+
+    class Meta:
+        model  = SchoolBusStop
+        fields = ['id', 'name', 'latitude', 'longitude', 'timing', 'is_active']
+
+
+class MapSchoolRouteSerializer(serializers.ModelSerializer):
+    """One route entry — includes school details and ordered active stops."""
+    school_id      = serializers.IntegerField(source='school.id',           read_only=True)
+    school_name    = serializers.CharField(source='school.school_name',     read_only=True)
+    school_address = serializers.CharField(source='school.school_address',  read_only=True)
+    state_name     = serializers.CharField(source='school.state.state',     read_only=True)
+    district_name  = serializers.CharField(source='school.district.district', read_only=True)
+    school_lat     = serializers.DecimalField(
+        source='school.school_lat', max_digits=9, decimal_places=6, read_only=True
+    )
+    school_lon     = serializers.DecimalField(
+        source='school.school_lon', max_digits=9, decimal_places=6, read_only=True
+    )
+    stops = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = SchoolRoute
+        fields = [
+            'id', 'name', 'status', 'description', 'route_points',
+            'school_id', 'school_name', 'school_address',
+            'state_name', 'district_name', 'school_lat', 'school_lon',
+            'stops',
+        ]
+
+    def get_stops(self, obj):
+        # route_stops pre-fetched by the view; only active stops
+        return [
+            {
+                'id':        rs.stop.id,
+                'name':      rs.stop.name,
+                'order':     rs.order,
+                'latitude':  float(rs.stop.latitude)  if rs.stop.latitude  else None,
+                'longitude': float(rs.stop.longitude) if rs.stop.longitude else None,
+                'timing':    rs.stop.timing,
+            }
+            for rs in obj.route_stops.all()
+            if rs.stop.is_active
+        ]
+
+
+
+class MapPISRouteSerializer(serializers.ModelSerializer):
+    """Lightweight PIS route for map display."""
+    source_stop_name      = serializers.CharField(source='source_stop.name',       read_only=True)
+    destination_stop_name = serializers.CharField(source='destination_stop.name',  read_only=True)
+    state_name            = serializers.CharField(source='state.state',            read_only=True)
+    district_name         = serializers.CharField(source='district.district',      read_only=True)
+    stops = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = PublicBusRoute
+        fields = [
+            'id', 'name', 'route_number', 'route_path',
+            'source_stop_name', 'destination_stop_name',
+            'state_name', 'district_name', 'status',
+            'stops',
+        ]
+
+    def get_stops(self, obj):
+        return [
+            {
+                'id':               rs.stop.id,
+                'name':             rs.stop.name,
+                'order':            rs.order,
+                'arrival_time_min': rs.arrival_time_min,
+                'halt_time_min':    rs.halt_time_min,
+                'latitude':  float(rs.stop.latitude)  if rs.stop.latitude  else None,
+                'longitude': float(rs.stop.longitude) if rs.stop.longitude else None,
+            }
+            for rs in obj.route_stops.all()
+        ]
+
+
+# ------------------------------------------------------------------
+# API 3 — School Bus live locations
+# ------------------------------------------------------------------
+
+class MapSchoolBusLocationSerializer(serializers.Serializer):
+    """One bus entry with latest GPS location."""
+    bus_id          = serializers.IntegerField()
+    vehicle_reg_no  = serializers.CharField()
+    vehicle_make    = serializers.CharField()
+    vehicle_model   = serializers.CharField()
+    school_id       = serializers.IntegerField()
+    school_name     = serializers.CharField()
+    # driver — may be None
+    driver          = serializers.DictField(allow_null=True)
+    # latest GPS
+    latitude        = serializers.FloatField(allow_null=True)
+    longitude       = serializers.FloatField(allow_null=True)
+    speed           = serializers.FloatField(allow_null=True)
+    heading         = serializers.FloatField(allow_null=True)
+    ignition_status = serializers.CharField(allow_null=True)
+    last_updated    = serializers.DateTimeField(allow_null=True)
+
+
+# ------------------------------------------------------------------
+# API 4 — Public (PIS) Bus live locations
+# ------------------------------------------------------------------
+
+class MapPISBusLocationSerializer(serializers.Serializer):
+    """One PIS bus entry with latest GPS location."""
+    bus_id          = serializers.IntegerField()
+    vehicle_reg_no  = serializers.CharField()
+    schedule_id     = serializers.IntegerField(allow_null=True)
+    schedule_status = serializers.CharField(allow_null=True)
+    service_type    = serializers.CharField(allow_null=True)
+    route_number    = serializers.CharField(allow_null=True)
+    route_name      = serializers.CharField(allow_null=True)
+    latitude        = serializers.FloatField(allow_null=True)
+    longitude       = serializers.FloatField(allow_null=True)
+    speed           = serializers.FloatField(allow_null=True)
+    heading         = serializers.FloatField(allow_null=True)
+    ignition_status = serializers.CharField(allow_null=True)
+    last_updated    = serializers.DateTimeField(allow_null=True)
+
+
+# ----------------------------------------------------------------
+#  4.1 State Transport Analytics Platform 
+# ----------------------------------------------------------------
+
+
+class TripAnalyticsSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Trip analytics list.
+    vehicle_category is resolved from a pre-built tag_map passed
+    via serializer context — avoids N+1 DB queries.
+    """
+    vehicle_category = serializers.SerializerMethodField()
+    created_by_name  = serializers.SerializerMethodField()
+ 
+    class Meta:
+        model  = Trip
+        fields = [
+            'id',
+            'trip_name',
+            'tripvehical_tag',
+            'vehicle_category',
+            'status',
+            'distance_travel',
+            'expected_time_of_travel',
+            'created_at',
+            'updated_at',
+            'mobile_no',
+            'created_by_name',
+        ]
+ 
+    def get_vehicle_category(self, obj):
+        # tag_map is pre-built in the view: { vehicle_reg_no: category_name }
+        return self.context.get('tag_map', {}).get(obj.tripvehical_tag)
+ 
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return obj.created_by.name
+        return obj.mobile_no
+    
+    
+    
+class DrivingPatternAlertSerializer(serializers.ModelSerializer):
+    """
+    Serializer for a single driving-pattern alert.
+    GPS location resolved from gps_ref FK (already select_related'd by view).
+    Vehicle info resolved from deviceTag FK (already select_related'd by view).
+    """
+    vehicle_reg_no   = serializers.CharField(source='deviceTag.vehicle_reg_no', read_only=True)
+    vehicle_category = serializers.SerializerMethodField()
+    state_name       = serializers.CharField(source='state.state', read_only=True)
+    district_name    = serializers.SerializerMethodField()
+    latitude         = serializers.SerializerMethodField()
+    longitude        = serializers.SerializerMethodField()
+    alert_type_display = serializers.SerializerMethodField()
+ 
+    class Meta:
+        model  = AlertsLog
+        fields = [
+            'id',
+            'type',
+            'alert_type_display',
+            'alert_details',
+            'timestamp',
+            'vehicle_reg_no',
+            'vehicle_category',
+            'state_name',
+            'district_name',
+            'latitude',
+            'longitude',
+        ]
+ 
+    def get_vehicle_category(self, obj):
+        # category_map pre-built by view: { device_tag_id: category_name }
+        return self.context.get('category_map', {}).get(obj.deviceTag_id)
+ 
+    def get_latitude(self, obj):
+        return obj.gps_ref.latitude if obj.gps_ref else None
+ 
+    def get_longitude(self, obj):
+        return obj.gps_ref.longitude if obj.gps_ref else None
+ 
+    def get_district_name(self, obj):
+        # District lives on DeviceTag, not AlertsLog directly
+        try:
+            return obj.deviceTag.district.district if obj.deviceTag.district else None
+        except Exception:
+            return None
+ 
+    def get_alert_type_display(self, obj):
+        DISPLAY_MAP = {
+            'HarshBreak':         'Harsh Braking',
+            'HarshTurn':          'Harsh Turn',
+            'HarshAcceleration':  'Harsh Acceleration',
+            'OverSpeed':          'Overspeed',
+            'Route_overspeed':    'Route Overspeed',
+            'Idling':             'Idling',
+            'UnauthorizedStop':   'Unauthorized Stop',
+            'UnauthorizedSkip':   'Unauthorized Skip',
+            'Tilt':               'Tilt',
+        }
+        return DISPLAY_MAP.get(obj.type, obj.type)
+
+
+class VehicleAlertSummarySerializer(serializers.Serializer):
+    device_tag_id    = serializers.IntegerField()
+    vehicle_reg_no   = serializers.CharField(allow_null=True)
+    vehicle_make     = serializers.CharField(allow_null=True)
+    vehicle_model    = serializers.CharField(allow_null=True)
+    vehicle_category = serializers.CharField(allow_null=True)
+    state_name       = serializers.CharField(allow_null=True)
+    district_name    = serializers.CharField(allow_null=True)
+
+    # Driving pattern
+    harsh_braking_count      = serializers.IntegerField()
+    harsh_turn_count         = serializers.IntegerField()
+    harsh_acceleration_count = serializers.IntegerField()
+    overspeed_count          = serializers.IntegerField()
+    route_overspeed_count    = serializers.IntegerField()
+    idling_count             = serializers.IntegerField()
+    unauthorized_stop_count  = serializers.IntegerField()
+    unauthorized_skip_count  = serializers.IntegerField()
+    tilt_count               = serializers.IntegerField()
+
+    # Boundary / compliance
+    overtime_count              = serializers.IntegerField()
+    state_border_cross_count    = serializers.IntegerField()
+    district_border_cross_count = serializers.IntegerField()
+    city_border_cross_count     = serializers.IntegerField()
+    permit_count                = serializers.IntegerField()
+    unauthorized_parking_count  = serializers.IntegerField()
+    prohibited_area_count       = serializers.IntegerField()
+
+    # Device health
+    offline_device_count = serializers.IntegerField()
+    network_loss_count   = serializers.IntegerField()
+    gps_loss_count       = serializers.IntegerField()
+    low_int_bat_count    = serializers.IntegerField()
+    low_ext_bat_count    = serializers.IntegerField()
+    ext_bat_discnt_count = serializers.IntegerField()
+    box_temp_count       = serializers.IntegerField()
+    em_temp_count        = serializers.IntegerField()
+    engine_count         = serializers.IntegerField()
+
+    # Geofence / route
+    geofence_count        = serializers.IntegerField()
+    route_deviation_count = serializers.IntegerField()
+    incident_count        = serializers.IntegerField()
+
+    # Emergency
+    emergency_count = serializers.IntegerField()
+
+    total_alerts = serializers.IntegerField()
+    
+    
+class PISAnalyticsSummarySerializer(serializers.Serializer):
+    # Scope identifiers (echo back what was filtered)
+    state_id            = serializers.IntegerField(allow_null=True)
+    state_name          = serializers.CharField(allow_null=True)
+    district_id         = serializers.IntegerField(allow_null=True)
+    district_name       = serializers.CharField(allow_null=True)
+    vehicle_category_id = serializers.IntegerField(allow_null=True)
+    vehicle_category    = serializers.CharField(allow_null=True)
+    date_from           = serializers.DateTimeField(allow_null=True)
+    date_to             = serializers.DateTimeField(allow_null=True)
+
+    # Infrastructure counts (scope-filtered, not date-filtered)
+    total_buses           = serializers.IntegerField()
+    total_active_stops    = serializers.IntegerField()
+    total_deactivated_stops = serializers.IntegerField()
+    total_active_routes   = serializers.IntegerField()
+    total_deactivated_routes = serializers.IntegerField()
+
+    # Schedule counts (date-range filtered + scope filtered)
+    schedules_total     = serializers.IntegerField()
+    schedules_created   = serializers.IntegerField()
+    schedules_started   = serializers.IntegerField()
+    schedules_completed = serializers.IntegerField()
+    schedules_canceled  = serializers.IntegerField()
+
+    # Schedule breakdown by service type (date-range filtered)
+    service_type_breakdown = serializers.ListField(child=serializers.DictField())
+    
+    
+class AlertHeatmapSerializer(serializers.ModelSerializer):
+    alert_type = serializers.CharField(source='type')
+    latitude = serializers.FloatField(source='gps_ref.latitude')
+    longitude = serializers.FloatField(source='gps_ref.longitude')
+
+    vehicle_reg_no = serializers.SerializerMethodField()
+    vehicle_category = serializers.SerializerMethodField()
+    state_name = serializers.SerializerMethodField()
+    district_name = serializers.SerializerMethodField()
+    manufacturer_name = serializers.SerializerMethodField()
+    model_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AlertsLog
+        fields = [
+            "id",
+            "alert_type",
+            "latitude",
+            "longitude",
+            "timestamp",
+            "vehicle_reg_no",
+            "vehicle_category",
+            "state_name",
+            "district_name",
+            "manufacturer_name",
+            "model_name",
+        ]
+
+    def get_vehicle_reg_no(self, obj):
+        return obj.deviceTag.vehicle_reg_no if obj.deviceTag else None
+
+    def get_vehicle_category(self, obj):
+        if obj.deviceTag and obj.deviceTag.category:
+            return obj.deviceTag.category.category
+        return None
+
+    def get_state_name(self, obj):
+        return obj.state.state if obj.state else None
+
+    def get_district_name(self, obj):
+        if obj.deviceTag and obj.deviceTag.district:
+            return obj.deviceTag.district.district
+        return None
+
+    def get_manufacturer_name(self, obj):
+        try:
+            return obj.deviceTag.device.dealer.manufacturer.company_name
+        except Exception:
+            return None
+
+    def get_model_name(self, obj):
+        try:
+            return obj.deviceTag.device.model.model_name
+        except Exception:
+            return None
+        
+        
+        
+class FavoriteCreateSerializer(serializers.Serializer):
+
+    bus = serializers.IntegerField(
+        required=False,
+        allow_null=True
+    )
+
+    route = serializers.IntegerField(
+        required=False,
+        allow_null=True
+    )
+
+    bus_stop = serializers.IntegerField(
+        required=False,
+        allow_null=True
+    )
+
+    label = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_blank=True,
+        default=""
+    )
+
+    def validate(self, attrs):
+
+        bus = attrs.get("bus")
+        route = attrs.get("route")
+        bus_stop = attrs.get("bus_stop")
+
+        if not any([bus, route, bus_stop]):
+            raise serializers.ValidationError(
+                "At least one of bus, route or bus_stop is required."
+            )
+
+        if bus and not DeviceTag.objects.filter(id=bus).exists():
+            raise serializers.ValidationError({
+                "bus": f"Bus with id {bus} does not exist."
+            })
+
+        if route and not PublicBusRoute.objects.filter(id=route).exists():
+            raise serializers.ValidationError({
+                "route": f"Route with id {route} does not exist."
+            })
+
+        if bus_stop and not PublicBusStop.objects.filter(id=bus_stop).exists():
+            raise serializers.ValidationError({
+                "bus_stop": f"Bus stop with id {bus_stop} does not exist."
+            })
+
+        return attrs
+    
+    
+class FavoriteUpdateSerializer(serializers.Serializer):
+
+    label = serializers.CharField(
+        max_length=100,
+        allow_blank=True
+    )
+    
+    
+    
+class FavoriteDetailSerializer(serializers.ModelSerializer):
+
+    bus = serializers.SerializerMethodField()
+    route = serializers.SerializerMethodField()
+    bus_stop = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Favorite
+        fields = [
+            "id",
+            "label",
+            "bus",
+            "route",
+            "bus_stop",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_bus(self, obj):
+
+        if not obj.bus:
+            return None
+
+        return {
+            "id": obj.bus.id,
+            "vehicle_reg_no": obj.bus.vehicle_reg_no,
+        }
+
+    def get_route(self, obj):
+
+        if not obj.route:
+            return None
+
+        return {
+            "id": obj.route.id,
+            "route_number": getattr(obj.route, "route_number", None),
+            "route_name": getattr(obj.route, "route_name", None),
+        }
+
+    def get_bus_stop(self, obj):
+
+        if not obj.bus_stop:
+            return None
+
+        return {
+            "id": obj.bus_stop.id,
+            "name": obj.bus_stop.name,
+            "latitude": obj.bus_stop.latitude,
+            "longitude": obj.bus_stop.longitude,
+        }
+        
+# =====================================================
+# User Login Report
+# =====================================================
+
+class UserLoginReportSerializer(serializers.Serializer):
+    user_id           = serializers.IntegerField()
+    name              = serializers.CharField()
+    email             = serializers.EmailField()
+    mobile            = serializers.CharField()
+    role              = serializers.CharField()
+    status            = serializers.CharField()
+    is_online         = serializers.BooleanField()
+    last_login        = serializers.DateTimeField(allow_null=True)
+    login_count_today = serializers.IntegerField()
+    login_count_week  = serializers.IntegerField()
+    login_count_month = serializers.IntegerField()
+    total_login_count = serializers.IntegerField()
+    
+    
+    
+
+ 
+ 
+class CustomAlertSubruleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = CustomAlertSubrule
+        fields = [
+            'id',
+            'order',
+            'parameter',
+            'operator',
+            'value',
+            'value_start',
+            'value_end',
+            'time_from',
+            'time_to',
+        ]
+ 
+    def validate(self, attrs):
+        op        = attrs.get('operator')
+        parameter = attrs.get('parameter')
+        value     = attrs.get('value', '')
+        v_start   = attrs.get('value_start', '')
+        v_end     = attrs.get('value_end', '')
+ 
+        is_text = parameter in CustomAlertSubrule.TEXT_PARAMETERS
+ 
+        # Operator / parameter type compatibility
+        text_only_ops    = {CustomAlertSubrule.OPERATOR_CONTAINS, CustomAlertSubrule.OPERATOR_NOT_CONTAINS}
+        numeric_only_ops = {
+            CustomAlertSubrule.OPERATOR_GT, CustomAlertSubrule.OPERATOR_GTE,
+            CustomAlertSubrule.OPERATOR_LT, CustomAlertSubrule.OPERATOR_LTE,
+            CustomAlertSubrule.OPERATOR_IN_RANGE,
+        }
+ 
+        if is_text and op in numeric_only_ops:
+            raise serializers.ValidationError({
+                'operator': f"Operator '{op}' is not valid for text parameter '{parameter}'."
+            })
+ 
+        if not is_text and op in text_only_ops:
+            raise serializers.ValidationError({
+                'operator': f"Operator '{op}' is only valid for text parameters."
+            })
+ 
+        # Value requirements
+        if op == CustomAlertSubrule.OPERATOR_IN_RANGE:
+            if not v_start or not v_end:
+                raise serializers.ValidationError({
+                    'value_start': 'Both value_start and value_end are required for in_range.',
+                    'value_end':   'Both value_start and value_end are required for in_range.',
+                })
+            try:
+                s, e = float(v_start), float(v_end)
+                if s >= e:
+                    raise serializers.ValidationError({'value_start': 'value_start must be less than value_end.'})
+            except ValueError:
+                raise serializers.ValidationError({'value_start': 'value_start and value_end must be numeric.'})
+        else:
+            if not value:
+                raise serializers.ValidationError({'value': 'value is required for this operator.'})
+ 
+        # Time window consistency
+        t_from = attrs.get('time_from')
+        t_to   = attrs.get('time_to')
+        if bool(t_from) != bool(t_to):
+            raise serializers.ValidationError({
+                'time_from': 'Both time_from and time_to must be provided together.'
+            })
+ 
+        return attrs
+ 
+ 
+class CustomAlertRuleCreateSerializer(serializers.ModelSerializer):
+    subrules = CustomAlertSubruleSerializer(many=True)
+ 
+    class Meta:
+        model  = CustomAlertRule
+        fields = [
+            'id',
+            'name',
+            'description',
+            'status',
+            'subrule_logic',
+            'time_from',
+            'time_to',
+            'state',
+            'subrules',
+        ]
+        read_only_fields = ['id', 'state']   # state is set by the view based on user role
+ 
+    def validate_subrules(self, value):
+        if not value:
+            raise serializers.ValidationError('At least one subrule is required.')
+        if len(value) > 4:
+            raise serializers.ValidationError('A rule can have a maximum of 4 subrules.')
+        orders = [item.get('order', 0) for item in value]
+        if len(orders) != len(set(orders)):
+            raise serializers.ValidationError('Subrule order values must be unique.')
+        return value
+ 
+    def validate(self, attrs):
+        t_from = attrs.get('time_from')
+        t_to   = attrs.get('time_to')
+        if bool(t_from) != bool(t_to):
+            raise serializers.ValidationError({
+                'time_from': 'Both time_from and time_to must be provided together.'
+            })
+        return attrs
+ 
+    def create(self, validated_data):
+        subrules_data = validated_data.pop('subrules')
+        rule = CustomAlertRule.objects.create(**validated_data)
+        for sr_data in subrules_data:
+            CustomAlertSubrule.objects.create(rule=rule, **sr_data)
+        return rule
+ 
+ 
+class CustomAlertRuleUpdateSerializer(serializers.ModelSerializer):
+    """
+    Partial update: top-level fields + full subrule replacement.
+    If 'subrules' is provided, ALL existing subrules are replaced.
+    """
+    subrules = CustomAlertSubruleSerializer(many=True, required=False)
+ 
+    class Meta:
+        model  = CustomAlertRule
+        fields = [
+            'name',
+            'description',
+            'status',
+            'subrule_logic',
+            'time_from',
+            'time_to',
+            'subrules',
+        ]
+ 
+    def validate_subrules(self, value):
+        if value is not None:
+            if len(value) > 4:
+                raise serializers.ValidationError('A rule can have a maximum of 4 subrules.')
+            orders = [item.get('order', 0) for item in value]
+            if len(orders) != len(set(orders)):
+                raise serializers.ValidationError('Subrule order values must be unique.')
+        return value
+ 
+    def update(self, instance, validated_data):
+        subrules_data = validated_data.pop('subrules', None)
+ 
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+ 
+        if subrules_data is not None:
+            # Full replacement
+            instance.subrules.all().delete()
+            for sr_data in subrules_data:
+                CustomAlertSubrule.objects.create(rule=instance, **sr_data)
+ 
+        return instance
+ 
+ 
+class CustomAlertRuleDetailSerializer(serializers.ModelSerializer):
+    subrules    = CustomAlertSubruleSerializer(many=True, read_only=True)
+    state_name  = serializers.CharField(source='state.state', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.name', read_only=True)
+    log_count   = serializers.SerializerMethodField()
+ 
+    class Meta:
+        model  = CustomAlertRule
+        fields = [
+            'id',
+            'name',
+            'description',
+            'status',
+            'subrule_logic',
+            'time_from',
+            'time_to',
+            'state',
+            'state_name',
+            'subrules',
+            'log_count',
+            'created_by',
+            'created_by_name',
+            'created_at',
+            'updated_at',
+        ]
+ 
+    def get_log_count(self, obj):
+        return obj.logs.count()
+ 
+ 
+class CustomAlertLogSerializer(serializers.ModelSerializer):
+    rule_name      = serializers.CharField(source='rule.name', read_only=True)
+    vehicle_reg_no = serializers.CharField(source='device_tag.vehicle_reg_no', read_only=True)
+    state_name     = serializers.CharField(source='state.state', read_only=True)
+    latitude       = serializers.FloatField(source='gps_ref.latitude', read_only=True)
+    longitude      = serializers.FloatField(source='gps_ref.longitude', read_only=True)
+    speed          = serializers.FloatField(source='gps_ref.speed', read_only=True)
+ 
+    class Meta:
+        model  = CustomAlertLog
+        fields = [
+            'id',
+            'rule',
+            'rule_name',
+            'device_tag',
+            'vehicle_reg_no',
+            'state_name',
+            'latitude',
+            'longitude',
+            'speed',
+            'details',
+            'fired_at',
+        ]
