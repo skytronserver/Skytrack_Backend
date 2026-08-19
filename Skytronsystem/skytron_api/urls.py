@@ -355,7 +355,10 @@ urlpatterns = [
     
     path('get_live_vehicle_no/',get_live_vehicle_no , name='get_live_vehicle_no'),#
       
-    path('pub/gps_track_data_api/',gps_track_data_api_pub, name='gps_track_data_api_pub'), 
+    path('pub/gps_track_data_api/',gps_track_data_api_pub, name='gps_track_data_api_pub'),
+    path('pub/gps_by_imei/', gps_by_imei, name='gps_by_imei'),  # public: latest GPS by IMEI
+    path('pub/vahan_by_imei/', vahan_by_imei, name='vahan_by_imei'),      # public: Parivahan lookup by IMEI
+    path('pub/vahan_by_regno/', vahan_by_regno, name='vahan_by_regno'),  # public: Parivahan lookup by regno+chassis
     path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),  # live tracking api
     path('gps_track_lite/', gps_track_lite_api, name='gps_track_lite_api'),             # lightweight tracking api
     path('gps_track_lite_options/', gps_track_lite_options_api, name='gps_track_lite_options_api'),  # available filter values
@@ -491,6 +494,7 @@ urlpatterns = [
     path('tag/getVehicle/',TagGetVehicle, name='TagGetVehicle'),
     
     path('tag/GetVahanAPIInfo/',GetVahanAPIInfo, name='GetVahanAPIInfo'),
+    path('tag/GetVahanAPIInfoByRegnNo/', GetVahanAPIInfoByRegnNo, name='GetVahanAPIInfoByRegnNo'),
     path('tag/ActivateTag/',ActivateTag, name='ActivateTag'),
     
     path('tag/TagAwaitingOwnerApprovalFinal/', TagAwaitingOwnerApprovalFinal, name='TagAwaitingOwnerApprovalFinal'),
