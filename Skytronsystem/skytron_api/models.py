@@ -1719,6 +1719,7 @@ class Session(models.Model):
     otp = models.IntegerField(blank=True, null=True, verbose_name="OTP")
     status = models.CharField(max_length=10, choices=[("otpsent", "OTP Sent"), ("login", "Login"), ("logout", "Logout"), ("timeout", "Timeout")], verbose_name="Status")
     lastactivity=models.DateTimeField(default=timezone.now, verbose_name="lastactivity")
+    otp_attempts = models.IntegerField(default=0, verbose_name="OTP Verification Attempts")
    
     def __str__(self):
         return f"Session {self.id}"
@@ -1819,7 +1820,7 @@ class LoginSettings(models.Model):
     
     # 3. Maximum simultaneous active sessions
     max_simultaneous_sessions = models.IntegerField(
-        default=0,
+        default=2,
         verbose_name="Max Simultaneous Sessions",
         help_text="Maximum number of simultaneous active sessions allowed. 0 = unlimited"
     )

@@ -15,7 +15,6 @@ Usage:
 """
 
 from rest_framework.authentication import BaseAuthentication
-from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth.models import User
 from django.contrib.auth import get_user_model
 from .secure_token import verify_jwt_token, decode_jwt_token
@@ -60,76 +59,83 @@ class JWTAuthentication(BaseAuthentication):
     
     def authenticate_token(self, token):
         """
-        Authenticate using the provided token
-        
-        Args:
-            token (str): JWT token to authenticate
-            
+        Authenticate using the provided token.
+
+        This method must never raise AuthenticationFailed for a merely
+        *unauthorized* token (wrong type, wrong session state, blacklisted,
+        unknown user, etc.) - only for genuinely malformed input. The
+        'token' field is reused across this codebase both as a bearer
+        credential AND as an application-level lookup key on several
+        AllowAny endpoints (e.g. OTP verification reads the same field from
+        request.data). HybridAuthentication runs on every request, and DRF
+        aborts the whole request with a hard 401 the instant any
+        authenticator raises - regardless of that view's permission_classes.
+        So an "unauthorized token" here must resolve to `return None`
+        (not authenticated via this scheme) and let permission_classes
+        (IsAuthenticated) do the actual gatekeeping on protected views,
+        rather than raising and breaking unrelated AllowAny endpoints.
+
         Returns:
             tuple: (user, token) if successful, None otherwise
         """
         try:
-            # SECURITY CHECK 1: Check if token is blacklisted (logout, security violation)
+            # Token has been explicitly invalidated (logout, security event)
             if TokenBlacklist.is_blacklisted(token):
                 logger.warning(f"JWT token is blacklisted")
-                raise AuthenticationFailed('Token has been invalidated')
-            
-            # SECURITY CHECK 2: Verify the token signature and expiration
+                return None
+
+            # Verify the token signature and expiration
             if not verify_jwt_token(token):
                 logger.warning(f"JWT token verification failed")
                 return None
-            
+
             # Decode the token to get user information
             payload = decode_jwt_token(token)
             if not payload:
                 logger.warning(f"JWT token decode failed")
                 return None
-            
+
             # Extract user ID from payload
             user_id = payload.get('user_id')
             if not user_id:
                 logger.warning(f"No user_id in JWT token payload")
-                raise AuthenticationFailed('Invalid token payload')
-            
+                return None
+
             # Get user from database
             User = get_user_model()
             try:
                 user = User.objects.get(id=user_id, is_active=True)
             except User.DoesNotExist:
                 logger.warning(f"User {user_id} not found or inactive")
-                raise AuthenticationFailed('User not found or inactive')
-            
-            # Additional security checks
+                return None
+
+            # Only a fully-issued access token may authenticate general API
+            # calls. Tokens minted for an intermediate step (e.g.
+            # token_type="otp_pending", issued before OTP verification) must
+            # not grant access anywhere else.
             token_type = payload.get('token_type', 'access')
             if token_type != 'access':
-                logger.warning(f"Invalid token type: {token_type}")
-                raise AuthenticationFailed('Invalid token type')
-            
-            # SECURITY CHECK 3: Verify the session is still active (not logged out)
-            # Check if there's an active session for this token
-            try:
-                session = Session.objects.filter(token=token, user=user).last()
-                if session:
-                    if session.status == 'logout':
-                        logger.warning(f"Session logged out for user {user_id}")
-                        raise AuthenticationFailed('Session has been logged out')
-                    elif session.status == 'timeout':
-                        logger.warning(f"Session timed out for user {user_id}")
-                        raise AuthenticationFailed('Session has timed out')
-            except Session.DoesNotExist:
-                # If no session found, allow authentication (backward compatibility)
-                pass
-            
+                logger.warning(f"Rejected non-access token_type for general API auth: {token_type}")
+                return None
+
+            # Verify the session backing this token is fully logged in. This
+            # is allow-list (only 'login' passes) rather than deny-list, so a
+            # token minted for an intermediate/unfinished auth step can never
+            # be used to reach a general API even if its token_type were
+            # ever mis-set to "access".
+            session = Session.objects.filter(token=token, user=user).last()
+            if session and session.status != 'login':
+                logger.warning(f"Session not fully authenticated (status={session.status}) for user {user_id}")
+                return None
+
             # Log successful authentication for security audit
             logger.info(f"JWT authentication successful for user {user_id}")
-            
+
             return (user, token)
-            
-        except AuthenticationFailed:
-            raise
+
         except Exception as e:
             logger.error(f"JWT authentication error: {e}")
-            raise AuthenticationFailed(f'Authentication failed: {str(e)}')
+            return None
     
     def authenticate_header(self, request):
         """
@@ -177,23 +183,28 @@ class LegacyTokenAuthentication(BaseAuthentication):
         if jwt_result:
             return jwt_result
         
-        # Fallback to legacy token authentication
+        # Fallback to legacy token authentication. Same rule as JWTAuthentication:
+        # an unmatched/invalid credential here must return None, not raise -
+        # this authenticator runs on every request (including AllowAny ones),
+        # and raising here aborts the whole request with a hard 401 regardless
+        # of that view's permission_classes.
         try:
             token = Token.objects.get(key=token_key)
             user = token.user
-            
+
             if not user.is_active:
-                raise AuthenticationFailed('User inactive')
-            
+                logger.warning(f"Legacy token authentication rejected: user {user.id} inactive")
+                return None
+
             logger.info(f"Legacy token authentication for user {user.id}")
             return (user, token_key)
-            
+
         except Token.DoesNotExist:
             logger.warning(f"Invalid legacy token: {token_key[:10]}...")
-            raise AuthenticationFailed('Invalid token')
+            return None
         except Exception as e:
             logger.error(f"Legacy authentication error: {e}")
-            raise AuthenticationFailed(f'Authentication failed: {str(e)}')
+            return None
 
 
 # Hybrid authentication class that tries JWT first, then falls back to legacy
