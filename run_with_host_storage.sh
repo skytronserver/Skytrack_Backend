@@ -130,3 +130,7 @@ echo "Firmware files will be stored in /home/azureuser/Skytrack_Backend/SKTN on 
 #@SETREGNO-DL00000*
 #@GETREGNO*
 #   @GETLOC*        @SETPROF-2*
+
+#source .venv/bin/activate
+#cd Skytronsystem
+#python manage.py migrate skytron_api
