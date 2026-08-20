@@ -39482,11 +39482,12 @@ class PISPublicBusLiveLocationByRegNoAPIView(APIView):
         
 
 
+# Internal field names, after _normalise_m2m_result converts the provider's
+# response. 'imsi' removed — the provider format does not return it.
 REQUIRED_M2M_RESPONSE_FIELDS = [
-    'iccid', 'imsi', 'msisdn', 'sim_status',
+    'iccid', 'msisdn', 'sim_status',
     'activation_date', 'validity_date', 'telecom_provider'
 ]
-
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -39530,8 +39531,8 @@ def m2m_config_create_update(request):
 
     if not sample_iccid:
         errors['sample_iccid'] = 'This field is required.'
-    elif not re.fullmatch(r'\d{15}', str(sample_iccid)):
-        errors['sample_iccid'] = 'sample_iccid is not exactly 15 numeric digits.'
+    elif not re.fullmatch(r'\d{18,22}', str(sample_iccid)):
+        errors['sample_iccid'] = 'sample_iccid must be 18 to 22 numeric digits.'
 
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -39598,10 +39599,10 @@ def m2m_config_test(request):
     now = timezone.now()
 
     try:
-        resp = requests.get(
+        resp = requests.post(
             provider.m2m_api_url,
-            headers={"Authorization": f"Bearer {provider.m2m_api_token}"},
-            params={"iccid": provider.m2m_sample_iccid},
+            json={"k1": provider.m2m_api_token, "k2": provider.m2m_sample_iccid},
+            headers={"Content-Type": "application/json"},
             timeout=10,
         )
     except Timeout:
@@ -39636,12 +39637,16 @@ def m2m_config_test(request):
             "API did not return valid JSON."
         )
 
-    data = body.get('data') if isinstance(body, dict) else None
-    missing_fields = []
-    if body.get('status') != 'success' or not isinstance(data, dict):
-        missing_fields.append('data')
-    else:
-        missing_fields = [f for f in REQUIRED_M2M_RESPONSE_FIELDS if not data.get(f)]
+    # Same normaliser Step 2 of tagging uses, so both know one format.
+    normalised, error_code, error_message = _normalise_m2m_result(body)
+    if error_code:
+        return _save_test_result(provider, now, error_code, body, error_message)
+
+    # This test only checks the response SHAPE, not whether the SIM is any
+    # good — the sample SIM may be old or expired, and that must not fail
+    # onboarding. A field that is present but blank (e.g. fallbackStatus)
+    # is acceptable; only a missing field fails.
+    missing_fields = [f for f in REQUIRED_M2M_RESPONSE_FIELDS if f not in normalised]
 
     if missing_fields:
         provider.m2m_last_test_result = body
@@ -39840,42 +39845,104 @@ def _parse_vahan_date(value):
     return None
  
  
+# =====================================================================
+# DUMMY VAHAN DATASET — 20 test vehicles
+# =====================================================================
+# Varying fields per test vehicle:
+#   (imei, reg_no, date_of_registration, veh_class)
+#
+# reg_no is blank for a few entries on purpose — those exercise the
+# temporary registration number path (district_code + TMP + last 4 of
+# chassis).
+#
+# Registration dates are spread deliberately so step 2 hits all three
+# validity cases:
+#   older than 2 years   -> needs 1 year of SIM validity  (Case A)
+#   within 2 years       -> needs 2 years                 (Case B)
+#   no registration no.  -> needs 2 years                 (Case C)
+DUMMY_VAHAN_VEHICLES = [
+    ('861850060253601', 'AS01TS0001', '2015-02-13', 'Motor Cab'),
+    ('861850060253602', 'AS01TS0002', '2016-06-21', 'Motor Cab'),
+    ('861850060253603', 'AS01TS0003', '2017-11-09', 'TAXI'),
+    ('861850060253604', 'AS01TS0004', '2018-03-30', 'Motor Cab'),
+    ('861850060253605', 'AS01TS0005', '2019-08-14', 'SCHOOL_BUS'),
+    ('861850060253606', 'AS01TS0006', '2020-01-27', 'Motor Cab'),
+    ('861850060253607', 'AS01TS0007', '2021-05-05', 'TANKER'),
+    ('861850060253608', 'AS01TS0008', '2022-09-18', 'Motor Cab'),
+    ('861850060253609', 'AS01TS0009', '2023-02-02', 'AMBULANCE'),
+    ('861850060253610', 'AS01TS0010', '2023-12-11', 'Motor Cab'),
+    ('861850060253611', 'AS01TS0011', '2024-04-23', 'TAXI'),
+    ('861850060253612', 'AS01TS0012', '2024-10-08', 'Motor Cab'),
+    ('861850060253613', 'AS01TS0013', '2025-03-17', 'Motor Cab'),
+    ('861850060253614', 'AS01TS0014', '2025-07-29', 'SCHOOL_BUS'),
+    ('861850060253615', 'AS01TS0015', '2026-01-06', 'Motor Cab'),
+    ('861850060253616', 'AS01TS0016', '2026-05-20', 'TAXI'),
+    # No registration number — fresh vehicles, temporary reg no generated
+    ('861850060253617', '', None, 'Motor Cab'),
+    ('861850060253618', '', None, 'Motor Cab'),
+    ('861850060253619', '', None, 'SCHOOL_BUS'),
+    ('861850060253620', '', None, 'TAXI'),
+]
+
+
+def _build_dummy_vahan_record(imei, reg_no, date_of_registration, veh_class, index):
+    """Build one dummy Vahan response. Serial fields derive from index."""
+    serial = f"{index:04d}"
+    return {
+        "chassisNo": f"MEXTEST00000{serial}",
+        "dateOfRegistration": date_of_registration,
+        "deviceActivationStatus": "PENDING",
+        "deviceSerialno": f"SKTNTEST{serial}",
+        "engineNo": f"ENGTEST{serial}",
+        "fitmentCentreName": "Skytron Test Fitment Centre",
+        "gnssConstellationCode": "5,2,6,1,3",
+        "iccId": None,          # filled in from the submitted ICCID below
+        "imeiNo": imei,
+        "makerName": "Pricol SGPCA SLD",
+        "modelName": "ASMTEST",
+        "ownerName": "TEST OWNER",
+        "regNo": reg_no,
+        "tacNo": "SKYTRON09",
+        "tacValidUpto": "2027-12-31",
+        "vehClass": veh_class,
+    }
+
+
+# Keyed by IMEI for lookup.
+DUMMY_VAHAN_DATA = {
+    imei: _build_dummy_vahan_record(imei, reg_no, reg_date, veh_class, index + 1)
+    for index, (imei, reg_no, reg_date, veh_class) in enumerate(DUMMY_VAHAN_VEHICLES)
+}
+
+
 def call_vahan_api(imei, iccid=None):
     """
     Look up vehicle + device details by IMEI.
- 
-    Vahan access is not available yet, so this returns dummy data matching
-    the documented response shape. Swap the body for the real HTTP call
-    when access is granted — the return contract stays the same.
- 
+
+    Vahan access is not available yet, so this returns one of a fixed set
+    of dummy vehicles, selected by IMEI. Swap the body for the real HTTP
+    call when access is granted — the return contract stays the same.
+
+    An unknown IMEI returns an error, which is also how the real Vahan
+    behaves for a device it has no record of.
+
     NOTE: the `iccid` argument exists only so the dummy can echo back the
     submitted value, which keeps the ICCID cross-check testable. The real
     Vahan call takes IMEI only — drop the argument when swapping it in.
- 
+
     Returns (data_dict, error_message). Exactly one is non-None.
     """
     if not imei:
         return None, "IMEI is required for the Vahan lookup."
- 
+
     # --- DUMMY DATA — replace with the real call ---------------------
-    return {
-        "chassisNo": "MD2A26AZ4EWF18595",
-        "dateOfRegistration": "2015-02-13",
-        "deviceActivationStatus": "PENDING",
-        "deviceSerialno": "ASMABC00000013",
-        "engineNo": "BAZWEF24719",
-        "fitmentCentreName": "SSSSSSSSS",
-        "gnssConstellationCode": "5,2,6,1,3",
-        "iccId": str(iccid) if iccid else "86185006025361000001",
-        "imeiNo": str(imei),
-        "makerName": "Pricol SGPCA SLD",
-        "modelName": "ASMTEST",
-        "ownerName": "TULSI SHARMA",
-        "regNo": "TN02372999",
-        "tacNo": "SKYTRON09",
-        "tacValidUpto": "2026-08-31",
-        "vehClass": "Motor Cab",
-    }, None
+    record = DUMMY_VAHAN_DATA.get(str(imei).strip())
+    if not record:
+        return None, "No vehicle record found on Vahan for this IMEI."
+
+    data = dict(record)
+    data["iccId"] = str(iccid) if iccid else ""
+    return data, None
     # -----------------------------------------------------------------
  
  
@@ -39962,7 +40029,7 @@ def _get_tagging_record(request, record_id, expected_step):
             msg = f"Step {expected_step} is already completed for this entry."
         else:
             msg = (
-                f"Step {record.current_step - 1} must be completed first. "
+                f"Step {record.current_step} must be completed first. "
                 f"This entry is currently at step {record.current_step}."
             )
         return None, None, Response(
