@@ -39482,11 +39482,12 @@ class PISPublicBusLiveLocationByRegNoAPIView(APIView):
         
 
 
+# Internal field names, after _normalise_m2m_result converts the provider's
+# response. 'imsi' removed — the provider format does not return it.
 REQUIRED_M2M_RESPONSE_FIELDS = [
-    'iccid', 'imsi', 'msisdn', 'sim_status',
+    'iccid', 'msisdn', 'sim_status',
     'activation_date', 'validity_date', 'telecom_provider'
 ]
-
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -39530,8 +39531,8 @@ def m2m_config_create_update(request):
 
     if not sample_iccid:
         errors['sample_iccid'] = 'This field is required.'
-    elif not re.fullmatch(r'\d{15}', str(sample_iccid)):
-        errors['sample_iccid'] = 'sample_iccid is not exactly 15 numeric digits.'
+    elif not re.fullmatch(r'\d{18,22}', str(sample_iccid)):
+        errors['sample_iccid'] = 'sample_iccid must be 18 to 22 numeric digits.'
 
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -39598,10 +39599,10 @@ def m2m_config_test(request):
     now = timezone.now()
 
     try:
-        resp = requests.get(
+        resp = requests.post(
             provider.m2m_api_url,
-            headers={"Authorization": f"Bearer {provider.m2m_api_token}"},
-            params={"iccid": provider.m2m_sample_iccid},
+            json={"k1": provider.m2m_api_token, "k2": provider.m2m_sample_iccid},
+            headers={"Content-Type": "application/json"},
             timeout=10,
         )
     except Timeout:
@@ -39636,12 +39637,16 @@ def m2m_config_test(request):
             "API did not return valid JSON."
         )
 
-    data = body.get('data') if isinstance(body, dict) else None
-    missing_fields = []
-    if body.get('status') != 'success' or not isinstance(data, dict):
-        missing_fields.append('data')
-    else:
-        missing_fields = [f for f in REQUIRED_M2M_RESPONSE_FIELDS if not data.get(f)]
+    # Same normaliser Step 2 of tagging uses, so both know one format.
+    normalised, error_code, error_message = _normalise_m2m_result(body)
+    if error_code:
+        return _save_test_result(provider, now, error_code, body, error_message)
+
+    # This test only checks the response SHAPE, not whether the SIM is any
+    # good — the sample SIM may be old or expired, and that must not fail
+    # onboarding. A field that is present but blank (e.g. fallbackStatus)
+    # is acceptable; only a missing field fails.
+    missing_fields = [f for f in REQUIRED_M2M_RESPONSE_FIELDS if f not in normalised]
 
     if missing_fields:
         provider.m2m_last_test_result = body
@@ -39962,7 +39967,7 @@ def _get_tagging_record(request, record_id, expected_step):
             msg = f"Step {expected_step} is already completed for this entry."
         else:
             msg = (
-                f"Step {record.current_step - 1} must be completed first. "
+                f"Step {record.current_step} must be completed first. "
                 f"This entry is currently at step {record.current_step}."
             )
         return None, None, Response(
