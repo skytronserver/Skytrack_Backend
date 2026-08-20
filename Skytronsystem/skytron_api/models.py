@@ -5183,3 +5183,84 @@ class DeviceStockMaster(models.Model):
  
     def __str__(self):
         return f"DeviceStockMaster #{self.id} - IMEI {self.imei} (step {self.current_step})"
+    
+    
+class VahanDummyData(models.Model):
+    """
+    Test vehicle records standing in for the real Vahan API.
+ 
+    Vahan access is not available yet, so `call_vahan_api` looks up a row
+    here by IMEI and returns it in the documented Vahan response shape.
+    Kept in the database rather than in code so test vehicles can be added
+    or edited without a deployment.
+ 
+    Delete this model once the real Vahan integration is live.
+    """
+    objects = SafeCreateManager()
+ 
+    # Lookup key. Unique — one vehicle per IMEI, same as real Vahan.
+    imei = models.CharField(max_length=55, unique=True)
+ 
+    # Blank means the vehicle is not registered yet, and step 1 will
+    # generate a temporary registration number instead.
+    reg_no = models.CharField(max_length=55, blank=True, default='')
+    date_of_registration = models.DateField(null=True, blank=True)
+ 
+    chassis_no = models.CharField(max_length=100)
+    engine_no = models.CharField(max_length=100)
+    device_serial_no = models.CharField(max_length=100)
+    veh_class = models.CharField(max_length=100)
+ 
+    maker_name = models.CharField(max_length=255, default='Pricol SGPCA SLD')
+    model_name = models.CharField(max_length=255, default='ASMTEST')
+    owner_name = models.CharField(max_length=255, default='TEST OWNER')
+    fitment_centre_name = models.CharField(max_length=255, default='Skytron Test Fitment Centre')
+    gnss_constellation_code = models.CharField(max_length=100, default='5,2,6,1,3')
+    device_activation_status = models.CharField(max_length=50, default='PENDING')
+    tac_no = models.CharField(max_length=100, default='SKYTRON09')
+    tac_valid_upto = models.DateField(null=True, blank=True)
+ 
+    # Optional. Leave blank and the ICCID submitted by the dealer is
+    # echoed back, so the ICCID cross-check always passes. Set a value
+    # here to test the mismatch rejection.
+    iccid = models.CharField(max_length=55, blank=True, default='')
+ 
+    # Lets a row be switched off without deleting it.
+    is_active = models.BooleanField(default=True)
+ 
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        verbose_name = 'Vahan Dummy Data'
+        verbose_name_plural = 'Vahan Dummy Data'
+        ordering = ['imei']
+ 
+    def __str__(self):
+        return f"{self.imei} - {self.reg_no or 'unregistered'}"
+ 
+    def to_vahan_response(self, submitted_iccid=None):
+        """Return this row in the Vahan API response shape."""
+        return {
+            "chassisNo": self.chassis_no,
+            "dateOfRegistration": (
+                self.date_of_registration.isoformat()
+                if self.date_of_registration else None
+            ),
+            "deviceActivationStatus": self.device_activation_status,
+            "deviceSerialno": self.device_serial_no,
+            "engineNo": self.engine_no,
+            "fitmentCentreName": self.fitment_centre_name,
+            "gnssConstellationCode": self.gnss_constellation_code,
+            "iccId": self.iccid or (str(submitted_iccid) if submitted_iccid else ""),
+            "imeiNo": self.imei,
+            "makerName": self.maker_name,
+            "modelName": self.model_name,
+            "ownerName": self.owner_name,
+            "regNo": self.reg_no,
+            "tacNo": self.tac_no,
+            "tacValidUpto": (
+                self.tac_valid_upto.isoformat() if self.tac_valid_upto else None
+            ),
+            "vehClass": self.veh_class,
+        }
