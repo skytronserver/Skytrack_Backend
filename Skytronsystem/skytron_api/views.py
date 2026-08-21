@@ -41773,6 +41773,8 @@ def device_tagging_my_entries(request):
         'manufacturer', 'device_model', 'esim_provider',
         'district', 'category', 'vehicle_owner',
         'created_device_stock', 'created_device_tag',
+    ).prefetch_related(
+        'vehicle_owner__users',
     ).order_by('-created_at')
 
     # ── Filters ──────────────────────────────────────────────────────
@@ -41835,6 +41837,13 @@ def device_tagging_my_entries(request):
     data = []
     for record in page_entries:
         progress = _tagging_step_progress(record)
+
+        # Uses the prefetched list rather than a fresh query per record.
+        owner_users = list(record.vehicle_owner.users.all())
+        owner_user = next(
+            (u for u in owner_users if u.status == 'active'), None
+        ) or (owner_users[0] if owner_users else None)
+
         data.append({
             'id': record.id,
             'current_step': record.current_step,
@@ -41865,6 +41874,16 @@ def device_tagging_my_entries(request):
             'category': {
                 'id': record.category_id,
                 'category': record.category.category,
+            },
+            'vehicle_owner': {
+                'id': record.vehicle_owner_id,
+                'company_name': record.vehicle_owner.company_name,
+                'name': owner_user.name if owner_user else None,
+                'mobile': owner_user.mobile if owner_user else None,
+                'email': owner_user.email if owner_user else None,
+                # Owner name as it appears on Vahan — may differ from the
+                # name on the Skytron account.
+                'vahan_owner_name': record.vahan_owner_name,
             },
             'packets_all_received': record.packets_all_received,
             'packets_checked_at': record.packets_checked_at,
