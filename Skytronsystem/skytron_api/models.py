@@ -625,6 +625,10 @@ class eSimProvider(models.Model):
     # this field itself can never change again.
     m2m_api_verified = models.BooleanField(null=True, blank=True, default=None)
     m2m_api_verified_at = models.DateTimeField(null=True, blank=True)
+    
+    # IP ranges the provider's devices connect from.
+    # 1 to 20 ranges, comma separated. CIDR or start-end notation.
+    device_ip_range = models.TextField(blank=True, default='')
    
          
 class Dealer(models.Model):
@@ -954,6 +958,10 @@ class DeviceModel(models.Model):
     mqtt_pw = models.CharField(max_length=255, blank=True, null=True)
     api_url = models.URLField(max_length=500, null=True, blank=True)
     token = models.CharField(max_length=500, null=True, blank=True)
+    
+    # IPs or URLs allowed to send data for this device model.
+    # 1 to 10 items, comma separated.
+    whitelisted_ip = models.TextField(blank=True, default='')
 
     class Meta:
         # Composite index for common filtering combinations

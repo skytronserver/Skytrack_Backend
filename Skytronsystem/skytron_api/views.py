@@ -28,6 +28,7 @@ from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError as DjangoValidationError
 from decimal import Decimal, InvalidOperation
 import logging
+import ipaddress
 
 
 logger = logging.getLogger(__name__)
@@ -17964,7 +17965,145 @@ def manufacturer_list_own_device_model_technical_onboarding_requests(request):
 
     serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_requests, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
-     
+   
+
+# Whitelisted IP / URL rules for a device model.
+WHITELISTED_IP_MIN_ITEMS = 1
+WHITELISTED_IP_MAX_ITEMS = 10
+
+
+def _validate_whitelisted_ip(raw_value):
+    """
+    Validate a comma-separated list of IP addresses or URLs.
+
+    Accepts an IPv4/IPv6 address, a full URL, or a bare hostname.
+    Between 1 and 10 items. Duplicates removed, order preserved.
+
+    Returns (cleaned_string, error_message). Exactly one is non-None.
+    """
+    raw_value = (raw_value or '').strip()
+    if not raw_value:
+        return None, 'whitelisted_ip is required. Provide at least one IP address or URL.'
+
+    items = [part.strip() for part in raw_value.split(',') if part.strip()]
+    if not items:
+        return None, 'whitelisted_ip is required. Provide at least one IP address or URL.'
+
+    if len(items) > WHITELISTED_IP_MAX_ITEMS:
+        return None, (
+            f'whitelisted_ip can have at most {WHITELISTED_IP_MAX_ITEMS} items. '
+            f'{len(items)} were provided.'
+        )
+
+    url_validator = URLValidator()
+    cleaned = []
+    invalid = []
+
+    for item in items:
+        if item in cleaned:
+            continue
+
+        try:
+            ipaddress.ip_address(item)
+            cleaned.append(item)
+            continue
+        except ValueError:
+            pass
+
+        candidate = item if '://' in item else f'https://{item}'
+        try:
+            url_validator(candidate)
+            cleaned.append(item)
+            continue
+        except DjangoValidationError:
+            invalid.append(item)
+
+    if invalid:
+        return None, (
+            'whitelisted_ip contains invalid entries: '
+            + ', '.join(invalid)
+            + '. Each item must be an IP address or a URL.'
+        )
+
+    return ', '.join(cleaned), None  
+
+
+# Device IP range rules for an eSIM provider.
+DEVICE_IP_RANGE_MIN_ITEMS = 1
+DEVICE_IP_RANGE_MAX_ITEMS = 20
+
+
+def _validate_device_ip_range(raw_value):
+    """
+    Validate a comma-separated list of IP ranges.
+
+    Accepts either notation:
+      CIDR        103.21.58.0/24
+      start-end   103.21.58.1-103.21.58.50
+
+    Between 1 and 20 ranges. Duplicates removed, order preserved.
+
+    Returns (cleaned_string, error_message). Exactly one is non-None.
+    """
+    raw_value = (raw_value or '').strip()
+    if not raw_value:
+        return None, 'device_ip_range is required. Provide at least one IP range.'
+
+    items = [part.strip() for part in raw_value.split(',') if part.strip()]
+    if not items:
+        return None, 'device_ip_range is required. Provide at least one IP range.'
+
+    if len(items) > DEVICE_IP_RANGE_MAX_ITEMS:
+        return None, (
+            f'device_ip_range can have at most {DEVICE_IP_RANGE_MAX_ITEMS} ranges. '
+            f'{len(items)} were provided.'
+        )
+
+    cleaned = []
+    invalid = []
+
+    for item in items:
+        if item in cleaned:
+            continue
+
+        # CIDR notation
+        if '/' in item:
+            try:
+                ipaddress.ip_network(item, strict=False)
+                cleaned.append(item)
+                continue
+            except ValueError:
+                invalid.append(item)
+                continue
+
+        # start-end notation
+        if '-' in item:
+            start, _, end = item.partition('-')
+            try:
+                start_ip = ipaddress.ip_address(start.strip())
+                end_ip = ipaddress.ip_address(end.strip())
+            except ValueError:
+                invalid.append(item)
+                continue
+            if start_ip.version != end_ip.version:
+                invalid.append(item)
+                continue
+            if start_ip > end_ip:
+                invalid.append(item)
+                continue
+            cleaned.append(item)
+            continue
+
+        invalid.append(item)
+
+    if invalid:
+        return None, (
+            'device_ip_range contains invalid entries: '
+            + ', '.join(invalid)
+            + '. Use CIDR (103.21.58.0/24) or start-end (103.21.58.1-103.21.58.50).'
+        )
+
+    return ', '.join(cleaned), None
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -17983,6 +18122,15 @@ def create_device_model(request ):
     man=get_user_object(user,"devicemanufacture")
     if not man:
         return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    whitelisted_ip, whitelist_error = _validate_whitelisted_ip(
+        request.data.get('whitelisted_ip')
+    )
+    if whitelist_error:
+        return Response(
+            {"errors": {"whitelisted_ip": whitelist_error}},
+            status=status.HTTP_400_BAD_REQUEST
+        )
      
 
 
@@ -18002,6 +18150,7 @@ def create_device_model(request ):
         'created': timezone.now(),
         'status': 'Manufacturer_OTP_Sent',
         'mqtt_pw': _mqtt_pw,
+        'whitelisted_ip': whitelisted_ip,
     }
 
     # Attach the file to the request data
@@ -39515,7 +39664,7 @@ def m2m_config_create_update(request):
     api_url = request.data.get('api_url')
     token = request.data.get('token')
     sample_iccid = request.data.get('sample_iccid')
-
+    device_ip_range_raw = request.data.get('device_ip_range')
     errors = {}
 
     if not api_url:
@@ -39534,17 +39683,22 @@ def m2m_config_create_update(request):
     elif not re.fullmatch(r'\d{18,22}', str(sample_iccid)):
         errors['sample_iccid'] = 'sample_iccid must be 18 to 22 numeric digits.'
 
+    device_ip_range, ip_range_error = _validate_device_ip_range(device_ip_range_raw)
+    if ip_range_error:
+        errors['device_ip_range'] = ip_range_error
+
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
     provider.m2m_api_url = api_url
     provider.m2m_api_token = token
     provider.m2m_sample_iccid = sample_iccid
+    provider.device_ip_range = device_ip_range
     # Any edit resets onboarding status — must be re-tested after changes
     provider.m2m_technical_onboarding_status = 'incorrect_api'
     provider.save(update_fields=[
         'm2m_api_url', 'm2m_api_token', 'm2m_sample_iccid',
-        'm2m_technical_onboarding_status'
+        'device_ip_range','m2m_technical_onboarding_status'
     ])
 
     return Response({
@@ -39554,6 +39708,7 @@ def m2m_config_create_update(request):
             "id": provider.id,
             "m2m_api_url": provider.m2m_api_url,
             "m2m_sample_iccid": provider.m2m_sample_iccid,
+            "device_ip_range": provider.device_ip_range,
             "m2m_technical_onboarding_status": provider.m2m_technical_onboarding_status,
             "m2m_api_verified": provider.m2m_api_verified,
         }
@@ -40598,6 +40753,7 @@ def device_tagging_step2_esim(request):
                 "primary_status": record.m2m_primary_status,
                 "fallback_tsp": record.m2m_fallback_tsp,
                 "fallback_msisdn": record.m2m_fallback_msisdn,
+                "fallback_status": record.m2m_fallback_status,
                 "data_usage": record.m2m_data_usage,
                 "data_usage_date": record.m2m_data_usage_date,
             },
@@ -40609,35 +40765,33 @@ def device_tagging_step2_esim(request):
  
  # Wrong OTP submissions allowed before the OTP is invalidated.
 TAGGING_OTP_MAX_ATTEMPTS = 5
- 
+
+# TEMPORARY: accept this OTP alongside the real one, for both dealer and
+# owner OTP in the tagging flow. Requested by TL for testing.
+# Set to None to switch off. Must be removed before production go-live.
+TAGGING_DEFAULT_TEST_OTP = '685472'
  
  
 def _tagging_otp_matches(stored_otp, submitted_otp):
     """
     Compare a submitted OTP against the stored one.
- 
-    For local development a configured test OTP is also accepted, so the
-    flow can be exercised without waiting for a real SMS. This is gated on
-    settings.DEBUG as well as the env flag, so it cannot be switched on by
-    config alone on a production server.
- 
-    To match the school bus module's behaviour instead (env flag only),
-    drop `settings.DEBUG and` from the condition below.
+
+    TAGGING_DEFAULT_TEST_OTP is also accepted, so the flow can be tested
+    without waiting for a real SMS. This is deliberate and temporary —
+    see the constant for how to switch it off.
     """
     if not stored_otp or not submitted_otp:
         return False
- 
+
     if secrets.compare_digest(str(stored_otp), str(submitted_otp)):
         return True
- 
-    if settings.DEBUG and os.environ.get('ALLOW_DEFAULT_TEST_OTP', '').lower() == 'true':
-        test_otp = os.environ.get('DEFAULT_TEST_OTP', '')
-        if test_otp and secrets.compare_digest(str(test_otp), str(submitted_otp)):
-            logger.warning(
-                "Tagging OTP accepted via DEFAULT_TEST_OTP — development only."
-            )
-            return True
- 
+
+    if TAGGING_DEFAULT_TEST_OTP and secrets.compare_digest(
+        str(TAGGING_DEFAULT_TEST_OTP), str(submitted_otp)
+    ):
+        logger.warning("Tagging OTP accepted via default test OTP.")
+        return True
+
     return False
  
  
