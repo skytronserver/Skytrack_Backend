@@ -1074,7 +1074,11 @@ class DeviceModelTechnicalOnboardingDemoDeviceSerializer(serializers.ModelSerial
             'ccid2',
             'msisdn1',
             'msisdn2',
+            'receipt_confirmed',
+            'receipt_confirmed_at',
+            'receipt_confirmed_by',
         ]
+        read_only_fields = ['receipt_confirmed', 'receipt_confirmed_at', 'receipt_confirmed_by']
 
 
 class DeviceModelTechnicalOnboardingRequestCreateSerializer(serializers.ModelSerializer):
@@ -1093,8 +1097,8 @@ class DeviceModelTechnicalOnboardingRequestCreateSerializer(serializers.ModelSer
         read_only_fields = ['id']
 
     def validate_demo_devices(self, value):
-        if not value:
-            raise serializers.ValidationError('At least one demo device is required.')
+        if not value or len(value) != 5:
+            raise serializers.ValidationError('Exactly 5 demo devices are required.')
         return value
 
 
@@ -1117,6 +1121,53 @@ class DeviceModelTechnicalOnboardingFinalizeSerializer(serializers.Serializer):
     onboarding_request_id = serializers.IntegerField()
     status = serializers.ChoiceField(choices=['technically_compatible', 'technically_not_compatible'])
     final_comment = serializers.CharField(required=True)
+
+
+class TechnicalOnboardingCourierTrackingSerializer(serializers.Serializer):
+    onboarding_request_id = serializers.IntegerField()
+    courier_name = serializers.CharField(required=False, allow_blank=True)
+    courier_tracking_number = serializers.CharField(required=False, allow_blank=True)
+    courier_shipped_date = serializers.DateField(required=False)
+
+
+class TechnicalOnboardingConfirmReceiptSerializer(serializers.Serializer):
+    onboarding_request_id = serializers.IntegerField()
+    demo_device_id = serializers.IntegerField()
+
+
+class TechnicalOnboardingTestCaseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TechnicalOnboardingTestCase
+        fields = '__all__'
+
+
+class TechnicalOnboardingTestBoardRequestSerializer(serializers.Serializer):
+    onboarding_request_id = serializers.IntegerField()
+
+
+class TechnicalOnboardingStartTestSerializer(serializers.Serializer):
+    onboarding_request_id = serializers.IntegerField()
+    demo_device_id = serializers.IntegerField()
+    test_case_id = serializers.IntegerField()
+
+
+class TechnicalOnboardingExecutionActionSerializer(serializers.Serializer):
+    execution_id = serializers.IntegerField()
+
+
+class TechnicalOnboardingCompleteTestSerializer(serializers.Serializer):
+    execution_id = serializers.IntegerField()
+    manual_result = serializers.ChoiceField(choices=['pass', 'fail'], required=False)
+    manual_notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class TechnicalOnboardingTestExecutionSerializer(serializers.ModelSerializer):
+    test_case = TechnicalOnboardingTestCaseSerializer(read_only=True)
+    demo_device = DeviceModelTechnicalOnboardingDemoDeviceSerializer(read_only=True)
+
+    class Meta:
+        model = TechnicalOnboardingTestExecution
+        fields = '__all__'
 
 
 class DeviceModelForTestAgencySerializer(SanitizingModelSerializer):

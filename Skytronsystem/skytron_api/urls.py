@@ -34,6 +34,18 @@ from .activation_views import (
     get_activation_status,
     list_pending_activations,
 )
+from .technical_onboarding_testing_views import (
+    manufacturer_update_courier_tracking,
+    superadmin_confirm_demo_device_receipt,
+    technical_onboarding_test_case_list,
+    technical_onboarding_test_case_upsert,
+    superadmin_get_onboarding_test_board,
+    superadmin_start_test,
+    superadmin_test_heartbeat,
+    superadmin_refresh_test_log,
+    superadmin_complete_test,
+    technical_onboarding_demo_page,
+)
 from .alert_stats_views import (
     alert_stats_type_options,
     alert_stats_summary,
@@ -451,7 +463,60 @@ urlpatterns = [
         manufacturer_list_own_device_model_technical_onboarding_requests,
         name='manufacturer_list_own_device_model_technical_onboarding_requests'
     ),
-    
+
+    # technical onboarding testing: courier tracking, receipt, test catalog + execution engine
+    path(
+        'devicemodel/technical-onboarding/manufacturer/courier-tracking/',
+        manufacturer_update_courier_tracking,
+        name='manufacturer_update_courier_tracking'
+    ),
+    path(
+        'devicemodel/technical-onboarding/superadmin/confirm-receipt/',
+        superadmin_confirm_demo_device_receipt,
+        name='superadmin_confirm_demo_device_receipt'
+    ),
+    path(
+        'devicemodel/technical-onboarding/test-cases/list/',
+        technical_onboarding_test_case_list,
+        name='technical_onboarding_test_case_list'
+    ),
+    path(
+        'devicemodel/technical-onboarding/test-cases/upsert/',
+        technical_onboarding_test_case_upsert,
+        name='technical_onboarding_test_case_upsert'
+    ),
+    path(
+        'devicemodel/technical-onboarding/superadmin/test-board/',
+        superadmin_get_onboarding_test_board,
+        name='superadmin_get_onboarding_test_board'
+    ),
+    path(
+        'devicemodel/technical-onboarding/superadmin/test-start/',
+        superadmin_start_test,
+        name='superadmin_start_test'
+    ),
+    path(
+        'devicemodel/technical-onboarding/superadmin/test-heartbeat/',
+        superadmin_test_heartbeat,
+        name='superadmin_test_heartbeat'
+    ),
+    path(
+        'devicemodel/technical-onboarding/superadmin/test-refresh-log/',
+        superadmin_refresh_test_log,
+        name='superadmin_refresh_test_log'
+    ),
+    path(
+        'devicemodel/technical-onboarding/superadmin/test-complete/',
+        superadmin_complete_test,
+        name='superadmin_complete_test'
+    ),
+    path(
+        'devicemodel/technical-onboarding/demo/',
+        technical_onboarding_demo_page,
+        name='technical_onboarding_demo_page'
+    ),
+
+
     #devicestock
     
     path('devicestock/esim_provider_list/', esim_provider_list, name='esim_provider_list'),
