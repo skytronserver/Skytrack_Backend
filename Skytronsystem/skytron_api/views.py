@@ -40271,6 +40271,8 @@ def device_tagging_step1_create(request):
     imei = str(request.data.get('imei') or '').strip()
     iccid = str(request.data.get('iccid') or '').strip()
     owner_phone_number = str(request.data.get('owner_phone_number') or '').strip()
+    device_sell_amount_raw = request.data.get('device_sell_amount')
+    no_of_emg_buttons_raw = request.data.get('no_of_emg_buttons')
 
     field_errors = {}
     if not manufacturer_id:
@@ -40291,6 +40293,18 @@ def device_tagging_step1_create(request):
         field_errors['owner_phone_number'] = 'This field is required.'
     if not request.FILES.get('rc_file'):
         field_errors['rc_file'] = 'RC document is required.'
+
+    device_sell_amount, sell_amount_error = _validate_device_sell_amount(
+        device_sell_amount_raw
+    )
+    if sell_amount_error:
+        field_errors['device_sell_amount'] = sell_amount_error
+
+    no_of_emg_buttons, emg_buttons_error = _validate_no_of_emg_buttons(
+        no_of_emg_buttons_raw
+    )
+    if emg_buttons_error:
+        field_errors['no_of_emg_buttons'] = emg_buttons_error
 
     if field_errors:
         return Response({'errors': field_errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -40466,6 +40480,8 @@ def device_tagging_step1_create(request):
         rc_file=rc_file_path,
         imei=imei,
         iccid=iccid,
+        device_sell_amount=device_sell_amount,
+        no_of_emg_buttons=no_of_emg_buttons,
 
         vahan_chassis_no=chassis_no,
         vahan_date_of_registration=_parse_vahan_date(vahan_data.get('dateOfRegistration')),
@@ -40512,6 +40528,8 @@ def device_tagging_step1_create(request):
             "vehicle_owner_id": vehicle_owner.id,
             "rc_file": record.rc_file,
             "is_temp_reg_no": record.is_temp_reg_no,
+            "device_sell_amount": record.device_sell_amount,
+            "no_of_emg_buttons": record.no_of_emg_buttons,
             "vahan": {
                 "chassis_no": record.vahan_chassis_no,
                 "date_of_registration": record.vahan_date_of_registration,
@@ -40767,11 +40785,126 @@ def device_tagging_step2_esim(request):
 TAGGING_OTP_MAX_ATTEMPTS = 5
 
 # TEMPORARY: accept this OTP alongside the real one, for both dealer and
-# owner OTP in the tagging flow. Requested by TL for testing.
+# owner OTP in the tagging flow.
 # Set to None to switch off. Must be removed before production go-live.
 TAGGING_DEFAULT_TEST_OTP = '685472'
  
- 
+
+
+
+# Number of SOS / emergency buttons a device may have.
+EMG_BUTTONS_MIN = 1
+EMG_BUTTONS_MAX = 10
+
+# Certificate number prefix. Format is not finalised — using a dummy
+# serial for now. Replace once the real format is provided.
+CERTIFICATE_NO_PREFIX = 'AS0000'
+
+
+def _validate_device_sell_amount(raw_value):
+    """
+    Sale amount of the device, entered by the dealer.
+    Returns (Decimal, error_message). Exactly one is non-None.
+    """
+    raw_value = str(raw_value or '').strip()
+    if not raw_value:
+        return None, 'This field is required.'
+
+    try:
+        amount = Decimal(raw_value)
+    except (InvalidOperation, ValueError):
+        return None, 'device_sell_amount must be a number.'
+
+    if amount < 0:
+        return None, 'device_sell_amount cannot be negative.'
+
+    if amount >= Decimal('10000000000'):
+        return None, 'device_sell_amount is too large.'
+
+    return amount.quantize(Decimal('0.01')), None
+
+
+def _validate_no_of_emg_buttons(raw_value):
+    """
+    Number of SOS / emergency buttons fitted, 1 to 10.
+    Returns (int, error_message). Exactly one is non-None.
+    """
+    raw_value = str(raw_value or '').strip()
+    if not raw_value:
+        return None, 'This field is required.'
+
+    try:
+        count = int(raw_value)
+    except (TypeError, ValueError):
+        return None, 'no_of_emg_buttons must be a whole number.'
+
+    if count < EMG_BUTTONS_MIN or count > EMG_BUTTONS_MAX:
+        return None, (
+            f'no_of_emg_buttons must be between {EMG_BUTTONS_MIN} '
+            f'and {EMG_BUTTONS_MAX}.'
+        )
+
+    return count, None
+
+
+
+
+def _build_certificate_no(record):
+    """
+    Certificate number for a completed tagging.
+
+    The real format has not been finalised — this is a dummy serial built
+    from the record id. Replace once the format is provided.
+    """
+    return f"{CERTIFICATE_NO_PREFIX}{record.id}"
+
+
+def _get_fitment_centre_details(dealer):
+    """
+    Fitment centre details come from the dealer who did the tagging.
+
+    Name is the dealer's company name. Address comes from the dealer's
+    user account — the Dealer model itself has no address field.
+
+    Returns (name, address).
+    """
+    name = dealer.company_name if dealer else ''
+
+    address = ''
+    if dealer:
+        dealer_user = dealer.users.filter(status='active').first() or dealer.users.first()
+        if dealer_user:
+            parts = [
+                (dealer_user.address or '').strip(),
+                (dealer_user.address_State or '').strip(),
+                (dealer_user.address_pin or '').strip(),
+            ]
+            address = ', '.join(p for p in parts if p)
+
+    return name, address
+
+
+def _build_certificate_fields(record):
+    """
+    The certificate-specific fields, on top of whatever the existing
+    Vahan info API returns.
+    """
+    fitment_name, fitment_address = _get_fitment_centre_details(record.dealer)
+
+    return {
+        "cert_no": _build_certificate_no(record),
+        "primary_msisdn": record.m2m_primary_msisdn or '',
+        "fallback_msisdn": record.m2m_fallback_msisdn or '',
+        "no_of_emg_buttons": (
+            str(record.no_of_emg_buttons) if record.no_of_emg_buttons else ''
+        ),
+        "fitment_center_name": fitment_name,
+        "fitment_center_address": fitment_address,
+        # RTO name is taken from the district for now.
+        "rto_name": record.district.district if record.district else '',
+    }
+    
+    
 def _tagging_otp_matches(stored_otp, submitted_otp):
     """
     Compare a submitted OTP against the stored one.
@@ -40997,9 +41130,7 @@ TAGGING_PACKET_TYPES = [
     'sos_stop',
 ]
  
-# Which of the 9 must be received before step 4 can pass.
-# All 9 per TL. Trim this list to relax the requirement without
-# touching any logic — the others are still checked and reported.
+
 TAGGING_REQUIRED_PACKETS = list(TAGGING_PACKET_TYPES)
  
  
@@ -41019,7 +41150,7 @@ def _packet_has_ble_marker(raw):
     """
     True when the packet carries the BLE source marker.
  
-    Per TL: BLE-triggered alerts are marked by a 'BLE' source string at
+        BLE-triggered alerts are marked by a 'BLE' source string at
     the end of the packet.
  
     UNVERIFIED — no BLE packet exists in the data yet, so the exact
@@ -41031,14 +41162,30 @@ def _packet_has_ble_marker(raw):
     return 'BLE' in tail
  
  
-def _is_login_packet(raw, ble=None):
-    # VERIFIED — 487,707 rows in production start with '$AS'.
-    return _normalise_packet(raw).startswith('$AS')
+# Matched on structure, not on a registration prefix. The registration
+# number varies by state — and a second-hand commercial vehicle keeps its
+# original plate even after moving to another state — so any prefix must
+# be accepted.
+LOGIN_PACKET_PATTERN = re.compile(r'^\$[A-Z0-9]+,\$\d{15},')
  
+ 
+def _is_login_packet(raw, ble=None):
+    """
+    Login packet: $<reg no>,$<imei>,$<fw>,$<fw>,$<position>
+    Matched on structure — the old check looked for a '$AS' prefix and so
+    only found Assam vehicles.
+    """
+    return bool(LOGIN_PACKET_PATTERN.match((raw or '').strip()))
  
 def _is_health_packet(raw, ble=None):
-    # VERIFIED — 1.5M rows in production.
-    return ',HLM,' in _normalise_packet(raw)
+    """
+    VERIFIED against real data:
+      $,HLM,MAPW,1.1.1,<imei>,100,10,0,5,5,0011,11.2 4.20,*
+
+    Field-based rather than a ',HLM,' substring — normalisation strips the
+    leading comma, so the substring check never matched real packets.
+    """
+    return _packet_type_in_header(raw, 'HLM')
  
  
 def _is_pvt_packet(raw, ble=None):
@@ -41048,7 +41195,7 @@ def _is_pvt_packet(raw, ble=None):
  
 def _is_emergency_start(raw, ble=False):
     """
-    Emergency start in GPSDataLog, alert type EM,10 per TL.
+    Emergency start in GPSDataLog, alert type EM,10
     UNVERIFIED — no EM,10 rows exist in the data yet.
     """
     packet = _normalise_packet(raw)
@@ -41059,7 +41206,7 @@ def _is_emergency_start(raw, ble=False):
  
 def _is_emergency_stop(raw, ble=None):
     """
-    Emergency stop in GPSDataLog, alert type EM,11 per TL.
+    Emergency stop in GPSDataLog, alert type EM,11
     UNVERIFIED — no EM,11 rows exist in the data yet.
     """
     return 'EM,11' in _normalise_packet(raw)
@@ -41079,15 +41226,15 @@ def _is_sos_packet(raw, msg_type, ble=False):
 # Which table each packet type lives in, and how to recognise it.
 # One place to correct a matcher — nothing else needs touching.
 TAGGING_PACKET_MATCHERS = {
-    'login_packet':        ('gps',   lambda r: _is_login_packet(r)),
-    'health_packet':       ('gps',   lambda r: _is_health_packet(r)),
-    'pvt_packet':          ('gps',   lambda r: _is_pvt_packet(r)),
-    'emergency_start':     ('gps',   lambda r: _is_emergency_start(r, ble=False)),
-    'ble_emergency_start': ('gps',   lambda r: _is_emergency_start(r, ble=True)),
-    'emergency_stop':      ('gps',   lambda r: _is_emergency_stop(r)),
-    'sos_start':           ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=False)),
-    'sos_start_ble':       ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=True)),
-    'sos_stop':            ('gpsem', lambda r: _is_sos_packet(r, 'SEM')),
+    'login_packet':        ('gps',   lambda r: _is_login_packet(r),                  True),
+    'health_packet':       ('gps',   lambda r: _is_health_packet(r),                 False),
+    'pvt_packet':          ('gps',   lambda r: _is_pvt_packet(r),                    True),
+    'emergency_start':     ('gps',   lambda r: _is_emergency_start(r, ble=False),    True),
+    'ble_emergency_start': ('gps',   lambda r: _is_emergency_start(r, ble=True),     True),
+    'emergency_stop':      ('gps',   lambda r: _is_emergency_stop(r),                True),
+    'sos_start':           ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=False),  True),
+    'sos_start_ble':       ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=True),   True),
+    'sos_stop':            ('gpsem', lambda r: _is_sos_packet(r, 'SEM'),             True),
 }
  
  
@@ -41196,13 +41343,19 @@ def device_tagging_step4_packet_check(request):
     latest_pvt_raw = None
  
     for packet_type in TAGGING_PACKET_TYPES:
-        table, matcher = TAGGING_PACKET_MATCHERS[packet_type]
+        table, matcher, needs_reg_no = TAGGING_PACKET_MATCHERS[packet_type]
         found = None
  
         for raw_data, packet_time in rows_by_table[table]:
-            # A packet carrying a different vehicle's registration number
-            # is not this device's traffic.
-            if reg_no and reg_no not in raw_data:
+            # Packet types that carry a registration number must match the
+            # vehicle's own number as well as the IMEI. This is what
+            # catches a device fitted without the correct plate configured
+            # — the device would transmit with the wrong or factory
+            # default registration, and must not pass this step.
+            #
+            # The health packet carries no registration number, so it is
+            # matched on IMEI alone.
+            if needs_reg_no and reg_no and reg_no not in raw_data:
                 continue
             try:
                 if matcher(raw_data):
@@ -41291,7 +41444,7 @@ def _get_owner_mobile(vehicle_owner):
 
 def _check_step5_prerequisites(record):
     """
-    The three checks the TL specified before the owner OTP is sent:
+    The three checks specified before the owner OTP is sent:
 
       1. all required GPS packets were received
       2. that check is still inside the freshness window
@@ -41603,8 +41756,10 @@ def device_tagging_step5_verify_owner_otp(request):
         category=record.category,
         district=record.district,
         rc_file=record.rc_file,
-        receipt_file_or='',   # not collected in this flow, per TL
-        receipt_file_ul='',   # not collected in this flow, per TL
+        device_sell_amount=record.device_sell_amount,
+        no_of_emg_buttons=record.no_of_emg_buttons,
+        receipt_file_or='',   # not collected in this flow, 
+        receipt_file_ul='',   # not collected in this flow, 
         status=TAGGING_FINAL_TAG_STATUS,
         tagged_by=request.user,
         tagged=now,
@@ -41672,15 +41827,13 @@ def device_tagging_step5_verify_owner_otp(request):
 # TAGGING FLOW — SUPPORTING APIs
 # =====================================================================
 #   1. My entries with step status  (drives the resume feature)
-#   2. My manufacturer / models / providers  (feeds step 1 dropdowns)
+#   2. My manufacturer 
 #
-# No model changes needed.
 # =====================================================================
 
 
 # =====================================================================
-# SECTION 1 — skytron_api/views.py
-# Add to the tagging constants block.
+# SECTION 1 
 # =====================================================================
 
 # Human-readable label for each step a record can be sitting at.
@@ -41698,8 +41851,7 @@ TAGGING_LIST_MAX_PAGE_SIZE = 100
 
 
 # =====================================================================
-# SECTION 2 — skytron_api/views.py
-# Helper. Paste with the other tagging helpers.
+# SECTION 2 
 # =====================================================================
 
 def _tagging_step_progress(record):
@@ -41733,7 +41885,7 @@ def _tagging_step_progress(record):
 
 
 # =====================================================================
-# SECTION 3 — skytron_api/views.py
+# SECTION 3
 # SUPPORTING API 1 — MY ENTRIES WITH STEP STATUS
 # =====================================================================
 
@@ -41917,7 +42069,7 @@ def device_tagging_my_entries(request):
 
 
 # =====================================================================
-# SECTION 4 — skytron_api/views.py
+# SECTION 4 
 # SUPPORTING API 2 — MY MANUFACTURER / MODELS / PROVIDERS
 # =====================================================================
 
@@ -42009,3 +42161,192 @@ def device_tagging_my_manufacturer(request):
         },
     }, status=status.HTTP_200_OK)
 
+
+
+
+
+# =====================================================================
+# CERTIFICATE API
+# =====================================================================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def device_tagging_certificate(request):
+    """
+    POST /api/device-tagging/certificate/
+
+    Certificate details for one completed tagging, looked up by IMEI.
+
+    Only records where tagging is fully complete (owner OTP verified,
+    step 5 done) are returned — a certificate cannot be issued for a
+    tagging still in progress.
+
+    Body:
+        { "imei": "861850060253620" }
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    dealer, error = _get_tagging_dealer(request)
+    if error:
+        return error
+
+    imei = str(request.data.get('imei') or '').strip()
+    if not imei:
+        return Response(
+            {"errors": {"imei": "This field is required."}},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    record = DeviceStockMaster.objects.filter(
+        imei=imei,
+        created_by=request.user,
+        is_deleted=False,
+        current_step=6,
+    ).select_related(
+        'dealer', 'district', 'created_device_tag'
+    ).last()
+
+    if not record:
+        # Distinguish "not finished" from "not found" — the dealer needs
+        # to know which.
+        in_progress = DeviceStockMaster.objects.filter(
+            imei=imei, created_by=request.user, is_deleted=False
+        ).last()
+        if in_progress:
+            return Response(
+                {
+                    "error": "Tagging is not completed for this IMEI.",
+                    "current_step": in_progress.current_step,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            {"error": "No completed tagging found for this IMEI."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    device_tag = record.created_device_tag
+    if not device_tag:
+        return Response(
+            {"error": "No device tag was created for this entry."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    serializer = VahanSerializer(device_tag)
+
+    return Response({
+        "status": "success",
+        "Skytrack_data": serializer.data,
+        "certificate_data": _build_certificate_fields(record),
+    },status=status.HTTP_200_OK)
+    
+    
+
+
+# =====================================================================
+# CERTIFICATE LIST API
+# =====================================================================
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def device_tagging_certificate_list(request):
+    """
+    GET or POST /api/device-tagging/certificate-list/
+
+    All completed taggings for the calling dealer, with the certificate
+    fields for each.
+
+    Optional filters (query string on GET, body on POST):
+        imei            partial match
+        vehicle_reg_no  partial match
+        search          partial match on either of the above
+        page            default 1
+        page_size       default 25, max 100
+    """
+    dealer, error = _get_tagging_dealer(request)
+    if error:
+        return error
+
+    params = request.data if request.method == 'POST' else request.query_params
+
+    entries = DeviceStockMaster.objects.filter(
+        created_by=request.user,
+        is_deleted=False,
+        current_step=6,
+    ).select_related(
+        'dealer', 'district', 'category', 'device_model',
+        'created_device_stock', 'created_device_tag',
+    ).order_by('-step5_completed_at')
+
+    imei = str(params.get('imei') or '').strip()
+    if imei:
+        entries = entries.filter(imei__icontains=imei)
+
+    reg_no = str(params.get('vehicle_reg_no') or '').strip()
+    if reg_no:
+        entries = entries.filter(vahan_reg_no__icontains=reg_no)
+
+    # One box that searches either field, for a single search input.
+    search = str(params.get('search') or '').strip()
+    if search:
+        entries = entries.filter(
+            Q(imei__icontains=search) | Q(vahan_reg_no__icontains=search)
+        )
+
+    total_count = entries.count()
+
+    try:
+        page = max(1, int(params.get('page') or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(params.get('page_size') or TAGGING_LIST_PAGE_SIZE)
+    except (TypeError, ValueError):
+        page_size = TAGGING_LIST_PAGE_SIZE
+    page_size = max(1, min(page_size, TAGGING_LIST_MAX_PAGE_SIZE))
+
+    start = (page - 1) * page_size
+    page_entries = entries[start:start + page_size]
+
+    data = []
+    for record in page_entries:
+        certificate = _build_certificate_fields(record)
+        data.append({
+            "id": record.id,
+            "imei": record.imei,
+            "iccid": record.iccid,
+            "vehicle_reg_no": record.vahan_reg_no,
+            "is_temp_reg_no": record.is_temp_reg_no,
+            "chassis_no": record.vahan_chassis_no,
+            "engine_no": record.vahan_engine_no,
+            "vehicle_make": record.vahan_maker_name,
+            "vehicle_model": record.vahan_model_name,
+            "category": record.category.category if record.category else '',
+            "device_model": (
+                record.device_model.model_name if record.device_model else ''
+            ),
+            "device_sell_amount": record.device_sell_amount,
+            "tagged_at": record.step5_completed_at,
+            "device_stock_id": record.created_device_stock_id,
+            "device_tag_id": record.created_device_tag_id,
+            **certificate,
+        })
+
+    total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+
+    return Response({
+        "status": "success",
+        "data": data,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_previous": page > 1,
+        },
+    }, status=status.HTTP_200_OK)

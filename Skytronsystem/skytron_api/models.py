@@ -1407,6 +1407,8 @@ class DeviceTag(models.Model):
     drivers= models.ManyToManyField(Driver, related_name='driver_vehicles', blank=True)
     with_trailer = models.BooleanField(default=False)
     trailer_id = models.CharField(max_length=30, null=True, blank=True)
+    # Number of SOS / emergency buttons fitted. 1 to 10.
+    no_of_emg_buttons = models.PositiveSmallIntegerField(null=True, blank=True)
 
     def __str__(self):
         return self.vehicle_reg_no
@@ -5286,6 +5288,15 @@ class DeviceStockMaster(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    # Sale amount of the device, entered by the dealer at step 1.
+    device_sell_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True
+    )
+
+    # Number of SOS / emergency buttons fitted. 1 to 10.
+    no_of_emg_buttons = models.PositiveSmallIntegerField(null=True, blank=True)
+ 
  
     class Meta:
         indexes = [

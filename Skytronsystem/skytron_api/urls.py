@@ -1165,4 +1165,7 @@ urlpatterns += [
     path('device-tagging/my-entries/',      device_tagging_my_entries,      name='device-tagging-my-entries'),
     path('device-tagging/my-manufacturer/', device_tagging_my_manufacturer, name='device-tagging-my-manufacturer'),
     
+    path('device-tagging/certificate/',      device_tagging_certificate,      name='device-tagging-certificate'),
+    path('device-tagging/certificate-list/', device_tagging_certificate_list, name='device-tagging-certificate-list'),
+    
 ]
