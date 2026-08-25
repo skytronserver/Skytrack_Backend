@@ -977,7 +977,9 @@ class DeviceModelTechnicalOnboardingRequest(models.Model):
 
     STATUS_CHOICES = [
         ('submitted', 'Submitted'),
+        ('stock_received', 'Stock Received'),
         ('ongoing_evaluation', 'Ongoing Evaluation'),
+        ('testing_complete', 'Testing Complete'),
         ('technically_compatible', 'Technically Compatible'),
         ('technically_not_compatible', 'Technically Not Compatible'),
         ('StateAdminApproved', 'State Admin Approved'),
@@ -997,6 +999,10 @@ class DeviceModelTechnicalOnboardingRequest(models.Model):
 
     evaluation_datetime = models.DateTimeField(blank=True, null=True)
     decision_datetime = models.DateTimeField(blank=True, null=True)
+
+    courier_name = models.CharField(max_length=255, blank=True, null=True)
+    courier_tracking_number = models.CharField(max_length=100, blank=True, null=True)
+    courier_shipped_date = models.DateField(blank=True, null=True)
 
     class Meta:
         indexes = [
@@ -1021,11 +1027,112 @@ class DeviceModelTechnicalOnboardingDemoDevice(models.Model):
     msisdn1 = models.CharField(max_length=30)
     msisdn2 = models.CharField(max_length=30)
 
+    receipt_confirmed = models.BooleanField(default=False)
+    receipt_confirmed_at = models.DateTimeField(blank=True, null=True)
+    receipt_confirmed_by = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+
     class Meta:
         indexes = [
             models.Index(fields=['onboarding_request']),
             models.Index(fields=['imei']),
             models.Index(fields=['device_serial_no']),
+        ]
+
+
+class TechnicalOnboardingTestCase(models.Model):
+    """
+    Backend-driven catalog of technical onboarding checkpoint tests.
+    Superadmin-editable via the catalog API so source/regex/thresholds can
+    be tuned per device-model protocol without a code deploy.
+    """
+    objects = SafeCreateManager()
+
+    SOURCE_CHOICES = [
+        ('gps', 'GPS Raw Log (GPSDataLog)'),
+        ('gpsem', 'Emergency Raw Log (GPSemDataLog)'),
+        ('ota_command', 'OTA Command History'),
+        ('activation_command', 'Activation Command'),
+        ('manual', 'Manual / Observed'),
+    ]
+
+    serial_no = models.PositiveSmallIntegerField(unique=True, db_index=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField()
+
+    source_table = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='manual')
+    regex_pattern = models.CharField(max_length=500, blank=True, null=True)
+    min_match_count = models.PositiveIntegerField(default=1)
+    max_interval_seconds = models.PositiveIntegerField(blank=True, null=True)
+    scan_window_seconds = models.PositiveIntegerField(default=300)
+
+    is_optional = models.BooleanField(default=False)
+    active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['serial_no']
+
+    def __str__(self):
+        return f"#{self.serial_no} {self.name}"
+
+
+class TechnicalOnboardingTestExecution(models.Model):
+    """
+    One row per (onboarding_request, demo_device, test_case) — tracks the
+    live state of a single IMEI running a single checkpoint test.
+    """
+    objects = SafeCreateManager()
+
+    STATUS_CHOICES = [
+        ('not_started', 'Not Started'),
+        ('in_progress', 'In Progress'),
+        ('complete', 'Complete'),
+        ('incomplete', 'Incomplete'),
+    ]
+    MANUAL_RESULT_CHOICES = [
+        ('pass', 'Pass'),
+        ('fail', 'Fail'),
+    ]
+
+    onboarding_request = models.ForeignKey(
+        'DeviceModelTechnicalOnboardingRequest', on_delete=models.CASCADE, related_name='test_executions'
+    )
+    demo_device = models.ForeignKey(
+        'DeviceModelTechnicalOnboardingDemoDevice', on_delete=models.CASCADE, related_name='test_executions'
+    )
+    test_case = models.ForeignKey(
+        'TechnicalOnboardingTestCase', on_delete=models.CASCADE, related_name='executions'
+    )
+
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='not_started', db_index=True)
+    attempt_number = models.PositiveIntegerField(default=0)
+
+    started_at = models.DateTimeField(blank=True, null=True)
+    started_by = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    last_heartbeat_at = models.DateTimeField(blank=True, null=True)
+
+    completed_at = models.DateTimeField(blank=True, null=True)
+    completed_by = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+
+    test_log_snapshot = models.JSONField(blank=True, null=True)
+    last_refreshed_at = models.DateTimeField(blank=True, null=True)
+
+    manual_result = models.CharField(max_length=4, choices=MANUAL_RESULT_CHOICES, blank=True, null=True)
+    manual_notes = models.TextField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ('onboarding_request', 'demo_device', 'test_case')
+        indexes = [
+            models.Index(fields=['onboarding_request', 'test_case']),
+            models.Index(fields=['onboarding_request', 'status']),
         ]
 
 

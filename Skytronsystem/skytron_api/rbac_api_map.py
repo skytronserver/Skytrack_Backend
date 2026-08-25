@@ -140,6 +140,17 @@ API_MODULE_MAP: dict[str, list[str]] = {
         "mfr_onboarding_new", "mfr_onboarding_list",
     ],
     "create_device_model_technical_onboarding_request": ["mfr_onboarding_new"],
+    "manufacturer_update_courier_tracking": ["mfr_onboarding_new"],
+    "superadmin_confirm_demo_device_receipt": ["tech_onboarding", "tech_onboarding_final"],
+    "technical_onboarding_test_case_list": [
+        "tech_onboarding", "tech_onboarding_final", "mfr_onboarding_new", "mfr_onboarding_list",
+    ],
+    "technical_onboarding_test_case_upsert": ["tech_onboarding"],
+    "superadmin_get_onboarding_test_board": ["tech_onboarding", "tech_onboarding_final"],
+    "superadmin_start_test": ["tech_onboarding", "tech_onboarding_final"],
+    "superadmin_test_heartbeat": ["tech_onboarding", "tech_onboarding_final"],
+    "superadmin_refresh_test_log": ["tech_onboarding", "tech_onboarding_final"],
+    "superadmin_complete_test": ["tech_onboarding", "tech_onboarding_final"],
 
     # ── A.7  Tracking & Playback ──────────────────────────────────────────────
     # gps_track_data_api is called from many routes / many modules
@@ -521,6 +532,13 @@ API_ACTION_OVERRIDE: dict[str, str] = {
     "superadmin_mark_technical_onboarding_ongoing_evaluation": "update",
     "superadmin_finalize_technical_onboarding_request":        "update",
     "approve_manufacturer_tech_onboarding":                    "update",
+    "manufacturer_update_courier_tracking":                    "update",
+    "superadmin_confirm_demo_device_receipt":                  "update",
+    "technical_onboarding_test_case_upsert":                   "update",
+    "superadmin_start_test":                                   "update",
+    "superadmin_test_heartbeat":                                "update",
+    "superadmin_refresh_test_log":                              "update",
+    "superadmin_complete_test":                                 "update",
     "esimActivateReq-update":     "update",
     "restore_gps_data_log":       "update",
     "send_mqtt_command":          "update",

@@ -17861,8 +17861,8 @@ def superadmin_mark_technical_onboarding_ongoing_evaluation(request):
     ).last()
     if not onboarding_request:
         return Response({'error': 'Invalid onboarding_request_id.'}, status=status.HTTP_400_BAD_REQUEST)
-    if onboarding_request.status != 'submitted':
-        return Response({'error': 'Only submitted requests can be moved to ongoing evaluation.'}, status=status.HTTP_400_BAD_REQUEST)
+    if onboarding_request.status not in ('submitted', 'stock_received'):
+        return Response({'error': 'Only submitted or stock-received requests can be moved to ongoing evaluation.'}, status=status.HTTP_400_BAD_REQUEST)
 
     onboarding_request.status = 'ongoing_evaluation'
     onboarding_request.evaluation_datetime = serializer.validated_data.get('evaluation_datetime', timezone.now())
@@ -17895,8 +17895,8 @@ def superadmin_finalize_technical_onboarding_request(request):
     ).last()
     if not onboarding_request:
         return Response({'error': 'Invalid onboarding_request_id.'}, status=status.HTTP_400_BAD_REQUEST)
-    if onboarding_request.status != 'ongoing_evaluation':
-        return Response({'error': 'Request must be in ongoing evaluation status before final decision.'}, status=status.HTTP_400_BAD_REQUEST)
+    if onboarding_request.status != 'testing_complete':
+        return Response({'error': 'All checkpoint tests must be completed for every demo IMEI before final decision.'}, status=status.HTTP_400_BAD_REQUEST)
 
     compatibility_report_file = request.FILES.get('compatibility_report_pdf')
     if not compatibility_report_file:

@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Technical Onboarding — API Demo</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #f2f4f7; color: #1a1f28; }
+  header { background: #14213d; color: #fff; padding: 14px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; margin-right: auto; }
+  header input[type=text] { width: 380px; max-width: 40vw; padding: 6px 8px; border-radius: 4px; border: 1px solid #333; }
+  header button { padding: 6px 12px; border: none; border-radius: 4px; background: #fca311; color: #14213d; font-weight: 600; cursor: pointer; }
+  header .token-state { font-size: 12px; opacity: .85; }
+  nav.tabs { display: flex; background: #fff; border-bottom: 1px solid #dde1e7; }
+  nav.tabs button { flex: none; padding: 10px 18px; border: none; background: none; cursor: pointer; font-size: 14px; border-bottom: 3px solid transparent; }
+  nav.tabs button.active { border-bottom-color: #fca311; font-weight: 600; }
+  main { padding: 16px 20px 60px; max-width: 1400px; margin: 0 auto; }
+  .tabpanel { display: none; }
+  .tabpanel.active { display: block; }
+  .card { background: #fff; border: 1px solid #dde1e7; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 10px; }
+  .card h3 { font-size: 13px; margin: 14px 0 6px; color: #555; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .row label { display: flex; flex-direction: column; font-size: 12px; color: #444; gap: 3px; }
+  .row input, .row select, .row textarea { padding: 6px 8px; border: 1px solid #c7ccd4; border-radius: 4px; font-size: 13px; min-width: 160px; }
+  .row textarea { min-width: 260px; }
+  button.act { padding: 7px 14px; border: 1px solid #14213d; background: #14213d; color: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  button.act.secondary { background: #fff; color: #14213d; }
+  button.act.small { padding: 4px 9px; font-size: 12px; }
+  button.act:disabled { opacity: .4; cursor: not-allowed; }
+  table.demo-devices { border-collapse: collapse; margin-bottom: 8px; width: 100%; }
+  table.demo-devices th, table.demo-devices td { border: 1px solid #dde1e7; padding: 4px; }
+  table.demo-devices input { width: 100%; border: none; padding: 4px; font-size: 12px; }
+  .out { background: #0e1420; color: #cdeb; padding: 10px; border-radius: 6px; font-size: 12px; white-space: pre-wrap; max-height: 220px; overflow: auto; margin-top: 8px; }
+  .req-card { border: 1px solid #dde1e7; border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+  .req-card .status { display: inline-block; padding: 2px 8px; border-radius: 10px; background: #eef1f6; font-size: 11px; margin-left: 6px; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 8px; font-size: 11px; margin-right: 4px; }
+  .badge.yes { background: #d7f5df; color: #14732b; }
+  .badge.no { background: #fde2e2; color: #93231f; }
+  .board-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .board-table th, .board-table td { border: 1px solid #dde1e7; padding: 6px; vertical-align: top; }
+  .board-table th { background: #f7f8fa; position: sticky; top: 0; }
+  .board-table td.name-cell { max-width: 260px; }
+  .board-table td.locked { background: #f5f5f5; color: #999; }
+  .status-pill { display: inline-block; padding: 1px 7px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-bottom: 4px; }
+  .status-pill.not_started { background: #eee; color: #666; }
+  .status-pill.in_progress { background: #fff4d6; color: #8a6100; }
+  .status-pill.complete { background: #d7f5df; color: #14732b; }
+  .status-pill.incomplete { background: #fde2e2; color: #93231f; }
+  .snapshot { font-size: 11px; background: #f7f8fa; padding: 4px; border-radius: 4px; margin: 4px 0; }
+  .cellbtns { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+  .muted { color: #888; font-size: 11px; }
+  #errBanner { display: none; position: sticky; top: 0; z-index: 20; background: #fde2e2; color: #7a1414; border: 1px solid #f3a3a3; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; font-size: 13px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Technical Onboarding — API Demo Interface</h1>
+  <input id="tokenInput" type="text" placeholder="Paste bearer access token here">
+  <button onclick="saveToken()">Save Token</button>
+  <span class="token-state" id="tokenState">no token set</span>
+</header>
+
+<nav class="tabs">
+  <button id="tab-btn-manufacturer" class="active" onclick="showTab('manufacturer')">Manufacturer</button>
+  <button id="tab-btn-superadmin" onclick="showTab('superadmin')">Superadmin</button>
+</nav>
+
+<main>
+
+  <div id="errBanner"></div>
+
+  <!-- ============ MANUFACTURER TAB ============ -->
+  <div id="tab-manufacturer" class="tabpanel active">
+
+    <div class="card">
+      <h2>Device Models</h2>
+      <div class="row">
+        <label>Model Name <input id="dm_model_name" value="Demo Model X1"></label>
+        <label>Test Agency <input id="dm_test_agency" value="Internal Lab"></label>
+        <label>Vendor ID <input id="dm_vendor_id" value="VEND-001"></label>
+        <label>TAC No <input id="dm_tac_no" value="TAC-0001"></label>
+        <label>TAC Validity <input id="dm_tac_validity" type="date"></label>
+        <label>Hardware Version <input id="dm_hardware_version" value="HW1.0"></label>
+        <label>Whitelisted IP(s) <input id="dm_whitelisted_ip" value="127.0.0.1" placeholder="comma-separated IPs or URLs"></label>
+        <label>TAC Doc (PDF) <input id="dm_tac_doc" type="file"></label>
+      </div>
+      <button class="act" onclick="createDeviceModel()">Create Device Model</button>
+      <button class="act secondary" onclick="listDeviceModels()">List Device Models</button>
+      <div id="dm_list"></div>
+    </div>
+
+    <div class="card">
+      <h2>Create Technical Onboarding Request (5 demo IMEIs)</h2>
+      <div class="row">
+        <label>Device Model ID <input id="req_device_model_id" type="number" placeholder="e.g. 3"></label>
+        <label>User Manual PDF <input id="req_user_manual" type="file"></label>
+        <label>OT Command List PDF <input id="req_ot_command" type="file"></label>
+      </div>
+      <h3>5 demo devices</h3>
+      <table class="demo-devices" id="demo_device_table">
+        <thead><tr><th>Serial No</th><th>IMEI</th><th>CCID1</th><th>CCID2</th><th>MSISDN1</th><th>MSISDN2</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button class="act" onclick="createOnboardingRequest()">Submit Onboarding Request</button>
+    </div>
+
+    <div class="card">
+      <h2>Courier Tracking</h2>
+      <div class="row">
+        <label>Onboarding Request ID <input id="courier_req_id" type="number"></label>
+        <label>Courier Name <input id="courier_name" value="BlueDart"></label>
+        <label>Tracking Number <input id="courier_tracking_number" value="TRK123456"></label>
+        <label>Shipped Date <input id="courier_shipped_date" type="date"></label>
+      </div>
+      <button class="act" onclick="updateCourierTracking()">Update Courier Tracking</button>
+    </div>
+
+    <div class="card">
+      <h2>My Onboarding Requests</h2>
+      <button class="act secondary" onclick="listMyRequests()">Refresh List</button>
+      <div id="mfr_requests_list"></div>
+    </div>
+
+  </div>
+
+  <!-- ============ SUPERADMIN TAB ============ -->
+  <div id="tab-superadmin" class="tabpanel">
+
+    <div class="card">
+      <h2>All Onboarding Requests</h2>
+      <button class="act secondary" onclick="listAllRequests()">Refresh List</button>
+      <div id="sa_requests_list"></div>
+    </div>
+
+    <div class="card" id="board_card" style="display:none;">
+      <h2>Test Board — Request <span id="board_req_id"></span> <span class="status" id="board_status"></span></h2>
+      <div class="muted" id="board_hint"></div>
+      <div style="overflow:auto; max-height: 70vh;">
+        <table class="board-table" id="board_table"></table>
+      </div>
+
+      <h3>Finalize (enabled once status = testing_complete)</h3>
+      <div class="row">
+        <label>Compatibility Report PDF <input id="final_report_pdf" type="file"></label>
+        <label>Decision
+          <select id="final_status">
+            <option value="technically_compatible">Technically Compatible</option>
+            <option value="technically_not_compatible">Technically Not Compatible</option>
+          </select>
+        </label>
+        <label>Comment <textarea id="final_comment" rows="2"></textarea></label>
+      </div>
+      <button class="act" id="finalize_btn" onclick="finalizeRequest()">Finalize Onboarding</button>
+    </div>
+
+  </div>
+
+  <div class="card">
+    <h2>Log</h2>
+    <div class="out" id="log"></div>
+  </div>
+
+</main>
+
+<script>
+const API_BASE = '/api/';
+let selectedBoardRequestId = null;
+let heartbeatTimer = null;
+const inProgressExecutionIds = new Set();
+
+// ---------- token ----------
+function getToken() { return localStorage.getItem('skytron_demo_token') || ''; }
+function saveToken() {
+  const v = document.getElementById('tokenInput').value.trim();
+  localStorage.setItem('skytron_demo_token', v);
+  refreshTokenState();
+}
+function refreshTokenState() {
+  const t = getToken();
+  document.getElementById('tokenInput').value = t;
+  document.getElementById('tokenState').textContent = t ? 'token set (' + t.slice(0, 10) + '…)' : 'no token set';
+}
+
+// ---------- tabs ----------
+function showTab(name) {
+  document.querySelectorAll('.tabpanel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav.tabs button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('tab-btn-' + name).classList.add('active');
+}
+
+// ---------- logging ----------
+function log(label, data) {
+  const el = document.getElementById('log');
+  const line = '[' + new Date().toLocaleTimeString() + '] ' + label + '\n' + JSON.stringify(data, null, 2) + '\n\n';
+  el.textContent = line + el.textContent;
+}
+
+// ---------- core API call ----------
+async function api(path, body, isForm) {
+  const opts = { method: 'POST', headers: {} };
+  const token = getToken();
+  if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+  if (isForm) {
+    opts.body = body;
+  } else {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body || {});
+  }
+  const res = await fetch(API_BASE + path, opts);
+  let data;
+  try { data = await res.json(); } catch (e) { data = { non_json_response: await res.text().catch(() => '') }; }
+  log(path + '  →  HTTP ' + res.status, data);
+  if (!res.ok) {
+    showBanner(path + ' failed (HTTP ' + res.status + '): ' + describeError(data));
+    throw Object.assign(new Error('Request failed: ' + path), { data, status: res.status });
+  }
+  clearBanner();
+  return data;
+}
+
+function describeError(data) {
+  if (!data) return 'Unknown error';
+  if (typeof data === 'string') return data;
+  if (data.error) return data.error;
+  if (data.errors) return JSON.stringify(data.errors);
+  if (data.detail) return data.detail;
+  return JSON.stringify(data);
+}
+
+function showBanner(msg) {
+  const el = document.getElementById('errBanner');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function clearBanner() {
+  const el = document.getElementById('errBanner');
+  el.style.display = 'none';
+  el.textContent = '';
+}
+
+function fd(obj) {
+  const f = new FormData();
+  Object.entries(obj).forEach(([k, v]) => {
+    if (v === undefined || v === null) return;
+    f.append(k, v);
+  });
+  return f;
+}
+
+// ---------- demo device rows ----------
+function buildDemoDeviceRows() {
+  const tbody = document.querySelector('#demo_device_table tbody');
+  tbody.innerHTML = '';
+  for (let i = 1; i <= 5; i++) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input data-f="device_serial_no" value="SN-${i}"></td>
+      <td><input data-f="imei" value="86000000000000${i}"></td>
+      <td><input data-f="ccid1" value="8991000000000000${i}"></td>
+      <td><input data-f="ccid2" value=""></td>
+      <td><input data-f="msisdn1" value="90000000${i}0"></td>
+      <td><input data-f="msisdn2" value=""></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function collectDemoDevices() {
+  const rows = document.querySelectorAll('#demo_device_table tbody tr');
+  return Array.from(rows).map(tr => {
+    const obj = {};
+    tr.querySelectorAll('input').forEach(inp => { obj[inp.dataset.f] = inp.value; });
+    return obj;
+  });
+}
+
+// ---------- Manufacturer: device models ----------
+async function createDeviceModel() {
+  const f = fd({
+    model_name: val('dm_model_name'),
+    test_agency: val('dm_test_agency'),
+    vendor_id: val('dm_vendor_id'),
+    tac_no: val('dm_tac_no'),
+    tac_validity: val('dm_tac_validity'),
+    hardware_version: val('dm_hardware_version'),
+    whitelisted_ip: val('dm_whitelisted_ip'),
+  });
+  const file = document.getElementById('dm_tac_doc').files[0];
+  if (file) f.append('tac_doc_path', file);
+  await api('devicemodel/devicemodelCreate/', f, true).catch(() => {});
+}
+
+async function listDeviceModels() {
+  const data = await api('devicemodel/devicemodelList/', {}).catch(() => []);
+  const el = document.getElementById('dm_list');
+  el.innerHTML = (data || []).map(m =>
+    `<div class="req-card"><b>#${m.id}</b> ${m.model_name || ''} — ${m.status || ''}</div>`
+  ).join('') || '<div class="muted">No device models.</div>';
+}
+
+// ---------- Manufacturer: onboarding request ----------
+async function createOnboardingRequest() {
+  const f = fd({
+    device_model_id: val('req_device_model_id'),
+    demo_devices: JSON.stringify(collectDemoDevices()),
+  });
+  const manual = document.getElementById('req_user_manual').files[0];
+  const otcmd = document.getElementById('req_ot_command').files[0];
+  if (manual) f.append('user_manual_pdf', manual);
+  if (otcmd) f.append('ot_command_list_pdf', otcmd);
+  await api('devicemodel/technical-onboarding/create/', f, true).catch(() => {});
+  await listMyRequests();
+}
+
+async function updateCourierTracking() {
+  await api('devicemodel/technical-onboarding/manufacturer/courier-tracking/', {
+    onboarding_request_id: Number(val('courier_req_id')),
+    courier_name: val('courier_name'),
+    courier_tracking_number: val('courier_tracking_number'),
+    courier_shipped_date: val('courier_shipped_date') || undefined,
+  }).catch(() => {});
+  await listMyRequests();
+}
+
+async function listMyRequests() {
+  const data = await api('devicemodel/technical-onboarding/manufacturer/list/', {}).catch(() => []);
+  document.getElementById('mfr_requests_list').innerHTML = renderRequestCards(data, false);
+}
+
+// ---------- Superadmin: requests + receipt ----------
+async function listAllRequests() {
+  const data = await api('devicemodel/technical-onboarding/superadmin/list/', {}).catch(() => []);
+  document.getElementById('sa_requests_list').innerHTML = renderRequestCards(data, true);
+}
+
+function renderRequestCards(data, superadmin) {
+  if (!data || !data.length) return '<div class="muted">No requests.</div>';
+  return data.map(r => {
+    const devices = (r.demo_devices || []).map(d => {
+      const badge = d.receipt_confirmed
+        ? `<span class="badge yes">received</span>`
+        : `<span class="badge no">pending</span>`;
+      const btn = (superadmin && !d.receipt_confirmed)
+        ? `<button class="act small" onclick="confirmReceipt(${r.id}, ${d.id})">Confirm Receipt</button>`
+        : '';
+      return `<div>${d.imei} ${badge} ${btn}</div>`;
+    }).join('');
+    const openBoard = superadmin
+      ? `<button class="act small" onclick="openTestBoard(${r.id})">Open Test Board</button>`
+      : '';
+    return `<div class="req-card">
+      <b>Request #${r.id}</b> — Device Model #${r.device_model ? r.device_model.id : r.device_model_id}
+      <span class="status">${r.status}</span>
+      <div class="muted">Courier: ${r.courier_name || '-'} / ${r.courier_tracking_number || '-'} / ${r.courier_shipped_date || '-'}</div>
+      <div>${devices}</div>
+      ${openBoard}
+    </div>`;
+  }).join('');
+}
+
+async function confirmReceipt(onboarding_request_id, demo_device_id) {
+  await api('devicemodel/technical-onboarding/superadmin/confirm-receipt/', { onboarding_request_id, demo_device_id }).catch(() => {});
+  await listAllRequests();
+}
+
+// ---------- Superadmin: test board ----------
+async function openTestBoard(requestId) {
+  selectedBoardRequestId = requestId;
+  const card = document.getElementById('board_card');
+  card.style.display = 'block';
+  document.getElementById('board_req_id').textContent = requestId;
+  document.getElementById('board_status').textContent = 'loading…';
+  document.getElementById('board_hint').textContent = '';
+  document.getElementById('board_table').innerHTML = '';
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  await refreshBoard();
+}
+
+async function refreshBoard() {
+  if (!selectedBoardRequestId) return;
+  let data;
+  try {
+    data = await api('devicemodel/technical-onboarding/superadmin/test-board/', {
+      onboarding_request_id: selectedBoardRequestId,
+    });
+  } catch (e) {
+    document.getElementById('board_status').textContent = 'error';
+    document.getElementById('board_hint').textContent =
+      (e.data && (e.data.error || JSON.stringify(e.data.errors))) ||
+      'Could not load the test board. If this request was just submitted, confirm receipt of all 5 IMEIs first.';
+    document.getElementById('board_table').innerHTML = '';
+    return;
+  }
+  document.getElementById('board_status').textContent = data.status;
+  document.getElementById('board_hint').textContent = data.current_unlocked_serial_no
+    ? 'Currently unlocked test: #' + data.current_unlocked_serial_no
+    : 'All gating tests complete.';
+  document.getElementById('finalize_btn').disabled = data.status !== 'testing_complete';
+
+  inProgressExecutionIds.clear();
+  renderBoardTable(data);
+  ensureHeartbeatLoop();
+}
+
+function renderBoardTable(data) {
+  const table = document.getElementById('board_table');
+  const deviceCount = (data.rows[0] && data.rows[0].executions.length) || 5;
+  let head = '<tr><th>#</th><th>Test</th>';
+  for (let i = 0; i < deviceCount; i++) head += `<th>IMEI ${i + 1}</th>`;
+  head += '</tr>';
+
+  let body = '';
+  data.rows.forEach(row => {
+    const tc = row.test_case;
+    const locked = data.current_unlocked_serial_no !== null && tc.serial_no > data.current_unlocked_serial_no && !tc.is_optional;
+    body += `<tr>
+      <td>${tc.serial_no}${tc.is_optional ? ' <span class="muted">(optional)</span>' : ''}</td>
+      <td class="name-cell"><b>${tc.name}</b><div class="muted">${tc.description}</div><div class="muted">source: ${tc.source_table}</div></td>`;
+    row.executions.forEach(ex => {
+      body += `<td class="${locked ? 'locked' : ''}">${renderExecutionCell(ex, tc, locked)}</td>`;
+      if (ex.status === 'in_progress') inProgressExecutionIds.add(ex.id);
+    });
+    body += '</tr>';
+  });
+
+  table.innerHTML = head + body;
+}
+
+function renderExecutionCell(ex, tc, locked) {
+  let html = `<span class="status-pill ${ex.status}">${ex.status}</span>`;
+  if (locked) return html + '<div class="muted">locked</div>';
+
+  if (ex.status === 'not_started' || ex.status === 'incomplete') {
+    html += `<div class="cellbtns"><button class="act small" onclick="startTest(${ex.onboarding_request},${ex.demo_device.id},${tc.id})">Start</button></div>`;
+  }
+
+  if (ex.status === 'in_progress') {
+    html += `<div class="cellbtns">
+      <button class="act small secondary" onclick="refreshLog(${ex.id})">Refresh Log</button>
+    </div>`;
+    if (ex.test_log_snapshot) {
+      const s = ex.test_log_snapshot;
+      html += `<div class="snapshot">pass: ${s.pass === null ? 'n/a' : s.pass}${s.matched_count !== undefined ? ' | matched: ' + s.matched_count + '/' + s.required : ''}${s.reason ? '<br>' + s.reason : ''}</div>`;
+    }
+    if (tc.source_table === 'manual') {
+      html += `<div class="cellbtns">
+        <select id="manual_result_${ex.id}"><option value="pass">Pass</option><option value="fail">Fail</option></select>
+        <input id="manual_notes_${ex.id}" placeholder="notes" style="min-width:90px;">
+        <button class="act small" onclick="completeTest(${ex.id}, true)">Complete</button>
+      </div>`;
+    } else {
+      html += `<div class="cellbtns"><button class="act small" onclick="completeTest(${ex.id}, false)">Complete</button></div>`;
+    }
+  }
+
+  return html;
+}
+
+async function startTest(onboarding_request_id, demo_device_id, test_case_id) {
+  await api('devicemodel/technical-onboarding/superadmin/test-start/', {
+    onboarding_request_id, demo_device_id, test_case_id,
+  }).catch(() => {});
+  await refreshBoard();
+}
+
+async function refreshLog(execution_id) {
+  await api('devicemodel/technical-onboarding/superadmin/test-refresh-log/', { execution_id }).catch(() => {});
+  await refreshBoard();
+}
+
+async function completeTest(execution_id, manual) {
+  const body = { execution_id };
+  if (manual) {
+    body.manual_result = val('manual_result_' + execution_id);
+    body.manual_notes = val('manual_notes_' + execution_id);
+  }
+  await api('devicemodel/technical-onboarding/superadmin/test-complete/', body).catch(() => {});
+  await refreshBoard();
+}
+
+function ensureHeartbeatLoop() {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(() => {
+    inProgressExecutionIds.forEach(id => {
+      api('devicemodel/technical-onboarding/superadmin/test-heartbeat/', { execution_id: id }).catch(() => {});
+    });
+  }, 15000);
+}
+
+async function finalizeRequest() {
+  const f = fd({
+    onboarding_request_id: selectedBoardRequestId,
+    status: val('final_status'),
+    final_comment: val('final_comment'),
+  });
+  const file = document.getElementById('final_report_pdf').files[0];
+  if (file) f.append('compatibility_report_pdf', file);
+  await api('devicemodel/technical-onboarding/superadmin/finalize/', f, true).catch(() => {});
+  await refreshBoard();
+  await listAllRequests();
+}
+
+// ---------- utils ----------
+function val(id) { const el = document.getElementById(id); return el ? el.value : ''; }
+
+// ---------- init ----------
+refreshTokenState();
+buildDemoDeviceRows();
+</script>
+
+</body>
+</html>
