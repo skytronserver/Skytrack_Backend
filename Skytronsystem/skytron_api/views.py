@@ -40767,7 +40767,7 @@ def device_tagging_step2_esim(request):
 TAGGING_OTP_MAX_ATTEMPTS = 5
 
 # TEMPORARY: accept this OTP alongside the real one, for both dealer and
-# owner OTP in the tagging flow. Requested by TL for testing.
+# owner OTP in the tagging flow.
 # Set to None to switch off. Must be removed before production go-live.
 TAGGING_DEFAULT_TEST_OTP = '685472'
  
@@ -40997,9 +40997,7 @@ TAGGING_PACKET_TYPES = [
     'sos_stop',
 ]
  
-# Which of the 9 must be received before step 4 can pass.
-# All 9 per TL. Trim this list to relax the requirement without
-# touching any logic — the others are still checked and reported.
+
 TAGGING_REQUIRED_PACKETS = list(TAGGING_PACKET_TYPES)
  
  
@@ -41019,7 +41017,7 @@ def _packet_has_ble_marker(raw):
     """
     True when the packet carries the BLE source marker.
  
-    Per TL: BLE-triggered alerts are marked by a 'BLE' source string at
+        BLE-triggered alerts are marked by a 'BLE' source string at
     the end of the packet.
  
     UNVERIFIED — no BLE packet exists in the data yet, so the exact
@@ -41031,14 +41029,30 @@ def _packet_has_ble_marker(raw):
     return 'BLE' in tail
  
  
-def _is_login_packet(raw, ble=None):
-    # VERIFIED — 487,707 rows in production start with '$AS'.
-    return _normalise_packet(raw).startswith('$AS')
+# Matched on structure, not on a registration prefix. The registration
+# number varies by state — and a second-hand commercial vehicle keeps its
+# original plate even after moving to another state — so any prefix must
+# be accepted.
+LOGIN_PACKET_PATTERN = re.compile(r'^\$[A-Z0-9]+,\$\d{15},')
  
+ 
+def _is_login_packet(raw, ble=None):
+    """
+    Login packet: $<reg no>,$<imei>,$<fw>,$<fw>,$<position>
+    Matched on structure — the old check looked for a '$AS' prefix and so
+    only found Assam vehicles.
+    """
+    return bool(LOGIN_PACKET_PATTERN.match((raw or '').strip()))
  
 def _is_health_packet(raw, ble=None):
-    # VERIFIED — 1.5M rows in production.
-    return ',HLM,' in _normalise_packet(raw)
+    """
+    VERIFIED against real data:
+      $,HLM,MAPW,1.1.1,<imei>,100,10,0,5,5,0011,11.2 4.20,*
+
+    Field-based rather than a ',HLM,' substring — normalisation strips the
+    leading comma, so the substring check never matched real packets.
+    """
+    return _packet_type_in_header(raw, 'HLM')
  
  
 def _is_pvt_packet(raw, ble=None):
@@ -41048,7 +41062,7 @@ def _is_pvt_packet(raw, ble=None):
  
 def _is_emergency_start(raw, ble=False):
     """
-    Emergency start in GPSDataLog, alert type EM,10 per TL.
+    Emergency start in GPSDataLog, alert type EM,10
     UNVERIFIED — no EM,10 rows exist in the data yet.
     """
     packet = _normalise_packet(raw)
@@ -41059,7 +41073,7 @@ def _is_emergency_start(raw, ble=False):
  
 def _is_emergency_stop(raw, ble=None):
     """
-    Emergency stop in GPSDataLog, alert type EM,11 per TL.
+    Emergency stop in GPSDataLog, alert type EM,11
     UNVERIFIED — no EM,11 rows exist in the data yet.
     """
     return 'EM,11' in _normalise_packet(raw)
@@ -41079,15 +41093,15 @@ def _is_sos_packet(raw, msg_type, ble=False):
 # Which table each packet type lives in, and how to recognise it.
 # One place to correct a matcher — nothing else needs touching.
 TAGGING_PACKET_MATCHERS = {
-    'login_packet':        ('gps',   lambda r: _is_login_packet(r)),
-    'health_packet':       ('gps',   lambda r: _is_health_packet(r)),
-    'pvt_packet':          ('gps',   lambda r: _is_pvt_packet(r)),
-    'emergency_start':     ('gps',   lambda r: _is_emergency_start(r, ble=False)),
-    'ble_emergency_start': ('gps',   lambda r: _is_emergency_start(r, ble=True)),
-    'emergency_stop':      ('gps',   lambda r: _is_emergency_stop(r)),
-    'sos_start':           ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=False)),
-    'sos_start_ble':       ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=True)),
-    'sos_stop':            ('gpsem', lambda r: _is_sos_packet(r, 'SEM')),
+    'login_packet':        ('gps',   lambda r: _is_login_packet(r),                  True),
+    'health_packet':       ('gps',   lambda r: _is_health_packet(r),                 False),
+    'pvt_packet':          ('gps',   lambda r: _is_pvt_packet(r),                    True),
+    'emergency_start':     ('gps',   lambda r: _is_emergency_start(r, ble=False),    True),
+    'ble_emergency_start': ('gps',   lambda r: _is_emergency_start(r, ble=True),     True),
+    'emergency_stop':      ('gps',   lambda r: _is_emergency_stop(r),                True),
+    'sos_start':           ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=False),  True),
+    'sos_start_ble':       ('gpsem', lambda r: _is_sos_packet(r, 'EMR', ble=True),   True),
+    'sos_stop':            ('gpsem', lambda r: _is_sos_packet(r, 'SEM'),             True),
 }
  
  
@@ -41196,13 +41210,19 @@ def device_tagging_step4_packet_check(request):
     latest_pvt_raw = None
  
     for packet_type in TAGGING_PACKET_TYPES:
-        table, matcher = TAGGING_PACKET_MATCHERS[packet_type]
+        table, matcher, needs_reg_no = TAGGING_PACKET_MATCHERS[packet_type]
         found = None
  
         for raw_data, packet_time in rows_by_table[table]:
-            # A packet carrying a different vehicle's registration number
-            # is not this device's traffic.
-            if reg_no and reg_no not in raw_data:
+            # Packet types that carry a registration number must match the
+            # vehicle's own number as well as the IMEI. This is what
+            # catches a device fitted without the correct plate configured
+            # — the device would transmit with the wrong or factory
+            # default registration, and must not pass this step.
+            #
+            # The health packet carries no registration number, so it is
+            # matched on IMEI alone.
+            if needs_reg_no and reg_no and reg_no not in raw_data:
                 continue
             try:
                 if matcher(raw_data):
@@ -41291,7 +41311,7 @@ def _get_owner_mobile(vehicle_owner):
 
 def _check_step5_prerequisites(record):
     """
-    The three checks the TL specified before the owner OTP is sent:
+    The three checks specified before the owner OTP is sent:
 
       1. all required GPS packets were received
       2. that check is still inside the freshness window
@@ -41603,8 +41623,8 @@ def device_tagging_step5_verify_owner_otp(request):
         category=record.category,
         district=record.district,
         rc_file=record.rc_file,
-        receipt_file_or='',   # not collected in this flow, per TL
-        receipt_file_ul='',   # not collected in this flow, per TL
+        receipt_file_or='',   # not collected in this flow, 
+        receipt_file_ul='',   # not collected in this flow, 
         status=TAGGING_FINAL_TAG_STATUS,
         tagged_by=request.user,
         tagged=now,
@@ -41672,15 +41692,13 @@ def device_tagging_step5_verify_owner_otp(request):
 # TAGGING FLOW — SUPPORTING APIs
 # =====================================================================
 #   1. My entries with step status  (drives the resume feature)
-#   2. My manufacturer / models / providers  (feeds step 1 dropdowns)
+#   2. My manufacturer 
 #
-# No model changes needed.
 # =====================================================================
 
 
 # =====================================================================
-# SECTION 1 — skytron_api/views.py
-# Add to the tagging constants block.
+# SECTION 1 
 # =====================================================================
 
 # Human-readable label for each step a record can be sitting at.
@@ -41698,8 +41716,7 @@ TAGGING_LIST_MAX_PAGE_SIZE = 100
 
 
 # =====================================================================
-# SECTION 2 — skytron_api/views.py
-# Helper. Paste with the other tagging helpers.
+# SECTION 2 
 # =====================================================================
 
 def _tagging_step_progress(record):
@@ -41733,7 +41750,7 @@ def _tagging_step_progress(record):
 
 
 # =====================================================================
-# SECTION 3 — skytron_api/views.py
+# SECTION 3
 # SUPPORTING API 1 — MY ENTRIES WITH STEP STATUS
 # =====================================================================
 
@@ -41917,7 +41934,7 @@ def device_tagging_my_entries(request):
 
 
 # =====================================================================
-# SECTION 4 — skytron_api/views.py
+# SECTION 4 
 # SUPPORTING API 2 — MY MANUFACTURER / MODELS / PROVIDERS
 # =====================================================================
 
