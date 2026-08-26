@@ -18105,6 +18105,204 @@ def _validate_device_ip_range(raw_value):
 
     return ', '.join(cleaned), None
 
+
+
+
+# Whitelisted phone numbers for a device model.
+WHITELISTED_PHONE_MAX_ITEMS = 10
+
+
+def _validate_whitelisted_phone_number(raw_value):
+    """
+    Validate a comma-separated list of phone numbers. Optional field.
+
+    Returns (cleaned_string_or_None, error_message).
+    Both None means the field was not supplied — that is allowed.
+    """
+    raw_value = str(raw_value or '').strip()
+    if not raw_value:
+        return None, None
+
+    items = [part.strip() for part in raw_value.split(',') if part.strip()]
+    if not items:
+        return None, None
+
+    if len(items) > WHITELISTED_PHONE_MAX_ITEMS:
+        return None, (
+            f'whitelisted_phone_number can have at most '
+            f'{WHITELISTED_PHONE_MAX_ITEMS} numbers. {len(items)} were provided.'
+        )
+
+    cleaned = []
+    invalid = []
+    for item in items:
+        digits = re.sub(r'\D', '', item)
+        if len(digits) < 10 or len(digits) > 15:
+            invalid.append(item)
+            continue
+        if digits in cleaned:
+            continue
+        cleaned.append(digits)
+
+    if invalid:
+        return None, (
+            'whitelisted_phone_number contains invalid entries: '
+            + ', '.join(invalid)
+            + '. Each number must have 10 to 15 digits.'
+        )
+
+    return ', '.join(cleaned), None
+
+
+def _apply_device_model_ip_filters(queryset, request):
+    """
+    Optional manufacturer_id / model_id filters, shared by the superadmin
+    and eSIM provider IP-config listings.
+
+    Returns (queryset, error_message). Exactly one is non-None.
+    """
+    manufacturer_id = request.query_params.get('manufacturer_id')
+    model_id = request.query_params.get('model_id')
+
+    if model_id:
+        if not str(model_id).isdigit():
+            return None, 'model_id must be a number.'
+        queryset = queryset.filter(id=model_id)
+
+    if manufacturer_id:
+        if not str(manufacturer_id).isdigit():
+            return None, 'manufacturer_id must be a number.'
+        manufacturer = Manufacturer.objects.filter(id=manufacturer_id).first()
+        if not manufacturer:
+            return None, 'No manufacturer found with this id.'
+        queryset = queryset.filter(created_by__in=manufacturer.users.all())
+
+    return queryset, None
+
+
+
+
+def _device_model_ip_config_payload(queryset):
+    """
+    Serialise device models with their IP / whitelist configuration and
+    their linked M2M (eSIM) providers.
+
+    Manufacturer is resolved through created_by, matching how tagging
+    Step 1 resolves it. DeviceModel has no direct manufacturer FK.
+    """
+    device_models = list(
+        queryset.select_related('created_by').prefetch_related('eSimProviders')
+    )
+
+    # One query for all manufacturers, instead of one per model.
+    creator_ids = {dm.created_by_id for dm in device_models if dm.created_by_id}
+    manufacturer_by_user = {}
+    if creator_ids:
+        manufacturers = Manufacturer.objects.filter(
+            users__id__in=creator_ids
+        ).prefetch_related('users').distinct()
+        for manufacturer in manufacturers:
+            for user in manufacturer.users.all():
+                if user.id in creator_ids:
+                    manufacturer_by_user[user.id] = manufacturer
+
+    payload = []
+    for dm in device_models:
+        manufacturer = manufacturer_by_user.get(dm.created_by_id)
+        payload.append({
+            'model_id': dm.id,
+            'model_name': dm.model_name,
+            'manufacturer_id': manufacturer.id if manufacturer else None,
+            'manufacturer_name': manufacturer.company_name if manufacturer else None,
+            'whitelisted_ip': dm.whitelisted_ip,
+            'whitelisted_phone_number': dm.whitelisted_phone_number,
+            'device_ip_range': dm.device_ip_range,
+            'threshold': dm.threshold,
+            'm2m_providers': [
+                {
+                    'id': provider.id,
+                    'name': provider.company_name,
+                    'device_ip_range': provider.device_ip_range,
+                }
+                for provider in dm.eSimProviders.all()
+            ],
+        })
+
+    return payload
+
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def superadmin_device_model_ip_config_list(request):
+    """
+    GET /api/devicemodel/ip-config/superadmin/list/
+
+    All device models with their whitelist / IP configuration.
+    Optional query params: manufacturer_id, model_id.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not get_user_object(request.user, "superadmin"):
+        return Response(
+            {"error": "Request must be from a superadmin."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    queryset, filter_error = _apply_device_model_ip_filters(
+        DeviceModel.objects.all(), request
+    )
+    if filter_error:
+        return Response({"error": filter_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _device_model_ip_config_payload(queryset)
+    return Response({
+        "status": "success",
+        "count": len(data),
+        "data": data,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def esim_provider_device_model_ip_config_list(request):
+    """
+    GET /api/devicemodel/ip-config/esim-provider/list/
+
+    Same response shape as the superadmin listing, but limited to the
+    device models this eSIM provider is linked to.
+    Optional query params: manufacturer_id, model_id.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    provider = eSimProvider.objects.filter(users=request.user).first()
+    if not provider:
+        return Response(
+            {"error": "No eSimProvider account found for this user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    queryset, filter_error = _apply_device_model_ip_filters(
+        DeviceModel.objects.filter(eSimProviders=provider), request
+    )
+    if filter_error:
+        return Response({"error": filter_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _device_model_ip_config_payload(queryset)
+    return Response({
+        "status": "success",
+        "count": len(data),
+        "data": data,
+    }, status=status.HTTP_200_OK)
+    
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
@@ -18123,14 +18321,32 @@ def create_device_model(request ):
     if not man:
         return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
     
+    field_errors = {}
+
     whitelisted_ip, whitelist_error = _validate_whitelisted_ip(
         request.data.get('whitelisted_ip')
     )
     if whitelist_error:
-        return Response(
-            {"errors": {"whitelisted_ip": whitelist_error}},
-            status=status.HTTP_400_BAD_REQUEST
+        field_errors['whitelisted_ip'] = whitelist_error
+
+    whitelisted_phone_number = None
+    if request.data.get('whitelisted_phone_number'):
+        whitelisted_phone_number, phone_error = _validate_whitelisted_phone_number(
+            request.data.get('whitelisted_phone_number')
         )
+        if phone_error:
+            field_errors['whitelisted_phone_number'] = phone_error
+
+    device_ip_range = None
+    if request.data.get('device_ip_range'):
+        device_ip_range, ip_range_error = _validate_device_ip_range(
+            request.data.get('device_ip_range')
+        )
+        if ip_range_error:
+            field_errors['device_ip_range'] = ip_range_error
+
+    if field_errors:
+        return Response({"errors": field_errors}, status=status.HTTP_400_BAD_REQUEST)
      
 
 
@@ -18151,6 +18367,8 @@ def create_device_model(request ):
         'status': 'Manufacturer_OTP_Sent',
         'mqtt_pw': _mqtt_pw,
         'whitelisted_ip': whitelisted_ip,
+        'whitelisted_phone_number': whitelisted_phone_number,
+        'device_ip_range': device_ip_range,
     }
 
     # Attach the file to the request data
