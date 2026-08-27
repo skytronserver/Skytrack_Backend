@@ -40656,9 +40656,9 @@ def _check_device_model_threshold(device_model):
     if threshold <= 0:
         return None
 
-    # DeviceStock is the common landing point for both the old tagging
-    # flow and the new 5-step flow, so it is the reliable count.
-    used = DeviceStock.objects.filter(model=device_model).count()
+    # Counting tagged devices, per TL. DeviceTag links to the model
+    # through DeviceStock, so the lookup goes device -> model.
+    used = DeviceTag.objects.filter(device__model=device_model).count()
 
     if THRESHOLD_COUNTS_IN_PROGRESS:
         # Taggings started but not yet finished. Completed ones are
