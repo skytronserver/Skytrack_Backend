@@ -1185,5 +1185,11 @@ urlpatterns += [
     
     path('device-tagging/certificate/',      device_tagging_certificate,      name='device-tagging-certificate'),
     path('device-tagging/certificate-list/', device_tagging_certificate_list, name='device-tagging-certificate-list'),
+       
+    # device model IP / whitelist configuration
+    path('devicemodel/ip-config/superadmin/list/',superadmin_device_model_ip_config_list,name='superadmin_device_model_ip_config_list'),
+    path('devicemodel/ip-config/esim-provider/list/',esim_provider_device_model_ip_config_list,name='esim_provider_device_model_ip_config_list'),
+    
+    path('sms-gateway/health/', sms_gateway_health_status, name='sms-gateway-health'),
     
 ]

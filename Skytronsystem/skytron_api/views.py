@@ -4499,7 +4499,7 @@ def getRoutelist(request ):
 #text="Dear user, to validate creation of a new user login in SkyTron platform, please enter the OTP {#var#}.Valid for 5 minutes. Please do not share.-SkyTron"
 
 
-def send_SMS(no,text,tpid):
+def _send_SMS_raw(no,text,tpid):
     import os
     url = os.getenv("SMS_URL", "http://tra.bulksmshyderabad.co.in/websms/sendsms.aspx")
     params = {
@@ -4533,6 +4533,110 @@ def send_SMS(no,text,tpid):
 
 
 
+# --- SMS gateway health tracking (Redis) ---------------------------------
+# One key holds the timestamp of the most recent SMS failure.
+# Cleared on every success. Read by the gateway health API.
+
+SMS_GATEWAY_FAILURE_KEY = 'sms_gateway:last_failure_at'
+SMS_GATEWAY_ISSUE_WINDOW_MINUTES = 30
+SMS_GATEWAY_KEY_TTL_SECONDS = 60 * 60 * 24
+
+
+def _record_sms_gateway_result(success):
+    """
+    Update the gateway health marker after an SMS attempt.
+
+    Success clears the key. Failure stores the current time.
+    Redis being unavailable must never stop an SMS going out, so
+    every error here is swallowed and logged.
+    """
+    try:
+        if success:
+            cache.delete(SMS_GATEWAY_FAILURE_KEY)
+        else:
+            cache.set(
+                SMS_GATEWAY_FAILURE_KEY,
+                timezone.now().isoformat(),
+                SMS_GATEWAY_KEY_TTL_SECONDS
+            )
+    except (ConnectionInterrupted, RedisConnectionError, OSError) as exc:
+        logger.warning('SMS gateway health cache unavailable', exc_info=exc)
+    except Exception as exc:
+        logger.warning('SMS gateway health update failed', exc_info=exc)
+
+
+def send_SMS(no, text, tpid):
+    """
+    Send an SMS and record the gateway health result.
+
+    Same name, arguments and return value as before: (success, response_text).
+    Most callers discard the return value, so the gateway response is
+    handled here rather than at each call site.
+    """
+    success, response_text = _send_SMS_raw(no, text, tpid)
+    if not success:
+        logger.warning('SMS send failed for %s: %s', no, response_text)
+    _record_sms_gateway_result(success)
+    return success, response_text
+
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def sms_gateway_health_status(request):
+    """
+    GET /api/sms-gateway/health/
+
+    Reports whether the SMS gateway has failed in the last 30 minutes.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not get_user_object(request.user, "superadmin"):
+        return Response(
+            {"error": "Request must be from a superadmin."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        last_failure_raw = cache.get(SMS_GATEWAY_FAILURE_KEY)
+    except (ConnectionInterrupted, RedisConnectionError, OSError) as exc:
+        logger.warning('SMS gateway health cache unavailable', exc_info=exc)
+        return Response({
+            "status": "unknown",
+            "message": "SMS gateway status could not be determined.",
+            "last_failure_at": None,
+        }, status=status.HTTP_200_OK)
+
+    last_failure = parse_datetime(last_failure_raw) if last_failure_raw else None
+
+    if not last_failure:
+        return Response({
+            "status": "ok",
+            "message": "No error found on SMS gateway.",
+            "last_failure_at": None,
+        }, status=status.HTTP_200_OK)
+
+    age_minutes = (timezone.now() - last_failure).total_seconds() / 60
+
+    if age_minutes <= SMS_GATEWAY_ISSUE_WINDOW_MINUTES:
+        return Response({
+            "status": "issue",
+            "message": "Facing issue in SMS gateway.",
+            "last_failure_at": last_failure_raw,
+            "minutes_since_failure": round(age_minutes, 1),
+        }, status=status.HTTP_200_OK)
+
+    return Response({
+        "status": "ok",
+        "message": "No error found on SMS gateway.",
+        "last_failure_at": last_failure_raw,
+    }, status=status.HTTP_200_OK)
+    
+    
 def sms_send(no,text,tpid):
     #text = "Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
     import os
@@ -18143,6 +18247,204 @@ def _validate_device_ip_range(raw_value):
 
     return ', '.join(cleaned), None
 
+
+
+
+# Whitelisted phone numbers for a device model.
+WHITELISTED_PHONE_MAX_ITEMS = 10
+
+
+def _validate_whitelisted_phone_number(raw_value):
+    """
+    Validate a comma-separated list of phone numbers. Optional field.
+
+    Returns (cleaned_string_or_None, error_message).
+    Both None means the field was not supplied — that is allowed.
+    """
+    raw_value = str(raw_value or '').strip()
+    if not raw_value:
+        return None, None
+
+    items = [part.strip() for part in raw_value.split(',') if part.strip()]
+    if not items:
+        return None, None
+
+    if len(items) > WHITELISTED_PHONE_MAX_ITEMS:
+        return None, (
+            f'whitelisted_phone_number can have at most '
+            f'{WHITELISTED_PHONE_MAX_ITEMS} numbers. {len(items)} were provided.'
+        )
+
+    cleaned = []
+    invalid = []
+    for item in items:
+        digits = re.sub(r'\D', '', item)
+        if len(digits) < 10 or len(digits) > 15:
+            invalid.append(item)
+            continue
+        if digits in cleaned:
+            continue
+        cleaned.append(digits)
+
+    if invalid:
+        return None, (
+            'whitelisted_phone_number contains invalid entries: '
+            + ', '.join(invalid)
+            + '. Each number must have 10 to 15 digits.'
+        )
+
+    return ', '.join(cleaned), None
+
+
+def _apply_device_model_ip_filters(queryset, request):
+    """
+    Optional manufacturer_id / model_id filters, shared by the superadmin
+    and eSIM provider IP-config listings.
+
+    Returns (queryset, error_message). Exactly one is non-None.
+    """
+    manufacturer_id = request.query_params.get('manufacturer_id')
+    model_id = request.query_params.get('model_id')
+
+    if model_id:
+        if not str(model_id).isdigit():
+            return None, 'model_id must be a number.'
+        queryset = queryset.filter(id=model_id)
+
+    if manufacturer_id:
+        if not str(manufacturer_id).isdigit():
+            return None, 'manufacturer_id must be a number.'
+        manufacturer = Manufacturer.objects.filter(id=manufacturer_id).first()
+        if not manufacturer:
+            return None, 'No manufacturer found with this id.'
+        queryset = queryset.filter(created_by__in=manufacturer.users.all())
+
+    return queryset, None
+
+
+
+
+def _device_model_ip_config_payload(queryset):
+    """
+    Serialise device models with their IP / whitelist configuration and
+    their linked M2M (eSIM) providers.
+
+    Manufacturer is resolved through created_by, matching how tagging
+    Step 1 resolves it. DeviceModel has no direct manufacturer FK.
+    """
+    device_models = list(
+        queryset.select_related('created_by').prefetch_related('eSimProviders')
+    )
+
+    # One query for all manufacturers, instead of one per model.
+    creator_ids = {dm.created_by_id for dm in device_models if dm.created_by_id}
+    manufacturer_by_user = {}
+    if creator_ids:
+        manufacturers = Manufacturer.objects.filter(
+            users__id__in=creator_ids
+        ).prefetch_related('users').distinct()
+        for manufacturer in manufacturers:
+            for user in manufacturer.users.all():
+                if user.id in creator_ids:
+                    manufacturer_by_user[user.id] = manufacturer
+
+    payload = []
+    for dm in device_models:
+        manufacturer = manufacturer_by_user.get(dm.created_by_id)
+        payload.append({
+            'model_id': dm.id,
+            'model_name': dm.model_name,
+            'manufacturer_id': manufacturer.id if manufacturer else None,
+            'manufacturer_name': manufacturer.company_name if manufacturer else None,
+            'whitelisted_ip': dm.whitelisted_ip,
+            'whitelisted_phone_number': dm.whitelisted_phone_number,
+            'device_ip_range': dm.device_ip_range,
+            'threshold': dm.threshold,
+            'm2m_providers': [
+                {
+                    'id': provider.id,
+                    'name': provider.company_name,
+                    'device_ip_range': provider.device_ip_range,
+                }
+                for provider in dm.eSimProviders.all()
+            ],
+        })
+
+    return payload
+
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def superadmin_device_model_ip_config_list(request):
+    """
+    GET /api/devicemodel/ip-config/superadmin/list/
+
+    All device models with their whitelist / IP configuration.
+    Optional query params: manufacturer_id, model_id.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not get_user_object(request.user, "superadmin"):
+        return Response(
+            {"error": "Request must be from a superadmin."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    queryset, filter_error = _apply_device_model_ip_filters(
+        DeviceModel.objects.all(), request
+    )
+    if filter_error:
+        return Response({"error": filter_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _device_model_ip_config_payload(queryset)
+    return Response({
+        "status": "success",
+        "count": len(data),
+        "data": data,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def esim_provider_device_model_ip_config_list(request):
+    """
+    GET /api/devicemodel/ip-config/esim-provider/list/
+
+    Same response shape as the superadmin listing, but limited to the
+    device models this eSIM provider is linked to.
+    Optional query params: manufacturer_id, model_id.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    provider = eSimProvider.objects.filter(users=request.user).first()
+    if not provider:
+        return Response(
+            {"error": "No eSimProvider account found for this user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    queryset, filter_error = _apply_device_model_ip_filters(
+        DeviceModel.objects.filter(eSimProviders=provider), request
+    )
+    if filter_error:
+        return Response({"error": filter_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _device_model_ip_config_payload(queryset)
+    return Response({
+        "status": "success",
+        "count": len(data),
+        "data": data,
+    }, status=status.HTTP_200_OK)
+    
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
@@ -18161,14 +18463,32 @@ def create_device_model(request ):
     if not man:
         return Response({"error":"Request must be from device manufacture"}, status=status.HTTP_400_BAD_REQUEST)
     
+    field_errors = {}
+
     whitelisted_ip, whitelist_error = _validate_whitelisted_ip(
         request.data.get('whitelisted_ip')
     )
     if whitelist_error:
-        return Response(
-            {"errors": {"whitelisted_ip": whitelist_error}},
-            status=status.HTTP_400_BAD_REQUEST
+        field_errors['whitelisted_ip'] = whitelist_error
+
+    whitelisted_phone_number = None
+    if request.data.get('whitelisted_phone_number'):
+        whitelisted_phone_number, phone_error = _validate_whitelisted_phone_number(
+            request.data.get('whitelisted_phone_number')
         )
+        if phone_error:
+            field_errors['whitelisted_phone_number'] = phone_error
+
+    device_ip_range = None
+    if request.data.get('device_ip_range'):
+        device_ip_range, ip_range_error = _validate_device_ip_range(
+            request.data.get('device_ip_range')
+        )
+        if ip_range_error:
+            field_errors['device_ip_range'] = ip_range_error
+
+    if field_errors:
+        return Response({"errors": field_errors}, status=status.HTTP_400_BAD_REQUEST)
      
 
 
@@ -18189,6 +18509,8 @@ def create_device_model(request ):
         'status': 'Manufacturer_OTP_Sent',
         'mqtt_pw': _mqtt_pw,
         'whitelisted_ip': whitelisted_ip,
+        'whitelisted_phone_number': whitelisted_phone_number,
+        'device_ip_range': device_ip_range,
     }
 
     # Attach the file to the request data
@@ -39924,6 +40246,80 @@ def _parse_ddmmyyyy(value):
     return None
 
 
+
+
+# Fields compared between the device model and the M2M provider response.
+# (model field, m2m response field, compare digits only)
+M2M_MODEL_MATCH_FIELDS = (
+    ('whitelisted_ip', 'whitelisted_ip', False),
+    ('whitelisted_phone_number', 'whitelisted_phone_number', True),
+    ('device_ip_range', 'device_ip_range', False),
+)
+
+
+def _normalise_match_values(raw_value, digits_only=False):
+    """
+    Turn a comma-separated string (or list) into a set for comparison.
+
+    Order and spacing are ignored, so "a, b" and "b,a" are equal.
+    Returns None when there is nothing to compare.
+    """
+    if raw_value is None:
+        return None
+
+    if isinstance(raw_value, (list, tuple)):
+        items = [str(item) for item in raw_value]
+    else:
+        items = str(raw_value).split(',')
+
+    cleaned = set()
+    for item in items:
+        item = item.strip()
+        if digits_only:
+            item = re.sub(r'\D', '', item)
+        if item:
+            cleaned.add(item.lower())
+
+    return cleaned or None
+
+
+def _check_m2m_model_field_match(device_model, normalised):
+    """
+    Compare the manufacturer's saved values against what the M2M
+    provider reports for this SIM.
+
+    Skipped when either side is blank. The provider does not send these
+    fields yet, so every check currently bypasses.
+
+    Returns an error message, or None when everything matches.
+    """
+    for model_field, m2m_field, digits_only in M2M_MODEL_MATCH_FIELDS:
+        model_values = _normalise_match_values(
+            getattr(device_model, model_field, None), digits_only
+        )
+        if not model_values:
+            continue  # manufacturer has not set it — nothing to check
+
+        m2m_values = _normalise_match_values(
+            normalised.get(m2m_field), digits_only
+        )
+        if not m2m_values:
+            continue  # provider does not send it yet — bypass
+
+        if model_values != m2m_values:
+            logger.warning(
+                'M2M mismatch on %s for device model id %s: model=%s provider=%s',
+                model_field, device_model.id,
+                sorted(model_values), sorted(m2m_values)
+            )
+            return (
+                f"{model_field} does not match the value registered "
+                f"by the manufacturer for this device model."
+            )
+
+    return None
+
+
 def _normalise_m2m_result(body):
     """
     Convert a provider's raw response into our internal shape.
@@ -39971,6 +40367,11 @@ def _normalise_m2m_result(body):
         'fallback_status': sim.get('fallbackStatus'),
         'data_usage': sim.get('dataUsage'),
         'data_usage_date': _parse_ddmmyyyy(sim.get('dataUsageDate')),
+        # Not returned by the provider today. Present so the model match
+        # check activates automatically when they start sending them.
+        'whitelisted_ip': sim.get('whitelistedIp'),
+        'whitelisted_phone_number': sim.get('whitelistedPhoneNumber'),
+        'device_ip_range': sim.get('deviceIpRange'),
     }, None, None
 
 
@@ -40275,6 +40676,48 @@ TAGGING_FINAL_ESIM_STATUS = 'ESIM_Active_Confirmed'
 TAGGING_FINAL_TAG_STATUS = 'Owner_Final_OTP_Verified'
 
 
+
+# Whether taggings still in progress count against a model's threshold.
+# False = only devices that reached DeviceStock are counted.
+THRESHOLD_COUNTS_IN_PROGRESS = False
+
+
+def _check_device_model_threshold(device_model):
+    """
+    Enforce the per-model tagging limit set by the admin.
+
+    Returns an error message string when the limit is reached,
+    or None when tagging is allowed.
+    A threshold of 0 means no limit.
+    """
+    threshold = device_model.threshold or 0
+    if threshold <= 0:
+        return None
+
+    # Counting tagged devices, per TL. DeviceTag links to the model
+    # through DeviceStock, so the lookup goes device -> model.
+    used = DeviceTag.objects.filter(device__model=device_model).count()
+
+    if THRESHOLD_COUNTS_IN_PROGRESS:
+        # Taggings started but not yet finished. Completed ones are
+        # excluded because they are already counted in DeviceStock.
+        used += DeviceStockMaster.objects.filter(
+            device_model=device_model,
+            is_deleted=False,
+            created_device_stock_id__isnull=True
+        ).count()
+
+    if used >= threshold:
+        logger.warning(
+            'Tagging blocked: device model %s (id %s) reached its threshold '
+            '(%s used, limit %s).',
+            device_model.model_name, device_model.id, used, threshold
+        )
+        return "Device not found."
+
+    return None
+
+
 # =====================================================================
 # SECTION 4 
 # STEP 1 API
@@ -40432,6 +40875,11 @@ def device_tagging_step1_create(request):
             {"error": "No active vehicle owner found for this phone number."},
             status=status.HTTP_400_BAD_REQUEST
         )
+        
+    # ── Check 9b: model has not reached its tagging threshold ────────
+    threshold_error = _check_device_model_threshold(device_model)
+    if threshold_error:
+        return Response({"error": threshold_error}, status=status.HTTP_400_BAD_REQUEST)
 
     # ── Check 10: Vahan lookup — nothing saved before this succeeds ──
     vahan_data, vahan_error = call_vahan_api(imei, iccid)
@@ -40687,6 +41135,13 @@ def device_tagging_step2_esim(request):
             {"error": "eSIM provider returned details for a different ICCID."},
             status=status.HTTP_400_BAD_REQUEST
         )
+        
+    
+    # ── Model config must match what the provider reports ────────────
+    # Bypassed while either side is blank. See _check_m2m_model_field_match.
+    match_error = _check_m2m_model_field_match(record.device_model, normalised)
+    if match_error:
+        return Response({"error": match_error}, status=status.HTTP_400_BAD_REQUEST)
  
     today = timezone.localdate()
  
