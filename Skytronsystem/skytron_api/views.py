@@ -41348,6 +41348,10 @@ def _build_certificate_fields(record):
 
     return {
         "cert_no": _build_certificate_no(record),
+        "serial_no": record.created_device_tag_id or '',
+        "esim_valid_upto": (
+            record.m2m_expiry_date.isoformat() if record.m2m_expiry_date else ''
+        ),
         "primary_msisdn": record.m2m_primary_msisdn or '',
         "fallback_msisdn": record.m2m_fallback_msisdn or '',
         "no_of_emg_buttons": (
