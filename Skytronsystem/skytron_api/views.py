@@ -41152,8 +41152,14 @@ def device_tagging_step3_verify_otp(request):
 # Also bounds the query: only this window is scanned.
 GPS_PACKET_FRESHNESS_HOURS = 24
  
-# Safety cap on how many rows are pulled per table for one device.
-GPS_PACKET_SCAN_LIMIT = 5000
+# Safety cap on how many rows are scanned per table for one device — a
+# backstop against a runaway scan, not the real bound. The freshness
+# window above is what's supposed to bound the work; a device sending
+# nothing but PVT packets every second or two for hours can otherwise
+# push a rare alert packet (e.g. an EA,10 emergency trigger from hours
+# earlier) past a low cap before the scan ever reaches it, even though
+# it's well inside the freshness window.
+GPS_PACKET_SCAN_LIMIT = 50000
  
 # The 9 packet types, in display order.
 TAGGING_PACKET_TYPES = [
@@ -41370,49 +41376,77 @@ def device_tagging_step4_packet_check(request):
     reg_no = (record.vahan_reg_no or '').strip()
  
     # ── Pull this device's recent packets — two queries, not eighteen ─
-    gps_rows = list(
+    # Scanned lazily, newest first, checking every packet type routed to
+    # that table on each row and dropping a type out of the search the
+    # moment it's matched. This way a device blasting out one packet type
+    # (PVT, typically) at high frequency can't push a rarer type further
+    # back in the same table out of reach before the scan gets to it —
+    # the scan for a still-missing type keeps going deeper regardless of
+    # how many rows of other types sit in front of it.
+    gps_types = {
+        pt: TAGGING_PACKET_MATCHERS[pt] for pt in TAGGING_PACKET_TYPES
+        if TAGGING_PACKET_MATCHERS[pt][0] == 'gps'
+    }
+    gpsem_types = {
+        pt: TAGGING_PACKET_MATCHERS[pt] for pt in TAGGING_PACKET_TYPES
+        if TAGGING_PACKET_MATCHERS[pt][0] == 'gpsem'
+    }
+
+    def _scan_for_packets(queryset, types_for_table):
+        remaining = dict(types_for_table)
+        found = {}
+        for raw_data, packet_time in queryset.iterator():
+            if not remaining:
+                break
+            matched_types = []
+            for packet_type, (_table, matcher, needs_reg_no) in remaining.items():
+                # Packet types that carry a registration number must match
+                # the vehicle's own number as well as the IMEI. This is
+                # what catches a device fitted without the correct plate
+                # configured — the device would transmit with the wrong
+                # or factory default registration, and must not pass this
+                # step.
+                #
+                # The health packet carries no registration number, so it
+                # is matched on IMEI alone.
+                if needs_reg_no and reg_no and reg_no not in raw_data:
+                    continue
+                try:
+                    if matcher(raw_data):
+                        found[packet_type] = (raw_data, packet_time)
+                        matched_types.append(packet_type)
+                except Exception:
+                    # A malformed packet is simply not a match.
+                    continue
+            for packet_type in matched_types:
+                remaining.pop(packet_type, None)
+        return found
+
+    gps_qs = (
         GPSDataLog.objects
         .filter(timestamp__gte=cutoff, raw_data__contains=imei)
         .order_by('-timestamp')
         .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
     )
-    gpsem_rows = list(
+    gpsem_qs = (
         GPSemDataLog.objects
         .filter(timestamp__gte=cutoff, raw_data__contains=imei)
         .order_by('-timestamp')
         .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
     )
- 
-    rows_by_table = {'gps': gps_rows, 'gpsem': gpsem_rows}
- 
-    # ── Classify — rows are already newest first, so the first match
-    #    for each type is the latest one ─────────────────────────────
+
+    found_by_type = {
+        **_scan_for_packets(gps_qs, gps_types),
+        **_scan_for_packets(gpsem_qs, gpsem_types),
+    }
+
+    # ── Build results in display order ────────────────────────────────
     results = {}
     latest_pvt_raw = None
- 
+
     for packet_type in TAGGING_PACKET_TYPES:
-        table, matcher, needs_reg_no = TAGGING_PACKET_MATCHERS[packet_type]
-        found = None
- 
-        for raw_data, packet_time in rows_by_table[table]:
-            # Packet types that carry a registration number must match the
-            # vehicle's own number as well as the IMEI. This is what
-            # catches a device fitted without the correct plate configured
-            # — the device would transmit with the wrong or factory
-            # default registration, and must not pass this step.
-            #
-            # The health packet carries no registration number, so it is
-            # matched on IMEI alone.
-            if needs_reg_no and reg_no and reg_no not in raw_data:
-                continue
-            try:
-                if matcher(raw_data):
-                    found = (raw_data, packet_time)
-                    break
-            except Exception:
-                # A malformed packet is simply not a match.
-                continue
- 
+        found = found_by_type.get(packet_type)
+
         if found:
             raw_data, packet_time = found
             results[packet_type] = {
