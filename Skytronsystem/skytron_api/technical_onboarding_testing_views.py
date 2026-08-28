@@ -674,10 +674,12 @@ def superadmin_complete_test(request):
     now = timezone.now()
 
     if test_case.source_table == 'manual':
-        if not data.get('manual_result'):
-            return Response({'error': 'manual_result is required for this test.'}, status=status.HTTP_400_BAD_REQUEST)
-        passed = data['manual_result'] == 'pass'
-        execution.manual_result = data['manual_result']
+        # Manual-only tests no longer require the caller to submit a
+        # manual_result -- completion auto-marks it 'pass' unless the
+        # caller explicitly overrides it (e.g. to record a fail).
+        manual_result = data.get('manual_result') or 'pass'
+        passed = manual_result == 'pass'
+        execution.manual_result = manual_result
         execution.manual_notes = data.get('manual_notes', '')
     else:
         if not execution.last_refreshed_at or execution.last_refreshed_at < execution.started_at:
@@ -686,12 +688,13 @@ def superadmin_complete_test(request):
         if test_case.requires_manual_confirmation:
             # The automated check only proves a packet arrived -- it can't
             # judge an accuracy comparison, a field-by-field protocol read,
-            # or an A-vs-B firmware check. Both have to pass. And the
-            # confirmation can't come first: without the packet already in
-            # GPSDataLog/GPSemDataLog there's nothing for the tester to be
-            # confirming, so a "pass" attempted before the automated check
-            # has found the data is rejected outright rather than silently
-            # accepted and then failed by the AND below.
+            # or an A-vs-B firmware check. The confirmation can't come
+            # first: without the packet already in GPSDataLog/GPSemDataLog
+            # there's nothing for the tester to be confirming, so
+            # completion attempted before the automated check has found
+            # the data is rejected outright. Once the automated check has
+            # passed, the manual side is auto-marked 'pass' unless the
+            # caller explicitly overrides it.
             if not auto_passed:
                 table_label = SOURCE_TABLE_LABEL.get(test_case.source_table, test_case.source_table)
                 return Response(
@@ -704,11 +707,10 @@ def superadmin_complete_test(request):
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            if not data.get('manual_result'):
-                return Response({'error': 'manual_result is required for this test.'}, status=status.HTTP_400_BAD_REQUEST)
-            execution.manual_result = data['manual_result']
+            manual_result = data.get('manual_result') or 'pass'
+            execution.manual_result = manual_result
             execution.manual_notes = data.get('manual_notes', '')
-            passed = auto_passed and data['manual_result'] == 'pass'
+            passed = auto_passed and manual_result == 'pass'
         else:
             passed = auto_passed
 

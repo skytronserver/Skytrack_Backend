@@ -744,24 +744,20 @@ def process_alerts(gps_data, loc_id):
 
         # Alert ID based alerts
         alert_mappings = {
-            "10": ('Em', "in"), 
-            "20": ('EmPublicApp', "in"), 
-            "21": ('EmRegisteredApp', "in"), 
-            "22": ('EmMonitorTripInvalidPw', "in"), 
-            "23": ('EmMonitorTripBLEDisconnect', "in"), 
-            "24": ('EmMonitorTripDeviated', "in"), 
-            "09": ("EmTemp", "in"), 
-            "17": ("Tilt", "in"), 
-            "13": ("HarshBreak", "in"), 
-            "15": ("HarshTurn", "in"), 
-            "14": ("HarshAcceleration", "in"), 
+            "10": ('Em', "in"),
+            "20": ('EmPublicApp', "in"),
+            "21": ('EmRegisteredApp', "in"),
+            "22": ('EmMonitorTripInvalidPw', "in"),
+            "23": ('EmMonitorTripBLEDisconnect', "in"),
+            "24": ('EmMonitorTripDeviated', "in"),
+            "09": ("EmTemp", "in"),
+            "17": ("Tilt", "in"),
         }
-        
-  
+
 
         # Event-based alert IDs always create a new record on each occurrence
         # (transient events, not stateful on/off conditions)
-        ALWAYS_CREATE_ALERT_IDS = {"10", "20", "21", "22", "23", "24", "09", "13", "14", "15", "17"}
+        ALWAYS_CREATE_ALERT_IDS = {"10", "20", "21", "22", "23", "24", "09", "17"}
 
         # These alert_id values (esp. 09/17) are only meaningful as app/BLE-triggered
         # sub-alerts under packet_type "EA". Amendment 3 firmware reuses the same
@@ -773,6 +769,18 @@ def process_alerts(gps_data, loc_id):
             al = normal_alert_map.get(alert_type)
             if not al or al.status != status or alert_id in ALWAYS_CREATE_ALERT_IDS:
                 create_alert(alert_type, status, loc_id, device_tag)
+
+        # Harsh-event packets: HB/HA/RT are dedicated single-purpose packet
+        # types (unlike EA above, which multiplexes several app/BLE alert
+        # kinds through alert_id), so they fire on packet_type alone. Each
+        # occurrence is transient -- always create a new record.
+        harsh_event_types = {
+            "HB": "HarshBreak",
+            "HA": "HarshAcceleration",
+            "RT": "HarshTurn",
+        }
+        if packet_type in harsh_event_types:
+            create_alert(harsh_event_types[packet_type], "in", loc_id, device_tag)
 
         # Border-cross alerts (state/district/city) on actual administrative change
         try:
