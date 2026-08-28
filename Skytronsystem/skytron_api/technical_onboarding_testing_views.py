@@ -21,10 +21,11 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
+from .dev_views import _dev_only
 from .models import (
     DeviceModelTechnicalOnboardingRequest,
     DeviceModelTechnicalOnboardingDemoDevice,
@@ -47,7 +48,7 @@ from .serializers import (
     TechnicalOnboardingCompleteTestSerializer,
     TechnicalOnboardingTestExecutionSerializer,
 )
-from .views import validate_inputs, get_user_object
+from .views import validate_inputs, get_user_object, _packet_fields
 
 # Packets older than this are not scanned; also bounds each query, since
 # GPSDataLog/GPSemDataLog have no IMEI column/index (see docstring above).
@@ -56,6 +57,14 @@ GPS_PACKET_SCAN_LIMIT = 5000
 # An in_progress execution with no heartbeat inside this window is
 # considered abandoned (browser/tab closed) and auto-marked incomplete.
 STALE_HEARTBEAT_SECONDS = 45
+
+SOURCE_TABLE_LABEL = {
+    'gps': 'GPSDataLog',
+    'gpsem': 'GPSemDataLog',
+    'ota_command': 'OTACommandHistory',
+    'activation_command': 'ActivationCommandDispatch',
+    'firmware_diff': 'GPSDataLog',
+}
 
 
 # ===========================================================================
@@ -212,6 +221,46 @@ def _run_test_check(execution):
             'pass': result_pass,
             'reason': reason,
             'samples': samples,
+            'window_start': window_start.isoformat(),
+            'refreshed_at': now.isoformat(),
+        }
+
+    if test_case.source_table == 'firmware_diff':
+        # A FOTA upgrade doesn't have its own packet type -- every PVT/HLM
+        # packet already carries the running firmware version as its 3rd
+        # field ($,PVT,MAPW,1.1.1,... / $,HLM,MAPW,1.1.1,...). Seeing 2+
+        # distinct version strings for this device inside the window is
+        # direct proof the firmware actually changed, not just that an
+        # upgrade command was sent.
+        rows = list(
+            GPSDataLog.objects
+            .filter(timestamp__gte=window_start, raw_data__contains=imei)
+            .order_by('-timestamp')
+            .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+        )
+        versions_seen = {}
+        for raw_data, packet_time in rows:
+            parts = _packet_fields(raw_data)
+            if len(parts) < 3 or parts[0].upper() not in ('PVT', 'HLM'):
+                continue
+            version = parts[2]
+            if version and version not in versions_seen:
+                versions_seen[version] = {'raw_data': raw_data, 'timestamp': packet_time.isoformat()}
+
+        matched_count = len(versions_seen)
+        result_pass = matched_count >= test_case.min_match_count
+        reason = None if result_pass else (
+            f"Only {matched_count} distinct firmware version(s) seen ({', '.join(versions_seen) or 'none'}), "
+            f"need at least {test_case.min_match_count} -- the upgrade hasn't taken effect on the device yet."
+        )
+        return {
+            'mode': test_case.source_table,
+            'matched_count': matched_count,
+            'required': test_case.min_match_count,
+            'pass': result_pass,
+            'reason': reason,
+            'samples': list(versions_seen.values())[:5],
+            'versions_seen': list(versions_seen.keys()),
             'window_start': window_start.isoformat(),
             'refreshed_at': now.isoformat(),
         }
@@ -633,7 +682,35 @@ def superadmin_complete_test(request):
     else:
         if not execution.last_refreshed_at or execution.last_refreshed_at < execution.started_at:
             return Response({'error': 'Refresh the test log at least once before completing this test.'}, status=status.HTTP_400_BAD_REQUEST)
-        passed = bool((execution.test_log_snapshot or {}).get('pass'))
+        auto_passed = bool((execution.test_log_snapshot or {}).get('pass'))
+        if test_case.requires_manual_confirmation:
+            # The automated check only proves a packet arrived -- it can't
+            # judge an accuracy comparison, a field-by-field protocol read,
+            # or an A-vs-B firmware check. Both have to pass. And the
+            # confirmation can't come first: without the packet already in
+            # GPSDataLog/GPSemDataLog there's nothing for the tester to be
+            # confirming, so a "pass" attempted before the automated check
+            # has found the data is rejected outright rather than silently
+            # accepted and then failed by the AND below.
+            if not auto_passed:
+                table_label = SOURCE_TABLE_LABEL.get(test_case.source_table, test_case.source_table)
+                return Response(
+                    {
+                        'error': (
+                            f'The required packet has not been found in {table_label} yet. '
+                            'Trigger the event on the device, refresh the test log, and confirm once it shows up.'
+                        ),
+                        'snapshot': execution.test_log_snapshot,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not data.get('manual_result'):
+                return Response({'error': 'manual_result is required for this test.'}, status=status.HTTP_400_BAD_REQUEST)
+            execution.manual_result = data['manual_result']
+            execution.manual_notes = data.get('manual_notes', '')
+            passed = auto_passed and data['manual_result'] == 'pass'
+        else:
+            passed = auto_passed
 
     execution.status = 'complete' if passed else 'incomplete'
     execution.completed_at = now
@@ -653,3 +730,105 @@ def superadmin_complete_test(request):
 
 def technical_onboarding_demo_page(request):
     return render(request, 'technical_onboarding_demo.html')
+
+
+def technical_onboarding_test_catalog_page(request):
+    return render(request, 'technical_onboarding_test_catalog.html')
+
+
+def technical_onboarding_test_requirements_page(request):
+    return render(request, 'technical_onboarding_test_requirements.html')
+
+
+# ===========================================================================
+# DEV-ONLY: force-pass a checkpoint
+# ===========================================================================
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@_dev_only
+@transaction.atomic
+def dev_force_pass_test(request):
+    """
+    DEV-ONLY -- force checkpoint `test_no` (1-39) to 'complete' for `imei`
+    with a dummy snapshot, bypassing every real trigger/detection path.
+
+    Exists so the rest of the pipeline (sequential gating, certificate
+    issuance, dashboards) can be exercised end-to-end without physically
+    operating a device through all 39 checkpoints. Blocked automatically
+    outside DEBUG by @_dev_only, same as dev_get_token/dev_list_users.
+
+    Request body: {"imei": "<imei>", "test_no": 1}
+    """
+    imei = (request.data.get('imei') or '').strip()
+    test_no = request.data.get('test_no')
+
+    if not imei:
+        return Response({'error': 'imei is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        test_no = int(test_no)
+    except (TypeError, ValueError):
+        return Response({'error': 'test_no must be an integer from 1 to 39.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not 1 <= test_no <= 39:
+        return Response({'error': 'test_no must be an integer from 1 to 39.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    test_case = TechnicalOnboardingTestCase.objects.filter(serial_no=test_no).last()
+    if not test_case:
+        return Response({'error': f'No test case with serial_no={test_no}.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    demo_device = (
+        DeviceModelTechnicalOnboardingDemoDevice.objects
+        .filter(imei=imei)
+        .select_related('onboarding_request')
+        .last()
+    )
+    if not demo_device:
+        return Response(
+            {'error': f'IMEI {imei} is not registered as a demo device on any technical onboarding request.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    onboarding_request = demo_device.onboarding_request
+    now = timezone.now()
+
+    execution, _created = TechnicalOnboardingTestExecution.objects.get_or_create(
+        onboarding_request=onboarding_request, demo_device=demo_device, test_case=test_case,
+    )
+
+    execution.status = 'complete'
+    execution.attempt_number += 1
+    execution.started_at = execution.started_at or now
+    execution.last_heartbeat_at = now
+    execution.test_log_snapshot = {
+        'mode': 'dev_bypass',
+        'pass': True,
+        'reason': 'Force-passed via the DEV bypass endpoint -- not real device evidence.',
+        'samples': [],
+        'window_start': now.isoformat(),
+        'refreshed_at': now.isoformat(),
+        'forced': True,
+    }
+    execution.last_refreshed_at = now
+    execution.manual_result = 'pass'
+    execution.manual_notes = 'Force-passed via DEV bypass endpoint (dev_force_pass_test).'
+    execution.completed_at = now
+    execution.completed_by = None
+    execution.save()
+
+    if onboarding_request.status == 'stock_received':
+        onboarding_request.status = 'ongoing_evaluation'
+        onboarding_request.evaluation_datetime = onboarding_request.evaluation_datetime or now
+        onboarding_request.save(update_fields=['status', 'evaluation_datetime'])
+
+    if _all_tests_complete(onboarding_request):
+        onboarding_request.status = 'testing_complete'
+        onboarding_request.save(update_fields=['status'])
+
+    return Response(
+        {
+            'status': 'forced_complete',
+            'message': f"Checkpoint #{test_no} ({test_case.name}) force-passed for IMEI {imei}. This is dummy evidence, not a real result.",
+            'execution': TechnicalOnboardingTestExecutionSerializer(execution).data,
+        },
+        status=status.HTTP_200_OK,
+    )

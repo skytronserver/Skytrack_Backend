@@ -45,6 +45,9 @@ from .technical_onboarding_testing_views import (
     superadmin_refresh_test_log,
     superadmin_complete_test,
     technical_onboarding_demo_page,
+    technical_onboarding_test_catalog_page,
+    technical_onboarding_test_requirements_page,
+    dev_force_pass_test,
 )
 from .alert_stats_views import (
     alert_stats_type_options,
@@ -515,6 +518,16 @@ urlpatterns = [
         technical_onboarding_demo_page,
         name='technical_onboarding_demo_page'
     ),
+    path(
+        'devicemodel/technical-onboarding/test-catalog/',
+        technical_onboarding_test_catalog_page,
+        name='technical_onboarding_test_catalog_page'
+    ),
+    path(
+        'devicemodel/technical-onboarding/test-requirements/',
+        technical_onboarding_test_requirements_page,
+        name='technical_onboarding_test_requirements_page'
+    ),
 
 
     #devicestock
@@ -718,6 +731,11 @@ urlpatterns = [
     # DEV-ONLY endpoints (return 403 in production when DEBUG=False)
     path('dev/token/', dev_get_token, name='dev_get_token'),
     path('dev/users/', dev_list_users, name='dev_list_users'),
+    path(
+        'dev/technical-onboarding/force-pass-test/',
+        dev_force_pass_test,
+        name='dev_force_pass_test'
+    ),
 
     # Complaint Management
     path('complaint/create/', create_ticket, name='complaint_create'),

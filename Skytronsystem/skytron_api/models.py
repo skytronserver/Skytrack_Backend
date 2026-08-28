@@ -1054,6 +1054,7 @@ class TechnicalOnboardingTestCase(models.Model):
         ('gpsem', 'Emergency Raw Log (GPSemDataLog)'),
         ('ota_command', 'OTA Command History'),
         ('activation_command', 'Activation Command'),
+        ('firmware_diff', 'Firmware Version Change (GPSDataLog)'),
         ('manual', 'Manual / Observed'),
     ]
 
@@ -1066,6 +1067,14 @@ class TechnicalOnboardingTestCase(models.Model):
     min_match_count = models.PositiveIntegerField(default=1)
     max_interval_seconds = models.PositiveIntegerField(blank=True, null=True)
     scan_window_seconds = models.PositiveIntegerField(default=300)
+
+    # For a non-manual test whose automated check only proves a packet
+    # arrived and can't judge the thing the test is actually about (an
+    # accuracy comparison against a reference instrument, a field-by-field
+    # protocol read, an A-vs-B firmware comparison): the tester still
+    # records a manual_result, and completion requires BOTH it and the
+    # automated snapshot to pass. Ignored when source_table == 'manual'.
+    requires_manual_confirmation = models.BooleanField(default=False)
 
     is_optional = models.BooleanField(default=False)
     active = models.BooleanField(default=True)

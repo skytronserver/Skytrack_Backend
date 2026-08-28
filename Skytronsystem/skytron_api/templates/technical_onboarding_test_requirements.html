@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Setup Requirements</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#F4F5F3;
+    --surface:#FFFFFF;
+    --surface-alt:#EAECE7;
+    --ink:#1A1F22;
+    --ink-muted:#5B6469;
+    --ink-faint:#8A9296;
+    --line:#D8DBD5;
+    --line-strong:#C1C6BF;
+    --accent:#1F6F72;
+    --accent-ink:#0F4547;
+    --accent-soft:#DCEEEC;
+    --hybrid:#6B4C86;
+    --hybrid-soft:#EDE3F2;
+    --optional:#5B6469;
+  }
+
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12161A;
+      --surface:#181D22;
+      --surface-alt:#1E242A;
+      --ink:#E7EAE7;
+      --ink-muted:#98A3A6;
+      --ink-faint:#6C7679;
+      --line:#2B3238;
+      --line-strong:#394149;
+      --accent:#54B8B0;
+      --accent-ink:#BFEAE5;
+      --accent-soft:#183633;
+      --hybrid:#C9A3E0;
+      --hybrid-soft:#332640;
+      --optional:#98A3A6;
+    }
+  }
+
+  :root[data-theme="dark"]{
+    --bg:#12161A;
+    --surface:#181D22;
+    --surface-alt:#1E242A;
+    --ink:#E7EAE7;
+    --ink-muted:#98A3A6;
+    --ink-faint:#6C7679;
+    --line:#2B3238;
+    --line-strong:#394149;
+    --accent:#54B8B0;
+    --accent-ink:#BFEAE5;
+    --accent-soft:#183633;
+    --hybrid:#C9A3E0;
+    --hybrid-soft:#332640;
+    --optional:#98A3A6;
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:0.01ms !important; transition-duration:0.01ms !important; }
+  }
+
+  .page{ max-width:880px; margin:0 auto; padding:56px 24px 96px; }
+
+  header{ margin-bottom:40px; }
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px; font-weight:500; letter-spacing:0.11em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 14px;
+  }
+  h1{
+    font-size:clamp(28px, 4vw, 38px); font-weight:700; line-height:1.15;
+    letter-spacing:-0.01em; margin:0 0 12px; text-wrap:balance;
+  }
+  .lede{ font-size:16px; line-height:1.6; color:var(--ink-muted); max-width:64ch; margin:0 0 24px; }
+  .lede code{
+    font-family:'IBM Plex Mono', monospace; font-size:0.92em; background:var(--surface-alt);
+    padding:0.1em 0.4em; border-radius:4px; color:var(--ink);
+  }
+
+  .key{
+    display:flex; flex-wrap:wrap; gap:10px 20px; font-size:13px; color:var(--ink-muted);
+    padding:14px 16px; background:var(--surface); border:1px solid var(--line); border-radius:10px;
+  }
+  .key-item{ display:flex; align-items:center; gap:7px; }
+
+  .group{ margin-top:44px; }
+  .group-head{
+    display:flex; align-items:baseline; gap:12px; padding-bottom:10px; margin-bottom:18px;
+    border-bottom:2px solid var(--ink);
+  }
+  .group-letter{
+    font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:600; color:var(--surface);
+    background:var(--ink); width:22px; height:22px; border-radius:5px;
+    display:inline-flex; align-items:center; justify-content:center; flex:none;
+  }
+  .group-title{ font-size:18px; font-weight:600; margin:0; flex:1; }
+  .group-range{
+    font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-faint); white-space:nowrap;
+  }
+
+  .test{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:18px 20px; margin-bottom:14px;
+  }
+  .test-head{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px;
+  }
+  .test-num{
+    font-family:'IBM Plex Mono', monospace; font-variant-numeric:tabular-nums;
+    font-size:14px; font-weight:600; color:var(--ink-faint);
+    background:var(--surface-alt); border-radius:6px; padding:3px 8px; flex:none;
+  }
+  .test-head h3{ font-size:16px; font-weight:600; margin:0; flex:1; min-width:180px; text-wrap:balance; }
+  .badges{ display:flex; gap:6px; flex-wrap:wrap; }
+  .badge{
+    font-family:'IBM Plex Mono', monospace; font-size:10.5px; font-weight:600;
+    letter-spacing:0.02em; padding:3px 8px; border-radius:5px; white-space:nowrap;
+  }
+  .badge-auto{ background:var(--accent-soft); color:var(--accent-ink); }
+  .badge-hybrid{ background:var(--hybrid-soft); color:var(--hybrid); }
+  .badge-optional{
+    background:transparent; color:var(--optional); border:1px solid var(--line-strong);
+    font-family:'IBM Plex Sans', sans-serif; font-weight:500; text-transform:uppercase; letter-spacing:0.06em;
+  }
+
+  .test-body{ display:grid; gap:12px; }
+  .field-label{
+    display:block; font-family:'IBM Plex Mono', monospace; font-size:10.5px; font-weight:600;
+    letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-faint); margin-bottom:6px;
+  }
+  .test-body p{ font-size:14px; line-height:1.6; color:var(--ink); margin:0; max-width:66ch; }
+  .needs{ display:flex; flex-wrap:wrap; gap:6px; }
+  .need{
+    font-size:12.5px; background:var(--surface-alt); border:1px solid var(--line);
+    color:var(--ink-muted); padding:4px 9px; border-radius:20px; line-height:1.3;
+  }
+  .pass{
+    background:var(--surface-alt); border-radius:8px; padding:10px 12px; color:var(--ink-muted) !important;
+  }
+
+  footer{ margin-top:40px; font-size:12.5px; color:var(--ink-faint); line-height:1.6; }
+  footer code{
+    font-family:'IBM Plex Mono', monospace; background:var(--surface-alt); padding:1px 6px; border-radius:4px; color:var(--ink);
+  }
+
+  @media (max-width:520px){
+    .test-head{ align-items:flex-start; }
+  }
+</style>
+</head>
+<body>
+
+
+<div class="page">
+
+  <header>
+    <p class="eyebrow">Skytrack &middot; Technical Onboarding</p>
+    <h1>What each of the 39 checkpoints needs to run</h1>
+    <p class="lede">
+      Equipment, access, and the physical step to perform for every checkpoint &mdash; and exactly
+      what has to be true for it to pass. Companion to the <code>TechnicalOnboardingTestCase</code>
+      DB-mechanics reference; this one is for the person actually running the test.
+    </p>
+    <div class="key">
+      <span class="key-item"><span class="badge badge-auto">Fully Automatic</span> the DB check alone decides pass/fail</span>
+      <span class="key-item"><span class="badge badge-hybrid">Auto + Confirm</span> the DB check must pass first &mdash; only then can you sign off</span>
+      <span class="key-item"><span class="badge badge-optional">Optional</span> not required to certify</span>
+    </div>
+  </header>
+
+  <section class="group">
+    <div class="group-head">
+      <span class="group-letter">A</span>
+      <h2 class="group-title">SOS &amp; emergency response</h2>
+      <span class="group-range">#1&ndash;5</span>
+    </div>
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">01</span>
+        <h3>SOS button -&gt; Emergency Server (5s cadence)</h3>
+        <div class="badges"><span class="badge badge-auto">Fully Automatic</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Physical SOS button</span><span class="need">Emergency Server packet feed</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>With the device powered and online, press the physical SOS button and hold the emergency active for at least 10 seconds.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">At least 2 EMR packets land in GPSemDataLog within 5 minutes, no more than 7 seconds apart.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">02</span>
+        <h3>BLE SOS -&gt; Emergency Server (5s cadence)</h3>
+        <div class="badges"><span class="badge badge-auto">Fully Automatic</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">BLE mobile app paired to device</span><span class="need">Emergency Server packet feed</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>From the BLE app, trigger SOS and hold it active for at least 10 seconds.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">At least 2 EMR packets carrying the BLE tag land in GPSemDataLog within 5 minutes, no more than 7 seconds apart.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">03</span>
+        <h3>SOS button -&gt; Tracking Server (Start + NR SOS=1)</h3>
+        <div class="badges"><span class="badge badge-auto">Fully Automatic</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Physical SOS button</span><span class="need">Tracking Server packet feed</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Press the physical SOS button, then watch the Tracking Server feed for at least 15 seconds.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">An EA,10 packet (no BLE tag) lands in GPSDataLog within 5 minutes.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">04</span>
+        <h3>BLE SOS -&gt; Tracking Server (Start + NR SOS=1)</h3>
+        <div class="badges"><span class="badge badge-auto">Fully Automatic</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">BLE mobile app paired to device</span><span class="need">Tracking Server packet feed</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>From the BLE app, trigger SOS, then watch the Tracking Server feed for at least 15 seconds.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A BLE-tagged EA,10 packet lands in GPSDataLog within 5 minutes.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">05</span>
+        <h3>SOS Stop on both servers</h3>
+        <div class="badges"><span class="badge badge-auto">Fully Automatic</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Superadmin console access (to send SOS Stop)</span><span class="need">Emergency Server packet feed</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>With SOS already active from test #1 or #3, send the SOS Stop command from the server console.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A SEM packet lands in GPSemDataLog within 5 minutes.</p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="group">
+    <div class="group-head">
+      <span class="group-letter">B</span>
+      <h2 class="group-title">Firmware, power &amp; driving-behavior bench tests</h2>
+      <span class="group-range">#6&ndash;13</span>
+    </div>
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">06</span>
+        <h3>FOTA upgrade A -&gt; B</h3>
+        <div class="badges"><span class="badge badge-auto">Fully Automatic</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Firmware Version A currently on device</span><span class="need">Firmware Version B package</span><span class="need">OTA push access</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Push the Version B firmware package to the device over the air and wait for it to apply.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">Two distinct firmware-version strings (e.g. 1.1.1, then 1.1.2) show up in the device's own PVT/Health packets in GPSDataLog within 5 minutes -- direct proof the upgrade took effect, not just that a command was sent.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">07</span>
+        <h3>Internal battery voltage (3 levels)</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Reference multimeter</span><span class="need">Ability to vary internal battery charge to 3 levels</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>At each of 3 internal-battery levels (e.g. full, mid, low), measure the battery with the reference meter and note the device's reported reading.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT or Health packet arrives in GPSDataLog at each level, AND you confirm the reported voltage matches the meter at all 3 levels.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">08</span>
+        <h3>External battery/supply voltage (3 levels)</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Reference multimeter or bench power supply</span><span class="need">Ability to vary external supply voltage to 3 levels</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>At each of 3 external-supply levels, measure with the reference meter and note the device's reported reading.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT or Health packet arrives in GPSDataLog at each level, AND you confirm the reported voltage matches the meter at all 3 levels.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">09</span>
+        <h3>Ignition ON/OFF status</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Access to the ignition wire/switch (vehicle or bench rig)</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Switch ignition ON, confirm the reported state, then switch it OFF and confirm again.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog for each toggle, AND you confirm the reported state matches the physical switch both times.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">10</span>
+        <h3>Harsh-braking event trigger</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Vehicle or bench rig capable of controlled deceleration</span><span class="need">Configured braking threshold (X km/h)</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Brake sharply just above the threshold (should trigger), then just below it (should not trigger).</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog during the test, AND you confirm the event fired above threshold and stayed silent below it.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">11</span>
+        <h3>Harsh-acceleration event trigger</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Vehicle or bench rig capable of controlled acceleration</span><span class="need">Configured acceleration threshold (X km/h)</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Accelerate sharply just above the threshold (should trigger), then just below it (should not trigger).</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog during the test, AND you confirm the event fired above threshold and stayed silent below it.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">12</span>
+        <h3>Rough-turning event trigger</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Vehicle or bench rig capable of a controlled turn</span><span class="need">Configured turn-rate threshold</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Execute a turn just above the threshold rate (should trigger), then just below it (should not trigger).</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog during the test, AND you confirm the event fired above threshold and stayed silent below it.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">13</span>
+        <h3>Tilt-event trigger</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Mounted device that can be physically tilted</span><span class="need">Configured tilt-angle threshold</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Tilt the mounted device past the configured angle and hold for a few seconds.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog during the test, AND you confirm the tilt event fired at the correct angle.</p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="group">
+    <div class="group-head">
+      <span class="group-letter">C</span>
+      <h2 class="group-title">Location, signal &amp; connectivity</h2>
+      <span class="group-range">#14&ndash;15, 20&ndash;24</span>
+    </div>
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">14</span>
+        <h3>GPS speed accuracy</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Reference GPS device or calibrated speedometer</span><span class="need">Open-sky test drive route</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Drive a short route at varying speeds alongside the reference device, logging both readings.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">PVT packets arrive in GPSDataLog throughout the drive, AND you confirm reported speed matches the reference within the agreed tolerance.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">15</span>
+        <h3>Geofence entry/exit accuracy</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">A geofence configured in the system</span><span class="need">Reference measurement of the real boundary (tape/GPS)</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Cross the geofence boundary from outside to inside, and again from inside to outside.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">PVT packets arrive in GPSDataLog around each crossing, AND you confirm the reported crossing point is within 50m of the real boundary.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">20</span>
+        <h3>A-GPS via primary SIM/profile</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Primary SIM/profile active</span><span class="need">Known reference location</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>With only the primary profile active, request a location fix in a GPS-denied area (indoors/underground) where A-GPS is needed.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog, AND you confirm the A-GPS fix is close to the known reference location.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">21</span>
+        <h3>A-GPS via secondary SIM/profile</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Secondary SIM/profile active</span><span class="need">Known reference location</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Same as #20, with only the secondary profile active.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog, AND you confirm the A-GPS fix is close to the known reference location.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">22</span>
+        <h3>Satellite/GPS signal loss and recovery</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Way to block the GPS antenna (metal box/shielding)</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Block the GPS antenna for a few minutes, then remove the blockage and wait, without touching the device.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">PVT packets resume in GPSDataLog after signal is restored, AND you confirm no manual intervention was needed for recovery.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">23</span>
+        <h3>eSIM switch: primary -&gt; secondary</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">eSIM profile management access</span><span class="need">Both profiles provisioned</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Trigger the switch from the primary profile to the secondary profile.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog after the switch, AND you confirm the active profile actually changed (not just that packets kept flowing).</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">24</span>
+        <h3>eSIM switch: secondary -&gt; primary</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">eSIM profile management access</span><span class="need">Both profiles provisioned</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Trigger the switch back from the secondary profile to the primary profile.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog after the switch, AND you confirm the active profile actually changed back.</p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="group">
+    <div class="group-head">
+      <span class="group-letter">D</span>
+      <h2 class="group-title">Protocol field validation</h2>
+      <span class="group-range">#25&ndash;30</span>
+    </div>
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">25</span>
+        <h3>Login packet protocol validation</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Ability to power-cycle the device</span><span class="need">Raw packet log access</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Power-cycle the device so it re-sends its login packet, then pull the raw packet.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A structurally valid login packet lands in GPSDataLog within 5 minutes, AND you confirm every field in the sample is correct.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">26</span>
+        <h3>Health packet protocol validation</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Raw packet log access</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>With the device online and idle, pull a health packet from the log.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A health packet lands in GPSDataLog within 5 minutes, AND you confirm every field in the sample is correct.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">27</span>
+        <h3>Emergency Start packet protocol validation</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Physical SOS button</span><span class="need">Raw packet log access on both servers</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Press the physical SOS button, then pull the raw Emergency Start packet from both servers.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">An EA,10 packet (no BLE tag) lands in GPSDataLog within 5 minutes, AND you confirm every field is correct and the Emergency-Server side also received it.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">28</span>
+        <h3>BLE Emergency packet protocol validation</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">BLE mobile app paired to device</span><span class="need">Raw packet log access on both servers</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Trigger SOS from the BLE app, then pull the raw BLE Emergency packet from both servers.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A BLE-tagged EA,10 packet lands in GPSDataLog within 5 minutes, AND you confirm every field is correct and the Emergency-Server side also received it.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">29</span>
+        <h3>Tracking/NR packet protocol validation</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Raw packet log access</span><span class="need">Device online and moving (for a non-zero fix)</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>With the device online, pull a Tracking/NR (PVT) packet from the log.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet lands in GPSDataLog within 5 minutes, AND you confirm every field in the sample is correct.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">30</span>
+        <h3>Emergency Stop packet protocol validation</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Superadmin console access (to send SOS Stop)</span><span class="need">Raw packet log access on both servers</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>With SOS active, send the SOS Stop command, then pull the raw Emergency Stop packet from both servers.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">An EA,11 packet lands in GPSDataLog within 5 minutes, AND you confirm every field is correct and the Emergency-Server side also cleared.</p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="group">
+    <div class="group-head">
+      <span class="group-letter">E</span>
+      <h2 class="group-title">Battery, ignition &amp; tamper alerts</h2>
+      <span class="group-range">#16&ndash;19, 31&ndash;36</span>
+    </div>
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">16</span>
+        <h3>External power disconnection detection</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Physical access to the external power connector</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Disconnect external power and note the time.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog after the disconnect, AND you confirm the alert timestamp matches when power was actually pulled.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">17</span>
+        <h3>SOS harness disconnection trigger</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Physical access to the SOS harness connector</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Disconnect the SOS harness and note the time.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog after the disconnect, AND you confirm the alert timestamp matches when the harness was actually disconnected.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">18</span>
+        <h3>Device-box tamper alert (optional)</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span><span class="badge badge-optional">Optional</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Device enclosure with a tamper switch (if the hardware supports it)</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Open or tamper with the device box and note the time. Optional — skip if the hardware has no tamper switch.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog after the tamper, AND you confirm the alert fired (where supported). Not required to pass certification.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">19</span>
+        <h3>History-data storage &amp; transmission (Faraday box)</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Faraday box or bag large enough for the device</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Place the powered device inside the Faraday box for several minutes to block signal, then remove it and let it reconnect.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">PVT packets resume in GPSDataLog after removal, AND you confirm the history data logged during the blackout is complete and in the correct order.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">31</span>
+        <h3>“Main Battery Disconnected” alert</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Physical access to the main battery</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Disconnect the main battery and note the time.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog after the disconnect, AND you confirm the alert timestamp matches when the battery was actually disconnected.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">32</span>
+        <h3>“Low Battery” alert</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Ability to drain the battery to the low-battery threshold</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Drain the battery down to the configured low-battery threshold and note the time it crosses.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog around the crossing, AND you confirm the alert matches the moment it actually crossed threshold.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">33</span>
+        <h3>“Low Battery Removed/Cleared” alert</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Ability to recharge the battery past the low-battery threshold</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Recharge the battery back past the threshold and note the time.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog around the recharge, AND you confirm the clear matches the moment it was actually recharged.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">34</span>
+        <h3>“Main Battery Reconnected” alert</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Physical access to the main battery</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Reconnect the main battery and note the time.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog after the reconnect, AND you confirm the alert timestamp matches when the battery was actually reconnected.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">35</span>
+        <h3>“Ignition ON” alert</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Access to the ignition wire/switch</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Switch ignition ON and note the time.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog after the switch, AND you confirm the alert timestamp matches when ignition was actually switched on.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">36</span>
+        <h3>“Ignition OFF” alert</h3>
+        <div class="badges"><span class="badge badge-hybrid">Auto + Confirm</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Access to the ignition wire/switch</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Switch ignition OFF and note the time.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">A PVT packet arrives in GPSDataLog after the switch, AND you confirm the alert timestamp matches when ignition was actually switched off.</p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="group">
+    <div class="group-head">
+      <span class="group-letter">F</span>
+      <h2 class="group-title">OTA commands &amp; activation</h2>
+      <span class="group-range">#37&ndash;39</span>
+    </div>
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">37</span>
+        <h3>OT Reboot command + ack</h3>
+        <div class="badges"><span class="badge badge-auto">Fully Automatic</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Superadmin console access (to send OTA Reboot)</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Send the OTA Reboot command to the device.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">An acknowledged reboot command appears in OTACommandHistory within 5 minutes.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">38</span>
+        <h3>OT set vehicle registration number + ack</h3>
+        <div class="badges"><span class="badge badge-auto">Fully Automatic</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Superadmin console access (to send OTA set-reg-no command)</span><span class="need">A registration number to set</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Send the OTA command to set the vehicle registration number.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">An acknowledged set-registration command appears in OTACommandHistory within 5 minutes.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="test">
+      <div class="test-head">
+        <span class="test-num">39</span>
+        <h3>Activation command + reply</h3>
+        <div class="badges"><span class="badge badge-auto">Fully Automatic</span></div>
+      </div>
+      <div class="test-body">
+        <div class="field">
+          <span class="field-label">You'll need</span>
+          <div class="needs"><span class="need">Superadmin console access (to send Activation command)</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Do this</span>
+          <p>Send the Activation command to the device.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Passes when</span>
+          <p class="pass">An acknowledged activation command appears in ActivationCommandDispatch within 5 minutes.</p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <footer>
+    Source: <code>TechnicalOnboardingTestCase</code> catalog, 39 active rows, updated 2026&#8209;08&#8209;28.
+    Run checkpoints in order &mdash; the onboarding gate won't unlock #<em>N</em> until #<em>N&minus;1</em>
+    is complete on all 5 demo units.
+  </footer>
+
+</div>
+
+</body>
+</html>
