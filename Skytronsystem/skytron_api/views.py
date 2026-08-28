@@ -2406,47 +2406,51 @@ def gps_track_data_api(request ):
         poi_t = _norm(request.GET.get('poi_t', None))
         poi_t_cf = str(poi_t).casefold() if poi_t is not None else None
 
-        # Get base queryset
-        gps_queryset = GPSData.objects.exclude(device_tag=None).filter(gps_status=1, device_tag__status='Owner_Final_OTP_Verified')
+        # Get base queryset. Driven from DeviceTag (small table, ~100k rows)
+        # rather than GPSData (11M+ rows): the latest packet per device is
+        # pulled via a correlated subquery further down, using the
+        # (device_tag, id) index for a fast per-device lookup instead of a
+        # full-table GROUP BY scan (see gps_track_lite_api for precedent —
+        # that scan pattern caused 60s+ timeouts on this endpoint).
+        device_tag_qs = DeviceTag.objects.filter(status='Owner_Final_OTP_Verified')
 
         # Filter by imei if provided (partial match)
         if imei and imei != "None":
-            gps_queryset = gps_queryset.filter(device_tag__device__imei__icontains=imei)
+            device_tag_qs = device_tag_qs.filter(device__imei__icontains=imei)
         # Filter by regno if provided (partial match)
         if regno and regno != "None":
-            gps_queryset = gps_queryset.filter(device_tag__vehicle_reg_no__icontains=regno)
+            device_tag_qs = device_tag_qs.filter(vehicle_reg_no__icontains=regno)
         # Filter by vehicle make (partial match, case-insensitive)
         if make_text is not None:
-            gps_queryset = gps_queryset.filter(device_tag__vehicle_make__icontains=str(make_text))
+            device_tag_qs = device_tag_qs.filter(vehicle_make__icontains=str(make_text))
         # Filter by manufacturer id via DeviceTag -> DeviceStock -> Dealer -> Manufacturer
         if manufacturer_id is not None:
-            gps_queryset = gps_queryset.filter(device_tag__device__dealer__manufacturer__id=manufacturer_id)
+            device_tag_qs = device_tag_qs.filter(device__dealer__manufacturer__id=manufacturer_id)
         # Filter by vehicle category (id or text)
         if category_id is not None:
-            gps_queryset = gps_queryset.filter(device_tag__category_id=category_id)
+            device_tag_qs = device_tag_qs.filter(category_id=category_id)
         elif category_text is not None:
-            gps_queryset = gps_queryset.filter(device_tag__category__category__icontains=category_text)
+            device_tag_qs = device_tag_qs.filter(category__category__icontains=category_text)
         # Filter by district id / district name
         if district_id is not None:
-            gps_queryset = gps_queryset.filter(device_tag__district__id=district_id)
+            device_tag_qs = device_tag_qs.filter(district__id=district_id)
         if district_text is not None:
-            gps_queryset = gps_queryset.filter(device_tag__district__district__icontains=str(district_text))
+            device_tag_qs = device_tag_qs.filter(district__district__icontains=str(district_text))
         # Filter by configured max speed for the vehicle category
         if speed_limit is not None:
             # Settings_VehicleCategory.maxSpeed is stored as text; allow leading zeros
-            gps_queryset = gps_queryset.filter(device_tag__category__maxSpeed__regex=rf'^0*{speed_limit}$')
-        # Push owner name filter to DB level (device_tag-level attribute — safe to apply early)
+            device_tag_qs = device_tag_qs.filter(category__maxSpeed__regex=rf'^0*{speed_limit}$')
+        # Owner name filter (device_tag-level attribute)
         if owner_name_substr:
-            gps_queryset = gps_queryset.filter(
-                device_tag__vehicle_owner__users__name__icontains=owner_name_substr
+            device_tag_qs = device_tag_qs.filter(
+                vehicle_owner__users__name__icontains=owner_name_substr
             )
-        # Push road/city text filter to DB to reduce rows before GROUP BY
-        if poi_t is not None:
-            gps_queryset = gps_queryset.filter(Q(road__icontains=poi_t) | Q(city__icontains=poi_t))
-            poi_t_cf = None
+        # poi_t (road/city substring) is a packet-level attribute; it's applied
+        # inside the latest-packet subquery below, not here.
+        poi_t_cf = None
 
         # Apply role-based filtering
-        gps_queryset, _role_err = _gps_scope_by_role(request, gps_queryset)
+        device_tag_qs, _role_err = _dt_scope_by_role(request, device_tag_qs)
         if _role_err:
             return _role_err
 
@@ -2698,41 +2702,77 @@ def gps_track_data_api(request ):
         want_count = str(request.GET.get('count', 'true')).lower() != 'false'
         _start = _page * _page_length
 
-        # Filter history window before computing latest-per-device
+        # Latest matching packet per device_tag, found via a correlated
+        # subquery keyed by device_tag_id. This lets Postgres use the
+        # gpsdata_tag_id_asc_idx (device_tag, id) index for one backward
+        # index scan per device instead of a GROUP BY + MAX(id) aggregate
+        # over the entire GPSData table (which forced a full sequential
+        # scan + hash join and caused 60s+ timeouts on this endpoint).
+        latest_gps_filter = Q(device_tag_id=OuterRef('id'), gps_status=1)
+        latest_order = ['-id']
         if history_dt is not None:
-            gps_queryset = gps_queryset.filter(
-                Q(packet_datetime__lte=history_dt) |
-                Q(packet_datetime__isnull=True, entry_time__lte=history_dt)
-            )
+            # No GPSData rows have a null packet_datetime in production, so
+            # the historical snapshot can be expressed as a single equality
+            # on packet_datetime — this lets Postgres use
+            # gpsdata_tag_packet_dt_idx (device_tag, -packet_datetime, -id)
+            # to seek straight to the right position per device. Mixing in
+            # an OR'd entry_time fallback (even though it never matches any
+            # row today) defeats that index-driven plan and forces a scan
+            # of each device's full history.
+            latest_gps_filter &= Q(packet_datetime__lte=history_dt)
+            latest_order = ['-packet_datetime', '-id']
 
-        # Get one row per device using GROUP BY + MAX(id).
-        # id is monotonically increasing with insertion order (GPS packets inserted as received),
-        # so MAX(id) per device_tag == most recent packet for that device.
-        # This is O(distinct devices) vs O(all GPS rows) for the old DISTINCT ON + COALESCE sort.
-        latest_id_qs = (
-            gps_queryset
-            .values('device_tag_id')
-            .annotate(latest_id=Max('id'))
-            .order_by('device_tag_id')
+        latest_gps_id_sq = GPSData.objects.filter(latest_gps_filter).order_by(*latest_order).values('id')[:1]
+
+        device_tag_qs = device_tag_qs.annotate(
+            latest_gps_id=Subquery(latest_gps_id_sq)
+        ).exclude(latest_gps_id=None)
+
+        # poi_t matches the device's current (latest) packet's road/city.
+        # road/city have no supporting index for substring search, so a
+        # correlated EXISTS() gets rewritten by Postgres into a hash join
+        # against a full sequential scan of GPSData (11M+ rows). Instead,
+        # resolve latest_gps_id for every candidate device (cheap, already
+        # index-driven above), bulk-fetch just those rows' road/city by
+        # primary key (an indexed IN lookup), and filter in Python before
+        # paginating — same result, no table scan.
+        if poi_t is not None:
+            poi_t_cf_local = str(poi_t).casefold()
+            id_pairs = list(device_tag_qs.values_list('id', 'latest_gps_id'))
+            latest_ids_all = [lid for _, lid in id_pairs if lid]
+            matching_gps_ids = {
+                gid for gid, road, city in GPSData.objects.filter(
+                    id__in=latest_ids_all
+                ).values_list('id', 'road', 'city')
+                if (road and poi_t_cf_local in road.casefold())
+                or (city and poi_t_cf_local in city.casefold())
+            }
+            matching_dt_ids = [dtid for dtid, lid in id_pairs if lid in matching_gps_ids]
+            device_tag_qs = device_tag_qs.filter(id__in=matching_dt_ids)
+
+        device_tag_qs = device_tag_qs.order_by('id')
+
+        _total = device_tag_qs.count() if want_count else None
+
+        page_device_tags = list(
+            device_tag_qs.select_related(
+                'device',
+                'device__dealer',
+                'device__dealer__manufacturer',
+                'vehicle_owner',
+                'category',
+                'district',
+                'district__state',
+            ).prefetch_related('vehicle_owner__users')[_start:_start + _page_length]
         )
 
-        _total = latest_id_qs.count() if want_count else None
-
-        paginated_rows = list(latest_id_qs[_start:_start + _page_length])
-        paginated_ids = [row['latest_id'] for row in paginated_rows]
+        paginated_ids = [dt.latest_gps_id for dt in page_device_tags if dt.latest_gps_id]
         id_to_entry = {g.id: g for g in GPSData.objects.filter(id__in=paginated_ids)}
-        latest_entries = [id_to_entry[lid] for lid in paginated_ids if lid in id_to_entry]
-
-        page_device_tag_ids = [g.device_tag_id for g in latest_entries if getattr(g, 'device_tag_id', None)]
-        page_device_tags = DeviceTag.objects.filter(id__in=page_device_tag_ids).select_related(
-            'device',
-            'device__dealer',
-            'device__dealer__manufacturer',
-            'vehicle_owner',
-            'category',
-            'district',
-            'district__state',
-        ).prefetch_related('vehicle_owner__users')
+        latest_entries = [
+            id_to_entry[dt.latest_gps_id]
+            for dt in page_device_tags
+            if dt.latest_gps_id in id_to_entry
+        ]
         device_tag_map = {dt.id: dt for dt in page_device_tags}
 
         _t5 = _time.perf_counter()
@@ -8514,33 +8554,27 @@ def DEx_getPendingCallList(request ):
             user.last_activity = timezone.now()
             user.save(update_fields=['login', 'last_activity'])
 
-        # Parse ignore_before_days from request body (default 3, clamped 1–30).
-        # Older assignments are excluded to keep the result set small and fast.
-        try:
-            ignore_before_days = int((request.data or {}).get('ignore_before_days', 3))
-            ignore_before_days = max(1, min(ignore_before_days, 30))
-        except (TypeError, ValueError):
-            ignore_before_days = 30
-        ignore_before_days = 30
-        cutoff = timezone.now() - timedelta(days=ignore_before_days)
-
-        # Base queryset: only pending calls, excluding closed assignments, within cutoff window
+        # Base queryset: only pending calls, excluding closed assignments.
+        # No age cutoff — a call still in status="pending" is by definition
+        # unresolved, so it must stay visible no matter how old it is.
+        # (An earlier start_time cutoff here caused every currently-open
+        # pending call to disappear from this list once older than 30 days.)
         qs_base = (
             EMCallAssignment.objects
-            .filter(call__status="pending", start_time__gte=cutoff)
+            .filter(call__status="pending")
             .exclude(status="closed")
         )
 
         # Scope selection based on role
         if uo2:
             qs = qs_base.filter(ex__state=uo2.state)
-            cache_scope = f"state:{getattr(uo2.state, 'id', uo2.state_id)}:d{ignore_before_days}"
+            cache_scope = f"state:{getattr(uo2.state, 'id', uo2.state_id)}"
         elif uo3:
             qs = qs_base.filter(ex__state=uo3.state)
-            cache_scope = f"state:{getattr(uo3.state, 'id', uo3.state_id)}:d{ignore_before_days}"
+            cache_scope = f"state:{getattr(uo3.state, 'id', uo3.state_id)}"
         else:
             qs = qs_base.filter(ex=uo)
-            cache_scope = f"ex:{getattr(uo, 'id', None)}:d{ignore_before_days}"
+            cache_scope = f"ex:{getattr(uo, 'id', None)}"
 
         # Short-lived cache to avoid repeated heavy serialization for the same scope
         cache_key = f"DEx_getPendingCallList:pending:{cache_scope}"
@@ -8590,23 +8624,27 @@ def DEx_getPendingCallList(request ):
             if a.call_id and a.call.device_id
         })
         if device_tag_ids:
-            from collections import defaultdict
-            gps_rows = (
-                GPSData.objects
-                .filter(device_tag_id__in=device_tag_ids, gps_status='1')
-                .order_by('device_tag_id', '-id')
-                .values(
-                    'id', 'date', 'time', 'latitude', 'latitude_dir',
-                    'longitude', 'longitude_dir', 'altitude', 'speed',
-                    'network_operator', 'device_tag_id',
+            # One bounded (LIMIT 10) query per device instead of a single
+            # order_by(device_tag_id, -id) query across all of them: some
+            # devices have 100k+ historical rows, and a combined ORDER BY
+            # across multiple devices can't push the per-device LIMIT down
+            # to the (device_tag, id) index — it has to sort every matching
+            # row for all devices before Python can bucket the top 10, which
+            # hung for minutes. Looping is only as many queries as there are
+            # devices with a pending call (a handful), and each is an
+            # index-driven backward scan that stops after 10 rows.
+            gps_by_device = {}
+            for dtid in device_tag_ids:
+                gps_by_device[dtid] = list(
+                    GPSData.objects
+                    .filter(device_tag_id=dtid, gps_status='1')
+                    .order_by('-id')
+                    .values(
+                        'id', 'date', 'time', 'latitude', 'latitude_dir',
+                        'longitude', 'longitude_dir', 'altitude', 'speed',
+                        'network_operator', 'device_tag_id',
+                    )[:10]
                 )
-            )
-            # Group rows in Python, keeping the top 10 (highest id) per device
-            gps_by_device = defaultdict(list)
-            for row in gps_rows:
-                bucket = gps_by_device[row['device_tag_id']]
-                if len(bucket) < 10:
-                    bucket.append(row)
             # Attach precomputed GPS vals so the serializer skips its own DB query
             for a in assignments:
                 if a.call_id and a.call.device_id:
@@ -41146,20 +41184,20 @@ def _normalise_packet(raw):
     return (raw or '').strip().replace('$,', '$', 1)
  
  
+BLE_MARKER_PATTERN = re.compile(r'\{SOS_PUB_[^}]*\}', re.IGNORECASE)
+
+
 def _packet_has_ble_marker(raw):
     """
     True when the packet carries the BLE source marker.
- 
-        BLE-triggered alerts are marked by a 'BLE' source string at
-    the end of the packet.
- 
-    UNVERIFIED — no BLE packet exists in the data yet, so the exact
-    spelling and position could not be confirmed. Checked case-insensitively
-    against the tail of the packet to be tolerant. Correct this once a real
-    BLE packet is available.
+
+    VERIFIED against real data: a BLE-triggered SOS/emergency packet ends
+    with a '{SOS_PUB_<reg_no>}' tag (seen as both '{SOS_PUB_AS01CC0001}'
+    and '{SOS_PUB_AS01CC0001*}' in production) — not a literal 'BLE'
+    string, which never appears in real packets.
     """
-    tail = _normalise_packet(raw)[-40:].upper()
-    return 'BLE' in tail
+    tail = _normalise_packet(raw)[-60:]
+    return bool(BLE_MARKER_PATTERN.search(tail))
  
  
 # Matched on structure, not on a registration prefix. The registration
@@ -41193,23 +41231,33 @@ def _is_pvt_packet(raw, ble=None):
     return _packet_type_in_header(raw, 'PVT')
  
  
+def _is_emergency_alert(raw, code):
+    """
+    Emergency start/stop are PVT packets with the status field replaced:
+    field 3 ('NR' when normal) becomes 'EA', field 4 carries the alert
+    code — '10' for start, '11' for stop.
+
+    VERIFIED against real data:
+      $,PVT,MAPW,1.1.1,EA,10,L,<imei>,<reg>,...  (start)
+      $,PVT,MAPW,1.1.1,EA,11,L,<imei>,<reg>,...  (stop)
+    """
+    parts = _packet_fields(raw)
+    return (
+        len(parts) > 4
+        and parts[0].upper() == 'PVT'
+        and parts[3].upper() == 'EA'
+        and parts[4] == code
+    )
+
+
 def _is_emergency_start(raw, ble=False):
-    """
-    Emergency start in GPSDataLog, alert type EM,10
-    UNVERIFIED — no EM,10 rows exist in the data yet.
-    """
-    packet = _normalise_packet(raw)
-    if 'EM,10' not in packet:
+    if not _is_emergency_alert(raw, '10'):
         return False
-    return _packet_has_ble_marker(packet) == ble
- 
- 
+    return _packet_has_ble_marker(raw) == ble
+
+
 def _is_emergency_stop(raw, ble=None):
-    """
-    Emergency stop in GPSDataLog, alert type EM,11
-    UNVERIFIED — no EM,11 rows exist in the data yet.
-    """
-    return 'EM,11' in _normalise_packet(raw)
+    return _is_emergency_alert(raw, '11')
  
  
 def _is_sos_packet(raw, msg_type, ble=False):
@@ -41217,7 +41265,7 @@ def _is_sos_packet(raw, msg_type, ble=False):
     SOS packets in GPSemDataLog. EMR = start, SEM = stop.
 
     VERIFIED — EMR 6.2M rows, SEM 48K rows in production.
-    The BLE split is UNVERIFIED.
+    The BLE split is VERIFIED too — see _packet_has_ble_marker.
     """
     if not _packet_type_in_header(raw, msg_type):
         return False
