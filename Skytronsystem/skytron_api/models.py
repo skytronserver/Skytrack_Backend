@@ -962,9 +962,6 @@ class DeviceModel(models.Model):
     # IPs or URLs allowed to send data for this device model.
     # 1 to 10 items, comma separated.
     whitelisted_ip = models.TextField(blank=True, default='')
-    whitelisted_phone_number = models.CharField(max_length=255, null=True, blank=True)
-    device_ip_range = models.CharField(max_length=500, null=True, blank=True)
-    threshold = models.PositiveIntegerField(default=0)
 
     class Meta:
         # Composite index for common filtering combinations
