@@ -5402,3 +5402,27 @@ class VahanDummyData(models.Model):
             ),
             "vehClass": self.veh_class,
         }
+        
+        
+class eSimProviderIPRange(models.Model):
+    """
+    One IP range belonging to an eSIM provider, with the certificate
+    from their ISP / TSP proving the range is theirs.
+
+    Uploaded by the provider after login, separate from registration.
+    """
+    provider = models.ForeignKey(
+        eSimProvider,
+        on_delete=models.CASCADE,
+        related_name='ip_ranges'
+    )
+    ip_range = models.CharField(max_length=100)
+    certificate_file = models.CharField(max_length=255, null=True, blank=True)
+    isp_name = models.CharField(max_length=255, null=True, blank=True)
+    remarks = models.TextField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.provider_id} - {self.ip_range}"
