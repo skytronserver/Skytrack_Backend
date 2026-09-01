@@ -40347,7 +40347,161 @@ def esim_provider_ip_range_delete(request):
         "data": {"id": entry.id, "ip_range": entry.ip_range},
     }, status=status.HTTP_200_OK)
     
+ 
+ 
+
+def _ip_in_ranges(ip_value, ranges):
+    """
+    Is this IP inside any of the provider's registered ranges?
+
+    Handles both formats the validator accepts:
+      CIDR         103.21.58.0/24
+      start-end    103.21.58.1-103.21.58.50
+    """
+    try:
+        ip = ipaddress.ip_address(str(ip_value).strip())
+    except ValueError:
+        return False
+
+    for raw in ranges:
+        raw = str(raw or '').strip()
+        if not raw:
+            continue
+        try:
+            if '/' in raw:
+                if ip in ipaddress.ip_network(raw, strict=False):
+                    return True
+            elif '-' in raw:
+                start_raw, end_raw = raw.split('-', 1)
+                start = ipaddress.ip_address(start_raw.strip())
+                end = ipaddress.ip_address(end_raw.strip())
+                if start <= ip <= end:
+                    return True
+            else:
+                if ip == ipaddress.ip_address(raw):
+                    return True
+        except ValueError:
+            continue
+
+    return False
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def m2m_provider_ip_scan(request):
+    """
+    GET /api/m2m/ip-scan/?provider_id=<id>&days=<n>
+
+    For one M2M provider, lists every IP its tagged devices have sent
+    data from, and flags any IP outside the provider's registered
+    ranges as fake.
+
+    Superadmin only.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not get_user_object(request.user, "superadmin"):
+        return Response(
+            {"error": "Request must be from a superadmin."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    provider_id = request.query_params.get('provider_id')
+    if not str(provider_id or '').isdigit():
+        return Response({"error": "provider_id must be a number."},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    provider = eSimProvider.objects.filter(id=provider_id).first()
+    if not provider:
+        return Response({"error": "No M2M provider found with this id."},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    # How far back to look. Default 7 days, so the query stays bounded.
+    days_raw = request.query_params.get('days', '7')
+    if not str(days_raw).isdigit() or not (1 <= int(days_raw) <= 90):
+        return Response({"error": "days must be a number between 1 and 90."},
+                        status=status.HTTP_400_BAD_REQUEST)
+    since = timezone.now() - timedelta(days=int(days_raw))
+
+    ranges = list(
+        eSimProviderIPRange.objects.filter(
+            provider=provider, is_active=True
+        ).values_list('ip_range', flat=True)
+    )
+
+    tag_ids = list(
+        DeviceTag.objects.filter(esim_provider=provider)
+        .values_list('id', flat=True)
+    )
+
+    if not tag_ids:
+        return Response({
+            "status": "success",
+            "provider": {"id": provider.id, "company_name": provider.company_name},
+            "registered_ranges": ranges,
+            "summary": {"total_ips": 0, "ok_ips": 0, "fake_ips": 0,
+                        "devices_checked": 0},
+            "data": [],
+        }, status=status.HTTP_200_OK)
+
+    # Unique IPs per table, then merged.
+    seen = {}
+    sources = (
+        ('gps', GPSData.objects.filter(
+            device_tag_id__in=tag_ids, entry_time__gte=since,
+            source_ip__isnull=False)),
+        ('em', EMGPSLocation.objects.filter(
+            device_tag_id__in=tag_ids, source_ip__isnull=False)),
+    )
+
+    for label, queryset in sources:
+        rows = (queryset
+                .values('source_ip')
+                .annotate(packet_count=Count('id'),
+                          device_count=Count('device_tag_id', distinct=True))
+                )
+        for row in rows:
+            ip = str(row['source_ip'])
+            entry = seen.setdefault(ip, {
+                'source_ip': ip,
+                'packet_count': 0,
+                'device_count': 0,
+                'seen_in': [],
+            })
+            entry['packet_count'] += row['packet_count']
+            entry['device_count'] = max(entry['device_count'],
+                                        row['device_count'])
+            entry['seen_in'].append(label)
+
+    data = []
+    fake_count = 0
+    for ip, entry in seen.items():
+        is_ok = _ip_in_ranges(ip, ranges)
+        if not is_ok:
+            fake_count += 1
+        entry['status'] = 'ok' if is_ok else 'fake'
+        data.append(entry)
+
+    data.sort(key=lambda r: (r['status'] != 'fake', -r['packet_count']))
+
+    return Response({
+        "status": "success",
+        "provider": {"id": provider.id, "company_name": provider.company_name},
+        "registered_ranges": ranges,
+        "days_checked": int(days_raw),
+        "summary": {
+            "total_ips": len(data),
+            "ok_ips": len(data) - fake_count,
+            "fake_ips": fake_count,
+            "devices_checked": len(tag_ids),
+        },
+        "data": data,
+    }, status=status.HTTP_200_OK)
     
+   
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def m2m_config_test(request):

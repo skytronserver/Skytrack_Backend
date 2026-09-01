@@ -1197,4 +1197,6 @@ urlpatterns += [
     
     path('esim-provider/ip-range/update/', esim_provider_ip_range_update, name='esim-provider-ip-range-update'),
     path('esim-provider/ip-range/delete/', esim_provider_ip_range_delete, name='esim-provider-ip-range-delete'),
+    
+    path('m2m/ip-scan/', m2m_provider_ip_scan, name='m2m-ip-scan'),
 ]

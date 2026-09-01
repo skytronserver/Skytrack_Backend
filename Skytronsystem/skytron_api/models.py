@@ -1489,6 +1489,7 @@ class EMGPSLocation(models.Model): #imergency tracking data
     # phone number in ARAI vs the configured SMS center in Amendment 3).
     packet_format = models.CharField(max_length=10, null=True, blank=True)
     device_tag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE,null=True, blank=True)
+    source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
     class Meta:
         app_label = 'skytron_api'
     def __str__(self):
@@ -2075,6 +2076,7 @@ class GPSData(models.Model):
     time_in_same_district = models.DurationField(null=True, blank=True)
     time_in_same_city = models.DurationField(null=True, blank=True)
 
+    source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
     class Meta:
         indexes = [
             models.Index(fields=['device_tag', '-entry_time', '-id'], name='gpsdata_tag_time_id_idx'),
@@ -2339,11 +2341,13 @@ class GPSDataLog(models.Model):
     objects = SafeCreateManager()
     timestamp = models.DateTimeField(auto_now_add=True)
     raw_data = models.TextField()
+    source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
 
 class GPSemDataLog(models.Model):
     objects = SafeCreateManager()
     timestamp = models.DateTimeField(auto_now_add=True)
     raw_data = models.TextField()
+    source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
 
   
 class AlertsLog(models.Model):
