@@ -40380,6 +40380,17 @@ def m2m_config_test(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # At least one IP range with its ISP certificate must be uploaded
+    # before technical onboarding can be completed.
+    if not eSimProviderIPRange.objects.filter(
+        provider=provider, is_active=True
+    ).exists():
+        return Response(
+            {"error": "Please upload at least one IP range with its ISP "
+                      "certificate before completing technical onboarding."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     now = timezone.now()
 
     try:
