@@ -18479,13 +18479,13 @@ def create_device_model(request ):
         if phone_error:
             field_errors['whitelisted_phone_number'] = phone_error
 
-    device_ip_range = None
-    if request.data.get('device_ip_range'):
-        device_ip_range, ip_range_error = _validate_device_ip_range(
-            request.data.get('device_ip_range')
-        )
-        if ip_range_error:
-            field_errors['device_ip_range'] = ip_range_error
+    # device_ip_range = None
+    # if request.data.get('device_ip_range'):
+    #     device_ip_range, ip_range_error = _validate_device_ip_range(
+    #         request.data.get('device_ip_range')
+    #     )
+    #     if ip_range_error:
+    #         field_errors['device_ip_range'] = ip_range_error
 
     if field_errors:
         return Response({"errors": field_errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -18510,7 +18510,7 @@ def create_device_model(request ):
         'mqtt_pw': _mqtt_pw,
         'whitelisted_ip': whitelisted_ip,
         'whitelisted_phone_number': whitelisted_phone_number,
-        'device_ip_range': device_ip_range,
+        'device_ip_range': None,
     }
 
     # Attach the file to the request data
@@ -40024,7 +40024,7 @@ def m2m_config_create_update(request):
     api_url = request.data.get('api_url')
     token = request.data.get('token')
     sample_iccid = request.data.get('sample_iccid')
-    device_ip_range_raw = request.data.get('device_ip_range')
+    # device_ip_range_raw = request.data.get('device_ip_range')
     errors = {}
 
     if not api_url:
@@ -40043,9 +40043,9 @@ def m2m_config_create_update(request):
     elif not re.fullmatch(r'\d{18,22}', str(sample_iccid)):
         errors['sample_iccid'] = 'sample_iccid must be 18 to 22 numeric digits.'
 
-    device_ip_range, ip_range_error = _validate_device_ip_range(device_ip_range_raw)
-    if ip_range_error:
-        errors['device_ip_range'] = ip_range_error
+    # device_ip_range, ip_range_error = _validate_device_ip_range(device_ip_range_raw)
+    # if ip_range_error:
+    #     errors['device_ip_range'] = ip_range_error
 
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -40053,12 +40053,12 @@ def m2m_config_create_update(request):
     provider.m2m_api_url = api_url
     provider.m2m_api_token = token
     provider.m2m_sample_iccid = sample_iccid
-    provider.device_ip_range = device_ip_range
+    # provider.device_ip_range = device_ip_range
     # Any edit resets onboarding status — must be re-tested after changes
     provider.m2m_technical_onboarding_status = 'incorrect_api'
     provider.save(update_fields=[
         'm2m_api_url', 'm2m_api_token', 'm2m_sample_iccid',
-        'device_ip_range','m2m_technical_onboarding_status'
+      'm2m_technical_onboarding_status' 
     ])
 
     return Response({
@@ -40068,7 +40068,7 @@ def m2m_config_create_update(request):
             "id": provider.id,
             "m2m_api_url": provider.m2m_api_url,
             "m2m_sample_iccid": provider.m2m_sample_iccid,
-            "device_ip_range": provider.device_ip_range,
+            # "device_ip_range": provider.device_ip_range,
             "m2m_technical_onboarding_status": provider.m2m_technical_onboarding_status,
             "m2m_api_verified": provider.m2m_api_verified,
         }
@@ -40077,8 +40077,431 @@ def m2m_config_create_update(request):
 
 
 
+def _validate_single_ip_range(raw_value):
+    """
+    Validate one IP range. Reuses the shared validator, then rejects
+    lists, because each range carries its own certificate.
+
+    Returns (cleaned_value, error_message).
+    """
+    raw_value = str(raw_value or '').strip()
+    if not raw_value:
+        return None, 'ip_range is required.'
+
+    if ',' in raw_value:
+        return None, (
+            'Provide one IP range per entry. Add each range separately '
+            'so it can carry its own certificate.'
+        )
+
+    cleaned, error = _validate_device_ip_range(raw_value)
+    if error:
+        return None, error.replace('device_ip_range', 'ip_range')
+
+    return cleaned, None
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def esim_provider_ip_range_add(request):
+    """
+    POST /api/esim-provider/ip-range/add/
+
+    Multipart. One IP range plus the ISP / TSP certificate proving it.
+    Called by the eSIM provider after login, separate from registration.
+    """
+    provider = eSimProvider.objects.filter(users=request.user).first()
+    if not provider:
+        return Response(
+            {"error": "No eSimProvider account found for this user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    field_errors = {}
+
+    ip_range, range_error = _validate_single_ip_range(
+        request.data.get('ip_range')
+    )
+    if range_error:
+        field_errors['ip_range'] = range_error
+
+    if not request.FILES.get('certificate_file'):
+        field_errors['certificate_file'] = 'Certificate file is required.'
+
+    if field_errors:
+        return Response({"errors": field_errors},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    # Same range twice for one provider is a duplicate.
+    if eSimProviderIPRange.objects.filter(
+        provider=provider, ip_range=ip_range, is_active=True
+    ).exists():
+        return Response(
+            {"error": "This IP range is already registered for your account."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    certificate_path = save_file(
+        request, 'certificate_file', 'fileuploads/esim_ip_certificates'
+    )
+    if not certificate_path:
+        return Response(
+            {"error": "Certificate upload failed. Use a PDF or image "
+                      "under 1 MB."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    entry = eSimProviderIPRange.objects.create(
+        provider=provider,
+        ip_range=ip_range,
+        certificate_file=certificate_path,
+        isp_name=(request.data.get('isp_name') or '').strip() or None,
+        remarks=(request.data.get('remarks') or '').strip() or None,
+    )
+
+    return Response({
+        "status": "success",
+        "message": "IP range and certificate saved successfully.",
+        "data": {
+            "id": entry.id,
+            "ip_range": entry.ip_range,
+            "isp_name": entry.isp_name,
+            "certificate_file": entry.certificate_file,
+            "remarks": entry.remarks,
+            "created_at": entry.created_at,
+        }
+    }, status=status.HTTP_200_OK)
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def esim_provider_ip_range_list(request):
+    """
+    GET /api/esim-provider/ip-range/list/
+
+    The calling eSIM provider's registered IP ranges and certificates.
+    """
+    provider = eSimProvider.objects.filter(users=request.user).first()
+    if not provider:
+        return Response(
+            {"error": "No eSimProvider account found for this user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    entries = eSimProviderIPRange.objects.filter(
+        provider=provider, is_active=True
+    ).order_by('-created_at')
+
+    data = [{
+        "id": e.id,
+        "ip_range": e.ip_range,
+        "isp_name": e.isp_name,
+        "certificate_file": e.certificate_file,
+        "remarks": e.remarks,
+        "created_at": e.created_at,
+    } for e in entries]
+
+    return Response({
+        "status": "success",
+        "count": len(data),
+        "data": data,
+    }, status=status.HTTP_200_OK)
+
+
+def _get_own_ip_range_entry(request, entry_id):
+    """
+    Fetch one IP range entry belonging to the calling provider.
+
+    Returns (entry, error_response). Exactly one is None.
+    """
+    provider = eSimProvider.objects.filter(users=request.user).first()
+    if not provider:
+        return None, Response(
+            {"error": "No eSimProvider account found for this user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not str(entry_id or '').isdigit():
+        return None, Response(
+            {"error": "A valid id is required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    entry = eSimProviderIPRange.objects.filter(
+        id=entry_id, provider=provider, is_active=True
+    ).first()
+    if not entry:
+        return None, Response(
+            {"error": "No IP range found with this id for your account."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    return entry, None
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def esim_provider_ip_range_update(request):
+    """
+    POST /api/esim-provider/ip-range/update/
+
+    Multipart. Edit one IP range entry. Send only the fields to change.
+    The certificate is replaced only when a new file is attached.
+    """
+    entry, error_response = _get_own_ip_range_entry(
+        request, request.data.get('id')
+    )
+    if error_response:
+        return error_response
+
+    field_errors = {}
+
+    # ip_range — only validated when supplied
+    if request.data.get('ip_range') is not None:
+        ip_range, range_error = _validate_single_ip_range(
+            request.data.get('ip_range')
+        )
+        if range_error:
+            field_errors['ip_range'] = range_error
+        elif ip_range != entry.ip_range:
+            clash = eSimProviderIPRange.objects.filter(
+                provider=entry.provider, ip_range=ip_range, is_active=True
+            ).exclude(id=entry.id).exists()
+            if clash:
+                field_errors['ip_range'] = (
+                    'This IP range is already registered for your account.'
+                )
+            else:
+                entry.ip_range = ip_range
+
+    if field_errors:
+        return Response({"errors": field_errors},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    # Certificate replaced only when a new file is sent
+    if request.FILES.get('certificate_file'):
+        new_path = save_file(
+            request, 'certificate_file', 'fileuploads/esim_ip_certificates'
+        )
+        if not new_path:
+            return Response(
+                {"error": "Certificate upload failed. Use a PDF or image "
+                          "under 1 MB."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        entry.certificate_file = new_path
+
+    if request.data.get('isp_name') is not None:
+        entry.isp_name = (request.data.get('isp_name') or '').strip() or None
+
+    if request.data.get('remarks') is not None:
+        entry.remarks = (request.data.get('remarks') or '').strip() or None
+
+    entry.save()
+
+    return Response({
+        "status": "success",
+        "message": "IP range updated successfully.",
+        "data": {
+            "id": entry.id,
+            "ip_range": entry.ip_range,
+            "isp_name": entry.isp_name,
+            "certificate_file": entry.certificate_file,
+            "remarks": entry.remarks,
+            "updated_at": entry.updated_at,
+        }
+    }, status=status.HTTP_200_OK)
+    
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def esim_provider_ip_range_delete(request):
+    """
+    POST /api/esim-provider/ip-range/delete/
+
+    Soft delete. The row and its certificate stay in the database;
+    is_active is set to False so it stops appearing and stops being
+    used in checks.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    entry, error_response = _get_own_ip_range_entry(
+        request, request.data.get('id')
+    )
+    if error_response:
+        return error_response
+
+    entry.is_active = False
+    entry.save(update_fields=['is_active', 'updated_at'])
+
+    return Response({
+        "status": "success",
+        "message": "IP range deleted successfully.",
+        "data": {"id": entry.id, "ip_range": entry.ip_range},
+    }, status=status.HTTP_200_OK)
+    
+ 
+ 
+
+def _ip_in_ranges(ip_value, ranges):
+    """
+    Is this IP inside any of the provider's registered ranges?
+
+    Handles both formats the validator accepts:
+      CIDR         103.21.58.0/24
+      start-end    103.21.58.1-103.21.58.50
+    """
+    try:
+        ip = ipaddress.ip_address(str(ip_value).strip())
+    except ValueError:
+        return False
+
+    for raw in ranges:
+        raw = str(raw or '').strip()
+        if not raw:
+            continue
+        try:
+            if '/' in raw:
+                if ip in ipaddress.ip_network(raw, strict=False):
+                    return True
+            elif '-' in raw:
+                start_raw, end_raw = raw.split('-', 1)
+                start = ipaddress.ip_address(start_raw.strip())
+                end = ipaddress.ip_address(end_raw.strip())
+                if start <= ip <= end:
+                    return True
+            else:
+                if ip == ipaddress.ip_address(raw):
+                    return True
+        except ValueError:
+            continue
+
+    return False
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def m2m_provider_ip_scan(request):
+    """
+    GET /api/m2m/ip-scan/?provider_id=<id>&days=<n>
+
+    For one M2M provider, lists every IP its tagged devices have sent
+    data from, and flags any IP outside the provider's registered
+    ranges as fake.
+
+    Superadmin only.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not get_user_object(request.user, "superadmin"):
+        return Response(
+            {"error": "Request must be from a superadmin."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    provider_id = request.query_params.get('provider_id')
+    if not str(provider_id or '').isdigit():
+        return Response({"error": "provider_id must be a number."},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    provider = eSimProvider.objects.filter(id=provider_id).first()
+    if not provider:
+        return Response({"error": "No M2M provider found with this id."},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    # How far back to look. Default 7 days, so the query stays bounded.
+    days_raw = request.query_params.get('days', '7')
+    if not str(days_raw).isdigit() or not (1 <= int(days_raw) <= 90):
+        return Response({"error": "days must be a number between 1 and 90."},
+                        status=status.HTTP_400_BAD_REQUEST)
+    since = timezone.now() - timedelta(days=int(days_raw))
+
+    ranges = list(
+        eSimProviderIPRange.objects.filter(
+            provider=provider, is_active=True
+        ).values_list('ip_range', flat=True)
+    )
+
+    tag_ids = list(
+        DeviceTag.objects.filter(esim_provider=provider)
+        .values_list('id', flat=True)
+    )
+
+    if not tag_ids:
+        return Response({
+            "status": "success",
+            "provider": {"id": provider.id, "company_name": provider.company_name},
+            "registered_ranges": ranges,
+            "summary": {"total_ips": 0, "ok_ips": 0, "fake_ips": 0,
+                        "devices_checked": 0},
+            "data": [],
+        }, status=status.HTTP_200_OK)
+
+    # Unique IPs per table, then merged.
+    seen = {}
+    sources = (
+        ('gps', GPSData.objects.filter(
+            device_tag_id__in=tag_ids, entry_time__gte=since,
+            source_ip__isnull=False)),
+        ('em', EMGPSLocation.objects.filter(
+            device_tag_id__in=tag_ids, source_ip__isnull=False)),
+    )
+
+    for label, queryset in sources:
+        rows = (queryset
+                .values('source_ip')
+                .annotate(packet_count=Count('id'),
+                          device_count=Count('device_tag_id', distinct=True))
+                )
+        for row in rows:
+            ip = str(row['source_ip'])
+            entry = seen.setdefault(ip, {
+                'source_ip': ip,
+                'packet_count': 0,
+                'device_count': 0,
+                'seen_in': [],
+            })
+            entry['packet_count'] += row['packet_count']
+            entry['device_count'] = max(entry['device_count'],
+                                        row['device_count'])
+            entry['seen_in'].append(label)
+
+    data = []
+    fake_count = 0
+    for ip, entry in seen.items():
+        is_ok = _ip_in_ranges(ip, ranges)
+        if not is_ok:
+            fake_count += 1
+        entry['status'] = 'ok' if is_ok else 'fake'
+        data.append(entry)
+
+    data.sort(key=lambda r: (r['status'] != 'fake', -r['packet_count']))
+
+    return Response({
+        "status": "success",
+        "provider": {"id": provider.id, "company_name": provider.company_name},
+        "registered_ranges": ranges,
+        "days_checked": int(days_raw),
+        "summary": {
+            "total_ips": len(data),
+            "ok_ips": len(data) - fake_count,
+            "fake_ips": fake_count,
+            "devices_checked": len(tag_ids),
+        },
+        "data": data,
+    }, status=status.HTTP_200_OK)
+    
+   
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def m2m_config_test(request):
@@ -40108,6 +40531,17 @@ def m2m_config_test(request):
     if not provider.m2m_api_url or not provider.m2m_api_token or not provider.m2m_sample_iccid:
         return Response(
             {"error": "Please submit api_url, token and sample_iccid first."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # At least one IP range with its ISP certificate must be uploaded
+    # before technical onboarding can be completed.
+    if not eSimProviderIPRange.objects.filter(
+        provider=provider, is_active=True
+    ).exists():
+        return Response(
+            {"error": "Please upload at least one IP range with its ISP "
+                      "certificate before completing technical onboarding."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -42288,6 +42722,7 @@ def device_tagging_step5_verify_owner_otp(request):
     # at the very last step of a five-step flow.
     device_tag = DeviceTag.objects.create(
         device=device_stock,
+        esim_provider=record.esim_provider,
         vehicle_owner=record.vehicle_owner,
         vehicle_reg_no=reg_no,
         engine_no=engine_no,

@@ -1398,6 +1398,7 @@ class DeviceTag(models.Model):
     ]
 
     device = models.ForeignKey(DeviceStock, on_delete=models.SET_NULL, null=True, blank=True)
+    esim_provider = models.ForeignKey('eSimProvider',on_delete=models.SET_NULL,null=True,blank=True,related_name='device_tags',help_text='The M2M provider chosen for this device during tagging.')
     vehicle_owner = models.ForeignKey(VehicleOwner, on_delete=models.CASCADE)
    
     vehicle_reg_no = models.CharField(max_length= 55,unique=True)
@@ -1494,6 +1495,7 @@ class EMGPSLocation(models.Model): #imergency tracking data
     # phone number in ARAI vs the configured SMS center in Amendment 3).
     packet_format = models.CharField(max_length=10, null=True, blank=True)
     device_tag=models.ForeignKey(DeviceTag, on_delete=models.CASCADE,null=True, blank=True)
+    source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
     class Meta:
         app_label = 'skytron_api'
     def __str__(self):
@@ -2080,6 +2082,7 @@ class GPSData(models.Model):
     time_in_same_district = models.DurationField(null=True, blank=True)
     time_in_same_city = models.DurationField(null=True, blank=True)
 
+    source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
     class Meta:
         indexes = [
             models.Index(fields=['device_tag', '-entry_time', '-id'], name='gpsdata_tag_time_id_idx'),
@@ -2344,11 +2347,13 @@ class GPSDataLog(models.Model):
     objects = SafeCreateManager()
     timestamp = models.DateTimeField(auto_now_add=True)
     raw_data = models.TextField()
+    source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
 
 class GPSemDataLog(models.Model):
     objects = SafeCreateManager()
     timestamp = models.DateTimeField(auto_now_add=True)
     raw_data = models.TextField()
+    source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
 
   
 class AlertsLog(models.Model):
@@ -5408,3 +5413,27 @@ class VahanDummyData(models.Model):
             ),
             "vehClass": self.veh_class,
         }
+        
+        
+class eSimProviderIPRange(models.Model):
+    """
+    One IP range belonging to an eSIM provider, with the certificate
+    from their ISP / TSP proving the range is theirs.
+
+    Uploaded by the provider after login, separate from registration.
+    """
+    provider = models.ForeignKey(
+        eSimProvider,
+        on_delete=models.CASCADE,
+        related_name='ip_ranges'
+    )
+    ip_range = models.CharField(max_length=100)
+    certificate_file = models.CharField(max_length=255, null=True, blank=True)
+    isp_name = models.CharField(max_length=255, null=True, blank=True)
+    remarks = models.TextField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.provider_id} - {self.ip_range}"

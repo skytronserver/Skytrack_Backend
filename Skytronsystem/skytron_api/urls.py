@@ -1192,4 +1192,11 @@ urlpatterns += [
     
     path('sms-gateway/health/', sms_gateway_health_status, name='sms-gateway-health'),
     
+    path('esim-provider/ip-range/add/',  esim_provider_ip_range_add,  name='esim-provider-ip-range-add'),
+    path('esim-provider/ip-range/list/', esim_provider_ip_range_list, name='esim-provider-ip-range-list'),
+    
+    path('esim-provider/ip-range/update/', esim_provider_ip_range_update, name='esim-provider-ip-range-update'),
+    path('esim-provider/ip-range/delete/', esim_provider_ip_range_delete, name='esim-provider-ip-range-delete'),
+    
+    path('m2m/ip-scan/', m2m_provider_ip_scan, name='m2m-ip-scan'),
 ]
