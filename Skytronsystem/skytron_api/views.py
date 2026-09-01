@@ -18510,7 +18510,7 @@ def create_device_model(request ):
         'mqtt_pw': _mqtt_pw,
         'whitelisted_ip': whitelisted_ip,
         'whitelisted_phone_number': whitelisted_phone_number,
-        # 'device_ip_range': device_ip_range,
+        'device_ip_range': None,
     }
 
     # Attach the file to the request data
