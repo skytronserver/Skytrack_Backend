@@ -18479,13 +18479,13 @@ def create_device_model(request ):
         if phone_error:
             field_errors['whitelisted_phone_number'] = phone_error
 
-    device_ip_range = None
-    if request.data.get('device_ip_range'):
-        device_ip_range, ip_range_error = _validate_device_ip_range(
-            request.data.get('device_ip_range')
-        )
-        if ip_range_error:
-            field_errors['device_ip_range'] = ip_range_error
+    # device_ip_range = None
+    # if request.data.get('device_ip_range'):
+    #     device_ip_range, ip_range_error = _validate_device_ip_range(
+    #         request.data.get('device_ip_range')
+    #     )
+    #     if ip_range_error:
+    #         field_errors['device_ip_range'] = ip_range_error
 
     if field_errors:
         return Response({"errors": field_errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -18510,7 +18510,7 @@ def create_device_model(request ):
         'mqtt_pw': _mqtt_pw,
         'whitelisted_ip': whitelisted_ip,
         'whitelisted_phone_number': whitelisted_phone_number,
-        'device_ip_range': device_ip_range,
+        # 'device_ip_range': device_ip_range,
     }
 
     # Attach the file to the request data
@@ -40024,7 +40024,7 @@ def m2m_config_create_update(request):
     api_url = request.data.get('api_url')
     token = request.data.get('token')
     sample_iccid = request.data.get('sample_iccid')
-    device_ip_range_raw = request.data.get('device_ip_range')
+    # device_ip_range_raw = request.data.get('device_ip_range')
     errors = {}
 
     if not api_url:
@@ -40043,9 +40043,9 @@ def m2m_config_create_update(request):
     elif not re.fullmatch(r'\d{18,22}', str(sample_iccid)):
         errors['sample_iccid'] = 'sample_iccid must be 18 to 22 numeric digits.'
 
-    device_ip_range, ip_range_error = _validate_device_ip_range(device_ip_range_raw)
-    if ip_range_error:
-        errors['device_ip_range'] = ip_range_error
+    # device_ip_range, ip_range_error = _validate_device_ip_range(device_ip_range_raw)
+    # if ip_range_error:
+    #     errors['device_ip_range'] = ip_range_error
 
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -40053,12 +40053,12 @@ def m2m_config_create_update(request):
     provider.m2m_api_url = api_url
     provider.m2m_api_token = token
     provider.m2m_sample_iccid = sample_iccid
-    provider.device_ip_range = device_ip_range
+    # provider.device_ip_range = device_ip_range
     # Any edit resets onboarding status — must be re-tested after changes
     provider.m2m_technical_onboarding_status = 'incorrect_api'
     provider.save(update_fields=[
         'm2m_api_url', 'm2m_api_token', 'm2m_sample_iccid',
-        'device_ip_range','m2m_technical_onboarding_status'
+      'm2m_technical_onboarding_status' 
     ])
 
     return Response({
@@ -40068,7 +40068,7 @@ def m2m_config_create_update(request):
             "id": provider.id,
             "m2m_api_url": provider.m2m_api_url,
             "m2m_sample_iccid": provider.m2m_sample_iccid,
-            "device_ip_range": provider.device_ip_range,
+            # "device_ip_range": provider.device_ip_range,
             "m2m_technical_onboarding_status": provider.m2m_technical_onboarding_status,
             "m2m_api_verified": provider.m2m_api_verified,
         }
