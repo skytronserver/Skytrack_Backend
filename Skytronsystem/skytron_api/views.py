@@ -42557,6 +42557,7 @@ def device_tagging_step5_verify_owner_otp(request):
     # at the very last step of a five-step flow.
     device_tag = DeviceTag.objects.create(
         device=device_stock,
+        esim_provider=record.esim_provider,
         vehicle_owner=record.vehicle_owner,
         vehicle_reg_no=reg_no,
         engine_no=engine_no,

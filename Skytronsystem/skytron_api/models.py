@@ -1392,6 +1392,7 @@ class DeviceTag(models.Model):
     ]
 
     device = models.ForeignKey(DeviceStock, on_delete=models.SET_NULL, null=True, blank=True)
+    esim_provider = models.ForeignKey('eSimProvider',on_delete=models.SET_NULL,null=True,blank=True,related_name='device_tags',help_text='The M2M provider chosen for this device during tagging.')
     vehicle_owner = models.ForeignKey(VehicleOwner, on_delete=models.CASCADE)
    
     vehicle_reg_no = models.CharField(max_length= 55,unique=True)
