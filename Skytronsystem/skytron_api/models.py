@@ -1058,6 +1058,12 @@ class TechnicalOnboardingTestCase(models.Model):
         ('ota_command', 'OTA Command History'),
         ('activation_command', 'Activation Command'),
         ('firmware_diff', 'Firmware Version Change (GPSDataLog)'),
+        ('voltage_internal', 'Internal Battery Voltage -- 3 Distinct Levels (GPSDataLog)'),
+        ('voltage_external', 'External/Main Voltage -- 3 Distinct Levels (GPSDataLog)'),
+        ('esim_primary_to_secondary', 'eSIM Switch Primary->Secondary -- 2 Distinct Networks (GPSDataLog)'),
+        ('esim_secondary_to_primary', 'eSIM Switch Secondary->Primary -- 2 Distinct Networks, Reversed (GPSDataLog)'),
+        ('vehicle_registration_diff', 'Vehicle Registration Number Changed (GPSDataLog)'),
+        ('reboot_restart_gap', 'Reboot Command -- Connectivity Gap Proves Restart (GPSDataLog)'),
         ('manual', 'Manual / Observed'),
     ]
 
@@ -1065,7 +1071,7 @@ class TechnicalOnboardingTestCase(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField()
 
-    source_table = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='manual')
+    source_table = models.CharField(max_length=30, choices=SOURCE_CHOICES, default='manual')
     regex_pattern = models.CharField(max_length=500, blank=True, null=True)
     min_match_count = models.PositiveIntegerField(default=1)
     max_interval_seconds = models.PositiveIntegerField(blank=True, null=True)

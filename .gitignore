@@ -103,3 +103,10 @@ MAPW/2/11_1.0.3_3.0.1(2).pac
 SKTN/*/*
 jmeter/captcha-results.jtl
 jmeter/mqtt-results.jtl
+Skytronsystem/skytron_api/skytronemudra stl/01_EndEntity_wc.skytron.in.cer
+Skytronsystem/skytron_api/skytronemudra stl/02_SubCA_EM DV TLS CA - G2A-1.cer
+Skytronsystem/skytron_api/skytronemudra stl/03_RootCA_AAA Certificate Services.cer
+Skytronsystem/skytron_api/skytronemudra stl/04_SubCA_EM DV TLS CA - G2A-1_01.cer
+Skytronsystem/skytron_api/skytronemudra stl/05_CA_emSign Root TLS CA - G1.cer
+Skytronsystem/skytron_api/skytronemudra stl/06_RootCA_emSign Root CA - G1.cer
+Skytronsystem/skytron_api/skytronemudra stl/3866599448R001_fullchain.pem
