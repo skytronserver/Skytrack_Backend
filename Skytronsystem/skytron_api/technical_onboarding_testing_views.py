@@ -64,7 +64,25 @@ SOURCE_TABLE_LABEL = {
     'ota_command': 'OTACommandHistory',
     'activation_command': 'ActivationCommandDispatch',
     'firmware_diff': 'GPSDataLog',
+    'voltage_internal': 'GPSDataLog',
+    'voltage_external': 'GPSDataLog',
+    'esim_primary_to_secondary': 'GPSDataLog',
+    'esim_secondary_to_primary': 'GPSDataLog',
+    'vehicle_registration_diff': 'GPSDataLog',
+    'reboot_restart_gap': 'GPSDataLog + OTACommandHistory',
 }
+
+# _packet_fields() index (after the leading '$'/'$,' is normalised away) for
+# the PVT fields these distinct-value checks read.
+PVT_NETWORK_OPERATOR_IDX = 21
+PVT_MAIN_VOLTAGE_IDX = 24       # external / main input voltage
+PVT_INTERNAL_VOLTAGE_IDX = 25   # internal / backup battery voltage
+PVT_VEHICLE_REG_NO_IDX = 7
+
+# Default minimum silence (no packets) after a reboot command is sent
+# before resumed packets count as proof of an actual restart, used when
+# the test case doesn't set its own max_interval_seconds.
+DEFAULT_REBOOT_GAP_SECONDS = 20
 
 
 # ===========================================================================
@@ -261,6 +279,238 @@ def _run_test_check(execution):
             'reason': reason,
             'samples': list(versions_seen.values())[:5],
             'versions_seen': list(versions_seen.keys()),
+            'window_start': window_start.isoformat(),
+            'refreshed_at': now.isoformat(),
+        }
+
+    if test_case.source_table in ('voltage_internal', 'voltage_external'):
+        # A single PVT packet only proves one voltage reading -- the check
+        # is that the tester actually varied the supply/battery across the
+        # window, which shows up as 3+ distinct voltage strings.
+        field_idx = PVT_INTERNAL_VOLTAGE_IDX if test_case.source_table == 'voltage_internal' else PVT_MAIN_VOLTAGE_IDX
+        label = 'internal battery voltage' if test_case.source_table == 'voltage_internal' else 'external/main voltage'
+        rows = list(
+            GPSDataLog.objects
+            .filter(timestamp__gte=window_start, raw_data__contains=imei)
+            .order_by('-timestamp')
+            .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+        )
+        values_seen = {}
+        for raw_data, packet_time in rows:
+            parts = _packet_fields(raw_data)
+            if len(parts) <= field_idx or parts[0].upper() != 'PVT':
+                continue
+            value = parts[field_idx].strip()
+            if value and value not in values_seen:
+                values_seen[value] = {'raw_data': raw_data, 'timestamp': packet_time.isoformat()}
+
+        matched_count = len(values_seen)
+        result_pass = matched_count >= test_case.min_match_count
+        reason = None if result_pass else (
+            f"Only {matched_count} distinct {label} level(s) seen ({', '.join(values_seen) or 'none'}), "
+            f"need at least {test_case.min_match_count} within the test window."
+        )
+        return {
+            'mode': test_case.source_table,
+            'matched_count': matched_count,
+            'required': test_case.min_match_count,
+            'pass': result_pass,
+            'reason': reason,
+            'samples': list(values_seen.values())[:5],
+            'values_seen': list(values_seen.keys()),
+            'window_start': window_start.isoformat(),
+            'refreshed_at': now.isoformat(),
+        }
+
+    if test_case.source_table in ('esim_primary_to_secondary', 'esim_secondary_to_primary'):
+        rows = list(
+            GPSDataLog.objects
+            .filter(timestamp__gte=window_start, raw_data__contains=imei)
+            .order_by('timestamp')  # ascending -- order of first appearance matters here
+            .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+        )
+        ordered_networks = []
+        seen = set()
+        for raw_data, packet_time in rows:
+            parts = _packet_fields(raw_data)
+            if len(parts) <= PVT_NETWORK_OPERATOR_IDX or parts[0].upper() != 'PVT':
+                continue
+            network = parts[PVT_NETWORK_OPERATOR_IDX].strip()
+            if network and network not in seen:
+                seen.add(network)
+                ordered_networks.append({'network': network, 'raw_data': raw_data, 'timestamp': packet_time.isoformat()})
+
+        matched_count = len(ordered_networks)
+        result_pass = matched_count >= test_case.min_match_count
+        reason = None
+        if not result_pass:
+            reason = (
+                f"Only {matched_count} distinct network(s) seen "
+                f"({', '.join(n['network'] for n in ordered_networks) or 'none'}), need at least "
+                f"{test_case.min_match_count} within the test window to prove the eSIM switch happened."
+            )
+
+        # Cross-check direction against the sibling test (23 <-> 24): the
+        # network order seen here should be the exact reverse of whatever
+        # the other direction's most recent completed run recorded.
+        sibling_serial_no = {23: 24, 24: 23}.get(test_case.serial_no)
+        if result_pass and sibling_serial_no:
+            sibling_case = TechnicalOnboardingTestCase.objects.filter(serial_no=sibling_serial_no).first()
+            sibling_execution = None
+            if sibling_case:
+                sibling_execution = TechnicalOnboardingTestExecution.objects.filter(
+                    onboarding_request=execution.onboarding_request,
+                    demo_device=execution.demo_device,
+                    test_case=sibling_case,
+                    status='complete',
+                ).order_by('-completed_at').first()
+            sibling_networks = (
+                (sibling_execution.test_log_snapshot or {}).get('networks_seen')
+                if sibling_execution else None
+            )
+            if sibling_networks and len(sibling_networks) >= 2:
+                this_first, this_second = ordered_networks[0]['network'], ordered_networks[1]['network']
+                expected_first, expected_second = sibling_networks[1], sibling_networks[0]
+                if this_first != expected_first or this_second != expected_second:
+                    result_pass = False
+                    reason = (
+                        f"Network order does not mirror '{sibling_case.name}': expected first "
+                        f"'{expected_first}' then '{expected_second}' (reverse of that test's order), "
+                        f"but saw '{this_first}' then '{this_second}'."
+                    )
+
+        return {
+            'mode': test_case.source_table,
+            'matched_count': matched_count,
+            'required': test_case.min_match_count,
+            'pass': result_pass,
+            'reason': reason,
+            'samples': [{'raw_data': n['raw_data'], 'timestamp': n['timestamp']} for n in ordered_networks[:5]],
+            'networks_seen': [n['network'] for n in ordered_networks],
+            'window_start': window_start.isoformat(),
+            'refreshed_at': now.isoformat(),
+        }
+
+    if test_case.source_table == 'vehicle_registration_diff':
+        # Only proof required is that the registration number reported by
+        # the device changed to something new during the window -- find
+        # the last known value before the window as the baseline, then
+        # look for any different value inside it.
+        baseline_raw = (
+            GPSDataLog.objects
+            .filter(timestamp__lt=window_start, raw_data__contains=imei)
+            .order_by('-timestamp')
+            .values_list('raw_data', flat=True)
+            .first()
+        )
+        baseline_value = None
+        if baseline_raw:
+            parts = _packet_fields(baseline_raw)
+            if len(parts) > PVT_VEHICLE_REG_NO_IDX and parts[0].upper() == 'PVT':
+                baseline_value = parts[PVT_VEHICLE_REG_NO_IDX].strip() or None
+
+        rows = list(
+            GPSDataLog.objects
+            .filter(timestamp__gte=window_start, raw_data__contains=imei)
+            .order_by('-timestamp')
+            .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+        )
+        new_values = {}
+        for raw_data, packet_time in rows:
+            parts = _packet_fields(raw_data)
+            if len(parts) <= PVT_VEHICLE_REG_NO_IDX or parts[0].upper() != 'PVT':
+                continue
+            value = parts[PVT_VEHICLE_REG_NO_IDX].strip()
+            if value and value != baseline_value and value not in new_values:
+                new_values[value] = {'raw_data': raw_data, 'timestamp': packet_time.isoformat()}
+
+        matched_count = len(new_values)
+        result_pass = matched_count >= test_case.min_match_count
+        reason = None if result_pass else (
+            f"Registration number is still '{baseline_value or 'unknown'}' -- no new value seen within the test window."
+        )
+        return {
+            'mode': test_case.source_table,
+            'matched_count': matched_count,
+            'required': test_case.min_match_count,
+            'pass': result_pass,
+            'reason': reason,
+            'samples': list(new_values.values())[:5],
+            'baseline_value': baseline_value,
+            'window_start': window_start.isoformat(),
+            'refreshed_at': now.isoformat(),
+        }
+
+    if test_case.source_table == 'reboot_restart_gap':
+        # A reboot has no meaningful text reply -- the real proof is the
+        # device dropping off the tracking stream and then resuming after
+        # the reboot command was actually dispatched.
+        pattern = re.compile(test_case.regex_pattern) if test_case.regex_pattern else None
+        command_row = None
+        for row in (
+            OTACommandHistory.objects
+            .filter(imei=imei, sent_at__gte=window_start)
+            .exclude(send_status='failed')
+            .order_by('sent_at')
+        ):
+            if not pattern or pattern.search(row.command_sent or ''):
+                command_row = row
+                break
+
+        if not command_row:
+            return {
+                'mode': test_case.source_table,
+                'matched_count': 0,
+                'required': 1,
+                'pass': False,
+                'reason': 'No reboot command found for this device within the test window.',
+                'samples': [],
+                'window_start': window_start.isoformat(),
+                'refreshed_at': now.isoformat(),
+            }
+
+        command_sent_at = command_row.sent_at
+        min_gap_seconds = test_case.max_interval_seconds or DEFAULT_REBOOT_GAP_SECONDS
+
+        packets_after = list(
+            GPSDataLog.objects
+            .filter(timestamp__gt=command_sent_at, raw_data__contains=imei)
+            .order_by('timestamp')
+            .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+        )
+
+        if not packets_after:
+            return {
+                'mode': test_case.source_table,
+                'matched_count': 0,
+                'required': 1,
+                'pass': False,
+                'reason': (
+                    f"Reboot command sent at {command_sent_at.isoformat()} -- device hasn't sent any "
+                    f"packets since; it may still be rebooting or offline."
+                ),
+                'samples': [],
+                'command_sent_at': command_sent_at.isoformat(),
+                'window_start': window_start.isoformat(),
+                'refreshed_at': now.isoformat(),
+            }
+
+        first_after_raw, first_after_time = packets_after[0]
+        gap_seconds = (first_after_time - command_sent_at).total_seconds()
+        result_pass = gap_seconds >= min_gap_seconds
+        reason = None if result_pass else (
+            f"Device kept sending packets with only a {gap_seconds:.0f}s gap after the reboot command "
+            f"(need at least {min_gap_seconds}s of silence to prove an actual restart) -- it may not have rebooted."
+        )
+        return {
+            'mode': test_case.source_table,
+            'matched_count': 1 if result_pass else 0,
+            'required': 1,
+            'pass': result_pass,
+            'reason': reason,
+            'samples': [{'raw_data': first_after_raw, 'timestamp': first_after_time.isoformat()}],
+            'command_sent_at': command_sent_at.isoformat(),
+            'restart_gap_seconds': gap_seconds,
             'window_start': window_start.isoformat(),
             'refreshed_at': now.isoformat(),
         }
