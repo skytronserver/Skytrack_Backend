@@ -18511,6 +18511,9 @@ def create_device_model(request ):
         'whitelisted_ip': whitelisted_ip,
         'whitelisted_phone_number': whitelisted_phone_number,
         'device_ip_range': None,
+        # Threshold is admin-controlled. 0 means unlimited. Forced here so
+        # a manufacturer cannot set their own limit at model creation.
+        'threshold': 0,
     }
 
     # Attach the file to the request data
