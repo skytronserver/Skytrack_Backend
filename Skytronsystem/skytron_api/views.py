@@ -11443,11 +11443,36 @@ def Tag_ownerlist(request ):
     if request.method == 'POST': 
         # Get base queryset. This endpoint is frequently used and can involve many rows;
         # ensure we pull related objects in bulk to avoid N+1 queries in serializers.
+        # DeviceTagSerializer2 walks a deep chain (device -> dealer -> manufacturer ->
+        # esim_provider -> users -> groups/permissions, plus vehicle_owner.users and
+        # dealer.districts) that isn't reachable by select_related alone; without the
+        # prefetch_related paths below, each of those hops re-queries per row, turning
+        # a page of ~50 devices into ~2000 queries.
         devices = (
             DeviceTag.objects
             .filter(status="Owner_Final_OTP_Verified")
-            .select_related('device', 'vehicle_owner', 'district', 'district__state', 'category')
-            .prefetch_related('drivers')
+            .select_related(
+                'device', 'device__model', 'device__dealer',
+                'device__dealer__manufacturer', 'device__dealer__manufacturer__state',
+                'device__created_by',
+                'vehicle_owner', 'district', 'district__state', 'category', 'category_code',
+            )
+            .prefetch_related(
+                'drivers',
+                'device__esim_provider', 'device__esim_provider__users',
+                'device__esim_provider__users__groups', 'device__esim_provider__users__user_permissions',
+                'device__esim_provider__state',
+                'device__dealer__users', 'device__dealer__users__groups', 'device__dealer__users__user_permissions',
+                'device__dealer__districts', 'device__dealer__districts__state',
+                'device__dealer__manufacturer__users',
+                'device__dealer__manufacturer__users__groups', 'device__dealer__manufacturer__users__user_permissions',
+                'device__dealer__manufacturer__esim_provider',
+                'device__dealer__manufacturer__esim_provider__users',
+                'device__dealer__manufacturer__esim_provider__users__groups',
+                'device__dealer__manufacturer__esim_provider__users__user_permissions',
+                'device__dealer__manufacturer__esim_provider__state',
+                'vehicle_owner__users', 'vehicle_owner__users__groups', 'vehicle_owner__users__user_permissions',
+            )
         )
         
         # Apply role-based filtering
@@ -16143,12 +16168,15 @@ def homepage_VehicleOwner(request ):
                 entry_time__gte=now - timedelta(days=30)
             ).values('device_tag').distinct().count()
             
-            # Calculate total travel distance from odometer
-            total_distance = 0
-            for device in activated_devices:
-                latest_gps = GPSData.objects.filter(device_tag=device).order_by('-entry_time').first()
-                if latest_gps and latest_gps.odometer:
-                    total_distance += latest_gps.odometer
+            # Calculate total travel distance from odometer (single query via
+            # subquery instead of one GPSData query per device, which timed
+            # out for owners with a large number of devices).
+            latest_odometer_subq = GPSData.objects.filter(
+                device_tag_id=OuterRef('pk')
+            ).order_by('-entry_time', '-id').values('odometer')[:1]
+            total_distance = activated_devices.annotate(
+                latest_odometer=Subquery(latest_odometer_subq)
+            ).aggregate(total=Sum('latest_odometer'))['total'] or 0
             
             # Calculate alert statistics
             total_alerts = AlertsLog.objects.filter(deviceTag__in=owned_devices).count()

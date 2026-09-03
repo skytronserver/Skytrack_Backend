@@ -107,15 +107,23 @@ class UserSerializer(SanitizingModelSerializer):
         exclude = ['password','dob'] 
         #fields = '__all__'    
     def get_created_by_name(self, obj):
-        if obj.createdby:
-            try: 
-                created_by_user = User.objects.get(id=obj.createdby)
-                return created_by_user.name
-            except User.DoesNotExist:
-                return ''
-            except ValueError:
-                return ''  
-        return ''
+        if not obj.createdby:
+            return ''
+        # `createdby` is a plain CharField (not a real FK), so it can't be
+        # select_related/prefetch_related away. Cache lookups per serialization
+        # pass (e.g. one API response) since the same creator is commonly
+        # referenced by many users in a list (a dealer's users, a
+        # manufacturer's users, etc.) and would otherwise be re-queried once
+        # per occurrence.
+        cache = self.context.setdefault('_created_by_name_cache', {})
+        if obj.createdby in cache:
+            return cache[obj.createdby]
+        try:
+            name = User.objects.get(id=obj.createdby).name
+        except (User.DoesNotExist, ValueError):
+            name = ''
+        cache[obj.createdby] = name
+        return name
 
 class VehicleOwnerSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
