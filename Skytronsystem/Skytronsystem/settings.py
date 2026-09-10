@@ -301,6 +301,8 @@ REST_FRAMEWORK = {
         'device_command': '20/minute', # Sending raw commands down to a live device
         'server_health': '10/minute',  # Internal server-health dashboard (superadmin only)
         'device_data_health': '20/minute',  # Device protocol-format validator lookups
+        'vehicle_obd_status': '20/minute',  # Vehicle OBD/GPS status lookup
+        'ip_violation_dummy': '30/minute',  # Public dummy IP-violation list
     },
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',

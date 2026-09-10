@@ -349,7 +349,12 @@ class DeviceStockSerializer2(SanitizingModelSerializer):
     dealer  = DealerSerializer2(many=False, read_only=True)
     created_by = UserSerializer(many=False, read_only=True)
     esim_provider = eSimProviderSerializer(many=True, read_only=True)
+    shipping_remark = serializers.SerializerMethodField()
     #is_tagged=serializers.CharField( )
+
+    def get_shipping_remark(self, obj):
+        return obj.shipping_remark if obj.shipping_remark is not None else "ok"
+
     class Meta:
         model = DeviceStock
         fields = '__all__'
@@ -1072,6 +1077,8 @@ class PointOfInterestSerializer(serializers.ModelSerializer):
 
 
 class DeviceModelTechnicalOnboardingDemoDeviceSerializer(serializers.ModelSerializer):
+    checkpoint_status = serializers.SerializerMethodField()
+
     class Meta:
         model = DeviceModelTechnicalOnboardingDemoDevice
         fields = [
@@ -1085,8 +1092,32 @@ class DeviceModelTechnicalOnboardingDemoDeviceSerializer(serializers.ModelSerial
             'receipt_confirmed',
             'receipt_confirmed_at',
             'receipt_confirmed_by',
+            'checkpoint_status',
         ]
         read_only_fields = ['receipt_confirmed', 'receipt_confirmed_at', 'receipt_confirmed_by']
+
+    def get_checkpoint_status(self, obj):
+        executions = list(
+            TechnicalOnboardingTestExecution.objects.filter(
+                demo_device=obj, test_case__active=True
+            ).select_related('test_case').order_by('test_case__serial_no')
+        )
+
+        last_completed = None
+        next_test = None
+        for execution in executions:
+            if execution.status == 'complete':
+                last_completed = execution
+            elif next_test is None:
+                next_test = execution
+
+        return {
+            'last_completed_test_no': last_completed.test_case.serial_no if last_completed else None,
+            'last_completed_test_name': last_completed.test_case.name if last_completed else None,
+            'next_test_no': next_test.test_case.serial_no if next_test else None,
+            'next_test_name': next_test.test_case.name if next_test else None,
+            'next_test_status': next_test.status if next_test else None,
+        }
 
 
 class DeviceModelTechnicalOnboardingRequestCreateSerializer(serializers.ModelSerializer):

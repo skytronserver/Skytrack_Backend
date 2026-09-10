@@ -70,6 +70,12 @@ from .device_data_health_views import (
     device_data_health_lookup,
     device_data_health_dashboard,
 )
+from .vehicle_obd_status_views import (
+    vehicle_obd_status_lookup,
+)
+from .ip_violation_dummy_views import (
+    ip_violation_dummy_list,
+)
 from django.urls import path
 
  
@@ -788,6 +794,8 @@ urlpatterns = [
     path('device-data-health/formats/', device_data_health_format_options, name='device_data_health_format_options'),
     path('device-data-health/lookup/', device_data_health_lookup, name='device_data_health_lookup'),
     path('device-data-health/dashboard/', device_data_health_dashboard, name='device_data_health_dashboard'),
+    path('vehicle-obd-status/lookup/', vehicle_obd_status_lookup, name='vehicle_obd_status_lookup'),
+    path('ip-violations/dummy/', ip_violation_dummy_list, name='ip_violation_dummy_list'),
 ]
 
 

@@ -4766,6 +4766,8 @@ def get_live_vehicle_no(request):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
+        from django.db.models import Exists, OuterRef
+
         vehicle_no = request.data.get('vehicle_no') or request.data.get('regno') or request.data.get('vehicle_reg_no')
         if isinstance(vehicle_no, str):
             vehicle_no = vehicle_no.strip()
@@ -4775,21 +4777,22 @@ def get_live_vehicle_no(request):
         # If the requester is a vehicle owner, restrict to their devices only.
         owner = get_user_object(request.user, "owner")
 
-        gps_qs = GPSData.objects.all()
+        # Driven off DeviceTag (hundreds of rows) instead of GPSData (10M+ rows).
+        # The previous version scanned/ordered/deduped the entire GPSData table
+        # per request, which timed out. "Live" (has reported at least one GPS
+        # point) is preserved via a per-row EXISTS check against GPSData's
+        # device_tag index, rather than joining and deduping the whole table.
+        tag_qs = DeviceTag.objects.exclude(vehicle_reg_no__isnull=True).exclude(vehicle_reg_no='')
         if owner:
-            gps_qs = gps_qs.filter(device_tag__vehicle_owner=owner)
-
+            tag_qs = tag_qs.filter(vehicle_owner=owner)
         if vehicle_no is not None:
-            gps_qs = gps_qs.filter(device_tag__vehicle_reg_no__icontains=vehicle_no)
+            tag_qs = tag_qs.filter(vehicle_reg_no__icontains=vehicle_no)
+        tag_qs = tag_qs.filter(
+            Exists(GPSData.objects.filter(device_tag_id=OuterRef('pk')))
+        )
 
         vehicle_list = list(
-            gps_qs
-            .exclude(device_tag__isnull=True)
-            .exclude(device_tag__vehicle_reg_no__isnull=True)
-            .exclude(device_tag__vehicle_reg_no='')
-            .order_by('device_tag__vehicle_reg_no')
-            .values_list('device_tag__vehicle_reg_no', flat=True)
-            .distinct()
+            tag_qs.order_by('vehicle_reg_no').values_list('vehicle_reg_no', flat=True).distinct()
         )
         return Response(vehicle_list)
     except Exception as e:

@@ -179,3 +179,13 @@ class ServerHealthRateThrottle(LoadTestBypassMixin, UserRateThrottle):
 class DeviceDataHealthRateThrottle(LoadTestBypassMixin, UserRateThrottle):
     """Throttle for the device-data-health lookup (bounded raw-log scans per request)."""
     scope = 'device_data_health'
+
+
+class VehicleOBDStatusRateThrottle(LoadTestBypassMixin, UserRateThrottle):
+    """Throttle for the vehicle OBD/GPS status lookup (bounded raw-log scans per request)."""
+    scope = 'vehicle_obd_status'
+
+
+class IPViolationDummyRateThrottle(LoadTestBypassMixin, AnonRateThrottle):
+    """Throttle for the public dummy IP-violation list endpoint."""
+    scope = 'ip_violation_dummy'
