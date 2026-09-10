@@ -4,9 +4,12 @@ latest PVT tracking packets, pull the OBD data block appended after the
 packet's '*' terminator (RPM, Speed, ...), and derive an at-a-glance device
 status (connectivity / speed-limit / VLTD) from the last N such packets.
 
-A status is only reported "OK" when every one of the last N packets agrees
--- a single bad packet in the window is enough to flip it to the "not OK"
-message.
+Each status uses its own rule over the scanned window:
+  - connectivity_status: "online" if at least CONNECTIVITY_MIN_PACKETS of
+    the scanned packets carry both RPM and SPD, else "offline".
+  - speed_limit_status: classifies the single most recent packet's speed.
+  - vltd_status: "Active" only if every one of the latest VLTD_LATEST_N
+    packets has a structurally valid GPS fix, else "offline".
 """
 from datetime import datetime, timedelta
 
@@ -33,15 +36,42 @@ PACKET_WINDOW = 20
 
 # Only packets received within this many minutes of "now" are scanned --
 # anything older is not looked at, regardless of PACKET_WINDOW.
-SCAN_WINDOW_MINUTES = 10
+SCAN_WINDOW_MINUTES = 5
 
 # Bounds the raw-log row scan within the SCAN_WINDOW_MINUTES cutoff (raw_data
 # has no IMEI index, so a row cap keeps a high-frequency device cheap too).
 ROW_SCAN_LIMIT = 500
 
-# Speed-limit thresholds (km/h), per the OBD "SPD" field.
-SPEED_FUNCTIONAL_BELOW = 30
-SPEED_OVERSPEED_ABOVE = 30
+# connectivity_status is "online" once at least this many of the (up to
+# PACKET_WINDOW) scanned packets carry both RPM and SPD -- a single
+# corroborating packet isn't enough, but the device doesn't need every
+# packet in the window to have it either.
+CONNECTIVITY_MIN_PACKETS = 5
+
+# vltd_status is "Active" only if every one of the latest this-many packets
+# has a structurally valid GPS fix.
+VLTD_LATEST_N = 5
+
+# Speed-limit thresholds (km/h), per the OBD "SPD" field. Evaluated against
+# the single most recent packet only.
+SPEED_FUNCTIONAL_BELOW = 20
+SPEED_OVERSPEED_ABOVE = 20
+
+# device_data.gps_valid ("is the vehicle's location trustworthy right now")
+# additionally requires the latest packet to have arrived within this many
+# seconds of the request -- a structurally valid fix from a few minutes ago
+# is stale, not current. Measured against the server's own receipt time
+# (GPSDataLog.timestamp), not the packet's self-reported date/time, since
+# the device's own clock can be garbage when it doesn't have a GPS lock.
+GPS_FRESHNESS_SECONDS = 20
+
+# connectivity_status and vltd_status additionally require the latest
+# packet to have arrived within this many seconds of the request, on top
+# of each status's own rule (CONNECTIVITY_MIN_PACKETS / VLTD_LATEST_N) --
+# if nothing has come in this recently, both go "offline" regardless of
+# how the last batch of packets looked. Measured against the server's own
+# receipt time, same reasoning as GPS_FRESHNESS_SECONDS above.
+STATUS_FRESHNESS_SECONDS = 15
 
 # Literal value the device sends in place of real OBD telemetry when it has
 # no OBD connection -- a packet carrying this is NOT a sign the OBD link is
@@ -58,6 +88,55 @@ def _numeric(value):
     except (TypeError, ValueError):
         return value
     return int(f) if f.is_integer() else f
+
+
+def _parse_obd_tail(raw):
+    """
+    Pull RPM/SPD out of the OBD block appended after the packet's '*'
+    terminator.
+
+    Two formats have been seen in production:
+      - "key:value" pairs, comma-separated, e.g. "RPM:0,SPD:0,CLT:0,..."
+        (current format). The block can be incomplete/truncated -- fields
+        can be missing or cut off mid-token -- so RPM/SPD are located by
+        key rather than by position, and anything else is ignored.
+      - a plain positional CSV list in header order (RPM,SPD,CLT,...), or
+        the literal sentinel "OBD-NULL" when the device has no OBD
+        connection at all (legacy format, kept for backward compatibility).
+
+    Returns (obd_present, obd_null, obd_rpm, obd_speed).
+    """
+    star_pos = raw.rfind('*')
+    if star_pos == -1:
+        return False, False, None, None
+
+    tail = raw[star_pos + 1:].strip()
+    if tail.startswith(','):
+        tail = tail[1:]
+    tail = tail.strip()
+    if not tail:
+        return False, False, None, None
+
+    tokens = [t.strip() for t in tail.split(',') if t.strip() != '']
+    if not tokens:
+        return False, False, None, None
+
+    if len(tokens) == 1 and tokens[0].upper() == OBD_NULL_SENTINEL:
+        return True, True, None, None
+
+    if any(':' in t for t in tokens):
+        values = {}
+        for t in tokens:
+            if ':' not in t:
+                continue
+            key, _, val = t.partition(':')
+            values[key.strip().upper()] = val.strip()
+        return True, False, _numeric(values.get('RPM')), _numeric(values.get('SPD'))
+
+    # Legacy positional CSV -- RPM is index 0, SPD is index 1.
+    rpm = tokens[0] if len(tokens) > 0 else None
+    speed = tokens[1] if len(tokens) > 1 else None
+    return True, False, _numeric(rpm), _numeric(speed)
 
 
 def _parse_pvt_packet(raw, imei):
@@ -94,20 +173,11 @@ def _parse_pvt_packet(raw, imei):
     # The OBD block (RPM,SPD,CLT,...) is appended, comma-separated, after
     # the packet's own '*' terminator -- not part of the standard PVT field
     # layout, so it's pulled from the raw text rather than `parts`.
-    obd_values = []
-    star_pos = raw.rfind('*')
-    if star_pos != -1:
-        tail = raw[star_pos + 1:].strip()
-        if tail.startswith(','):
-            tail = tail[1:]
-        tail = tail.strip()
-        if tail:
-            obd_values = [v.strip() for v in tail.split(',')]
-    obd_present = len(obd_values) > 0
-    obd_null = obd_present and obd_values[0].strip().upper() == OBD_NULL_SENTINEL
-    # "online" means real OBD telemetry is coming through -- data present
-    # after '*' AND it isn't the device's own "no OBD connection" sentinel.
-    obd_online = obd_present and not obd_null
+    obd_present, _obd_null, obd_rpm, obd_speed = _parse_obd_tail(raw)
+    # "online" specifically means BOTH RPM and SPD telemetry came through --
+    # the rest of the OBD block can be incomplete/truncated/missing, that's
+    # fine, but these two are what this endpoint reports on.
+    obd_online = obd_rpm is not None and obd_speed is not None
 
     packet_datetime = None
     try:
@@ -125,8 +195,8 @@ def _parse_pvt_packet(raw, imei):
         'packet_datetime': packet_datetime,
         'obd_present': obd_present,
         'obd_online': obd_online,
-        'obd_rpm': _numeric(obd_values[0]) if len(obd_values) > 0 else None,
-        'obd_speed': _numeric(obd_values[1]) if len(obd_values) > 1 else None,
+        'obd_rpm': obd_rpm,
+        'obd_speed': obd_speed,
     }
 
 
@@ -144,15 +214,6 @@ def _speed_state(packet):
     return 'anomaly'
 
 
-def _vltd_state(packet):
-    return 'active' if packet['gps_valid'] else 'gps_loss'
-
-
-def _connectivity_state(packet):
-    # OBD-NULL means the device has no OBD connection, not that it's online.
-    return 'online' if packet['obd_online'] else 'offline'
-
-
 @api_view(['GET'])
 @permission_classes([AllowAny])
 @throttle_classes([VehicleOBDStatusRateThrottle])
@@ -160,14 +221,17 @@ def vehicle_obd_status_lookup(request):
     """
     GET /api/vehicle-obd-status/lookup/?imei=<imei>
 
-    Scans PVT packets received in the last SCAN_WINDOW_MINUTES (10) minutes
+    Scans PVT packets received in the last SCAN_WINDOW_MINUTES (5) minutes
     only -- anything older is ignored -- taking up to the latest
     PACKET_WINDOW (20) of them for the given IMEI, and returns:
       - device_data: fields extracted from the single most recent packet
         (IMEI, tagged vehicle reg no / type / category / owner, whether an
         OBD data block was present, OBD RPM/Speed, GPS validity, timestamp).
-      - status: connectivity / speed-limit / VLTD status, each "OK" only if
-        every packet found in that 10-minute window was OK for that check.
+      - status: connectivity_status ("online" if >= CONNECTIVITY_MIN_PACKETS
+        of the scanned packets have both RPM and SPD), speed_limit_status
+        (classifies the latest packet's speed only), and vltd_status
+        ("Active" only if the latest VLTD_LATEST_N packets are all
+        GPS-valid, else "offline").
     """
     imei = (request.GET.get('imei') or DEFAULT_EXAMPLE_IMEI).strip()
     if not imei:
@@ -242,6 +306,7 @@ def vehicle_obd_status_lookup(request):
                 'latitude': None,
                 'longitude': None,
                 'last_data_timestamp': None,
+                'device_reported_timestamp': None,
             },
             'status_summary': {
                 'connectivity_status': 'offline',
@@ -255,6 +320,13 @@ def vehicle_obd_status_lookup(request):
         })
 
     latest = packets[0]
+    latest_age_seconds = (timezone.now() - latest['log_timestamp']).total_seconds()
+    gps_valid_now = latest['gps_valid'] and latest_age_seconds <= GPS_FRESHNESS_SECONDS
+    # connectivity_status, speed_limit_status, and vltd_status all require
+    # the latest packet to still be fresh -- if nothing has arrived in the
+    # last STATUS_FRESHNESS_SECONDS, all three reflect that regardless of
+    # how the rest of the window looked.
+    data_fresh = latest_age_seconds <= STATUS_FRESHNESS_SECONDS
 
     device_data = {
         **base_device_data,
@@ -263,29 +335,48 @@ def vehicle_obd_status_lookup(request):
         'obd_online': latest['obd_online'],
         'obd_rpm': latest['obd_rpm'],
         'obd_speed': latest['obd_speed'],
-        'gps_valid': latest['gps_valid'],
+        'gps_valid': gps_valid_now,
         'latitude': latest['latitude'],
         'longitude': latest['longitude'],
-        'last_data_timestamp': latest['packet_datetime'] or latest['log_timestamp'],
+        # Server receipt time -- authoritative. The device's own
+        # self-reported date/time (see device_reported_timestamp) can be
+        # garbage (seen: 2080, 2020) when it doesn't have a GPS lock, so it
+        # is never used as the primary timestamp.
+        'last_data_timestamp': latest['log_timestamp'],
+        'device_reported_timestamp': latest['packet_datetime'],
     }
 
-    speed_states = [_speed_state(p) for p in packets]
-    vltd_states = [_vltd_state(p) for p in packets]
-    connectivity_states = [_connectivity_state(p) for p in packets]
-
-    if all(s == 'functional' for s in speed_states):
-        speed_limit_status = 'Functional'
-    elif all(s == 'overspeed' for s in speed_states):
-        speed_limit_status = 'Overspeed detected'
+    # speed_limit_status: the latest packet's speed only -- stale data
+    # (nothing within STATUS_FRESHNESS_SECONDS) is always an anomaly, no
+    # matter what speed value the last-received packet happened to carry.
+    if data_fresh:
+        speed_state_latest = _speed_state(latest)
+        speed_limit_status = {
+            'functional': 'Functional',
+            'overspeed': 'Overspeed detected',
+        }.get(speed_state_latest, 'Speed limit anomaly detected')
     else:
         speed_limit_status = 'Speed limit anomaly detected'
 
-    vltd_status = 'Active' if all(s == 'active' for s in vltd_states) else 'GPS Loss'
-    connectivity_status = 'online' if all(s == 'online' for s in connectivity_states) else 'offline'
+    # connectivity_status: at least CONNECTIVITY_MIN_PACKETS of the scanned
+    # packets (not necessarily consecutive) must carry both RPM and SPD.
+    obd_full_count = sum(1 for p in packets if p['obd_online'])
+    connectivity_status = 'online' if obd_full_count >= CONNECTIVITY_MIN_PACKETS and data_fresh else 'offline'
+
+    # vltd_status: every one of the latest VLTD_LATEST_N packets must be
+    # GPS-valid -- fewer packets than that in the window is also "offline"
+    # (not enough recent data to call it Active).
+    latest_n = packets[:VLTD_LATEST_N]
+    vltd_status = (
+        'Active'
+        if len(latest_n) >= VLTD_LATEST_N and all(p['gps_valid'] for p in latest_n) and data_fresh
+        else 'offline'
+    )
 
     packet_history = [
         {
-            'timestamp': p['packet_datetime'] or p['log_timestamp'],
+            'timestamp': p['log_timestamp'],
+            'device_reported_timestamp': p['packet_datetime'],
             'gps_valid': p['gps_valid'],
             'obd_data_received': p['obd_present'],
             'obd_online': p['obd_online'],
