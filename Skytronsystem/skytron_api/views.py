@@ -42056,6 +42056,21 @@ GPS_PACKET_FRESHNESS_HOURS = 24
 # earlier) past a low cap before the scan ever reaches it, even though
 # it's well inside the freshness window.
 GPS_PACKET_SCAN_LIMIT = 50000
+
+from datetime import timezone as dt_timezone
+
+# --- PVT pre-checks --------------------
+# Window for finding the device's latest PVT.
+PVT_PRECHECK_WINDOW_MINUTES = 5
+# Max gap between the time inside the packet and the time the server received it.  
+PVT_MAX_CLOCK_DRIFT_SECONDS = 60
+# Main input voltage must exceed this,
+PVT_MIN_MAIN_INPUT_VOLTAGE = Decimal('12')
+# Devices must be fitted inside Assam. 
+TAGGING_ALLOWED_STATE_ISO = 'IN-AS'
+REVERSE_GEOCODE_URL = 'https://map-geocoding.gromed.in/reverse'
+REVERSE_GEOCODE_TIMEOUT_SECONDS = 3
+REVERSE_GEOCODE_CACHE_SECONDS = 3600
  
 # The 9 packet types, in display order.
 TAGGING_PACKET_TYPES = [
@@ -42226,6 +42241,169 @@ def _extract_pvt_lat_lon(raw):
         lon = -lon
 
     return lat, lon
+
+
+def _is_normal_pvt_packet(raw):
+    """
+    True for a normal position PVT packet.
+
+    """
+    parts = _packet_fields(raw)
+    try:
+        idx = next(i for i, p in enumerate(parts) if p.upper() == 'PVT')
+    except StopIteration:
+        return False
+    return len(parts) > idx + 3 and parts[idx + 3].upper() == 'NR'
+
+
+def _extract_pvt_datetime(raw):
+    """
+    Device timestamp from inside a PVT packet
+
+    """
+    parts = _packet_fields(raw)
+    try:
+        idx = next(i for i, p in enumerate(parts) if p.upper() == 'PVT')
+    except StopIteration:
+        return None
+    try:
+        naive = datetime.strptime(parts[idx + 9] + parts[idx + 10], '%d%m%Y%H%M%S')
+    except (IndexError, ValueError):
+        return None
+    return naive.replace(tzinfo=dt_timezone.utc)
+
+
+def _extract_pvt_main_input_voltage(raw):
+    """
+    Main input voltage from a PVT packet.
+    """
+    parts = _packet_fields(raw)
+    try:
+        idx = next(i for i, p in enumerate(parts) if p.upper() == 'PVT')
+    except StopIteration:
+        return None
+    try:
+        return Decimal(parts[idx + 24])
+    except (IndexError, InvalidOperation, ValueError):
+        return None
+
+
+def _reverse_geocode_state_iso(latitude, longitude):
+    """
+    Returns (iso_code, error) — exactly one is non-None. A lookup that
+    fails for any reason returns an error rather than a code, so the
+    caller blocks the device instead of letting it through unverified
+
+
+    Cached because step 4 is re-runnable and dealers call it repeatedly
+    while triggering alerts, so the same coordinate is looked up over and
+    over. A cache failure must never fail a tagging.
+    """
+    unavailable = "Location could not be verified at the moment. Please try again."
+
+    cache_key = f"revgeo:{round(float(latitude), 4)}:{round(float(longitude), 4)}"
+    try:
+        cached = cache.get(cache_key)
+    except Exception:
+        cached = None
+    if cached:
+        return cached, None
+
+    try:
+        response = requests.get(
+            REVERSE_GEOCODE_URL,
+            params={
+                'format': 'json',
+                'lat': str(latitude),
+                'lon': str(longitude),
+                'addressdetails': 1,
+                'zoom': 18,
+            },
+            timeout=REVERSE_GEOCODE_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        address = (response.json() or {}).get('address') or {}
+    except (Timeout, RequestException, ValueError) as exc:
+        logger.warning("Tagging reverse geocode failed for %s,%s: %s", latitude, longitude, exc)
+        return None, unavailable
+
+    iso_code = str(address.get('ISO3166-2-lvl4') or '').strip().upper()
+    if not iso_code:
+        logger.warning("Tagging reverse geocode returned no state for %s,%s", latitude, longitude)
+        return None, unavailable
+
+    try:
+        cache.set(cache_key, iso_code, REVERSE_GEOCODE_CACHE_SECONDS)
+    except Exception:
+        pass
+    return iso_code, None
+
+
+def _run_pvt_prechecks(record):
+    """
+    Three checks on the device's latest normal PVT packet, run before the
+    9-packet scan.
+
+    Returns (error_message, details). error_message is None when all
+    three pass.
+    """
+    now = timezone.now()
+    cutoff = now - timedelta(minutes=PVT_PRECHECK_WINDOW_MINUTES)
+    reg_no = (record.vahan_reg_no or '').strip()
+
+    rows = (
+        GPSDataLog.objects
+        .filter(timestamp__gte=cutoff, raw_data__contains=record.imei)
+        .order_by('-timestamp')
+        .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+    )
+
+    latest = None
+    for raw_data, received_at in rows.iterator():
+        if reg_no and reg_no not in raw_data:
+            continue
+        if not _is_pvt_packet(raw_data) or not _is_normal_pvt_packet(raw_data):
+            continue
+        latest = (raw_data, received_at)
+        break
+
+    if not latest:
+        return "No data found.", None
+
+    raw_data, received_at = latest
+    details = {'raw_data': raw_data, 'received_at': received_at.isoformat()}
+
+    # ── Check 1: device clock against server receive time ────────────
+    packet_time = _extract_pvt_datetime(raw_data)
+    if packet_time is None:
+        return "No data found.", details
+    drift = abs((received_at - packet_time).total_seconds())
+    details['packet_datetime'] = packet_time.isoformat()
+    details['clock_drift_seconds'] = drift
+    if drift > PVT_MAX_CLOCK_DRIFT_SECONDS:
+        return "No data found.", details
+
+    # ── Check 2: coordinates present, non-zero, and inside Assam ─────
+    latitude, longitude = _extract_pvt_lat_lon(raw_data)
+    if latitude is None or longitude is None or latitude == 0 or longitude == 0:
+        return "Device must be within Assam.", details
+    details['latitude'] = str(latitude)
+    details['longitude'] = str(longitude)
+
+    state_iso, geocode_error = _reverse_geocode_state_iso(latitude, longitude)
+    if geocode_error:
+        return geocode_error, details
+    details['state_iso'] = state_iso
+    if state_iso != TAGGING_ALLOWED_STATE_ISO:
+        return "Device must be within Assam.", details
+
+    # ── Check 3: wired to the vehicle supply ─────────────────────────
+    voltage = _extract_pvt_main_input_voltage(raw_data)
+    details['main_input_voltage'] = str(voltage) if voltage is not None else None
+    if voltage is None or voltage <= PVT_MIN_MAIN_INPUT_VOLTAGE:
+        return "Device must be connected to main power.", details
+
+    return None, details
  
  
 # =====================================================================
@@ -42265,7 +42443,18 @@ def device_tagging_step4_packet_check(request):
     record, dealer, error = _get_tagging_record(request, record_id, expected_step=4)
     if error:
         return error
- 
+
+    # ── PVT pre-checks — must pass before the 9-packet scan runs ─────
+    precheck_error, precheck_details = _run_pvt_prechecks(record)
+    if precheck_error:
+        logger.info(
+            "Tagging step 4 pre-check failed for record %s (imei %s): %s | %s",
+            record.id, record.imei, precheck_error, precheck_details,
+        )
+        return Response(
+            {"status": "failed", "error": precheck_error},
+            status=status.HTTP_400_BAD_REQUEST
+        )
     now = timezone.now()
     cutoff = now - timedelta(hours=GPS_PACKET_FRESHNESS_HOURS)
     imei = record.imei
