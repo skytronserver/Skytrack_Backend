@@ -41327,6 +41327,18 @@ def device_tagging_step1_create(request):
     if response_error:
         return Response({"error": response_error}, status=status.HTTP_400_BAD_REQUEST)
 
+    # ── Check 10b: device serial / ESN format ────────────────────────
+    device_serial_no = str(vahan_data.get('deviceSerialno') or '').strip().upper()
+    if not VAHAN_DEVICE_SERIAL_PATTERN.match(device_serial_no):
+        logger.warning(
+            "Vahan returned a device serial in an unexpected format for imei %s: %r",
+            imei, device_serial_no,
+        )
+        return Response(
+            {"error": "Device serial number returned by Vahan is not in the expected format."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     # ── Check 11: Vahan ICCID must match the dealer's input ──────────
     vahan_iccid = str(vahan_data.get('iccId') or '').strip()
     if vahan_iccid and vahan_iccid != iccid:
@@ -42071,6 +42083,10 @@ TAGGING_ALLOWED_STATE_ISO = 'IN-AS'
 REVERSE_GEOCODE_URL = 'https://map-geocoding.gromed.in/reverse'
 REVERSE_GEOCODE_TIMEOUT_SECONDS = 3
 REVERSE_GEOCODE_CACHE_SECONDS = 3600
+
+# Device ESN / serial number format returned by Vahan, e.g. ASMABC00000013:
+#   3-char state code + 3-char vendor code + 8-digit serial.
+VAHAN_DEVICE_SERIAL_PATTERN = re.compile(r'^[A-Z]{3}[A-Z0-9]{3}[0-9]{8}$')
  
 # The 9 packet types, in display order.
 TAGGING_PACKET_TYPES = [
