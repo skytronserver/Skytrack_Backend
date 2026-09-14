@@ -18487,6 +18487,12 @@ def create_device_model(request ):
     #     if ip_range_error:
     #         field_errors['device_ip_range'] = ip_range_error
 
+    provider_combinations, combinations_error = _validate_provider_combinations(
+        request.data.get('provider_combinations')
+    )
+    if combinations_error:
+        field_errors['provider_combinations'] = combinations_error
+
     if field_errors:
         return Response({"errors": field_errors}, status=status.HTTP_400_BAD_REQUEST)
      
@@ -18514,6 +18520,9 @@ def create_device_model(request ):
         # Threshold is admin-controlled. 0 means unlimited. Forced here so
         # a manufacturer cannot set their own limit at model creation.
         'threshold': 0,
+        # Normalised at validation, so what's stored is always upper-case
+        # and suffix-free — step 2 compares against it directly.
+        'provider_combinations': json.dumps(provider_combinations),
     }
 
     # Attach the file to the request data
@@ -41277,6 +41286,34 @@ def device_tagging_step1_create(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # ── Check 7b: chosen combination is one the model offers ─────────
+    model_combinations = device_model.provider_combinations or []
+    provider_combination = []
+    if model_combinations:
+        raw_combination = request.data.get('provider_combination')
+        if isinstance(raw_combination, str):
+            try:
+                raw_combination = json.loads(raw_combination)
+            except ValueError:
+                raw_combination = None
+        if not isinstance(raw_combination, list) or not raw_combination:
+            return Response(
+                {"error": "Select one of the provider combinations listed against this device model."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        chosen = {_normalise_tsp(name) for name in raw_combination}
+        match = next(
+            (c for c in model_combinations if {_normalise_tsp(n) for n in c} == chosen),
+            None
+        )
+        if match is None:
+            return Response(
+                {"error": "This provider combination is not listed against the given device model."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        provider_combination = match
+
     # ── Check 8: duplicates among NON-DELETED rows ───────────────────
     duplicate = DeviceStockMaster.objects.filter(
         Q(imei=imei) | Q(iccid=iccid),
@@ -41409,6 +41446,7 @@ def device_tagging_step1_create(request):
         manufacturer=manufacturer,
         device_model=device_model,
         esim_provider=esim_provider,
+        provider_combination=provider_combination,
         vehicle_owner=vehicle_owner,
         district=district,
         category=category,
@@ -41659,7 +41697,32 @@ def device_tagging_step2_esim(request):
             },
             status=status.HTTP_400_BAD_REQUEST
         )
- 
+
+    # ── Check: primary/fallback TSP matches the combination picked ───
+    if record.provider_combination:
+        combination = {_normalise_tsp(name) for name in record.provider_combination}
+        primary_tsp = _normalise_tsp(normalised.get('telecom_provider'))
+        fallback_tsp = _normalise_tsp(normalised.get('fallback_tsp'))
+
+        if not primary_tsp or primary_tsp not in combination:
+            return Response(
+                {
+                    "error": "eSIM primary provider does not match the selected combination.",
+                    "primary_tsp": normalised.get('telecom_provider'),
+                    "selected_combination": record.provider_combination,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not fallback_tsp or fallback_tsp not in combination:
+            return Response(
+                {
+                    "error": "eSIM fallback provider does not match the selected combination.",
+                    "fallback_tsp": normalised.get('fallback_tsp'),
+                    "selected_combination": record.provider_combination,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
     # ── All checks passed — save the eSIM data ───────────────────────
     now = timezone.now()
  
@@ -42087,6 +42150,69 @@ REVERSE_GEOCODE_CACHE_SECONDS = 3600
 # Device ESN / serial number format returned by Vahan, e.g. ASMABC00000013:
 #   3-char state code + 3-char vendor code + 8-digit serial.
 VAHAN_DEVICE_SERIAL_PATTERN = re.compile(r'^[A-Z]{3}[A-Z0-9]{3}[0-9]{8}$')
+
+# Telecom service providers a device model's combinations can be built
+# from. More may be added later.
+TSP_CHOICES = ['AIRTEL', 'VI', 'JIO', 'BSNL', 'MTNL']
+# Every combination needs at least this many providers.
+MIN_PROVIDERS_PER_COMBINATION = 2
+
+
+def _normalise_tsp(value):
+    """
+    Telecom provider name in a comparable form.
+
+    The M2M API is inconsistent — 'AIRTEL' in one response and 'Airtel'
+    in another, and BSNL arrives as 'BSNL_S' on some SIMs . Upper-case it and drop any suffix.
+    """
+    return str(value or '').strip().upper().split('_')[0]
+
+
+def _validate_provider_combinations(raw):
+    """
+    Check the combinations supplied at model creation.
+
+    Returns (combinations, error) — exactly one is non-None. Accepts a
+    JSON string, since model creation is multipart and form values
+    arrive as text.
+    """
+    if raw in (None, '', b''):
+        return [], None
+
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None, "provider_combinations must be valid JSON."
+
+    if not isinstance(raw, list):
+        return None, "provider_combinations must be a list of combinations."
+
+    combinations = []
+    seen = set()
+    for position, entry in enumerate(raw, start=1):
+        if not isinstance(entry, list):
+            return None, f"Combination {position} must be a list of provider names."
+
+        names = [_normalise_tsp(name) for name in entry]
+        if len(names) < MIN_PROVIDERS_PER_COMBINATION:
+            return None, f"Combination {position} needs at least {MIN_PROVIDERS_PER_COMBINATION} providers."
+
+        unknown = [name for name in names if name not in TSP_CHOICES]
+        if unknown:
+            return None, f"Combination {position} has unknown providers: {', '.join(unknown)}."
+
+        if len(set(names)) != len(names):
+            return None, f"Combination {position} has the same provider more than once."
+
+        key = frozenset(names)
+        if key in seen:
+            return None, f"Combination {position} is a duplicate."
+        seen.add(key)
+
+        combinations.append(names)
+
+    return combinations, None
  
 # The 9 packet types, in display order.
 TAGGING_PACKET_TYPES = [
@@ -43316,6 +43442,8 @@ def device_tagging_my_manufacturer(request):
             'hardware_version': device_model.hardware_version,
             'technical_onboarding_complete': True,
             'esim_providers': providers,
+            # Empty list means no combination is required at step 1.
+            'provider_combinations': device_model.provider_combinations or [],
         })
 
     districts = [
