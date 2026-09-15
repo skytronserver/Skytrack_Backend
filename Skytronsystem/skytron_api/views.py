@@ -18518,6 +18518,12 @@ def create_device_model(request ):
     #     if ip_range_error:
     #         field_errors['device_ip_range'] = ip_range_error
 
+    provider_combinations, combinations_error = _validate_provider_combinations(
+        request.data.get('provider_combinations')
+    )
+    if combinations_error:
+        field_errors['provider_combinations'] = combinations_error
+
     if field_errors:
         return Response({"errors": field_errors}, status=status.HTTP_400_BAD_REQUEST)
      
@@ -18542,6 +18548,12 @@ def create_device_model(request ):
         'whitelisted_ip': whitelisted_ip,
         'whitelisted_phone_number': whitelisted_phone_number,
         'device_ip_range': None,
+        # Threshold is admin-controlled. 0 means unlimited. Forced here so
+        # a manufacturer cannot set their own limit at model creation.
+        'threshold': 0,
+        # Normalised at validation, so what's stored is always upper-case
+        # and suffix-free — step 2 compares against it directly.
+        'provider_combinations': json.dumps(provider_combinations),
     }
 
     # Attach the file to the request data
@@ -41305,6 +41317,34 @@ def device_tagging_step1_create(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # ── Check 7b: chosen combination is one the model offers ─────────
+    model_combinations = device_model.provider_combinations or []
+    provider_combination = []
+    if model_combinations:
+        raw_combination = request.data.get('provider_combination')
+        if isinstance(raw_combination, str):
+            try:
+                raw_combination = json.loads(raw_combination)
+            except ValueError:
+                raw_combination = None
+        if not isinstance(raw_combination, list) or not raw_combination:
+            return Response(
+                {"error": "Select one of the provider combinations listed against this device model."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        chosen = {_normalise_tsp(name) for name in raw_combination}
+        match = next(
+            (c for c in model_combinations if {_normalise_tsp(n) for n in c} == chosen),
+            None
+        )
+        if match is None:
+            return Response(
+                {"error": "This provider combination is not listed against the given device model."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        provider_combination = match
+
     # ── Check 8: duplicates among NON-DELETED rows ───────────────────
     duplicate = DeviceStockMaster.objects.filter(
         Q(imei=imei) | Q(iccid=iccid),
@@ -41354,6 +41394,18 @@ def device_tagging_step1_create(request):
     response_error = _validate_vahan_response(vahan_data)
     if response_error:
         return Response({"error": response_error}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Check 10b: device serial / ESN format ────────────────────────
+    device_serial_no = str(vahan_data.get('deviceSerialno') or '').strip().upper()
+    if not VAHAN_DEVICE_SERIAL_PATTERN.match(device_serial_no):
+        logger.warning(
+            "Vahan returned a device serial in an unexpected format for imei %s: %r",
+            imei, device_serial_no,
+        )
+        return Response(
+            {"error": "Device serial number returned by Vahan is not in the expected format."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     # ── Check 11: Vahan ICCID must match the dealer's input ──────────
     vahan_iccid = str(vahan_data.get('iccId') or '').strip()
@@ -41425,6 +41477,7 @@ def device_tagging_step1_create(request):
         manufacturer=manufacturer,
         device_model=device_model,
         esim_provider=esim_provider,
+        provider_combination=provider_combination,
         vehicle_owner=vehicle_owner,
         district=district,
         category=category,
@@ -41675,7 +41728,32 @@ def device_tagging_step2_esim(request):
             },
             status=status.HTTP_400_BAD_REQUEST
         )
- 
+
+    # ── Check: primary/fallback TSP matches the combination picked ───
+    if record.provider_combination:
+        combination = {_normalise_tsp(name) for name in record.provider_combination}
+        primary_tsp = _normalise_tsp(normalised.get('telecom_provider'))
+        fallback_tsp = _normalise_tsp(normalised.get('fallback_tsp'))
+
+        if not primary_tsp or primary_tsp not in combination:
+            return Response(
+                {
+                    "error": "eSIM primary provider does not match the selected combination.",
+                    "primary_tsp": normalised.get('telecom_provider'),
+                    "selected_combination": record.provider_combination,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not fallback_tsp or fallback_tsp not in combination:
+            return Response(
+                {
+                    "error": "eSIM fallback provider does not match the selected combination.",
+                    "fallback_tsp": normalised.get('fallback_tsp'),
+                    "selected_combination": record.provider_combination,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
     # ── All checks passed — save the eSIM data ───────────────────────
     now = timezone.now()
  
@@ -42084,6 +42162,88 @@ GPS_PACKET_FRESHNESS_HOURS = 24
 # earlier) past a low cap before the scan ever reaches it, even though
 # it's well inside the freshness window.
 GPS_PACKET_SCAN_LIMIT = 50000
+
+from datetime import timezone as dt_timezone
+
+# --- PVT pre-checks --------------------
+# Window for finding the device's latest PVT.
+PVT_PRECHECK_WINDOW_MINUTES = 5
+# Max gap between the time inside the packet and the time the server received it.  
+PVT_MAX_CLOCK_DRIFT_SECONDS = 60
+# Main input voltage must exceed this,
+PVT_MIN_MAIN_INPUT_VOLTAGE = Decimal('12')
+# Devices must be fitted inside Assam. 
+TAGGING_ALLOWED_STATE_ISO = 'IN-AS'
+REVERSE_GEOCODE_URL = 'https://map-geocoding.gromed.in/reverse'
+REVERSE_GEOCODE_TIMEOUT_SECONDS = 3
+REVERSE_GEOCODE_CACHE_SECONDS = 3600
+
+# Device ESN / serial number format returned by Vahan, e.g. ASMABC00000013:
+#   3-char state code + 3-char vendor code + 8-digit serial.
+VAHAN_DEVICE_SERIAL_PATTERN = re.compile(r'^[A-Z]{3}[A-Z0-9]{3}[0-9]{8}$')
+
+# Telecom service providers a device model's combinations can be built
+# from. More may be added later.
+TSP_CHOICES = ['AIRTEL', 'VI', 'JIO', 'BSNL', 'MTNL']
+# Every combination needs at least this many providers.
+MIN_PROVIDERS_PER_COMBINATION = 2
+
+
+def _normalise_tsp(value):
+    """
+    Telecom provider name in a comparable form.
+
+    The M2M API is inconsistent — 'AIRTEL' in one response and 'Airtel'
+    in another, and BSNL arrives as 'BSNL_S' on some SIMs . Upper-case it and drop any suffix.
+    """
+    return str(value or '').strip().upper().split('_')[0]
+
+
+def _validate_provider_combinations(raw):
+    """
+    Check the combinations supplied at model creation.
+
+    Returns (combinations, error) — exactly one is non-None. Accepts a
+    JSON string, since model creation is multipart and form values
+    arrive as text.
+    """
+    if raw in (None, '', b''):
+        return [], None
+
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None, "provider_combinations must be valid JSON."
+
+    if not isinstance(raw, list):
+        return None, "provider_combinations must be a list of combinations."
+
+    combinations = []
+    seen = set()
+    for position, entry in enumerate(raw, start=1):
+        if not isinstance(entry, list):
+            return None, f"Combination {position} must be a list of provider names."
+
+        names = [_normalise_tsp(name) for name in entry]
+        if len(names) < MIN_PROVIDERS_PER_COMBINATION:
+            return None, f"Combination {position} needs at least {MIN_PROVIDERS_PER_COMBINATION} providers."
+
+        unknown = [name for name in names if name not in TSP_CHOICES]
+        if unknown:
+            return None, f"Combination {position} has unknown providers: {', '.join(unknown)}."
+
+        if len(set(names)) != len(names):
+            return None, f"Combination {position} has the same provider more than once."
+
+        key = frozenset(names)
+        if key in seen:
+            return None, f"Combination {position} is a duplicate."
+        seen.add(key)
+
+        combinations.append(names)
+
+    return combinations, None
  
 # The 9 packet types, in display order.
 TAGGING_PACKET_TYPES = [
@@ -42254,6 +42414,169 @@ def _extract_pvt_lat_lon(raw):
         lon = -lon
 
     return lat, lon
+
+
+def _is_normal_pvt_packet(raw):
+    """
+    True for a normal position PVT packet.
+
+    """
+    parts = _packet_fields(raw)
+    try:
+        idx = next(i for i, p in enumerate(parts) if p.upper() == 'PVT')
+    except StopIteration:
+        return False
+    return len(parts) > idx + 3 and parts[idx + 3].upper() == 'NR'
+
+
+def _extract_pvt_datetime(raw):
+    """
+    Device timestamp from inside a PVT packet
+
+    """
+    parts = _packet_fields(raw)
+    try:
+        idx = next(i for i, p in enumerate(parts) if p.upper() == 'PVT')
+    except StopIteration:
+        return None
+    try:
+        naive = datetime.strptime(parts[idx + 9] + parts[idx + 10], '%d%m%Y%H%M%S')
+    except (IndexError, ValueError):
+        return None
+    return naive.replace(tzinfo=dt_timezone.utc)
+
+
+def _extract_pvt_main_input_voltage(raw):
+    """
+    Main input voltage from a PVT packet.
+    """
+    parts = _packet_fields(raw)
+    try:
+        idx = next(i for i, p in enumerate(parts) if p.upper() == 'PVT')
+    except StopIteration:
+        return None
+    try:
+        return Decimal(parts[idx + 24])
+    except (IndexError, InvalidOperation, ValueError):
+        return None
+
+
+def _reverse_geocode_state_iso(latitude, longitude):
+    """
+    Returns (iso_code, error) — exactly one is non-None. A lookup that
+    fails for any reason returns an error rather than a code, so the
+    caller blocks the device instead of letting it through unverified
+
+
+    Cached because step 4 is re-runnable and dealers call it repeatedly
+    while triggering alerts, so the same coordinate is looked up over and
+    over. A cache failure must never fail a tagging.
+    """
+    unavailable = "Location could not be verified at the moment. Please try again."
+
+    cache_key = f"revgeo:{round(float(latitude), 4)}:{round(float(longitude), 4)}"
+    try:
+        cached = cache.get(cache_key)
+    except Exception:
+        cached = None
+    if cached:
+        return cached, None
+
+    try:
+        response = requests.get(
+            REVERSE_GEOCODE_URL,
+            params={
+                'format': 'json',
+                'lat': str(latitude),
+                'lon': str(longitude),
+                'addressdetails': 1,
+                'zoom': 18,
+            },
+            timeout=REVERSE_GEOCODE_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        address = (response.json() or {}).get('address') or {}
+    except (Timeout, RequestException, ValueError) as exc:
+        logger.warning("Tagging reverse geocode failed for %s,%s: %s", latitude, longitude, exc)
+        return None, unavailable
+
+    iso_code = str(address.get('ISO3166-2-lvl4') or '').strip().upper()
+    if not iso_code:
+        logger.warning("Tagging reverse geocode returned no state for %s,%s", latitude, longitude)
+        return None, unavailable
+
+    try:
+        cache.set(cache_key, iso_code, REVERSE_GEOCODE_CACHE_SECONDS)
+    except Exception:
+        pass
+    return iso_code, None
+
+
+def _run_pvt_prechecks(record):
+    """
+    Three checks on the device's latest normal PVT packet, run before the
+    9-packet scan.
+
+    Returns (error_message, details). error_message is None when all
+    three pass.
+    """
+    now = timezone.now()
+    cutoff = now - timedelta(minutes=PVT_PRECHECK_WINDOW_MINUTES)
+    reg_no = (record.vahan_reg_no or '').strip()
+
+    rows = (
+        GPSDataLog.objects
+        .filter(timestamp__gte=cutoff, raw_data__contains=record.imei)
+        .order_by('-timestamp')
+        .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+    )
+
+    latest = None
+    for raw_data, received_at in rows.iterator():
+        if reg_no and reg_no not in raw_data:
+            continue
+        if not _is_pvt_packet(raw_data) or not _is_normal_pvt_packet(raw_data):
+            continue
+        latest = (raw_data, received_at)
+        break
+
+    if not latest:
+        return "No data found.", None
+
+    raw_data, received_at = latest
+    details = {'raw_data': raw_data, 'received_at': received_at.isoformat()}
+
+    # ── Check 1: device clock against server receive time ────────────
+    packet_time = _extract_pvt_datetime(raw_data)
+    if packet_time is None:
+        return "No data found.", details
+    drift = abs((received_at - packet_time).total_seconds())
+    details['packet_datetime'] = packet_time.isoformat()
+    details['clock_drift_seconds'] = drift
+    if drift > PVT_MAX_CLOCK_DRIFT_SECONDS:
+        return "No data found.", details
+
+    # ── Check 2: coordinates present, non-zero, and inside Assam ─────
+    latitude, longitude = _extract_pvt_lat_lon(raw_data)
+    if latitude is None or longitude is None or latitude == 0 or longitude == 0:
+        return "Device must be within Assam.", details
+    details['latitude'] = str(latitude)
+    details['longitude'] = str(longitude)
+
+    state_iso, geocode_error = _reverse_geocode_state_iso(latitude, longitude)
+    if geocode_error:
+        return geocode_error, details
+    details['state_iso'] = state_iso
+    if state_iso != TAGGING_ALLOWED_STATE_ISO:
+        return "Device must be within Assam.", details
+
+    # ── Check 3: wired to the vehicle supply ─────────────────────────
+    voltage = _extract_pvt_main_input_voltage(raw_data)
+    details['main_input_voltage'] = str(voltage) if voltage is not None else None
+    if voltage is None or voltage <= PVT_MIN_MAIN_INPUT_VOLTAGE:
+        return "Device must be connected to main power.", details
+
+    return None, details
  
  
 # =====================================================================
@@ -42293,7 +42616,18 @@ def device_tagging_step4_packet_check(request):
     record, dealer, error = _get_tagging_record(request, record_id, expected_step=4)
     if error:
         return error
- 
+
+    # ── PVT pre-checks — must pass before the 9-packet scan runs ─────
+    precheck_error, precheck_details = _run_pvt_prechecks(record)
+    if precheck_error:
+        logger.info(
+            "Tagging step 4 pre-check failed for record %s (imei %s): %s | %s",
+            record.id, record.imei, precheck_error, precheck_details,
+        )
+        return Response(
+            {"status": "failed", "error": precheck_error},
+            status=status.HTTP_400_BAD_REQUEST
+        )
     now = timezone.now()
     cutoff = now - timedelta(hours=GPS_PACKET_FRESHNESS_HOURS)
     imei = record.imei
@@ -43139,6 +43473,8 @@ def device_tagging_my_manufacturer(request):
             'hardware_version': device_model.hardware_version,
             'technical_onboarding_complete': True,
             'esim_providers': providers,
+            # Empty list means no combination is required at step 1.
+            'provider_combinations': device_model.provider_combinations or [],
         })
 
     districts = [

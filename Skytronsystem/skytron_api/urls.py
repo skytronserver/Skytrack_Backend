@@ -89,18 +89,29 @@ from .mqtt_validate_views import mqtt_validate_connection, mqtt_validate_acl
 
 
 urlpatterns = [
+    ## INUSE by Manufacturer, Owner, StateAdmin
     path('emuser-locations/', get_latest_emuser_locations, name='get_latest_emuser_locations'),
+    ## INUSE by Owner
     path('trip/create/', create_trip, name='create_trip'),
+    ## INUSE by Owner
     path('trip/<int:trip_id>/', get_trip, name='get_trip'),
+    ## INUSE by Owner
     path('trip/', get_trip, name='get_trips'),
+    ## INUSE by Owner
     path('trip/<int:trip_id>/update/', update_trip, name='update_trip'),
+    ## INUSE by Owner
     path('trip/<int:trip_id>/end/', end_trip, name='end_trip'),
+    ## INUSE by Owner
     path('trip/<int:trip_id>/cancel/', cancel_trip, name='cancel_trip'),
     
     path('cell_location/', cell_location_average, name='cell_location_average'),
 
 
+    ## INUSE by Owner, StateAdmin
+    ## PUBLIC
     path('geocode/', geocode_poi, name='geocode_poi'),
+    ## INUSE by Owner, StateAdmin
+    ## PUBLIC
     path('reverse_geocode/', reverse_geocode_poi, name='reverse_geocode_poi'),
 
     # SOS monthly metrics (unauthenticated)
@@ -112,6 +123,7 @@ urlpatterns = [
     path('police_fleet_metrics/', police_fleet_metrics, name='police_fleet_metrics'),
 
     # Vehicle status metrics (unauthenticated)
+    ## INUSE by StateAdmin, SOSAdmin
     path('vehicle_status_metrics/', vehicle_status_metrics, name='vehicle_status_metrics'),
 
     # Public onboarding + device inventory dashboard metrics
@@ -169,10 +181,13 @@ urlpatterns = [
     path('driver/add_driver/', driver_add, name='add_driver'),
     path('driver/remove_driver/', driver_remove, name='remove_driver'),
 
+    ## INUSE by Owner
     path('poi/create/', create_poi, name='create_poi'),
     path('poi/update/', update_poi, name='update_poi'),
     path('poi/delete/', delete_poi, name='delete_poi'),
+    ## INUSE by Manufacturer, Owner, StateAdmin, SOSAdmin, SOSExecutive
     path('poi/list/', list_pois, name='list_pois'),
+    ## INUSE by Manufacturer, Owner, StateAdmin, SOSAdmin
     path('poi/types/', list_poi_types, name='list_poi_types'),
     path('mqtt/send_command/', send_mqtt_command, name='send_mqtt_command'),
 
@@ -181,48 +196,61 @@ urlpatterns = [
     path('pub/manufacturer/create_manufacturer/', create_manufacturer_pub, name='create_manufacturer_pub'),
     path('manufacturer/update_manufacturer/', update_manufacturer, name='update_manufacturer'),
     path('manufacturer/approve_tech_onboarding/', approve_manufacturer_tech_onboarding, name='approve_manufacturer_tech_onboarding'),
+    ## INUSE by Owner, StateAdmin
     path('manufacturer/filter_manufacturers/', filter_manufacturers, name='filter_manufacturers'),
+    ## INUSE by StateAdmin
     path('manufacturer/filter_TechOnboardmanufacturers/', filter_TechOnboardmanufacturers, name='filter_TechOnboardmanufacturers'),
     path('manufacturer/delete_manufacturer/<int:manufacturer_id>/', delete_manufacturer, name='delete_manufacturer'),
+    ## INUSE by Manufacturer
     path('dealer/create_dealer/', create_dealer, name='create_dealer'),    
     path('dealer/update_dealer/', update_dealer, name='update_dealer'),
+    ## INUSE by Manufacturer, StateAdmin
     path('dealer/filter_dealer/', filter_dealer, name='filter_dealer'),
     path('eSimProvider/create_eSimProvider/', create_eSimProvider, name='create_eSimProvider'),
     path('pub/eSimProvider/create_eSimProvider/', create_eSimProvider_pub, name='create_eSimProvider_pub'),
     path('eSimProvider/update_eSimProvider/', update_eSimProvider, name='update_eSimProvider'),
     path('pub/eSimProvider/filter_eSimProvider/', filter_eSimProvider_pub, name='filter_eSimProvider_pub'),
+    ## INUSE by Manufacturer
     path('eSimProvider/filter_eSimProvider/', filter_eSimProvider, name='filter_eSimProvider'),
 
     path('testAgency/create_testAgency/', create_testAgency, name='create_testAgency'),
     path('testAgency/update_testAgency/', update_testAgency, name='update_testAgency'),
     path('testAgency/list/', get_testAgency_list, name='get_testAgency_list'),
+    ## INUSE by Manufacturer
     path('testAgency/name_list/', get_testAgency_name_list, name='get_testAgency_name_list'),
     path('testAgency/details/list/', public_testAgencyDetails_list, name='public_testAgencyDetails_list'),
     path('testAgency/details/create/', create_testAgencyDetails, name='create_testAgencyDetails'),
     path('testAgency/details/update/', update_testAgencyDetails, name='update_testAgencyDetails'),
     path('testAgency/device_models/', get_testAgency_device_models, name='get_testAgency_device_models'),
 
+    ## INUSE by Dealer
     path('VehicleOwner/create_VehicleOwner/', create_VehicleOwner, name='create_VehicleOwner'),
     path('VehicleOwner/update_VehicleOwner/', update_VehicleOwner, name='update_VehicleOwner'),
+    ## INUSE by Dealer, StateAdmin, Analytics
     path('VehicleOwner/filter_VehicleOwner/', filter_VehicleOwner, name='filter_VehicleOwner'),
 
 
 
     path('Settings/create_settings_hp_freq/', create_Settings_hp_freq, name='create_settings_hp_freq'),
+    ## INUSE by Manufacturer
     path('Settings/filter_settings_hp_freq/', filter_Settings_hp_freq, name='filter_settings_hp_freq'),
 
     path('Settings/create_settings_ip/', create_Settings_ip, name='create_settings_ip'),
     path('Settings/filter_settings_ip/', filter_Settings_ip, name='filter_settings_ip'),
 
     path('Settings/create_settings_State/', create_Settings_State, name='create_settings_state'),
+    ## INUSE by Manufacturer, Owner, StateAdmin, PIS, Analytics, SOSAdmin
     path('Settings/filter_settings_State/', filter_Settings_State, name='filter_settings_state'),
     path('pub/Settings/filter_settings_State_pub/', filter_Settings_State_pub, name='filter_settings_state_pub'),
     
 
     path('Settings/create_settings_District/', create_Settings_District, name='create_settings_District'),
+    ## INUSE by Manufacturer, StateAdmin, PIS, Analytics, SOSAdmin
+    ## PUBLIC
     path('Settings/filter_settings_District/', filter_Settings_District, name='filter_settings_District'), 
 
     path('Settings/create_settings_VehicleCategory/', create_Settings_VehicleCategory, name='create_settings_VehicleCategory'),
+    ## INUSE by Analytics
     path('Settings/filter_settings_VehicleCategory/', filter_Settings_VehicleCategory, name='filter_settings_VehicleCategory'),
 
     path('pub/Settings/vehicle_category_code/', pub_list_vehicle_category_code, name='pub_list_vehicle_category_code'),
@@ -237,16 +265,20 @@ urlpatterns = [
 
     path('Statistics/manufacturer_model_stock_statistics/', manufacturer_model_stock_statistics, name='manufacturer_model_stock_statistics'),
     path('Statistics/user_statistics/', user_statistics, name='user_statistics'),
+    ## INUSE by SOSAdmin
     path('Statistics/vehicle_alert_statistics/', vehicle_alert_statistics, name='vehicle_alert_statistics'),
 
+    ## INUSE by Manufacturer
     path('Settings/create_settings_firmware/', create_Settings_firmware, name='create_settings_firmware'),
     path('Settings/filter_settings_firmware/', filter_Settings_firmware, name='filter_settings_firmware'), 
 
     path('StateAdmin/create_StateAdmin/', create_StateAdmin, name='create_StateAdmin'),
     path('StateAdmin/update_StateAdmin/', update_StateAdmin, name='update_StateAdmin'),
     path('StateAdmin/filter_StateAdmin/', filter_StateAdmin, name='filter_StateAdmin'),
+    ## INUSE by StateAdmin
     path('DTO_RTO/create_DTO_RTO/', create_DTO_RTO, name='create_DTO_RTO'),
     path('DTO_RTO/update_DTO_RTO/', update_DTO_RTO, name='update_DTO_RTO'),
+    ## INUSE by StateAdmin
     path('DTO_RTO/filter_DTO_RTO/', filter_DTO_RTO, name='filter_DTO_RTO'),
     path('DTO_RTO/getDistrictList/', getDistrictList, name='getDistrictList'),
     path('DTO_RTO/transfer_DTO_RTO/', transfer_DTO_RTO, name='transfer_DTO_RTO'),
@@ -255,23 +287,33 @@ urlpatterns = [
     path('SOSAdmin/create_SOSAdmin/', create_SOS_admin, name='create_SOSAdmin'),
     path('SOSAdmin/filter_SOSAdmin/', filter_SOS_admin, name='filter_SOSAdmin'),
       
+    ## INUSE by SOSAdmin
     path('SOSuser/create_SOSuser/', create_SOS_user, name='create_SOSuser'),
+    ## INUSE by SOSAdmin
     path('SOSuser/filter_SOSuser/', filter_SOS_user, name='filter_SOSuser'),
 
 
     path('homepageandstat/homepage_DTO/', homepage_DTO, name='homepage_DTO'),
+    ## INUSE by Manufacturer
     path('homepageandstat/homepage_Manufacturer/', homepage_Manufacturer, name='homepage_Manufacturer'),
     path('homepageandstat/homepage_DTO/', homepage_DTO, name='homepage_DTO'),
+    ## INUSE by Owner
     path('homepageandstat/homepage_VehicleOwner/', homepage_VehicleOwner, name='homepage_VehicleOwner'),
+    ## INUSE by Dealer
     path('homepageandstat/homepage_Dealer/', homepage_Dealer, name='homepage_Dealer'),
+    ## INUSE by StateAdmin
     path('homepageandstat/homepage_stateAdmin/', homepage_stateAdmin, name='homepage_stateAdmin'),
+    ## INUSE by M2MProvider
     path('homepageandstat/homepage_esimProvider/', homepage_esimProvider, name='homepage_esimProvider'),
     
     path('homepageandstat/homepage/', homepage, name='homepage'),
+    ## INUSE by SOSAdmin
     path('SOS/SOS_Admin_report/', SOS_adminreport2, name='SOS_adminreport'),
     path('SOS/SOS_Admin_report2/', SOS_adminreport, name='SOS_adminreport'),
     path('SOS/SOS_TL_report/', SOS_TLreport, name='SOS_TLreport'),
+    ## INUSE by SOSExecutive
     path('SOS/SOS_EX_report/', SOS_EXreport, name='SOS_EXreport'),
+    ## INUSE by SOSAdmin
     path('SOS/report/', SOS_detailed_report, name='SOS_detailed_report'),
     
     path('SOS/SOS_TL_report2/', SOS_TLreport2, name='SOS_TLreport'),
@@ -290,16 +332,24 @@ urlpatterns = [
 
 
 
+    ## INUSE by SOSAdmin
     path('EM/create_EMteam/', create_EM_team, name='create_EMteam'),
+    ## INUSE by SOSAdmin
     path('EM/activate_EMteam/', activate_EM_team, name='activate_EM_team'),
+    ## INUSE by SOSAdmin
     path('EM/remove_EMteam/', remove_EM_team, name='remove_EM_team'),
+    ## INUSE by SOSAdmin
     path('EM/edit_EMteam/', edit_EM_team, name='edit_EM_team'),
+    ## INUSE by SOSAdmin
     path('EM/get_EMteam/', get_EM_team, name='get_EM_team'),
+    ## INUSE by SOSAdmin
     path('EM/list_EMteam/', list_EM_team, name='list_EM_team'),
     
     # Activated Device List
+    ## INUSE by StateAdmin
     path('device/activated_device_list/', activated_device_list, name='activated_device_list'),
 
+    ## INUSE by SOSAdmin, SOSExecutive
     path('EM/DEx/getPendingCallList/', DEx_getPendingCallList, name='DEx_getPendingCallList'),
     
     path('EM/DEx/getCallList/', DEx_getCallList, name='DEx_getCallList'),
@@ -310,18 +360,24 @@ urlpatterns = [
     path('EM/DExTL/getPendingCallList/', DEx_getPendingCallListTL, name='DEx_getPendingCallList'),
     
     
+    ## INUSE by SOSAdmin, SOSExecutive
     path('EM/DEx/replyCall/', DEx_replyCall, name='DEx_replyCall'),
 
+    ## INUSE by SOSAdmin, SOSExecutive
     path('EM/DEx/broadcast/', DEx_broadcast, name='DEx_broadcast'),
     path('checklive/', CheckLive, name='DEx_broadcast'),
     
 
     path('EM/DEx/listBroadcast/', DEx_broadcastlist, name='DEx_broadcastlist'),
+    ## INUSE by SOSAdmin, SOSExecutive
     path('EM/DEx/closeCase/', DEx_closeCase, name='DEx_closeCase'),
     #path('EM/DEx/closeCase/', DEx_closeCase, name='DEx_closeCase'),
+    ## INUSE by SOSAdmin, SOSExecutive
     path('EM/DEx/sendMsg/', DEx_sendMsg, name='DEx_sendMsg'),
+    ## INUSE by SOSAdmin, SOSExecutive
     path('EM/DEx/rcvMsg/', DEx_rcvMsg, name='DEx_rcvMsg'),
     path('EM/DEx/commentFE/', DEx_commentFE, name='DEx_commentFE'),
+    ## INUSE by SOSAdmin, SOSExecutive
     path('EM/DEx/getCallAllLoc/', DEx_getloc, name='DEx_getCallAllLoc'),
     path('EM/DEx/get-media/', DEx_getMedia, name='get_media'),
    
@@ -354,6 +410,7 @@ urlpatterns = [
 
 
     
+    ## INUSE by StateAdmin
     path('gps-data-log-table/', gps_data_log_table, name='gps_data_log_table'),
     path('gps-em-data-log-table/', gps_em_data_log_table, name='gps_em_data_log_table'),
     path('gps-packet-health-summary/', gps_packet_health_summary, name='gps_packet_health_summary'),
@@ -374,20 +431,27 @@ urlpatterns = [
     path('central_api/', global_counts_summary, name='global_counts_summary'),
     path('gps_history_map_data/',gps_history_map_data , name='gps_history_map_data'),
     
+    ## INUSE by Owner, StateAdmin
     path('get_live_vehicle_no/',get_live_vehicle_no , name='get_live_vehicle_no'),#
       
     path('pub/gps_track_data_api/',gps_track_data_api_pub, name='gps_track_data_api_pub'),
     path('pub/gps_by_imei/', gps_by_imei, name='gps_by_imei'),  # public: latest GPS by IMEI
     path('pub/vahan_by_imei/', vahan_by_imei, name='vahan_by_imei'),      # public: Parivahan lookup by IMEI
     path('pub/vahan_by_regno/', vahan_by_regno, name='vahan_by_regno'),  # public: Parivahan lookup by regno+chassis
+    ## INUSE by Manufacturer, Owner, StateAdmin, SOSAdmin
     path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),  # live tracking api
     path('gps_track_lite/', gps_track_lite_api, name='gps_track_lite_api'),             # lightweight tracking api
     path('gps_track_lite_options/', gps_track_lite_options_api, name='gps_track_lite_options_api'),  # available filter values
     path('gps_cluster/', gps_cluster_api, name='gps_cluster_api'),             # cluster summary api
     path('gps_grid_cluster/', gps_grid_cluster_api, name='gps_grid_cluster_api'),  # grid-based cluster api
+    ## INUSE by Owner, StateAdmin
     path('saveRoute/',saveRoute, name='saveRout'), 
+    ## INUSE by Owner, StateAdmin
     path('delRoute/',delRoute, name='delRout'), 
+    ## INUSE by Owner, StateAdmin
     path('getRoute/',getRoute, name='getRout'), 
+    ## INUSE by Manufacturer, Owner, StateAdmin
+    ## PUBLIC
     path('get_routePath/',get_routePath, name='get_routePath'), 
     path('temp_user_login/',temp_user_login, name='temp_user_login'),
     path('temp_user_resendOTP/',temp_user_resendOTP, name='temp_user_resendOTP'),
@@ -425,6 +489,7 @@ urlpatterns = [
 
 
     #esimActivateReq
+    ## INUSE by Dealer
     path('esimActivateReq/create/', create_esim_activation_request, name='esimActivateReq-create'),
     path('esimActivateReq/filter/', filter_esim_activation_request, name='esimActivateReq-filter'),
     path('esimActivateReq/update/', update_esim_activation_request, name='esimActivateReq-update'),
@@ -432,18 +497,24 @@ urlpatterns = [
 
 
     #device model
+    ## INUSE by Manufacturer
     path('devicemodel/devicemodelCreate/', create_device_model, name='devicemodel-create'),
     path('devicemodel/devicemodelList/', list_devicemodel, name='devicemodel-list'),
     path('devicemodel/devicemodleVerifyStateAdminOtp/', DeviceVerifyStateAdminOtp, name='device_verify_state_admin_otp'),
     path('devicemodel/devicemodelSendStateAdminOtp/', DeviceSendStateAdminOtp, name='device_send_state_admin_otp'),
     path('devicemodel/devicemodelAwaitingStateApproval/', DeviceModelAwaitingStateApproval, name='device_model_awaiting_state_approval'),
+    ## INUSE by Manufacturer
     path('devicemodel/devicemodelManufacturerOtpVerify/', DeviceCreateManufacturerOtpVerify, name='device_create_manufacturer_otp_verify'),
+    ## INUSE by Manufacturer
     path('devicemodel/COPUpload/', COPCreate, name='COPCreate'),
     path('devicemodel/COPAwaitingStateApproval/', COPAwaitingStateApproval, name='COPAwaitingStateApproval'),
     path('devicemodel/COPSendStateAdminOtp/', COPSendStateAdminOtp, name='COPSendStateAdminOtp'),
     path('devicemodel/COPVerifyStateAdminOtp/', COPVerifyStateAdminOtp, name='COPVerifyStateAdminOtp'),
+    ## INUSE by Manufacturer
     path('devicemodel/COPManufacturerOtpVerify/', COPManufacturerOtpVerify, name='COPManufacturerOtpVerify'),
+    ## INUSE by Manufacturer
     path('devicemodel/devicemodelFilter/', filter_devicemodel, name='devicemodel-filter'),
+    ## INUSE by Manufacturer
     path('devicemodel/devicemodelDetails/', details_devicemodel, name='devicemodel-detail'),
 
     # device model technical onboarding request
@@ -538,18 +609,29 @@ urlpatterns = [
 
     #devicestock
     
+    ## INUSE by Manufacturer, Dealer, M2MProvider
     path('devicestock/esim_provider_list/', esim_provider_list, name='esim_provider_list'),
+    ## INUSE by Manufacturer
     path('devicestock/deviceStockCreate/', deviceStockCreate, name='deviceStockCreate'),
+    ## INUSE by Manufacturer
+    ## PUBLIC
     path('devicestock/deviceStockBulkSample/', download_static_file, name='download_static_file'),
+    ## INUSE by Manufacturer
     path('devicestock/deviceStockCreateBulk/', deviceStockCreateBulk, name='deviceStockCreateBulk'),
+    ## INUSE by Manufacturer, Dealer, StateAdmin
     path('devicestock/deviceStockFilter/', deviceStockFilter, name='deviceStockFilter'),
+    ## INUSE by Manufacturer
     path('devicestock/deviceStockUntaggedFilter/', deviceStockUntaggedFilter, name='deviceStockUntaggedFilter'),
+    ## INUSE by Manufacturer
     path('devicestock/deviceStockSoftDelete/', deviceStockSoftDelete, name='deviceStockSoftDelete'),
+    ## INUSE by Manufacturer
     path('devicestock/StockAssignToDealer/', StockAssignToDealer, name='StockAssignToDealer'),
+    ## INUSE by Manufacturer
     path('devicestock/combined/', combined_device_stock, name='combined_device_stock'),
     
     #sell
     ## path('sell/SellFitDevice/', SellFitDevice, name='SellFitDevice'),
+    ## INUSE by Dealer
     path('sell/SellListAvailableDeviceStock/', SellListAvailableDeviceStock, name='SellListAvailableDeviceStock'),
     #path('sell/activate_esim_request/', ActivateESIMRequest, name='activate_esim_request'),
     ##path('sell/confirm_esim_activation/', ConfirmESIMActivation, name='confirm_esim_activation'),
@@ -560,6 +642,7 @@ urlpatterns = [
     path('sell/return_to_manufacturer/', ReturnToDeviceManufacturer, name='return_to_manufacturer'),
     
     # Dealer eSIM status check
+    ## INUSE by Dealer
     path('dealer/check_esim_status/', dealer_check_esim_status, name='dealer_check_esim_status'),
     
     #Devicetag
@@ -569,7 +652,9 @@ urlpatterns = [
     path('validate_ble/', validate_ble, name='validate_ble'),
     
     
+    ## INUSE by Dealer
     path('tag/untag/', unTagDevice2Vehicle, name='unTagDevice2Vehicle'),
+    ## INUSE by Dealer
     path('tag/retag/', reTagDevice2Vehicle, name='reTagDevice2Vehicle'),
     path('tag/TagAwaitingOwnerApproval/', TagAwaitingOwnerApproval, name='TagAwaitingOwnerApproval'),
     path('tag/TagSendOwnerOtp/', TagSendOwnerOtp, name='TagSendOwnerOtp'),
@@ -598,10 +683,12 @@ urlpatterns = [
     path('tag/upload_receiptPDF/', upload_receiptPDF, name='upload_receiptPDF'),
     
     path('tag/tag_status/', Tag_status, name='tag_status'),
+    ## INUSE by Owner, StateAdmin
     path('tag/tag_ownerlist/', Tag_ownerlist, name='tag_ownerlist'),
     path('tag/StateAdmin_view_all_tagging/', StateAdmin_view_all_tagging, name='StateAdmin_view_all_tagging'),
    
 
+    ## INUSE by Manufacturer, StateAdmin, SOSAdmin
     path('download/', downloadfile, name='download'),
     path('sms/rcv', sms_received, name='sms_received'),
     path('sms/send', sms_send, name='sms_send'),
@@ -620,10 +707,14 @@ urlpatterns = [
     path('debug/check_file_paths/', check_file_paths, name='check_file_paths'),
     
     # State Admin Reports APIs
+    ## INUSE by StateAdmin
     path('stateadmin/reports/approved-models/', state_admin_approved_models_report, name='state_admin_approved_models_report'),
+    ## INUSE by StateAdmin
     path('stateadmin/reports/approved-cops/', state_admin_approved_cops_report, name='state_admin_approved_cops_report'),
     path('stateadmin/reports/combined-approval/', state_admin_combined_approval_report, name='state_admin_combined_approval_report'),
+    ## INUSE by Owner
     path('device-trip-details/', get_device_trip_details, name='get_device_trip_details'),
+    ## INUSE by Owner, StateAdmin
     path('device-health-status/', get_device_health_status, name='get_device_health_status'),
     
     # MQTT Authentication endpoints
@@ -679,12 +770,14 @@ urlpatterns = [
 
     # Incident Register APIs
     path('incident/register/', register_incident, name='register_incident'),
+    ## INUSE by Manufacturer, StateAdmin, SOSAdmin, SOSExecutive
     path('incident/filter/', filter_incident, name='filter_incident'),
     path('incident/update/', update_incident, name='update_incident'),
     
     # AlertsLog APIs
     path('alertlog/create/', create_alert_log, name='create_alert_log'),
     path('alertlog/update/', update_alert_log, name='update_alert_log'),
+    ## INUSE by Manufacturer, Owner, StateAdmin
     path('alertlog/filter/', filter_alert_log, name='filter_alert_log'),
     
     # Notification Preferences API
@@ -712,22 +805,30 @@ urlpatterns = [
     path('login-settings/set/', set_login_settings, name='set_login_settings'),
     path('login-settings/get/', get_login_settings, name='get_login_settings'),
 
+    ## INUSE by StateAdmin
     path('update_vehicle_owner_expiry/', update_vehicle_owner_expiry, name='update_vehicle_owner_expiry'),
     
     # Central Dashboard APIs for Vehicle Monitoring
+    ## INUSE by StateAdmin, SOSAdmin
     path('dashboard/vehicle-monitoring/', vehicle_monitoring_dashboard, name='vehicle_monitoring_dashboard'),
     path('dashboard/filter-options/', get_dashboard_filter_options, name='get_dashboard_filter_options'),
+    ## INUSE by StateAdmin, SOSAdmin
     path('dashboard/areawise-device-count/', get_areawise_device_tag_count, name='get_areawise_device_tag_count'),
     path('dashboard/vehicle-locations/', get_latest_vehicle_locations, name='get_latest_vehicle_locations'),
     
+    ## INUSE by StateAdmin, SOSAdmin
     path('dashboard_SOS/areawise-device-count/', get_areawise_device_tag_count, name='get_areawise_device_tag_count'),
     path('dashboard_SOS/vehicle-locations/', get_latest_vehicle_locations, name='get_latest_vehicle_locations'),
     
+    ## INUSE by StateAdmin, SOSAdmin
     path('dashboard_ERSS/areawise-device-count/', get_areawise_device_tag_count, name='get_areawise_device_tag_count'),
     path('dashboard_ERSS/vehicle-locations/', get_latest_vehicle_locations, name='get_latest_vehicle_locations'),
     
+    ## INUSE by StateAdmin, SOSAdmin
     path('dashboard/erss-summary/', erss_dashboard_summary, name='erss_dashboard_summary'),
+    ## INUSE by StateAdmin, SOSAdmin
     path('dashboard/sos-analysis/', sos_analysis_dashboard, name='sos_analysis_dashboard'),
+    ## INUSE by StateAdmin, SOSAdmin
     path('dashboard/sos-monitoring/', sos_monitoring_dashboard, name='sos_monitoring_dashboard'),
 
     # IMEI Comparison Tool (public)
@@ -744,38 +845,58 @@ urlpatterns = [
     ),
 
     # Complaint Management
+    ## INUSE by Manufacturer, SOSAdmin
+    ## PUBLIC
     path('complaint/create/', create_ticket, name='complaint_create'),
+    ## INUSE by Manufacturer, SOSAdmin
     path('complaint/list/', list_tickets, name='complaint_list'),
+    ## INUSE by SOSAdmin
     path('complaint/device-imei/', device_imei_lookup, name='complaint_device_imei_lookup'),
     path('complaint/track/<str:ticket_ref>/', public_track_ticket, name='complaint_public_track'),
+    ## INUSE by Manufacturer, SOSAdmin
     path('complaint/<int:pk>/', ticket_detail, name='complaint_detail'),
+    ## INUSE by SOSAdmin
     path('complaint/<int:pk>/update-status/', update_ticket_status, name='complaint_update_status'),
     path('complaint/<int:pk>/escalate/', escalate_ticket, name='complaint_escalate'),
+    ## INUSE by SOSAdmin
     path('complaint/<int:pk>/final-report/', submit_final_report, name='complaint_final_report'),
+    ## INUSE by SOSAdmin
     path('complaint/<int:pk>/comment/', add_comment, name='complaint_add_comment'),
+    ## INUSE by Manufacturer, SOSAdmin
     path('complaint/<int:pk>/activity/', ticket_activity_log, name='complaint_activity_log'),
 
     # Whitelist Request Management
+    ## INUSE by Manufacturer, Dealer, M2MProvider
     path('whitelist/request/create/', create_whitelist_request, name='whitelist_request_create'),
+    ## INUSE by Manufacturer, Dealer, M2MProvider
     path('whitelist/request/list/', list_whitelist_requests, name='whitelist_request_list'),
     path('whitelist/request/esim/all/', esim_list_whitelist_requests, name='whitelist_esim_list'),
+    ## INUSE by Manufacturer, Dealer, M2MProvider
     path('whitelist/request/<int:pk>/approve/', approve_whitelist_request, name='whitelist_request_approve'),
+    ## INUSE by Manufacturer, Dealer, M2MProvider
     path('whitelist/request/<int:pk>/deny/', deny_whitelist_request, name='whitelist_request_deny'),
+    ## INUSE by Manufacturer, Dealer, StateAdmin, M2MProvider
     path('whitelist/active/list/', list_active_whitelist, name='whitelist_active_list'),
 
     # Device Dashboard, KYC, and Detail
+    ## INUSE by Manufacturer, Dealer, StateAdmin, M2MProvider
     path('whitelist/device/dashboard/', device_dashboard, name='whitelist_device_dashboard'),
+    ## INUSE by Manufacturer, Dealer, StateAdmin
     path('whitelist/device/<int:pk>/detail/', device_detail, name='whitelist_device_detail'),
     path('whitelist/device/<int:pk>/kyc/update/', update_device_kyc, name='whitelist_device_kyc_update'),
 
     # Activation command reply (public – called by SMS gateway)
     path('device/activation-reply/', receive_activation_command_reply, name='device_activation_reply'),
+    ## INUSE by Dealer
     path('device/send-activation-command/', send_activation_command, name='send_activation_command'),
+    ## INUSE by Dealer
     path('device/activation-status/', get_activation_status, name='get_activation_status'),
+    ## INUSE by Dealer
     path('device/pending-activations/', list_pending_activations, name='list_pending_activations'),
 
     # Alert Statistics Dashboard
     path('alert-stats/types/', alert_stats_type_options, name='alert_stats_type_options'),
+    ## INUSE by StateAdmin
     path('alert-stats/summary/', alert_stats_summary, name='alert_stats_summary'),
     path('alert-stats/dashboard/', alert_stats_dashboard, name='alert_stats_dashboard'),
 
@@ -791,7 +912,10 @@ urlpatterns = [
     path('server-health/dashboard/', server_health_dashboard, name='server_health_dashboard'),
 
     # Device Data Health: last packet per category, validated against a protocol format
+    ## INUSE by Manufacturer, Dealer, StateAdmin
+    ## PUBLIC
     path('device-data-health/formats/', device_data_health_format_options, name='device_data_health_format_options'),
+    ## INUSE by Manufacturer, Dealer, StateAdmin
     path('device-data-health/lookup/', device_data_health_lookup, name='device_data_health_lookup'),
     path('device-data-health/dashboard/', device_data_health_dashboard, name='device_data_health_dashboard'),
     path('vehicle-obd-status/lookup/', vehicle_obd_status_lookup, name='vehicle_obd_status_lookup'),
@@ -1057,23 +1181,34 @@ urlpatterns += [
     # =====================================================
 
     # Bus Stops
+    ## INUSE by PIS
     path('pis/bus-stops/', PISBusStopListCreateAPIView.as_view(), name='pis-bus-stop-list-create'),
+    ## INUSE by PIS
     path('pis/bus-stops/<int:pk>/', PISBusStopDetailAPIView.as_view(), name='pis-bus-stop-detail'),
+    ## INUSE by PIS
     path('pis/bus-stops/<int:pk>/update/', PISBusStopUpdateAPIView.as_view(), name='pis-bus-stop-update'),
+    ## INUSE by PIS
     path('pis/bus-stops/<int:pk>/toggle/', PISBusStopToggleAPIView.as_view(), name='pis-bus-stop-toggle'),
 
     # Bus Routes
+    ## INUSE by PIS, Analytics
     path('pis/routes/', PISBusRouteListCreateAPIView.as_view(), name='pis-route-list-create'),
+    ## INUSE by PIS
     path('pis/routes/<int:pk>/', PISBusRouteDetailAPIView.as_view(), name='pis-route-detail'),
+    ## INUSE by PIS
     path('pis/routes/<int:pk>/update/', PISBusRouteUpdateAPIView.as_view(), name='pis-route-update'),
+    ## INUSE by PIS
     path('pis/routes/<int:pk>/toggle/', PISBusRouteToggleAPIView.as_view(), name='pis-route-toggle'),
 
     # Bus Schedules
+    ## INUSE by PIS
     path('pis/schedules/', PISBusScheduleListCreateAPIView.as_view(), name='pis-schedule-list-create'),
     path('pis/schedules/<int:pk>/', PISBusScheduleDetailAPIView.as_view(), name='pis-schedule-detail'),
+    ## INUSE by PIS
     path('pis/schedules/<int:pk>/update-status/', PISBusScheduleUpdateStatusAPIView.as_view(), name='pis-schedule-update-status'),
 
     # Available buses dropdown
+    ## INUSE by PIS
     path('pis/available-buses/', PISAvailableBusListAPIView.as_view(), name='pis-available-buses'),
     
     path("admin/reports/unplanned-movement/", SchoolBusUnplannedMovementAPIView.as_view(), name="unplanned-movement-report"),
@@ -1093,6 +1228,7 @@ urlpatterns += [
     # ------------------------------------------------------------------
     # API 1 — School Bus Module: all routes (across all schools)
     # ------------------------------------------------------------------
+    ## INUSE by Manufacturer, StateAdmin
     path('map/school-bus/routes/',MapSchoolBusRoutesAPIView.as_view(),name='map-school-bus-routes',),
  
     # ------------------------------------------------------------------
@@ -1119,21 +1255,29 @@ urlpatterns += [
     #  4.1 State Transport Analytics Platform 
     # ----------------------------------------------------------------
     
+    ## INUSE by Analytics
     path('analytics/trips/', TripAnalyticsAPIView.as_view(), name='analytics-trips'),
     
+    ## INUSE by Analytics
     path('analytics/driving-pattern-alerts/', DrivingPatternAlertsAPIView.as_view(),name='analytics-driving-pattern-alerts',),
     
+    ## INUSE by Analytics
     path('analytics/vehicle-alert-summary/',VehicleAlertSummaryAPIView.as_view(),name='analytics-vehicle-alert-summary',),
     
+    ## INUSE by Analytics
     path('analytics/pis-summary/',PISAnalyticsSummaryAPIView.as_view(),name='analytics-pis-summary',),
     
+    ## INUSE by Analytics
     path('analytics/resource-performance/', ResourcePerformanceAPIView.as_view(), name='analytics-resource-performance'),
     
+    ## INUSE by Analytics
     path('analytics/operational/', OperationalAnalyticsAPIView.as_view(), name='analytics-operational'),
     
+    ## INUSE by Analytics
     path('analytics/comparative-analysis/',ComparativeAnalysisAPIView.as_view(),name='analytics-comparative-analysis',),
     
     
+    ## INUSE by Owner, StateAdmin
     path("analytics/alert-heatmap/",AlertHeatmapAPIView.as_view(),name="alert-heatmap",),
     
     
@@ -1147,6 +1291,7 @@ urlpatterns += [
 
     # path("favorites/bulk-delete/",FavoriteBulkDeleteAPIView.as_view(),name="favorite-bulk-delete",),
     
+    ## INUSE by Manufacturer, Dealer, StateAdmin, M2MProvider, SOSAdmin, SOSExecutive
     path('admin/users/login-report/', UserLoginReportAPIView.as_view(), name='user-login-report'),
     
     
@@ -1172,26 +1317,38 @@ urlpatterns += [
     
     path('pis/public/buses/live-location/', PISPublicBusLiveLocationByRegNoAPIView.as_view(), name='pis-public-bus-live-location'),
     
+    ## INUSE by M2MProvider
     path('esim-provider/m2m-config/', m2m_config_create_update, name='m2m_config_create_update'),
     path('esim-provider/m2m-config/test/', m2m_config_test, name='m2m_config_test'),
     
     
+    ## INUSE by Dealer
     path('device-tagging/step1/', device_tagging_step1_create, name='device-tagging-step1'),
+    ## INUSE by Dealer
     path('device-tagging/step2/', device_tagging_step2_esim,   name='device-tagging-step2'),
     
+    ## INUSE by Dealer
     path('device-tagging/step3/resend-otp/', device_tagging_step3_resend_otp, name='device-tagging-step3-resend'),
+    ## INUSE by Dealer
     path('device-tagging/step3/verify-otp/', device_tagging_step3_verify_otp, name='device-tagging-step3-verify'),
     
+    ## INUSE by Dealer
     path('device-tagging/step4/', device_tagging_step4_packet_check, name='device-tagging-step4'),
     
+    ## INUSE by Dealer
     path('device-tagging/step5/send-otp/',   device_tagging_step5_send_owner_otp,   name='device-tagging-step5-send'),
+    ## INUSE by Dealer
     path('device-tagging/step5/verify-otp/', device_tagging_step5_verify_owner_otp, name='device-tagging-step5-verify'),
     
     
+    ## INUSE by Dealer
     path('device-tagging/my-entries/',      device_tagging_my_entries,      name='device-tagging-my-entries'),
+    ## INUSE by Dealer
     path('device-tagging/my-manufacturer/', device_tagging_my_manufacturer, name='device-tagging-my-manufacturer'),
     
+    ## INUSE by Dealer
     path('device-tagging/certificate/',      device_tagging_certificate,      name='device-tagging-certificate'),
+    ## INUSE by Dealer
     path('device-tagging/certificate-list/', device_tagging_certificate_list, name='device-tagging-certificate-list'),
        
     # device model IP / whitelist configuration
@@ -1200,10 +1357,14 @@ urlpatterns += [
     
     path('sms-gateway/health/', sms_gateway_health_status, name='sms-gateway-health'),
     
+    ## INUSE by M2MProvider
     path('esim-provider/ip-range/add/',  esim_provider_ip_range_add,  name='esim-provider-ip-range-add'),
+    ## INUSE by M2MProvider
     path('esim-provider/ip-range/list/', esim_provider_ip_range_list, name='esim-provider-ip-range-list'),
     
+    ## INUSE by M2MProvider
     path('esim-provider/ip-range/update/', esim_provider_ip_range_update, name='esim-provider-ip-range-update'),
+    ## INUSE by M2MProvider
     path('esim-provider/ip-range/delete/', esim_provider_ip_range_delete, name='esim-provider-ip-range-delete'),
     
     path('m2m/ip-scan/', m2m_provider_ip_scan, name='m2m-ip-scan'),

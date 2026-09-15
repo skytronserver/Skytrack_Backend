@@ -966,6 +966,11 @@ class DeviceModel(models.Model):
     device_ip_range = models.CharField(max_length=500, null=True, blank=True)
     threshold = models.PositiveIntegerField(default=0)
 
+    # Telecom service provider combinations this model supports,
+    # least 2 providers. The dealer picks one during tagging, and step 2
+    # checks the M2M API's primary/fallback TSP against it.
+    provider_combinations = models.JSONField(default=list, blank=True)
+
     class Meta:
         # Composite index for common filtering combinations
         indexes = [
@@ -5189,6 +5194,10 @@ class DeviceStockMaster(models.Model):
     esim_provider = models.ForeignKey(
         'eSimProvider', on_delete=models.CASCADE, related_name='stock_master_entries'
     )
+    # Which of the device model's provider combinations the dealer picked
+    # at step 1, e.g. ["AIRTEL", "BSNL"]. Step 2 checks the M2M API's
+    # primary and fallback TSP against this list.
+    provider_combination = models.JSONField(default=list, blank=True)
     # Owner phone number itself is NOT stored — only the resolved owner.
     vehicle_owner = models.ForeignKey(
         'VehicleOwner', on_delete=models.CASCADE, related_name='stock_master_entries'
