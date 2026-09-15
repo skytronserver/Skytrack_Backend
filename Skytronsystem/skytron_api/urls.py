@@ -1350,7 +1350,12 @@ urlpatterns += [
     path('device-tagging/certificate/',      device_tagging_certificate,      name='device-tagging-certificate'),
     ## INUSE by Dealer
     path('device-tagging/certificate-list/', device_tagging_certificate_list, name='device-tagging-certificate-list'),
-       
+
+    ## Device eSIM Renewal — INUSE by Dealer, Manufacturer, Superadmin
+    path('device-renewal/eligible/', device_renewal_eligible_list, name='device-renewal-eligible'),
+    path('device-renewal/submit/',   device_renewal_submit,        name='device-renewal-submit'),
+    path('device-renewal/history/',  device_renewal_history_list,  name='device-renewal-history'),
+
     # device model IP / whitelist configuration
     path('devicemodel/ip-config/superadmin/list/',superadmin_device_model_ip_config_list,name='superadmin_device_model_ip_config_list'),
     path('devicemodel/ip-config/esim-provider/list/',esim_provider_device_model_ip_config_list,name='esim_provider_device_model_ip_config_list'),

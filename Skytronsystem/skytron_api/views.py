@@ -1,5 +1,6 @@
 
 import threading, os, ssl, json, time
+from types import SimpleNamespace
 import paho.mqtt.client as mqtt
 from rest_framework.pagination import PageNumberPagination
 from math import radians, sin, cos, sqrt, asin
@@ -42583,56 +42584,67 @@ def _run_pvt_prechecks(record):
 # SECTION 3
 # STEP 4 API
 # =====================================================================
- 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
-@transaction.atomic
-def device_tagging_step4_packet_check(request):
+
+def _scan_for_packets(queryset, types_for_table, reg_no):
+    remaining = dict(types_for_table)
+    found = {}
+    for raw_data, packet_time in queryset.iterator():
+        if not remaining:
+            break
+        matched_types = []
+        for packet_type, (_table, matcher, needs_reg_no) in remaining.items():
+            # Packet types that carry a registration number must match
+            # the vehicle's own number as well as the IMEI. This is
+            # what catches a device fitted without the correct plate
+            # configured — the device would transmit with the wrong
+            # or factory default registration, and must not pass this
+            # step.
+            #
+            # The health packet carries no registration number, so it
+            # is matched on IMEI alone.
+            if needs_reg_no and reg_no and reg_no not in raw_data:
+                continue
+            try:
+                if matcher(raw_data):
+                    found[packet_type] = (raw_data, packet_time)
+                    matched_types.append(packet_type)
+            except Exception:
+                # A malformed packet is simply not a match.
+                continue
+        for packet_type in matched_types:
+            remaining.pop(packet_type, None)
+    return found
+
+
+def _run_packet_check(imei, reg_no):
     """
-    POST /api/device-tagging/step4/
- 
-    Checks whether the fitted device is transmitting all required packet
-    types, and records the result.
- 
-    Re-runnable: the dealer will typically call this several times while
-    triggering alerts on the device. Each call re-checks live and
-    overwrites the stored result. The record only advances to step 5 once
-    every required packet has been seen inside the freshness window.
- 
+    Runs the PVT pre-checks plus the 9-packet scan for an arbitrary
+    imei/reg_no pair.
+
+    Shared by device_tagging_step4_packet_check (via a thin adapter around
+    its DeviceStockMaster record) and the device-renewal flow, which has
+    no DeviceStockMaster row to hang off.
+
     Query strategy: the GPS log tables have no IMEI column and no index on
     raw_data, so matching by IMEI alone would mean a full scan of tables
     holding tens of millions of rows. Restricting to the freshness window
     first bounds the work — which is why the threshold is not just a
     validation rule.
-    """
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
- 
-    record_id = request.data.get('id')
- 
-    # ── Common checks + must be sitting at step 4 ────────────────────
-    record, dealer, error = _get_tagging_record(request, record_id, expected_step=4)
-    if error:
-        return error
 
-    # ── PVT pre-checks — must pass before the 9-packet scan runs ─────
-    precheck_error, precheck_details = _run_pvt_prechecks(record)
+    Returns (precheck_error, precheck_details, results, all_received, missing, latitude, longitude).
+    precheck_error is None when the PVT pre-checks passed; results/all_received/
+    missing/latitude/longitude are None when the pre-checks failed (the scan
+    never ran).
+    """
+    precheck_record = SimpleNamespace(imei=imei, vahan_reg_no=reg_no)
+    precheck_error, precheck_details = _run_pvt_prechecks(precheck_record)
     if precheck_error:
-        logger.info(
-            "Tagging step 4 pre-check failed for record %s (imei %s): %s | %s",
-            record.id, record.imei, precheck_error, precheck_details,
-        )
-        return Response(
-            {"status": "failed", "error": precheck_error},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return precheck_error, precheck_details, None, False, None, None, None
+
     now = timezone.now()
     cutoff = now - timedelta(hours=GPS_PACKET_FRESHNESS_HOURS)
-    imei = record.imei
-    reg_no = (record.vahan_reg_no or '').strip()
- 
+    reg_no = (reg_no or '').strip()
+
     # ── Pull this device's recent packets — two queries, not eighteen ─
     # Scanned lazily, newest first, checking every packet type routed to
     # that table on each row and dropping a type out of the search the
@@ -42650,36 +42662,6 @@ def device_tagging_step4_packet_check(request):
         if TAGGING_PACKET_MATCHERS[pt][0] == 'gpsem'
     }
 
-    def _scan_for_packets(queryset, types_for_table):
-        remaining = dict(types_for_table)
-        found = {}
-        for raw_data, packet_time in queryset.iterator():
-            if not remaining:
-                break
-            matched_types = []
-            for packet_type, (_table, matcher, needs_reg_no) in remaining.items():
-                # Packet types that carry a registration number must match
-                # the vehicle's own number as well as the IMEI. This is
-                # what catches a device fitted without the correct plate
-                # configured — the device would transmit with the wrong
-                # or factory default registration, and must not pass this
-                # step.
-                #
-                # The health packet carries no registration number, so it
-                # is matched on IMEI alone.
-                if needs_reg_no and reg_no and reg_no not in raw_data:
-                    continue
-                try:
-                    if matcher(raw_data):
-                        found[packet_type] = (raw_data, packet_time)
-                        matched_types.append(packet_type)
-                except Exception:
-                    # A malformed packet is simply not a match.
-                    continue
-            for packet_type in matched_types:
-                remaining.pop(packet_type, None)
-        return found
-
     gps_qs = (
         GPSDataLog.objects
         .filter(timestamp__gte=cutoff, raw_data__contains=imei)
@@ -42694,8 +42676,8 @@ def device_tagging_step4_packet_check(request):
     )
 
     found_by_type = {
-        **_scan_for_packets(gps_qs, gps_types),
-        **_scan_for_packets(gpsem_qs, gpsem_types),
+        **_scan_for_packets(gps_qs, gps_types, reg_no),
+        **_scan_for_packets(gpsem_qs, gpsem_types, reg_no),
     }
 
     # ── Build results in display order ────────────────────────────────
@@ -42720,16 +42702,61 @@ def device_tagging_step4_packet_check(request):
                 'timestamp': None,
                 'raw_data': None,
             }
- 
+
     # ── Latitude / longitude from the latest PVT packet ───────────────
     latitude, longitude = (None, None)
     if latest_pvt_raw:
         latitude, longitude = _extract_pvt_lat_lon(latest_pvt_raw)
- 
+
     # ── Did everything required arrive? ──────────────────────────────
     missing = [p for p in TAGGING_REQUIRED_PACKETS if not results[p]['received']]
     all_received = not missing
- 
+
+    return None, precheck_details, results, all_received, missing, latitude, longitude
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@transaction.atomic
+def device_tagging_step4_packet_check(request):
+    """
+    POST /api/device-tagging/step4/
+
+    Checks whether the fitted device is transmitting all required packet
+    types, and records the result.
+
+    Re-runnable: the dealer will typically call this several times while
+    triggering alerts on the device. Each call re-checks live and
+    overwrites the stored result. The record only advances to step 5 once
+    every required packet has been seen inside the freshness window.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    record_id = request.data.get('id')
+
+    # ── Common checks + must be sitting at step 4 ────────────────────
+    record, dealer, error = _get_tagging_record(request, record_id, expected_step=4)
+    if error:
+        return error
+
+    # ── PVT pre-checks + 9-packet scan ────────────────────────────────
+    precheck_error, precheck_details, results, all_received, missing, latitude, longitude = (
+        _run_packet_check(record.imei, record.vahan_reg_no)
+    )
+    if precheck_error:
+        logger.info(
+            "Tagging step 4 pre-check failed for record %s (imei %s): %s | %s",
+            record.id, record.imei, precheck_error, precheck_details,
+        )
+        return Response(
+            {"status": "failed", "error": precheck_error},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    now = timezone.now()
+
     # ── Store — every call overwrites, so the record always holds the
     #    most recent check ────────────────────────────────────────────
     record.packet_results = results
@@ -42738,19 +42765,19 @@ def device_tagging_step4_packet_check(request):
     record.packet_latitude = latitude
     record.packet_longitude = longitude
     record.updated_by = request.user
- 
+
     update_fields = [
         'packet_results', 'packets_all_received', 'packets_checked_at',
         'packet_latitude', 'packet_longitude', 'updated_by', 'updated_at',
     ]
- 
+
     if all_received:
         record.step4_completed_at = now
         record.current_step = 5
         update_fields += ['step4_completed_at', 'current_step']
- 
+
     record.save(update_fields=update_fields)
- 
+
     return Response({
         "status": "success" if all_received else "pending",
         "message": (
@@ -42772,8 +42799,505 @@ def device_tagging_step4_packet_check(request):
             "packets": results,
         }
     }, status=status.HTTP_200_OK)
- 
-  
+
+
+# =====================================================================
+# DEVICE eSIM VALIDITY RENEWAL / EXTENSION
+# =====================================================================
+# Devices tagged & activated by dealers under a manufacturer's device
+# model eventually need their eSIM validity extended. A dealer (for
+# devices they personally tagged) or a manufacturer (for devices under
+# their own device models) can request a renewal of 1 or 2 years once the
+# device has been active for at least RENEWAL_MIN_DAYS_SINCE_ACTIVATION
+# days. A successful renewal re-runs the full activation process — eSIM
+# re-validation via the M2M provider, the same PVT/packet checks used in
+# tagging step 4, a Vahan validity push, and a fresh certificate.
+
+RENEWAL_ELIGIBILITY_WINDOW_DAYS = 60          # "next 2 months"
+RENEWAL_MIN_DAYS_SINCE_ACTIVATION = 300
+RENEWAL_MIN_EXTENSION_YEARS = 1
+RENEWAL_LIST_PAGE_SIZE = 25
+RENEWAL_LIST_MAX_PAGE_SIZE = 100
+
+
+def _paginate_params(params, default_page_size=RENEWAL_LIST_PAGE_SIZE, max_page_size=RENEWAL_LIST_MAX_PAGE_SIZE):
+    try:
+        page = max(1, int(params.get('page') or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(params.get('page_size') or default_page_size)
+    except (TypeError, ValueError):
+        page_size = default_page_size
+    page_size = max(1, min(page_size, max_page_size))
+    return page, page_size
+
+
+def _pagination_meta(page, page_size, total_count):
+    total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+    return {
+        "page": page,
+        "page_size": page_size,
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_previous": page > 1,
+    }
+
+
+def _latest_active_device_tag(device):
+    """Latest non-deleted DeviceTag for a device — the activation record used for renewal."""
+    return (
+        DeviceTag.objects
+        .filter(device=device)
+        .exclude(status__in=['TagDeleted', 'untaged_after_failed_taging'])
+        .order_by('-tagged')
+        .first()
+    )
+
+
+def _push_vahan_validity(device, device_tag, new_expiry_dt):
+    """
+    Push the renewed eSIM validity to Vahan.
+
+    PLACEHOLDER: no Vahan "push"/"update" operation exists in this
+    codebase today — every existing Vahan integration
+    (GetVahanAPIInfo, vahan_by_imei, vahan_by_regno, call_vahan_api) only
+    reads/looks up a VLTD record. This stub records the attempt without
+    raising, so a renewal can still complete while the real integration
+    is confirmed with the Parivahan integration owner.
+
+    Returns (response_dict, error_message). Exactly one of response_dict's
+    "success" key reflects the outcome; error_message is set whenever the
+    push did not actually happen.
+    """
+    logger.info(
+        "Vahan push not implemented — skipping for device %s (imei %s), new validity %s",
+        device.id, device.imei, new_expiry_dt,
+    )
+    return (
+        {"note": "Vahan push integration not yet available.", "attempted": False},
+        "Vahan push integration is not yet available.",
+    )
+
+
+def _device_renewal_scope_or_error(user, base_qs, device_field_prefix=''):
+    """
+    Applies manufacturer/dealer/superadmin scoping to a queryset.
+
+    `device_field_prefix` is '' when the queryset's rows ARE DeviceStock
+    (API 1), or 'device__' when the queryset is DeviceRenewalRequest and
+    the FK path needs to be traversed (unused for API 3, which scopes on
+    its own denormalised dealer/manufacturer FKs instead — see
+    device_renewal_history_list).
+
+    Returns (queryset, error_response). error_response is None on success.
+    """
+    if user.role == 'superadmin':
+        return base_qs, None
+    elif user.role == 'devicemanufacture':
+        manufacturer = get_user_object(user, 'devicemanufacture')
+        if not manufacturer:
+            return None, Response(
+                {"status": "error", "message": "Manufacturer profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        return base_qs.filter(**{f'{device_field_prefix}model__created_by__in': manufacturer.users.all()}), None
+    elif user.role == 'dealer':
+        dealer = get_user_object(user, 'dealer')
+        if not dealer:
+            return None, Response(
+                {"status": "error", "message": "Dealer profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        return base_qs.filter(**{f'{device_field_prefix}dealer': dealer}), None
+    else:
+        return None, Response(
+            {"status": "error", "message": "Your role cannot access device renewal information."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('device_renewal_management', 'view')
+def device_renewal_eligible_list(request):
+    """
+    GET or POST /api/device-renewal/eligible/
+
+    Devices whose eSIM validity expires within RENEWAL_ELIGIBILITY_WINDOW_DAYS,
+    role-scoped:
+      - superadmin: all devices.
+      - manufacturer: only devices under their own device models.
+      - dealer: only devices assigned to them (DeviceStock.dealer).
+
+    Optional filters (query string on GET, body on POST):
+        search       partial match on imei/iccid
+        page         default 1
+        page_size    default 25, max 100
+    """
+    user = request.user
+    now = timezone.now()
+    horizon = now + timedelta(days=RENEWAL_ELIGIBILITY_WINDOW_DAYS)
+
+    base_qs = DeviceStock.objects.filter(
+        esim_validity__isnull=False,
+        esim_validity__gte=now,
+        esim_validity__lte=horizon,
+    ).exclude(stock_status__in=['Deleted', 'Device_Untagged'])
+
+    qs, error = _device_renewal_scope_or_error(user, base_qs)
+    if error:
+        return error
+
+    params = request.data if request.method == 'POST' else request.query_params
+
+    search = str(params.get('search') or '').strip()
+    if search:
+        qs = qs.filter(Q(imei__icontains=search) | Q(iccid__icontains=search))
+
+    qs = qs.select_related('model', 'model__created_by', 'dealer').order_by('esim_validity')
+
+    total_count = qs.count()
+    page, page_size = _paginate_params(params)
+    start = (page - 1) * page_size
+    devices = list(qs[start:start + page_size])
+
+    # Attach the latest DeviceTag per device without an N+1 — this list is
+    # small, bounded by the eligibility window.
+    device_ids = [d.id for d in devices]
+    tags_by_device = {}
+    for tag in DeviceTag.objects.filter(device_id__in=device_ids).exclude(
+        status__in=['TagDeleted', 'untaged_after_failed_taging']
+    ).order_by('device_id', '-tagged'):
+        tags_by_device.setdefault(tag.device_id, tag)
+    for d in devices:
+        d._latest_tag = tags_by_device.get(d.id)
+
+    serializer = DeviceRenewalEligibleDeviceSerializer(devices, many=True)
+    return Response({
+        "status": "success",
+        "data": serializer.data,
+        "pagination": _pagination_meta(page, page_size, total_count),
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('device_renewal_management', 'create')
+@transaction.atomic
+def device_renewal_submit(request):
+    """
+    POST /api/device-renewal/submit/
+    body: {device_id, requested_duration_years: 1|2}
+
+    Submits a renewal request for a device. Both dealer and manufacturer
+    can submit, scoped to their own devices. On success, re-runs the full
+    activation process: eSIM re-validation via the M2M provider, the PVT/
+    packet checks from tagging step 4, a Vahan validity push, and a fresh
+    certificate.
+    """
+    user = request.user
+
+    input_serializer = DeviceRenewalSubmitSerializer(data=request.data)
+    if not input_serializer.is_valid():
+        return Response(
+            {"status": "error", "message": "Invalid input.", "errors": input_serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    device_id = input_serializer.validated_data['device_id']
+    duration_years = input_serializer.validated_data['requested_duration_years']
+
+    device = DeviceStock.objects.filter(id=device_id).select_related(
+        'model', 'model__created_by', 'dealer'
+    ).first()
+    if not device:
+        return Response({"status": "error", "message": "Device not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # ── Scope: manufacturer/dealer may only renew their own devices ──────
+    dealer = manufacturer = None
+    if user.role == 'devicemanufacture':
+        manufacturer = get_user_object(user, 'devicemanufacture')
+        if not manufacturer or not device.model or device.model.created_by not in manufacturer.users.all():
+            return Response(
+                {"status": "error", "message": "You can only renew devices under your own device models."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+    elif user.role == 'dealer':
+        dealer = get_user_object(user, 'dealer')
+        if not dealer or device.dealer_id != dealer.id:
+            return Response(
+                {"status": "error", "message": "You can only renew devices you tagged yourself."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+    elif user.role != 'superadmin':
+        return Response(
+            {"status": "error", "message": "Your role cannot submit renewal requests."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    # ── Guard against a request already in flight for this device ───────
+    if DeviceRenewalRequest.objects.filter(device=device, status='pending').exists():
+        return Response(
+            {"status": "error", "message": "A renewal request is already in progress for this device."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    device_tag = _latest_active_device_tag(device)
+    if not device_tag:
+        return Response(
+            {"status": "error", "message": "Device has no active tagging record."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ── 300-day-since-activation check (client's explicit business rule) ─
+    days_since_activation = (timezone.now() - device_tag.tagged).days
+    if days_since_activation < RENEWAL_MIN_DAYS_SINCE_ACTIVATION:
+        return Response({
+            "status": "error",
+            "message": (
+                f"Device must be active for at least {RENEWAL_MIN_DAYS_SINCE_ACTIVATION} days "
+                f"before renewal can be requested. Currently {days_since_activation} days."
+            ),
+            "days_since_activation": days_since_activation,
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    renewal = DeviceRenewalRequest.objects.create(
+        device=device,
+        device_tag=device_tag,
+        requested_by=user,
+        requester_role=user.role,
+        dealer=dealer,
+        manufacturer=manufacturer,
+        requested_duration_years=duration_years,
+        old_esim_validity=device.esim_validity,
+        status='pending',
+    )
+
+    # ── M2M call — reuse the same provider/parse helpers as tagging step 2 ─
+    provider = device_tag.esim_provider or device.esim_provider.first()
+    if not provider:
+        renewal.status = 'failed'
+        renewal.rejection_reason = "No eSIM provider is associated with this device; cannot check M2M validity."
+        renewal.save()
+        return Response({"status": "error", "message": renewal.rejection_reason}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not provider.m2m_api_url or not provider.m2m_api_token:
+        renewal.status = 'failed'
+        renewal.rejection_reason = "This eSIM provider has not configured their M2M API."
+        renewal.save()
+        return Response({"status": "error", "message": renewal.rejection_reason}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        resp = requests.post(
+            provider.m2m_api_url,
+            json={"k1": provider.m2m_api_token, "k2": device.iccid},
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+    except Timeout:
+        renewal.status = 'failed'
+        renewal.rejection_reason = "eSIM provider API timed out. Please try again."
+        renewal.save()
+        return Response({"status": "error", "message": renewal.rejection_reason}, status=status.HTTP_400_BAD_REQUEST)
+    except RequestException as e:
+        logger.error(f"M2M API call failed for renewal request {renewal.id}: {e}")
+        renewal.status = 'failed'
+        renewal.rejection_reason = "Could not reach the eSIM provider API."
+        renewal.save()
+        return Response({"status": "error", "message": renewal.rejection_reason}, status=status.HTTP_400_BAD_REQUEST)
+
+    if resp.status_code in (401, 403):
+        renewal.status = 'failed'
+        renewal.rejection_reason = "eSIM provider API rejected our credentials."
+        renewal.save()
+        return Response({"status": "error", "message": renewal.rejection_reason}, status=status.HTTP_400_BAD_REQUEST)
+    if resp.status_code != 200:
+        renewal.status = 'failed'
+        renewal.rejection_reason = f"eSIM provider API returned HTTP {resp.status_code}."
+        renewal.save()
+        return Response({"status": "error", "message": renewal.rejection_reason}, status=status.HTTP_400_BAD_REQUEST)
+
+    body = _safe_json(resp)
+    if body is None:
+        renewal.status = 'failed'
+        renewal.rejection_reason = "eSIM provider API did not return valid JSON."
+        renewal.save()
+        return Response({"status": "error", "message": renewal.rejection_reason}, status=status.HTTP_400_BAD_REQUEST)
+
+    normalised, error_code, error_message = _normalise_m2m_result(body)
+    renewal.m2m_raw_response = body
+    renewal.m2m_checked_at = timezone.now()
+    if error_code:
+        renewal.status = 'failed'
+        renewal.rejection_reason = error_message
+        renewal.save()
+        return Response({"status": "error", "message": error_message}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── 1-year expiry validation (flat rule, regardless of requested duration) ─
+    new_expiry_date = normalised.get('validity_date')
+    if not new_expiry_date:
+        renewal.status = 'failed'
+        renewal.rejection_reason = "eSIM provider did not return an expiry date."
+        renewal.save()
+        return Response({"status": "error", "message": renewal.rejection_reason}, status=status.HTTP_400_BAD_REQUEST)
+
+    old_validity_date = device.esim_validity.date() if device.esim_validity else timezone.localdate()
+    min_required_expiry = _shift_years(old_validity_date, RENEWAL_MIN_EXTENSION_YEARS)
+    if new_expiry_date < min_required_expiry:
+        renewal.status = 'rejected'
+        renewal.rejection_reason = (
+            f"New eSIM expiry ({new_expiry_date}) is not at least {RENEWAL_MIN_EXTENSION_YEARS} "
+            f"year(s) later than the current validity ({old_validity_date})."
+        )
+        renewal.save()
+        return Response({
+            "status": "error",
+            "message": renewal.rejection_reason,
+            "new_expiry_date": new_expiry_date,
+            "minimum_required_expiry": min_required_expiry,
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    new_expiry_dt = timezone.make_aware(datetime.combine(new_expiry_date, datetime.min.time()))
+
+    # ── Packet re-check — reuse the same PVT prechecks + 9-packet scan as tagging step 4 ─
+    precheck_error, precheck_details, results, all_received, missing, latitude, longitude = (
+        _run_packet_check(device.imei, device_tag.vehicle_reg_no)
+    )
+    renewal.pvt_precheck_details = precheck_details
+    renewal.packet_results = results
+    renewal.packets_all_received = all_received
+    renewal.packets_checked_at = timezone.now()
+    if precheck_error or not all_received:
+        renewal.status = 'failed'
+        renewal.rejection_reason = precheck_error or f"Missing packets: {', '.join(missing)}"
+        renewal.save()
+        return Response({
+            "status": "error",
+            "message": renewal.rejection_reason,
+            "missing_packets": missing,
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── All checks passed — commit the new validity ──────────────────────
+    device.esim_validity = new_expiry_dt
+    device.save(update_fields=['esim_validity'])
+
+    # ── Vahan push (best-effort — does not fail the request; see gap note) ─
+    vahan_response, vahan_error = _push_vahan_validity(device, device_tag, new_expiry_dt)
+    renewal.vahan_push_status = 'failed' if vahan_error else 'success'
+    renewal.vahan_push_response = vahan_response
+    renewal.vahan_pushed_at = timezone.now()
+
+    # ── Certificate regeneration (best-effort — does not fail the request) ─
+    now = timezone.now()
+    relative_path = f"fileuploads/renewal_certs/{renewal.id}.pdf"
+    file_path = os.path.join(HOST_STORAGE_PATH, relative_path)
+    try:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        geneateCet(
+            file_path,
+            device.imei,
+            device.model.model_name if device.model else '',
+            device.model.model_name if device.model else '',
+            new_expiry_dt.strftime('%d/%m/%Y'),
+            device_tag.vehicle_reg_no,
+            device_tag.tagged.strftime('%d/%m/%Y'),
+            device_tag.tagged.strftime('%d/%m/%Y'),
+            device_tag.tagged.strftime('%d/%m/%Y'),
+            'Renewed',
+            now.strftime('%d/%m/%Y'),
+        )
+        renewal.certificate_file_path = relative_path
+        renewal.certificate_generated_at = now
+    except Exception:
+        logger.exception("Renewal certificate generation failed for request %s", renewal.id)
+
+    renewal.new_esim_validity = new_expiry_dt
+    renewal.status = 'success'
+    renewal.save()
+
+    return Response({
+        "status": "success",
+        "message": "Device renewed successfully.",
+        "data": DeviceRenewalRequestListSerializer(renewal).data,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('device_renewal_management', 'view')
+def device_renewal_history_list(request):
+    """
+    GET or POST /api/device-renewal/history/
+
+    Renewal request history, role-scoped:
+      - superadmin: all requests.
+      - manufacturer: only requests for devices under their own device models.
+      - dealer: only requests they themselves submitted (their own DeviceRenewalRequest.dealer).
+
+    Optional filters (query string on GET, body on POST):
+        status       filter by DeviceRenewalRequest.status
+        search       partial match on device imei/iccid
+        page         default 1
+        page_size    default 25, max 100
+    """
+    user = request.user
+    qs = DeviceRenewalRequest.objects.select_related(
+        'device', 'device_tag', 'requested_by', 'dealer', 'manufacturer'
+    )
+
+    if user.role == 'superadmin':
+        pass
+    elif user.role == 'devicemanufacture':
+        manufacturer = get_user_object(user, 'devicemanufacture')
+        if not manufacturer:
+            return Response(
+                {"status": "error", "message": "Manufacturer profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        qs = qs.filter(device__model__created_by__in=manufacturer.users.all())
+    elif user.role == 'dealer':
+        dealer = get_user_object(user, 'dealer')
+        if not dealer:
+            return Response(
+                {"status": "error", "message": "Dealer profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        qs = qs.filter(dealer=dealer)
+    else:
+        return Response(
+            {"status": "error", "message": "Your role cannot view renewal history."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    params = request.data if request.method == 'POST' else request.query_params
+
+    status_filter = str(params.get('status') or '').strip()
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+
+    search = str(params.get('search') or '').strip()
+    if search:
+        qs = qs.filter(Q(device__imei__icontains=search) | Q(device__iccid__icontains=search))
+
+    qs = qs.order_by('-created_at')
+
+    total_count = qs.count()
+    page, page_size = _paginate_params(params)
+    start = (page - 1) * page_size
+    page_entries = qs[start:start + page_size]
+
+    serializer = DeviceRenewalRequestListSerializer(page_entries, many=True)
+    return Response({
+        "status": "success",
+        "data": serializer.data,
+        "pagination": _pagination_meta(page, page_size, total_count),
+    }, status=status.HTTP_200_OK)
+
+
 def _get_owner_mobile(vehicle_owner):
     """Registered mobile of the vehicle owner's active user account."""
     owner_user = vehicle_owner.users.filter(status='active').first()

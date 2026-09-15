@@ -352,6 +352,11 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "StockAssignToDealer":        ["ds_assign"],
     "esim_provider_list":         ["ds_assign", "device_management"],
 
+    # Device eSIM Renewal
+    "device-renewal-eligible":    ["device_renewal_management"],
+    "device-renewal-submit":      ["device_renewal_management"],
+    "device-renewal-history":     ["device_renewal_management"],
+
     # Vehicle tagging
     "TagDevice2Vehicle":          ["dealer_tag_device", "vehicle_tagging"],
     "tag_status":                 ["dealer_tag_device", "vehicle_tagging"],
@@ -474,6 +479,7 @@ API_ACTION_OVERRIDE: dict[str, str] = {
     "create_testAgencyDetails":   "create",
     "create_device_model_technical_onboarding_request": "create",
     "esimActivateReq-create":     "create",
+    "device-renewal-submit":      "create",
     "deviceStockCreate":          "create",
     "deviceStockCreateBulk":      "create",
     "devicemodel-create":         "create",

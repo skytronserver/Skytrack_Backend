@@ -1891,6 +1891,77 @@ class esimActivationRequest(models.Model):
     def __str__(self):
         return f"esimActivationRequest {self.id}"
 
+class DeviceRenewalRequest(models.Model):
+    """
+    A dealer/manufacturer-initiated request to extend a device's eSIM
+    validity. One row per attempt — a re-submission after a rejection
+    creates a new row rather than mutating an existing one, so this table
+    stays a full audit trail of renewal history.
+    """
+    objects = SafeCreateManager()
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('success', 'Success'),
+        ('rejected', 'Rejected'),
+        ('failed', 'Failed'),
+    ]
+    DURATION_CHOICES = [(1, '1 Year'), (2, '2 Years')]
+    VAHAN_PUSH_STATUS_CHOICES = [
+        ('not_attempted', 'Not Attempted'),
+        ('success', 'Success'),
+        ('failed', 'Failed'),
+    ]
+    REQUESTER_ROLE_CHOICES = [
+        ('dealer', 'Dealer'),
+        ('devicemanufacture', 'Manufacturer'),
+    ]
+
+    device = models.ForeignKey(DeviceStock, on_delete=models.CASCADE, related_name='renewal_requests')
+    device_tag = models.ForeignKey(DeviceTag, on_delete=models.SET_NULL, null=True, blank=True, related_name='renewal_requests')
+
+    requested_by = models.ForeignKey('User', on_delete=models.CASCADE, related_name='renewal_requests_made')
+    requester_role = models.CharField(max_length=20, choices=REQUESTER_ROLE_CHOICES)
+    dealer = models.ForeignKey(Dealer, on_delete=models.SET_NULL, null=True, blank=True, related_name='renewal_requests')
+    manufacturer = models.ForeignKey(Manufacturer, on_delete=models.SET_NULL, null=True, blank=True, related_name='renewal_requests')
+
+    requested_duration_years = models.PositiveSmallIntegerField(choices=DURATION_CHOICES)
+
+    old_esim_validity = models.DateTimeField(null=True, blank=True)
+    new_esim_validity = models.DateTimeField(null=True, blank=True)
+
+    m2m_raw_response = models.JSONField(null=True, blank=True)
+    m2m_checked_at = models.DateTimeField(null=True, blank=True)
+
+    packet_results = models.JSONField(null=True, blank=True)
+    packets_all_received = models.BooleanField(null=True, blank=True, default=None)
+    packets_checked_at = models.DateTimeField(null=True, blank=True)
+    pvt_precheck_details = models.JSONField(null=True, blank=True)
+
+    vahan_push_status = models.CharField(max_length=20, null=True, blank=True, choices=VAHAN_PUSH_STATUS_CHOICES)
+    vahan_push_response = models.JSONField(null=True, blank=True)
+    vahan_pushed_at = models.DateTimeField(null=True, blank=True)
+
+    certificate_file_path = models.CharField(max_length=255, null=True, blank=True)
+    certificate_generated_at = models.DateTimeField(null=True, blank=True)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    rejection_reason = models.TextField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['device', 'status']),
+            models.Index(fields=['requested_by', 'created_at']),
+            models.Index(fields=['status', 'created_at']),
+        ]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"DeviceRenewalRequest {self.id} - device {self.device_id} ({self.status})"
+
 class EditRequest(models.Model):
     objects = SafeCreateManager()
     time = models.DateTimeField(auto_now_add=True, verbose_name="Time")
@@ -4120,6 +4191,9 @@ class RolePermissionConfig(models.Model):
         ('ota_command_definition',      'OTA — Command Definitions'),
         ('ota_command_history',         'OTA — Command History & Send Command'),
         ('ota_value_suggestion',        'OTA — Value Suggestions'),
+
+        # Device eSIM Renewal Management
+        ('device_renewal_management',   'Device eSIM Renewal Management'),
     ]
 
     role   = models.ForeignKey(

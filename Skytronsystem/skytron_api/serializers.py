@@ -1,6 +1,7 @@
 # Serializer for GSM cell info input (cell location API)
 
 # skytron_api/serializers.py
+from django.utils import timezone
 from rest_framework import serializers
 from .models import User, Manufacturer, Dealer, Device, DeviceModel, FOTA,  Session, OTPRequest, EditRequest, Settings
 
@@ -363,6 +364,62 @@ class DeviceStockSerializer2(SanitizingModelSerializer):
     #    return obj.created_by.name if obj.created_by else ''
     #def get_device_model_name(self, obj):
     #    return obj.model.model_name if obj.created_by else ''
+
+
+class DeviceRenewalEligibleDeviceSerializer(serializers.ModelSerializer):
+    """List-API row: device eligible for renewal (eSIM expiring within the window)."""
+    model_name = serializers.CharField(source='model.model_name', read_only=True)
+    manufacturer_name = serializers.SerializerMethodField()
+    dealer_name = serializers.CharField(source='dealer.company_name', read_only=True)
+    days_since_activation = serializers.SerializerMethodField()
+    vehicle_reg_no = serializers.SerializerMethodField()
+    days_to_expiry = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeviceStock
+        fields = [
+            'id', 'imei', 'iccid', 'model_name', 'manufacturer_name', 'dealer_name',
+            'esim_validity', 'days_to_expiry', 'vehicle_reg_no', 'days_since_activation',
+            'stock_status',
+        ]
+
+    def get_manufacturer_name(self, obj):
+        return obj.model.created_by.name if obj.model and obj.model.created_by else None
+
+    def get_vehicle_reg_no(self, obj):
+        tag = getattr(obj, '_latest_tag', None)
+        return tag.vehicle_reg_no if tag else None
+
+    def get_days_since_activation(self, obj):
+        tag = getattr(obj, '_latest_tag', None)
+        if not tag or not tag.tagged:
+            return None
+        return (timezone.now() - tag.tagged).days
+
+    def get_days_to_expiry(self, obj):
+        if not obj.esim_validity:
+            return None
+        return (obj.esim_validity - timezone.now()).days
+
+
+class DeviceRenewalSubmitSerializer(serializers.Serializer):
+    device_id = serializers.IntegerField()
+    requested_duration_years = serializers.ChoiceField(choices=[1, 2])
+
+
+class DeviceRenewalRequestListSerializer(serializers.ModelSerializer):
+    device_imei = serializers.CharField(source='device.imei', read_only=True)
+    device_iccid = serializers.CharField(source='device.iccid', read_only=True)
+    requested_by_name = serializers.CharField(source='requested_by.name', read_only=True)
+
+    class Meta:
+        model = DeviceRenewalRequest
+        fields = [
+            'id', 'device', 'device_imei', 'device_iccid', 'requested_by', 'requested_by_name',
+            'requester_role', 'requested_duration_years', 'old_esim_validity', 'new_esim_validity',
+            'status', 'rejection_reason', 'packets_all_received', 'vahan_push_status',
+            'certificate_file_path', 'created_at',
+        ]
 
 
 class FOTASerializer(SanitizingModelSerializer):
