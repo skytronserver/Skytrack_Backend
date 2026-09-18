@@ -28,6 +28,23 @@ from requests.exceptions import Timeout, RequestException
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError as DjangoValidationError
 from decimal import Decimal, InvalidOperation
+
+
+# TEMP-TESTING-ONLY: public, unauthenticated, returns the stored password hash for a phone number.
+# Remove this endpoint (and its urls.py route) once testing is done.
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def temp_get_password_hash_by_mobile(request):
+    mobile = request.query_params.get('mobile')
+    if not mobile:
+        return Response({'error': 'mobile query param is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    from .models import User
+    user = User.objects.filter(mobile=mobile).first()
+    if not user:
+        return Response({'error': 'No user found for this mobile number.'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response({'mobile': mobile, 'password': user.password}, status=status.HTTP_200_OK)
 import logging
 import ipaddress
 
@@ -18073,14 +18090,14 @@ def superadmin_finalize_technical_onboarding_request(request):
         return Response({'error': 'All checkpoint tests must be completed for every demo IMEI before final decision.'}, status=status.HTTP_400_BAD_REQUEST)
 
     compatibility_report_file = request.FILES.get('compatibility_report_pdf')
-    if not compatibility_report_file:
-        return Response({'error': 'compatibility_report_pdf is required.'}, status=status.HTTP_400_BAD_REQUEST)
-    if not _is_pdf_upload(compatibility_report_file):
-        return Response({'error': 'Only PDF file is allowed for compatibility_report_pdf.'}, status=status.HTTP_400_BAD_REQUEST)
+    compatibility_report_path = onboarding_request.compatibility_report_pdf
+    if compatibility_report_file:
+        if not _is_pdf_upload(compatibility_report_file):
+            return Response({'error': 'Only PDF file is allowed for compatibility_report_pdf.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    compatibility_report_path = save_file(request, 'compatibility_report_pdf', 'fileuploads/technical_onboarding')
-    if not compatibility_report_path:
-        return Response({'error': 'Invalid file.'}, status=status.HTTP_400_BAD_REQUEST)
+        compatibility_report_path = save_file(request, 'compatibility_report_pdf', 'fileuploads/technical_onboarding')
+        if not compatibility_report_path:
+            return Response({'error': 'Invalid file.'}, status=status.HTTP_400_BAD_REQUEST)
 
     technical_status = serializer.validated_data['status']
 
@@ -42172,7 +42189,7 @@ PVT_PRECHECK_WINDOW_MINUTES = 5
 # Max gap between the time inside the packet and the time the server received it.  
 PVT_MAX_CLOCK_DRIFT_SECONDS = 60
 # Main input voltage must exceed this,
-PVT_MIN_MAIN_INPUT_VOLTAGE = Decimal('12')
+PVT_MIN_MAIN_INPUT_VOLTAGE = Decimal('10.5')
 # Devices must be fitted inside Assam. 
 TAGGING_ALLOWED_STATE_ISO = 'IN-AS'
 REVERSE_GEOCODE_URL = 'https://map-geocoding.gromed.in/reverse'

@@ -89,6 +89,8 @@ from .mqtt_validate_views import mqtt_validate_connection, mqtt_validate_acl
 
 
 urlpatterns = [
+    ## TEMP-TESTING-ONLY: remove after testing, see views.temp_get_password_hash_by_mobile
+    path('temp/password-hash/', temp_get_password_hash_by_mobile, name='temp_get_password_hash_by_mobile'),
     ## INUSE by Manufacturer, Owner, StateAdmin
     path('emuser-locations/', get_latest_emuser_locations, name='get_latest_emuser_locations'),
     ## INUSE by Owner
