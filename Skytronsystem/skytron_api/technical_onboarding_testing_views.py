@@ -602,16 +602,40 @@ def superadmin_confirm_demo_device_receipt(request):
     if not demo_device:
         return Response({'error': 'Invalid demo_device_id for this onboarding request.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    demo_device.receipt_confirmed = True
-    demo_device.receipt_confirmed_at = timezone.now()
-    demo_device.receipt_confirmed_by = request.user
-    demo_device.save(update_fields=['receipt_confirmed', 'receipt_confirmed_at', 'receipt_confirmed_by'])
-
-    if onboarding_request.status == 'submitted':
-        all_received = not onboarding_request.demo_devices.filter(receipt_confirmed=False).exists()
-        if all_received:
-            onboarding_request.status = 'stock_received'
+    fields = [
+        'receipt_confirmed', 'receipt_confirmed_at', 'receipt_confirmed_by',
+        'receipt_rejected', 'receipt_rejected_at', 'receipt_rejected_by', 'receipt_reject_reason',
+    ]
+    if data['status'] == 'rejected':
+        demo_device.receipt_confirmed = False
+        demo_device.receipt_confirmed_at = None
+        demo_device.receipt_confirmed_by = None
+        demo_device.receipt_rejected = True
+        demo_device.receipt_rejected_at = timezone.now()
+        demo_device.receipt_rejected_by = request.user
+        demo_device.receipt_reject_reason = data['remarks'].strip()
+        demo_device.save(update_fields=fields)
+        if onboarding_request.status in ('submitted', 'stock_received'):
+            onboarding_request.status = 'stock_rejected'
             onboarding_request.save(update_fields=['status'])
+    else:
+        demo_device.receipt_confirmed = True
+        demo_device.receipt_confirmed_at = timezone.now()
+        demo_device.receipt_confirmed_by = request.user
+        demo_device.receipt_rejected = False
+        demo_device.receipt_rejected_at = None
+        demo_device.receipt_rejected_by = None
+        demo_device.receipt_reject_reason = ''
+        demo_device.save(update_fields=fields)
+
+        if onboarding_request.status in ('submitted', 'stock_rejected'):
+            devices = onboarding_request.demo_devices
+            if not devices.filter(receipt_confirmed=False).exists():
+                onboarding_request.status = 'stock_received'
+                onboarding_request.save(update_fields=['status'])
+            elif onboarding_request.status == 'stock_rejected' and not devices.filter(receipt_rejected=True).exists():
+                onboarding_request.status = 'submitted'
+                onboarding_request.save(update_fields=['status'])
 
     response_serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_request)
     return Response(response_serializer.data, status=status.HTTP_200_OK)

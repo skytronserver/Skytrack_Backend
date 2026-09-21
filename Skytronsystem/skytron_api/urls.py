@@ -503,6 +503,8 @@ urlpatterns = [
     path('devicemodel/devicemodelCreate/', create_device_model, name='devicemodel-create'),
     path('devicemodel/devicemodelList/', list_devicemodel, name='devicemodel-list'),
     path('devicemodel/devicemodleVerifyStateAdminOtp/', DeviceVerifyStateAdminOtp, name='device_verify_state_admin_otp'),
+    path('devicemodel/manufacturer/overview/', manufacturer_device_model_overview, name='manufacturer_device_model_overview'),
+    path('devicemodel/reject-model/', DeviceModelReject, name='device_model_reject'),
     path('devicemodel/devicemodelSendStateAdminOtp/', DeviceSendStateAdminOtp, name='device_send_state_admin_otp'),
     path('devicemodel/devicemodelAwaitingStateApproval/', DeviceModelAwaitingStateApproval, name='device_model_awaiting_state_approval'),
     ## INUSE by Manufacturer

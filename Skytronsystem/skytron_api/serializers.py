@@ -484,6 +484,7 @@ class DeviceModelSerializer(SanitizingModelSerializer):
     class Meta:
         model = DeviceModel
         fields = '__all__'
+        read_only_fields = ['reject_reason', 'rejected_by', 'rejected_at']
 class DeviceModelSerializer_disp(SanitizingModelSerializer):
     #eSimProviders = serializers.PrimaryKeyRelatedField(many=True, queryset=eSimProvider.objects.all())
     eSimProviders = eSimProviderSerializer( many=True, read_only=True)
@@ -581,6 +582,7 @@ class DeviceModelFileUploadSerializer(SanitizingModelSerializer):
     class Meta:
         model = DeviceModel
         fields = '__all__'
+        read_only_fields = ['reject_reason', 'rejected_by', 'rejected_at']
 
 
 
@@ -1149,9 +1151,16 @@ class DeviceModelTechnicalOnboardingDemoDeviceSerializer(serializers.ModelSerial
             'receipt_confirmed',
             'receipt_confirmed_at',
             'receipt_confirmed_by',
+            'receipt_rejected',
+            'receipt_rejected_at',
+            'receipt_rejected_by',
+            'receipt_reject_reason',
             'checkpoint_status',
         ]
-        read_only_fields = ['receipt_confirmed', 'receipt_confirmed_at', 'receipt_confirmed_by']
+        read_only_fields = [
+            'receipt_confirmed', 'receipt_confirmed_at', 'receipt_confirmed_by',
+            'receipt_rejected', 'receipt_rejected_at', 'receipt_rejected_by', 'receipt_reject_reason',
+        ]
 
     def get_checkpoint_status(self, obj):
         executions = list(
@@ -1229,6 +1238,14 @@ class TechnicalOnboardingCourierTrackingSerializer(serializers.Serializer):
 class TechnicalOnboardingConfirmReceiptSerializer(serializers.Serializer):
     onboarding_request_id = serializers.IntegerField()
     demo_device_id = serializers.IntegerField()
+    # 'confirmed' is the default so existing clients keep working.
+    status = serializers.ChoiceField(choices=['confirmed', 'rejected'], required=False, default='confirmed')
+    remarks = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        if attrs['status'] == 'rejected' and not attrs.get('remarks', '').strip():
+            raise serializers.ValidationError({'remarks': 'A reject reason is required when rejecting receipt.'})
+        return attrs
 
 
 class TechnicalOnboardingTestCaseSerializer(serializers.ModelSerializer):

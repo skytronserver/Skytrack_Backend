@@ -940,6 +940,7 @@ class DeviceModel(models.Model):
         ('Manufacturer_OTP_Verified', 'Manufacturer OTP Verified'),
         ('StateAdminOTPSend', 'State Admin OTP Sent'),
         ('StateAdminApproved', 'State Admin Approved'),
+        ('StateAdminRejected', 'State Admin Rejected'),
     ]
 
     model_name = models.CharField(max_length=255, db_index=True)
@@ -971,6 +972,11 @@ class DeviceModel(models.Model):
     # checks the M2M API's primary/fallback TSP against it.
     provider_combinations = models.JSONField(default=list, blank=True)
 
+    # Set when a superadmin / state admin rejects the model.
+    reject_reason = models.TextField(blank=True, default='')
+    rejected_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    rejected_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         # Composite index for common filtering combinations
         indexes = [
@@ -986,6 +992,7 @@ class DeviceModelTechnicalOnboardingRequest(models.Model):
     STATUS_CHOICES = [
         ('submitted', 'Submitted'),
         ('stock_received', 'Stock Received'),
+        ('stock_rejected', 'Stock Rejected'),
         ('ongoing_evaluation', 'Ongoing Evaluation'),
         ('testing_complete', 'Testing Complete'),
         ('technically_compatible', 'Technically Compatible'),
@@ -1040,6 +1047,12 @@ class DeviceModelTechnicalOnboardingDemoDevice(models.Model):
     receipt_confirmed_by = models.ForeignKey(
         'User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
     )
+    receipt_rejected = models.BooleanField(default=False)
+    receipt_rejected_at = models.DateTimeField(blank=True, null=True)
+    receipt_rejected_by = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    receipt_reject_reason = models.TextField(blank=True, default='')
 
     class Meta:
         indexes = [

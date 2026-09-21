@@ -14394,6 +14394,42 @@ def DeviceVerifyStateAdminOtp(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'update')
+def DeviceModelReject(request):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = request.user
+    if not (get_user_object(user, "stateadmin") or get_user_object(user, "superadmin")):
+        return Response({"error": "Request must be from stateadmin or superadmin"}, status=status.HTTP_400_BAD_REQUEST)
+
+    device_model_id = request.data.get('device_model_id')
+    remarks = str(request.data.get('remarks') or '').strip()
+    if not device_model_id:
+        return Response({"error": "device_model_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not remarks:
+        return Response({"error": "remarks (reject reason) is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    device_model = DeviceModel.objects.filter(
+        id=device_model_id, status__in=['Manufacturer_OTP_Verified', 'StateAdminOTPSend']
+    ).first()
+    if not device_model:
+        return Response({"error": "Device model not found or already processed."}, status=status.HTTP_400_BAD_REQUEST)
+
+    device_model.status = 'StateAdminRejected'
+    device_model.reject_reason = remarks
+    device_model.rejected_by = user
+    device_model.rejected_at = timezone.now()
+    device_model.save(update_fields=['status', 'reject_reason', 'rejected_by', 'rejected_at'])
+
+    return Response({"message": "Device model rejected successfully."}, status=200)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
 @require_permission('device_management', 'update')
@@ -18086,8 +18122,12 @@ def superadmin_finalize_technical_onboarding_request(request):
     ).last()
     if not onboarding_request:
         return Response({'error': 'Invalid onboarding_request_id.'}, status=status.HTTP_400_BAD_REQUEST)
-    if onboarding_request.status != 'testing_complete':
-        return Response({'error': 'All checkpoint tests must be completed for every demo IMEI before final decision.'}, status=status.HTTP_400_BAD_REQUEST)
+    # Rejection is allowed at any point before a final decision; approval needs all tests complete.
+    if serializer.validated_data['status'] == 'technically_compatible':
+        if onboarding_request.status != 'testing_complete':
+            return Response({'error': 'All checkpoint tests must be completed for every demo IMEI before final decision.'}, status=status.HTTP_400_BAD_REQUEST)
+    elif onboarding_request.status in ('technically_compatible', 'technically_not_compatible', 'StateAdminApproved', 'StateAdminRejected'):
+        return Response({'error': 'A final decision has already been made for this onboarding request.'}, status=status.HTTP_400_BAD_REQUEST)
 
     compatibility_report_file = request.FILES.get('compatibility_report_pdf')
     compatibility_report_path = onboarding_request.compatibility_report_pdf
@@ -18157,6 +18197,170 @@ def manufacturer_list_own_device_model_technical_onboarding_requests(request):
     serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_requests, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
    
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'view')
+def manufacturer_device_model_overview(request):
+    """
+    Manufacturer dashboard: every device model of the logged-in manufacturer with
+    its approval status, latest technical onboarding status, stock counts by
+    stock status, tagging counts by tag status and online/offline counts.
+
+    Online = tagged device with a GPS packet in the last 15 minutes.
+    Offline = currently tagged devices - online.
+
+    Body (optional): page (default 1), page_size (default 50, max 200).
+    `totals` always cover all models; only `device_models` is paginated.
+    """
+    from .models import (
+        DeviceModelTechnicalOnboardingDemoDevice, DeviceModelTechnicalOnboardingRequest,
+        DeviceStock, DeviceTag, GPSData, Manufacturer,
+    )
+
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    manufacturer = get_user_object(request.user, 'devicemanufacture')
+    if not manufacturer:
+        return Response({'error': 'Request must be from devicemanufacture.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    manufacturer_user_ids = list(manufacturer.users.values_list('id', flat=True))
+    onboarding_requests = list(
+        DeviceModelTechnicalOnboardingRequest.objects
+        .filter(manufacturer=manufacturer)
+        .order_by('id')
+    )
+    onboarded_model_ids = {r.device_model_id for r in onboarding_requests}
+
+    device_models = list(
+        DeviceModel.objects
+        .filter(Q(created_by_id__in=manufacturer_user_ids) | Q(id__in=onboarded_model_ids))
+        .order_by('-created', '-id')
+    )
+    model_ids = [m.id for m in device_models]
+
+    latest_onboarding = {}
+    for r in onboarding_requests:
+        latest_onboarding[r.device_model_id] = r  # ascending id, last wins
+
+    # Stock-receipt rejection reasons, per onboarding request.
+    receipt_rejections = {}
+    for d in DeviceModelTechnicalOnboardingDemoDevice.objects.filter(
+        onboarding_request_id__in=[r.id for r in latest_onboarding.values()], receipt_rejected=True
+    ).order_by('id'):
+        receipt_rejections.setdefault(d.onboarding_request_id, []).append({
+            'demo_device_id': d.id,
+            'imei': d.imei,
+            'reason': d.receipt_reject_reason,
+            'rejected_at': d.receipt_rejected_at,
+        })
+
+    def onboarding_reject_reason(req):
+        if req.status == 'stock_rejected':
+            return '; '.join(x['reason'] for x in receipt_rejections.get(req.id, []) if x['reason']) or None
+        if req.status in ('technically_not_compatible', 'StateAdminRejected'):
+            return req.final_comment
+        return None
+
+    stock_by_model = {}
+    for row in (
+        DeviceStock.objects.filter(model_id__in=model_ids)
+        .exclude(stock_status=DEVICE_STOCK_DELETED_STATUS)
+        .values('model_id', 'stock_status').annotate(c=Count('id'))
+    ):
+        stock_by_model.setdefault(row['model_id'], {})[row['stock_status']] = row['c']
+
+    tag_by_model = {}
+    for row in (
+        DeviceTag.objects.filter(device__model_id__in=model_ids)
+        .values('device__model_id', 'status').annotate(c=Count('id'))
+    ):
+        tag_by_model.setdefault(row['device__model_id'], {})[row['status']] = row['c']
+
+    window_start = timezone.now() - timedelta(minutes=15)
+    online_tags = (
+        GPSData.objects
+        .filter(entry_time__gte=window_start, device_tag__device__model_id__in=model_ids)
+        .exclude(device_tag__status__in=['Device_Untagged', 'TagDeleted', 'untaged_after_failed_taging'])
+        .values_list('device_tag__device__model_id', 'device_tag_id')
+        .distinct()
+    )
+    online_by_model = {}
+    for model_id, _tag_id in online_tags:
+        online_by_model[model_id] = online_by_model.get(model_id, 0) + 1
+
+    inactive_tag_statuses = {'Device_Untagged', 'TagDeleted', 'untaged_after_failed_taging'}
+    result = []
+    for m in device_models:
+        stock = stock_by_model.get(m.id, {})
+        tags = tag_by_model.get(m.id, {})
+        tagged = sum(c for st, c in tags.items() if st not in inactive_tag_statuses)
+        online = online_by_model.get(m.id, 0)
+        onboarding = latest_onboarding.get(m.id)
+        result.append({
+            'device_model_id': m.id,
+            'model_name': m.model_name,
+            'vendor_id': m.vendor_id,
+            'tac_no': m.tac_no,
+            'tac_validity': m.tac_validity,
+            'hardware_version': m.hardware_version,
+            'created': m.created,
+            'model_status': m.status,
+            'reject_reason': m.reject_reason or None,
+            'rejected_at': m.rejected_at,
+            'technical_onboarding': {
+                'request_id': onboarding.id,
+                'status': onboarding.status,
+                'request_datetime': onboarding.request_datetime,
+                'final_comment': onboarding.final_comment,
+                'reject_reason': onboarding_reject_reason(onboarding),
+                'receipt_rejections': receipt_rejections.get(onboarding.id, []),
+            } if onboarding else None,
+            'stock': {
+                'total': sum(stock.values()),
+                'by_status': stock,
+            },
+            'tagging': {
+                'total_tagged': tagged,
+                'by_status': tags,
+            },
+            'devices': {
+                'online': online,
+                'offline': max(0, tagged - online),
+            },
+        })
+
+    totals = {
+        'total_models': len(result),
+        'total_stock': sum(r['stock']['total'] for r in result),
+        'total_tagged': sum(r['tagging']['total_tagged'] for r in result),
+        'total_online': sum(r['devices']['online'] for r in result),
+        'total_offline': sum(r['devices']['offline'] for r in result),
+    }
+
+    try:
+        page = max(int(request.data.get('page', 1)), 1)
+        page_size = min(max(int(request.data.get('page_size', 50)), 1), 200)
+    except (TypeError, ValueError):
+        return Response({'error': 'page and page_size must be integers.'}, status=status.HTTP_400_BAD_REQUEST)
+    total_count = len(result)
+    offset = (page - 1) * page_size
+
+    return Response({
+        'totals': totals,
+        'pagination': {
+            'page': page,
+            'page_size': page_size,
+            'total_count': total_count,
+            'total_pages': (total_count + page_size - 1) // page_size,
+        },
+        'device_models': result[offset:offset + page_size],
+    }, status=status.HTTP_200_OK)
+
 
 # Whitelisted IP / URL rules for a device model.
 WHITELISTED_IP_MIN_ITEMS = 1
