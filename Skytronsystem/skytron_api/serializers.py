@@ -1,6 +1,8 @@
 # Serializer for GSM cell info input (cell location API)
 
 # skytron_api/serializers.py
+from datetime import timedelta
+
 from django.utils import timezone
 from rest_framework import serializers
 from .models import User, Manufacturer, Dealer, Device, DeviceModel, FOTA,  Session, OTPRequest, EditRequest, Settings
@@ -1272,6 +1274,39 @@ class TechnicalOnboardingCompleteTestSerializer(serializers.Serializer):
     execution_id = serializers.IntegerField()
     manual_result = serializers.ChoiceField(choices=['pass', 'fail'], required=False)
     manual_notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class TechnicalOnboardingDemoDeviceHistorySerializer(serializers.Serializer):
+    """
+    Either `timestamp` (the 1 hour ending there, defaults to now) or a
+    `start_datetime`/`end_datetime` pair at most 24 hours apart. Validated
+    data always carries the resolved start_datetime/end_datetime.
+    """
+    onboarding_request_id = serializers.IntegerField()
+    timestamp = serializers.DateTimeField(required=False)
+    start_datetime = serializers.DateTimeField(required=False)
+    end_datetime = serializers.DateTimeField(required=False)
+
+    def validate(self, attrs):
+        start = attrs.get('start_datetime')
+        end = attrs.get('end_datetime')
+
+        if start or end:
+            if 'timestamp' in attrs:
+                raise serializers.ValidationError('Send either timestamp or start_datetime/end_datetime, not both.')
+            if not (start and end):
+                raise serializers.ValidationError('start_datetime and end_datetime must be sent together.')
+            if end <= start:
+                raise serializers.ValidationError({'end_datetime': 'Must be after start_datetime.'})
+            if end - start > timedelta(hours=24):
+                raise serializers.ValidationError({'end_datetime': 'The range can be at most 24 hours.'})
+        else:
+            end = attrs.get('timestamp') or timezone.now()
+            start = end - timedelta(hours=1)
+
+        attrs['start_datetime'] = start
+        attrs['end_datetime'] = end
+        return attrs
 
 
 class TechnicalOnboardingTestExecutionSerializer(serializers.ModelSerializer):

@@ -1,6 +1,6 @@
 """
 Technical onboarding testing: courier tracking, per-IMEI stock receipt
-confirmation, the backend-driven 39-checkpoint test catalog, and the
+confirmation, the backend-driven checkpoint test catalog, and the
 per-IMEI test-execution engine (start / heartbeat / refresh-log / complete).
 
 Data-source strategy: the 5 demo IMEIs used during onboarding have no
@@ -13,9 +13,11 @@ structured OTACommandHistory/ActivationCommandDispatch ack fields.
 """
 
 import re
+import statistics
 from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -47,8 +49,15 @@ from .serializers import (
     TechnicalOnboardingExecutionActionSerializer,
     TechnicalOnboardingCompleteTestSerializer,
     TechnicalOnboardingTestExecutionSerializer,
+    TechnicalOnboardingDemoDeviceHistorySerializer,
 )
-from .views import validate_inputs, get_user_object, _packet_fields
+from .views import (
+    validate_inputs,
+    get_user_object,
+    _packet_fields,
+    _extract_pvt_datetime,
+    _extract_pvt_lat_lon,
+)
 
 # Packets older than this are not scanned; also bounds each query, since
 # GPSDataLog/GPSemDataLog have no IMEI column/index (see docstring above).
@@ -70,6 +79,13 @@ SOURCE_TABLE_LABEL = {
     'esim_secondary_to_primary': 'GPSDataLog',
     'vehicle_registration_diff': 'GPSDataLog',
     'reboot_restart_gap': 'GPSDataLog + OTACommandHistory',
+    'pvt_packet_drop': 'GPSDataLog',
+}
+
+# The eSIM switch tests cross-check each other's network order.
+ESIM_SIBLING_SOURCE = {
+    'esim_primary_to_secondary': 'esim_secondary_to_primary',
+    'esim_secondary_to_primary': 'esim_primary_to_secondary',
 }
 
 # _packet_fields() index (after the leading '$'/'$,' is normalised away) for
@@ -78,6 +94,29 @@ PVT_NETWORK_OPERATOR_IDX = 21
 PVT_MAIN_VOLTAGE_IDX = 24       # external / main input voltage
 PVT_INTERNAL_VOLTAGE_IDX = 25   # internal / backup battery voltage
 PVT_VEHICLE_REG_NO_IDX = 7
+
+# PVT field offsets relative to the 'PVT' token, used by the history API.
+PVT_OFFSET_PACKET_TYPE = 3
+PVT_OFFSET_PACKET_STATUS = 5    # L = live, H = history (buffered)
+PVT_OFFSET_IMEI = 6
+PVT_OFFSET_SPEED = 15
+PVT_OFFSET_HEADING = 16
+PVT_OFFSET_IGNITION = 22
+
+# Default max allowed gap between consecutive PVT packets for the packet
+# drop test, used when the test case doesn't set max_interval_seconds.
+DEFAULT_PVT_DROP_MAX_GAP_SECONDS = 75
+
+# A device timestamp is only trusted inside this band around the server
+# receive time: devices without a GPS fix report junk clocks (e.g. year
+# 2080), while buffered history (H) packets legitimately arrive late.
+DEVICE_CLOCK_MAX_AHEAD = timedelta(minutes=5)
+DEVICE_CLOCK_MAX_BEHIND = timedelta(days=7)
+
+# Demo-device history API: how late a buffered (H) packet may arrive after
+# its device timestamp and still be picked up, and a hard cap on rows read.
+HISTORY_LATE_ARRIVAL_SLACK = timedelta(hours=1)
+HISTORY_ROW_LIMIT = 150000
 
 # Default minimum silence (no packets) after a reboot command is sent
 # before resumed packets count as proof of an actual restart, used when
@@ -350,12 +389,14 @@ def _run_test_check(execution):
                 f"{test_case.min_match_count} within the test window to prove the eSIM switch happened."
             )
 
-        # Cross-check direction against the sibling test (23 <-> 24): the
-        # network order seen here should be the exact reverse of whatever
-        # the other direction's most recent completed run recorded.
-        sibling_serial_no = {23: 24, 24: 23}.get(test_case.serial_no)
-        if result_pass and sibling_serial_no:
-            sibling_case = TechnicalOnboardingTestCase.objects.filter(serial_no=sibling_serial_no).first()
+        # Cross-check direction against the sibling eSIM test: the network
+        # order seen here should be the exact reverse of whatever the other
+        # direction's most recent completed run recorded.
+        sibling_source = ESIM_SIBLING_SOURCE.get(test_case.source_table)
+        if result_pass and sibling_source:
+            sibling_case = TechnicalOnboardingTestCase.objects.filter(
+                source_table=sibling_source, active=True
+            ).order_by('serial_no').first()
             sibling_execution = None
             if sibling_case:
                 sibling_execution = TechnicalOnboardingTestExecution.objects.filter(
@@ -515,7 +556,109 @@ def _run_test_check(execution):
             'refreshed_at': now.isoformat(),
         }
 
+    if test_case.source_table == 'pvt_packet_drop':
+        # Gaps are measured on the device's own timestamp (when plausible)
+        # so buffered history (H) packets that arrive late still close the
+        # gap they cover -- only data that never reached the server counts
+        # as dropped.
+        rows = list(
+            GPSDataLog.objects
+            .filter(timestamp__gte=window_start, raw_data__contains=imei)
+            .order_by('-timestamp')
+            .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+        )
+        packet_times = []
+        for raw_data, packet_time in rows:
+            if _pvt_index(_packet_fields(raw_data)) is None:
+                continue
+            effective_time, _time_source = _packet_time(raw_data, packet_time)
+            if effective_time >= window_start:
+                packet_times.append(effective_time)
+
+        max_gap_allowed = test_case.max_interval_seconds or DEFAULT_PVT_DROP_MAX_GAP_SECONDS
+        stats = _gap_stats(packet_times)
+        matched_count = stats['packet_count']
+
+        # Silence before the first packet or since the last one is a drop
+        # too -- a device that goes quiet mid-test must not pass.
+        gaps = list(stats['gaps'])
+        if packet_times:
+            first, last = min(packet_times), max(packet_times)
+            gaps.append({'seconds': (first - window_start).total_seconds(), 'from': window_start.isoformat(), 'to': first.isoformat()})
+            gaps.append({'seconds': (now - last).total_seconds(), 'from': last.isoformat(), 'to': now.isoformat()})
+        over_limit = sorted((g for g in gaps if g['seconds'] > max_gap_allowed), key=lambda g: g['from'])
+
+        result_pass = matched_count >= test_case.min_match_count and not over_limit
+        if matched_count < test_case.min_match_count:
+            reason = f"Only {matched_count} PVT packet(s) found, need at least {test_case.min_match_count}."
+        elif over_limit:
+            longest = max(over_limit, key=lambda g: g['seconds'])
+            reason = (
+                f"{len(over_limit)} gap(s) above the allowed {max_gap_allowed}s between PVT packets -- "
+                f"longest {longest['seconds']:.0f}s from {longest['from']} to {longest['to']}."
+            )
+        else:
+            reason = None
+
+        return {
+            'mode': test_case.source_table,
+            'matched_count': matched_count,
+            'required': test_case.min_match_count,
+            'pass': result_pass,
+            'reason': reason,
+            'samples': over_limit[:5],
+            'max_gap_allowed_seconds': max_gap_allowed,
+            'drop_count': len(over_limit),
+            'gap_stats': {k: v for k, v in stats.items() if k != 'gaps'},
+            'window_start': window_start.isoformat(),
+            'refreshed_at': now.isoformat(),
+        }
+
     return {'mode': 'unknown', 'pass': False, 'reason': 'Unrecognised source_table.', 'refreshed_at': now.isoformat()}
+
+
+def _pvt_index(parts):
+    """Index of the 'PVT' token in a packet's fields, or None."""
+    for i, part in enumerate(parts[:3]):
+        if part.upper() == 'PVT':
+            return i
+    return None
+
+
+def _packet_time(raw_data, server_time):
+    """
+    (effective_time, time_source) for a PVT packet: the device timestamp
+    when it's plausible ('device'), else the server receive time ('server').
+    """
+    device_time = _extract_pvt_datetime(raw_data)
+    if device_time and server_time - DEVICE_CLOCK_MAX_BEHIND <= device_time <= server_time + DEVICE_CLOCK_MAX_AHEAD:
+        return device_time, 'device'
+    return server_time, 'server'
+
+
+def _gap_stats(times):
+    """
+    Time-gap statistics between consecutive packets. `times` need not be
+    sorted. Gaps are in seconds; 'gaps' lists every gap with its endpoints.
+    """
+    ordered = sorted(times)
+    gaps = [
+        {'seconds': (later - earlier).total_seconds(), 'from': earlier.isoformat(), 'to': later.isoformat()}
+        for earlier, later in zip(ordered, ordered[1:])
+    ]
+    seconds = [g['seconds'] for g in gaps]
+    return {
+        'packet_count': len(ordered),
+        'first_packet_at': ordered[0].isoformat() if ordered else None,
+        'last_packet_at': ordered[-1].isoformat() if ordered else None,
+        'gap_count': len(gaps),
+        'average_gap_seconds': round(statistics.mean(seconds), 2) if seconds else None,
+        'median_gap_seconds': round(statistics.median(seconds), 2) if seconds else None,
+        'min_gap_seconds': min(seconds) if seconds else None,
+        'max_gap_seconds': max(seconds) if seconds else None,
+        'longest_gap': max(gaps, key=lambda g: g['seconds']) if gaps else None,
+        'gaps': gaps,
+    }
 
 
 def _get_onboarding_request_or_error(onboarding_request_id):
@@ -1001,6 +1144,131 @@ def superadmin_complete_test(request):
 
 
 # ===========================================================================
+# Demo-device location history + packet gap statistics
+# ===========================================================================
+
+def _pvt_history_entry(raw_data, parts, idx, server_time, effective_time, time_source):
+    def field(offset):
+        return parts[idx + offset] if len(parts) > idx + offset else None
+
+    latitude, longitude = _extract_pvt_lat_lon(raw_data)
+    device_time = _extract_pvt_datetime(raw_data)
+    return {
+        'timestamp': effective_time.isoformat(),
+        'time_source': time_source,
+        'device_timestamp': device_time.isoformat() if device_time else None,
+        'server_timestamp': server_time.isoformat(),
+        'latitude': float(latitude) if latitude is not None else None,
+        'longitude': float(longitude) if longitude is not None else None,
+        'speed': field(PVT_OFFSET_SPEED),
+        'heading': field(PVT_OFFSET_HEADING),
+        'ignition': field(PVT_OFFSET_IGNITION),
+        'packet_type': field(PVT_OFFSET_PACKET_TYPE),
+        'packet_status': field(PVT_OFFSET_PACKET_STATUS),
+    }
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'view')
+def superadmin_demo_device_location_history(request):
+    """
+    PVT location history for every demo device on an onboarding request,
+    with per-device time-gap statistics between packets.
+
+    Request body:
+      {"onboarding_request_id": 12, "timestamp": "2026-09-24T10:00:00Z"}
+          -> the 1 hour ending at `timestamp` (defaults to now)
+      {"onboarding_request_id": 12,
+       "start_datetime": "...", "end_datetime": "..."}
+          -> any range up to 24 hours
+
+    Entries and gaps are keyed on the device timestamp inside the packet
+    (server receive time when it's missing or implausible -- see
+    _packet_time), so buffered history (H) packets land where they belong
+    in the timeline.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not get_user_object(request.user, 'superadmin'):
+        return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = TechnicalOnboardingDemoDeviceHistorySerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    data = serializer.validated_data
+
+    onboarding_request, error = _get_onboarding_request_or_error(data['onboarding_request_id'])
+    if error:
+        return error
+
+    start, end = data['start_datetime'], data['end_datetime']
+    demo_devices = list(onboarding_request.demo_devices.all().order_by('id'))
+    if not demo_devices:
+        return Response({'error': 'This onboarding request has no demo devices.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    imei_filter = Q()
+    for demo_device in demo_devices:
+        imei_filter |= Q(raw_data__contains=demo_device.imei)
+
+    rows = list(
+        GPSDataLog.objects
+        .filter(timestamp__gte=start, timestamp__lte=end + HISTORY_LATE_ARRIVAL_SLACK)
+        .filter(imei_filter)
+        .filter(raw_data__contains='PVT')
+        .order_by('timestamp')
+        .values_list('raw_data', 'timestamp')[:HISTORY_ROW_LIMIT + 1]
+    )
+    truncated = len(rows) > HISTORY_ROW_LIMIT
+    rows = rows[:HISTORY_ROW_LIMIT]
+
+    entries_by_imei = {d.imei: [] for d in demo_devices}
+    for raw_data, server_time in rows:
+        parts = _packet_fields(raw_data)
+        idx = _pvt_index(parts)
+        if idx is None:
+            continue
+        imei = parts[idx + PVT_OFFSET_IMEI] if len(parts) > idx + PVT_OFFSET_IMEI else None
+        if imei not in entries_by_imei:
+            continue
+        effective_time, time_source = _packet_time(raw_data, server_time)
+        if not start <= effective_time <= end:
+            continue
+        entries_by_imei[imei].append(
+            (effective_time, _pvt_history_entry(raw_data, parts, idx, server_time, effective_time, time_source))
+        )
+
+    devices = []
+    for demo_device in demo_devices:
+        timed_entries = sorted(entries_by_imei[demo_device.imei], key=lambda pair: pair[0])
+        stats = _gap_stats([t for t, _entry in timed_entries])
+        stats.pop('gaps')
+        devices.append({
+            'demo_device_id': demo_device.id,
+            'device_serial_no': demo_device.device_serial_no,
+            'imei': demo_device.imei,
+            'location_count': sum(1 for _t, e in timed_entries if e['latitude'] is not None),
+            'gap_stats': stats,
+            'entries': [entry for _t, entry in timed_entries],
+        })
+
+    return Response(
+        {
+            'onboarding_request_id': onboarding_request.id,
+            'start_datetime': start.isoformat(),
+            'end_datetime': end.isoformat(),
+            'truncated': truncated,
+            'devices': devices,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+# ===========================================================================
 # Demo page
 # ===========================================================================
 
@@ -1026,12 +1294,12 @@ def technical_onboarding_test_requirements_page(request):
 @transaction.atomic
 def dev_force_pass_test(request):
     """
-    DEV-ONLY -- force checkpoint `test_no` (1-39) to 'complete' for `imei`
+    DEV-ONLY -- force checkpoint `test_no` (any catalog serial_no) to 'complete' for `imei`
     with a dummy snapshot, bypassing every real trigger/detection path.
 
     Exists so the rest of the pipeline (sequential gating, certificate
     issuance, dashboards) can be exercised end-to-end without physically
-    operating a device through all 39 checkpoints. Blocked automatically
+    operating a device through every checkpoint. Blocked automatically
     outside DEBUG by @_dev_only, same as dev_get_token/dev_list_users.
 
     Request body: {"imei": "<imei>", "test_no": 1}
@@ -1044,9 +1312,7 @@ def dev_force_pass_test(request):
     try:
         test_no = int(test_no)
     except (TypeError, ValueError):
-        return Response({'error': 'test_no must be an integer from 1 to 39.'}, status=status.HTTP_400_BAD_REQUEST)
-    if not 1 <= test_no <= 39:
-        return Response({'error': 'test_no must be an integer from 1 to 39.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'test_no must be an integer serial_no from the test catalog.'}, status=status.HTTP_400_BAD_REQUEST)
 
     test_case = TechnicalOnboardingTestCase.objects.filter(serial_no=test_no).last()
     if not test_case:

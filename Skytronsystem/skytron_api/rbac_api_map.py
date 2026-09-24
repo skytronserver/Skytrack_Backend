@@ -151,6 +151,7 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "superadmin_test_heartbeat": ["tech_onboarding", "tech_onboarding_final"],
     "superadmin_refresh_test_log": ["tech_onboarding", "tech_onboarding_final"],
     "superadmin_complete_test": ["tech_onboarding", "tech_onboarding_final"],
+    "superadmin_demo_device_location_history": ["tech_onboarding", "tech_onboarding_final"],
 
     # ── A.7  Tracking & Playback ──────────────────────────────────────────────
     # gps_track_data_api is called from many routes / many modules
