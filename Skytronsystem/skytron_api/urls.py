@@ -50,6 +50,7 @@ from .technical_onboarding_testing_views import (
     technical_onboarding_test_requirements_page,
     dev_force_pass_test,
 )
+from .vltd_summary_views import superadmin_vltd_summary
 from .alert_stats_views import (
     alert_stats_type_options,
     alert_stats_summary,
@@ -1383,4 +1384,6 @@ urlpatterns += [
     path('esim-provider/ip-range/delete/', esim_provider_ip_range_delete, name='esim-provider-ip-range-delete'),
     
     path('m2m/ip-scan/', m2m_provider_ip_scan, name='m2m-ip-scan'),
+
+    path('superadmin/vltd-summary/', superadmin_vltd_summary, name='superadmin_vltd_summary'),
 ]

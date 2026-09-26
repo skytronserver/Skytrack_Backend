@@ -52,6 +52,7 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "ambulance_fleet_metrics":            ["dashboard_central"],
     "ambulance_fleet_metrics222":         ["dashboard_central"],  # legacy alias
     "police_fleet_metrics":               ["dashboard_central"],
+    "superadmin_vltd_summary":            ["dashboard_central"],
 
     # SOS pending-call list appears on /superadmin-dashboard AND /sos-call-list
     "DEx_getPendingCallList":     ["dashboard_central", "sos_call_list", "report_sos_call_list"],

@@ -812,6 +812,7 @@ class EM_admin(models.Model):
     expirydate = models.DateField(default=timezone.localdate)
     idProofno = models.CharField(max_length=255, blank=True, null=True)
     file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    file_authLetter = models.CharField(max_length=255, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
     status_choices = [
             ('Created', 'Created'),

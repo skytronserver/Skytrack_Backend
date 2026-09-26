@@ -8085,6 +8085,14 @@ def create_SOS_admin(request ):
                 if not file_idProof: 
                     user.delete()
                     return Response({'error': "Invalid file." }, status=400)
+                # Frontend sends the letter as file_authorization_letter.
+                auth_letter_key = 'file_authorization_letter' if 'file_authorization_letter' in request.FILES else 'file_authLetter'
+                file_authLetter = None
+                if auth_letter_key in request.FILES:
+                    file_authLetter = save_file(request, auth_letter_key, 'fileuploads/man')
+                    if not file_authLetter:
+                        user.delete()
+                        return Response({'error': "Invalid authorization letter file."}, status=400)
                 dealer,error = EM_admin.objects.safe_create( 
                     created=created,
                     state_id=state, 
@@ -8092,6 +8100,7 @@ def create_SOS_admin(request ):
                     expirydate=expirydate, 
                     idProofno=idProofno, 
                     file_idProof=file_idProof,
+                    file_authLetter=file_authLetter,
                     createdby=createdby,
                     status="Created",
                 ) 
