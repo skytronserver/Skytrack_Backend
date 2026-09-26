@@ -7185,6 +7185,36 @@ def send_usercreation_otp(user, new_password, type):
         raise Exception(msg)
 
 
+# DLT template for the technical-onboarding-approved SMS.
+# TODO: dummy template ID and text — replace with the DLT-registered ones.
+TECH_ONBOARDING_APPROVED_SMS_TPID = "1007000000000000001"
+TECH_ONBOARDING_APPROVED_SMS_TEXT = (
+    'Dear Manufacturer, the technical onboarding of your device model {model} '
+    'has been successfully integrated on the SkyTron platform. -SkyTron'
+)
+
+
+def send_tech_onboarding_approved_sms(onboarding_request):
+    """SMS the manufacturer that technical onboarding was approved. Sent to the
+    company phone number, falling back to the manufacturer login's mobile.
+    Never raises — an SMS failure must not undo the approval."""
+    try:
+        manufacturer = onboarding_request.manufacturer
+        phone = manufacturer.company_phoneno
+        if not phone:
+            login_user = manufacturer.users.first()
+            phone = login_user.mobile if login_user else None
+        if not phone:
+            logger.warning('Tech onboarding SMS skipped: no phone for manufacturer %s', manufacturer.id)
+            return
+        text = TECH_ONBOARDING_APPROVED_SMS_TEXT.format(
+            model=onboarding_request.device_model.model_name,
+        )
+        send_SMS(phone, text, TECH_ONBOARDING_APPROVED_SMS_TPID)
+    except Exception:
+        logger.exception('Tech onboarding SMS failed for request %s', onboarding_request.id)
+
+
 def _role_to_account_type(role: str) -> str:
     if not role:
         return "User"
@@ -18139,6 +18169,10 @@ def superadmin_finalize_technical_onboarding_request(request):
     onboarding_request.save(
         update_fields=['compatibility_report_pdf', 'final_comment', 'status', 'decision_datetime']
     )
+
+    if technical_status == 'technically_compatible':
+        # Only once the approval is committed.
+        transaction.on_commit(lambda: send_tech_onboarding_approved_sms(onboarding_request))
 
     response_serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_request)
     return Response(response_serializer.data, status=status.HTTP_200_OK)
