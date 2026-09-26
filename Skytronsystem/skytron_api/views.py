@@ -18759,6 +18759,32 @@ def create_device_model(request ):
     if combinations_error:
         field_errors['provider_combinations'] = combinations_error
 
+    # Selected M2M providers must have completed integration, and every TSP in
+    # the combinations must be backed by one of their confirmed IP ranges.
+    if hasattr(request.data, 'getlist'):
+        esim_provider_ids = request.data.getlist('eSimProviders')
+    else:
+        esim_provider_ids = request.data.get('eSimProviders') or []
+        if not isinstance(esim_provider_ids, list):
+            esim_provider_ids = [esim_provider_ids]
+    selected_providers = eSimProvider.objects.filter(id__in=[i for i in esim_provider_ids if str(i).isdigit()])
+    not_integrated = selected_providers.exclude(id__in=m2m_integrated_providers(selected_providers).values('id'))
+    if not_integrated.exists():
+        field_errors['eSimProviders'] = (
+            "M2M integration is not complete for: "
+            + ', '.join(not_integrated.values_list('company_name', flat=True))
+        )
+    elif provider_combinations:
+        available = _confirmed_tsps(selected_providers)
+        requested = {tsp for combination in provider_combinations for tsp in combination}
+        unavailable = sorted(requested - available)
+        if unavailable:
+            field_errors['provider_combinations'] = (
+                "No selected M2M provider has a confirmed IP range for: "
+                + ', '.join(unavailable)
+                + (". Available: " + ', '.join(sorted(available)) if available else ". No TSP is available yet.")
+            )
+
     if field_errors:
         return Response({"errors": field_errors}, status=status.HTTP_400_BAD_REQUEST)
      
@@ -42432,6 +42458,39 @@ def _normalise_tsp(value):
     in another, and BSNL arrives as 'BSNL_S' on some SIMs . Upper-case it and drop any suffix.
     """
     return str(value or '').strip().upper().split('_')[0]
+
+
+# Words that identify each TSP in an IP range's free-text isp_name.
+TSP_ISP_ALIASES = {
+    'AIRTEL': ('airtel', 'bharti'),
+    'JIO': ('jio', 'reliance'),
+    'VI': ('vi', 'vodafone', 'idea'),
+    'BSNL': ('bsnl', 'bharat sanchar'),
+    'MTNL': ('mtnl', 'mahanagar'),
+}
+
+
+def _isp_name_to_tsp(isp_name):
+    """Map an IP range's isp_name ('Bharti Airtel Ltd', 'Vodafone Idea') to a
+    TSP_CHOICES code, or None if it names no known TSP."""
+    name = str(isp_name or '').strip().lower()
+    if not name:
+        return None
+    if _normalise_tsp(name) in TSP_CHOICES:
+        return _normalise_tsp(name)
+    for tsp, aliases in TSP_ISP_ALIASES.items():
+        if any(re.search(r'\b' + re.escape(alias) + r'\b', name) for alias in aliases):
+            return tsp
+    return None
+
+
+def _confirmed_tsps(providers):
+    """TSPs usable by a device model with these M2M providers: those covered
+    by an active IP range of a provider whose M2M integration is complete."""
+    isp_names = eSimProviderIPRange.objects.filter(
+        provider__in=m2m_integrated_providers(providers), is_active=True,
+    ).values_list('isp_name', flat=True)
+    return {tsp for tsp in map(_isp_name_to_tsp, isp_names) if tsp}
 
 
 def _validate_provider_combinations(raw):
