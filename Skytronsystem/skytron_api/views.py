@@ -2067,6 +2067,28 @@ import random
 from rest_framework.response import Response
 
 
+def m2m_integrated_providers(queryset):
+    """eSIM providers whose M2M integration is complete: API verified and at
+    least one active IP range. Only these may be picked by a manufacturer."""
+    return queryset.filter(m2m_api_verified=True, ip_ranges__is_active=True).distinct()
+
+
+# Frontends send the company PAN card under either key.
+PAN_CARD_FILE_KEYS = ('file_selfCertifiedCompanyPANCard', 'file_pan')
+
+
+def save_pan_card_file(request):
+    """Save the PAN card upload if one was sent. Returns (path, error);
+    both are None when no PAN card was uploaded."""
+    for key in PAN_CARD_FILE_KEYS:
+        if request.FILES.get(key):
+            path = save_file(request, key, 'fileuploads/man')
+            if not path:
+                return None, f"Invalid file for 'PAN Card' ({key}). Allowed types: PDF, PNG, JPG, XLS, XLSX. Max size: 1 MB."
+            return path, None
+    return None, None
+
+
 def save_file(request, tag, path):
     uploaded_file = request.FILES.get(tag)
     if not uploaded_file:
@@ -5301,109 +5323,6 @@ def filter_VehicleOwner(request ):
 
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-@transaction.atomic
-@require_http_methods(['GET', 'POST'])
-@require_permission('manufacturer_management', 'update')
-def update_manufacturer(request ): 
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    
-    try:
-        id = request.data.get('manufacturer_id')
-        man=Manufacturer.objects.filter(id=id).last()
-        if not man:
-            return Response({'error': "Invalid manufacturer id"}, status=400)
-        m_user = man.users.last()
-        if not m_user:
-            return Response({'error': "No user mapped to this manufacturer"}, status=400)
-        is_creator = bool(getattr(man, 'createdby_id', None) == getattr(request.user, 'id', None))
-        is_superadmin = bool(get_user_object(request.user, 'superadmin'))
-        if not (is_creator or is_superadmin):
-            return Response({'error': "Only creator or superadmin can edit this manufacturer"}, status=400)
-        
-        date_joined = timezone.localdate() 
-        company_name = request.data.get('company_name')
-        gstnnumber = request.data.get('gstnnumber')        
-        state = request.data.get('state')
-        gstno = request.data.get('gstno' )   
-        idProofno = request.data.get('idProofno' )  
-        file_authLetter = request.data.get('file_authLetter')
-        file_companRegCertificate = request.data.get('file_companRegCertificate')
-        file_GSTCertificate = request.data.get('file_GSTCertificate')
-        file_idProof = request.data.get('file_idProof')
-        esim_provider_ids = request.data.get('esim_provider', [])
-        
-        email = request.data.get('email' )
-        mobile = request.data.get('mobile' )
-        name = request.data.get('name' )
-        dob = request.data.get('dob' )
-        partner_status = _normalize_partner_status(request.data.get('status'))
-        if company_name:
-            man.company_name=company_name
-        if gstnnumber :
-            man.gstnnumber=gstnnumber
-        if state:
-            man.state = state
-        if gstno:
-            man.gstno=gstno  
-        if  idProofno:
-            man.idProofno=idProofno
-        if file_authLetter:
-            man.file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man') 
-            
-            if not man.file_authLetter : 
-                    return Response({'error': "Invalid file." }, status=400)
-
-        if file_companRegCertificate :
-            man.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
-                
-            if not man.file_companRegCertificate : 
-                    return Response({'error': "Invalid file." }, status=400)
-
-        if file_GSTCertificate :
-            man.file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
-            if not man.file_GSTCertificate : 
-                    return Response({'error': "Invalid file." }, status=400)
-            
-
-        if file_idProof:
-            man.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
-            if not man.file_idProof : 
-                    return Response({'error': "Invalid file." }, status=400)
-            
-        if esim_provider_ids !=[]:
-            man.esim_provider_ids=esim_provider_ids
-
-            
-        if email:
-            m_user.email  =email
-        if mobile:
-            m_user.mobile=mobile
-        if name:
-            m_user.name=name 
-        if dob:
-            m_user.dob = dob
-        if partner_status is not None:
-            if partner_status not in ALLOWED_PARTNER_STATUSES:
-                return Response(
-                    {'error': 'Invalid status. Allowed values are: Reject, Allow to login, Allow to add dealer, Accept'},
-                    status=400
-                )
-            man.status = partner_status
-        
-     
-        m_user.save()
-        man.save() 
-        return Response(ManufacturerSerializer(man).data)
-      
-
-    except Exception as e:
-        return Response({'error': "Unable to process request."+str(e)}, status=400)
 
 
 @api_view(['POST'])
@@ -5480,6 +5399,11 @@ def update_eSimProvider(request ):
             
             if not esimprovider.file_authLetter: 
                     return Response({'error': "Invalid auth file." }, status=400)
+        pan_card_file, pan_error = save_pan_card_file(request)
+        if pan_error:
+            return Response({'error': pan_error}, status=400)
+        if pan_card_file:
+            esimprovider.file_selfCertifiedCompanyPANCard = pan_card_file
         if file_companRegCertificate:
             esimprovider.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
         
@@ -5605,6 +5529,10 @@ def create_eSimProvider_pub(request ):
                     file_companRegCertificate=save_file(request,'file_companRegCertificate','fileuploads/man')
                     file_GSTCertificate=save_file(request,'file_GSTCertificate','fileuploads/man')
                     file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                    file_selfCertifiedCompanyPANCard, pan_error = save_pan_card_file(request)
+                    if pan_error:
+                        user.delete()
+                        return Response({'error': pan_error}, status=400)
                     file_company_registration_certificate = None
                     if request.FILES.get('file_company_registration_certificate'):
                         file_company_registration_certificate = save_file(request, 'file_company_registration_certificate', 'fileuploads/man')
@@ -5674,6 +5602,7 @@ def create_eSimProvider_pub(request ):
                     file_company_registration_certificate=file_company_registration_certificate,
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
+                    file_selfCertifiedCompanyPANCard=file_selfCertifiedCompanyPANCard,
                     file_officialTechnicalOnboardingRequestLetter=file_officialTechnicalOnboardingRequestLetter,
                     file_selfCertifiedDotM2mRegistrationCertificate=file_selfCertifiedDotM2mRegistrationCertificate,
                     file_affidavitNda=file_affidavitNda,
@@ -5770,6 +5699,10 @@ def create_eSimProvider(request ):
                     file_companRegCertificate=save_file(request,'file_companRegCertificate','fileuploads/man')
                     file_GSTCertificate=save_file(request,'file_GSTCertificate','fileuploads/man')
                     file_idProof = save_file(request,'file_idProof','fileuploads/man')
+                    file_selfCertifiedCompanyPANCard, pan_error = save_pan_card_file(request)
+                    if pan_error:
+                        user.delete()
+                        return Response({'error': pan_error}, status=400)
                     file_company_registration_certificate = None
                     if request.FILES.get('file_company_registration_certificate'):
                         file_company_registration_certificate = save_file(request, 'file_company_registration_certificate', 'fileuploads/man')
@@ -5839,6 +5772,7 @@ def create_eSimProvider(request ):
                     file_company_registration_certificate=file_company_registration_certificate,
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
+                    file_selfCertifiedCompanyPANCard=file_selfCertifiedCompanyPANCard,
                     file_officialTechnicalOnboardingRequestLetter=file_officialTechnicalOnboardingRequestLetter,
                     file_selfCertifiedDotM2mRegistrationCertificate=file_selfCertifiedDotM2mRegistrationCertificate,
                     file_affidavitNda=file_affidavitNda,
@@ -5930,6 +5864,9 @@ def filter_eSimProvider(request ):
         if state_filter:
             manufacturers = manufacturers.filter(state__id=state_filter)
 
+        if str(request.data.get('integrated_only', '')).strip().lower() in {'1', 'true', 'yes'}:
+            manufacturers = m2m_integrated_providers(manufacturers)
+
         # Apply state-based filtering for state admin users
         if uo:  # If user is a state admin
             manufacturers = manufacturers.filter(state=uo.state)
@@ -5987,6 +5924,7 @@ def filter_eSimProvider_pub(request ):
 
         # Start with base query
         manufacturers = eSimProvider.objects.all() if all_user else eSimProvider.objects.filter(users__status='active')
+        manufacturers = m2m_integrated_providers(manufacturers)
         
         # Apply filters based on input parameters
         if dealer_id:
@@ -6367,6 +6305,11 @@ def update_manufacturer(request ):
             man.file_authLetter = save_file(request, 'file_authLetter', 'fileuploads/man') 
             if not man.file_authLetter :
                     return Response({'error': "Invalid file." }, status=400)
+        pan_card_file, pan_error = save_pan_card_file(request)
+        if pan_error:
+            return Response({'error': pan_error}, status=400)
+        if pan_card_file:
+            man.file_selfCertifiedCompanyPANCard = pan_card_file
 
         if file_companRegCertificate :
             man.file_companRegCertificate = save_file(request, 'file_companRegCertificate', 'fileuploads/man')
@@ -6375,13 +6318,12 @@ def update_manufacturer(request ):
 
         if file_GSTCertificate :
             man.file_GSTCertificate = save_file(request, 'file_GSTCertificate', 'fileuploads/man')
-            if not file_GSTCertificate :
+            if not man.file_GSTCertificate :
                 return Response({'error': "Invalid file." }, status=400)
 
         if file_idProof:
             man.file_idProof = save_file(request, 'file_idProof', 'fileuploads/man')
-            
-            if not file_idProof :
+            if not man.file_idProof :
                 return Response({'error': "Invalid file." }, status=400)
         if esim_provider_ids !=[]:
             man.esim_provider_ids=esim_provider_ids
@@ -6486,6 +6428,14 @@ def create_manufacturer_pub(request ):
         esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
         #print(esim_provider_ids)
 
+        # Only providers with completed M2M integration may be linked. Checked
+        # before create_user so a rejected request leaves no orphan user.
+        not_integrated = eSimProvider.objects.filter(id__in=esim_provider_ids).exclude(
+            id__in=m2m_integrated_providers(eSimProvider.objects.all()).values('id'))
+        if not_integrated.exists():
+            names = ', '.join(not_integrated.values_list('company_name', flat=True))
+            return Response({'error': f"M2M integration is not complete for: {names}"}, status=400)
+
         user, error, new_password = create_user('devicemanufacture', request)
         if user:  
             try:
@@ -6512,6 +6462,11 @@ def create_manufacturer_pub(request ):
                 file_companRegCertificate = _saved_files['file_companRegCertificate']
                 file_GSTCertificate = _saved_files['file_GSTCertificate']
                 file_idProof = _saved_files['file_idProof']
+
+                file_selfCertifiedCompanyPANCard, pan_error = save_pan_card_file(request)
+                if pan_error:
+                    transaction.savepoint_rollback(sid)
+                    return Response({'error': pan_error}, status=400)
 
                 # Optional file upload: only validate if provided
                 file_affidavitNda = None
@@ -6581,6 +6536,7 @@ def create_manufacturer_pub(request ):
                     file_company_registration_certificate=file_company_registration_certificate,
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
+                    file_selfCertifiedCompanyPANCard=file_selfCertifiedCompanyPANCard,
                     file_affidavitNda=file_affidavitNda,
                     file_officialTechnicalOnboardingRequestLetter=file_officialTechnicalOnboardingRequestLetter,
                     file_vehicleTypeApprovalTacAnnexureCopy=file_vehicleTypeApprovalTacAnnexureCopy,
@@ -6712,6 +6668,14 @@ def create_manufacturer(request ):
         esim_provider_ids = request.POST.getlist('esimProvider[]',[])#request.data.get('esimProvider[]', [])
         #print(esim_provider_ids)
 
+        # Only providers with completed M2M integration may be linked. Checked
+        # before create_user so a rejected request leaves no orphan user.
+        not_integrated = eSimProvider.objects.filter(id__in=esim_provider_ids).exclude(
+            id__in=m2m_integrated_providers(eSimProvider.objects.all()).values('id'))
+        if not_integrated.exists():
+            names = ', '.join(not_integrated.values_list('company_name', flat=True))
+            return Response({'error': f"M2M integration is not complete for: {names}"}, status=400)
+
         user, error, new_password = create_user('devicemanufacture', request)
         if user:  
             try:
@@ -6738,6 +6702,11 @@ def create_manufacturer(request ):
                 file_companRegCertificate = _saved_files['file_companRegCertificate']
                 file_GSTCertificate = _saved_files['file_GSTCertificate']
                 file_idProof = _saved_files['file_idProof']
+
+                file_selfCertifiedCompanyPANCard, pan_error = save_pan_card_file(request)
+                if pan_error:
+                    transaction.savepoint_rollback(sid)
+                    return Response({'error': pan_error}, status=400)
 
                 # Optional file upload: only validate if provided
                 file_affidavitNda = None
@@ -6807,6 +6776,7 @@ def create_manufacturer(request ):
                     file_company_registration_certificate=file_company_registration_certificate,
                     file_GSTCertificate=file_GSTCertificate,
                     file_idProof=file_idProof,
+                    file_selfCertifiedCompanyPANCard=file_selfCertifiedCompanyPANCard,
                     file_affidavitNda=file_affidavitNda,
                     file_officialTechnicalOnboardingRequestLetter=file_officialTechnicalOnboardingRequestLetter,
                     file_vehicleTypeApprovalTacAnnexureCopy=file_vehicleTypeApprovalTacAnnexureCopy,
