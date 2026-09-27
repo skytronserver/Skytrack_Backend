@@ -16,15 +16,10 @@ git pull
 sudo rm -f /var/log/*.gz
 sudo find /var/log -maxdepth 1 -type f -name '*-????????' -delete
 sudo journalctl --vacuum-size=100M
-sudo truncate -s 0 /var/log/mail.log
-sudo truncate -s 0 /var/log/mail.info
-sudo truncate -s 0 /var/log/mail.warn
-sudo truncate -s 0 /var/log/mail.err
-sudo truncate -s 0 /var/log/mail
-sudo truncate -s 0 /var/log/syslog.1
-sudo truncate -s 0 /var/log/warn
-sudo truncate -s 0 /var/log/sudo.log
-sudo truncate -s 0 /var/log/aide
+# Only truncate regular files — some servers have these as directories or not at all
+for f in mail.log mail.info mail.warn mail.err mail syslog.1 warn sudo.log aide; do
+    if sudo test -f "/var/log/$f"; then sudo truncate -s 0 "/var/log/$f"; fi
+done
 
 
 sudo docker system prune -f
