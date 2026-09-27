@@ -7541,9 +7541,9 @@ def filter_StateAdmin(request ):
                 users__mobile__icontains=phone_no, 
             ).distinct()
         else:
+            # All statuses, so admins still pending registration (password not
+            # yet set via the link) show up in the list too.
             manufacturers = StateAdmin.objects.filter(
-                #id=manufacturer_id,
-                users__status='active',
                 users__email__icontains=email, 
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
