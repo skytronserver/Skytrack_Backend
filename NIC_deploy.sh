@@ -14,7 +14,7 @@ git pull
 # Run with sudo — scripts have their own env/Docker setup
  
 sudo rm -f /var/log/*.gz
-sudo rm -f /var/log/*-????????
+sudo find /var/log -maxdepth 1 -type f -name '*-????????' -delete
 sudo journalctl --vacuum-size=100M
 sudo truncate -s 0 /var/log/mail.log
 sudo truncate -s 0 /var/log/mail.info
