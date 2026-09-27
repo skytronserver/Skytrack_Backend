@@ -265,17 +265,11 @@ def get_active_session_count(user_id):
         int: Number of active sessions
     """
     try:
-        # Django Redis doesn't support pattern matching directly
-        # We'll use a workaround by storing a session count
-        from django.core.cache import cache
-        from django_redis import get_redis_connection
-
-        # Get Redis connection
-        redis_conn = get_redis_connection("default")
-
-        # Get all keys matching pattern
-        pattern = get_user_sessions_pattern(user_id)
-        keys = redis_conn.keys(pattern)
+        # Use the cache API's keys() rather than a raw Redis KEYS call: keys
+        # written through django.core.cache are stored with Django's key
+        # prefix/version (":1:user_session:..."), so a raw pattern of
+        # "user_session:..." never matched and the count was always 0.
+        keys = cache.keys(get_user_sessions_pattern(user_id))
 
         count = len(keys) if keys else 0
         logger.debug(f"Active session count for user {user_id}: {count}")
@@ -288,6 +282,62 @@ def get_active_session_count(user_id):
         # logins) whenever Redis is unreachable. Callers that enforce a
         # max_simultaneous_sessions limit must treat -1 as "deny" (fail closed).
         return -1
+
+
+def enforce_session_limit(user_id, user_role, keep_token):
+    """
+    Enforce max_simultaneous_sessions for a user right after a login completes.
+
+    Keeps the newest `max_simultaneous_sessions` logged-in sessions (always
+    including `keep_token`, the one just issued) and terminates the rest:
+    Session.status -> 'logout' (JWTAuthentication only accepts 'login'),
+    token blacklisted, and removed from Redis session tracking.
+    max_simultaneous_sessions = 0 means unlimited.
+
+    Returns:
+        int: number of older sessions terminated
+    """
+    from .models import Session, TokenBlacklist
+    from .secure_token import decode_jwt_token
+
+    try:
+        settings = get_login_settings_from_cache(user_role) or {}
+        max_sessions = int(settings.get('max_simultaneous_sessions', 1))
+        if max_sessions <= 0:
+            return 0
+
+        others = (Session.objects
+                  .filter(user_id=user_id, status='login')
+                  .exclude(token=keep_token)
+                  .order_by('-loginTime', '-id'))
+        to_end = list(others[max_sessions - 1:])
+
+        for session in to_end:
+            token = session.token
+            if token:
+                try:
+                    payload = decode_jwt_token(token)
+                    if payload:
+                        TokenBlacklist.blacklist_token(
+                            token=token,
+                            user_id=user_id,
+                            jti=payload.get('jti', f"session_limit_{user_id}_{session.id}"),
+                            expires_at=timezone.make_aware(datetime.fromtimestamp(payload.get('exp', 0))),
+                            reason="session_limit"
+                        )
+                except Exception as e:
+                    logger.error(f"Error blacklisting token for user {user_id}: {e}")
+                remove_active_session(user_id, token)
+            session.status = 'logout'
+            session.save(update_fields=['status'])
+
+        if to_end:
+            logger.info(f"Session limit ({max_sessions}) for user {user_id}: ended {len(to_end)} older session(s)")
+        return len(to_end)
+
+    except Exception as e:
+        logger.error(f"Error enforcing session limit for user {user_id}: {e}")
+        return 0
 
 
 # ==================== Validation Functions ====================
@@ -338,19 +388,12 @@ def validate_login_allowed(user_id, user_role):
             if current_count >= daily_limit:
                 return False, f"Daily login limit ({daily_limit}) reached. Please try again tomorrow"
         
-        # 3. Check simultaneous sessions limit
-        max_sessions = settings.get('max_simultaneous_sessions', 0)
-        if max_sessions > 0:
-            active_sessions = get_active_session_count(user_id)
-            if active_sessions < 0:
-                # Redis/session-count lookup failed - fail CLOSED for this
-                # specific check rather than silently allowing unlimited
-                # concurrent logins, since the limit can't be verified.
-                logger.error(f"Could not verify active session count for user {user_id}; denying login")
-                return False, "Unable to verify active session limit right now. Please try again shortly."
-            if active_sessions >= max_sessions:
-                return False, f"Maximum simultaneous sessions ({max_sessions}) reached. Please logout from another device"
-        
+        # 3. Simultaneous sessions limit is NOT checked here. It is enforced
+        # when a login completes (enforce_session_limit), by ending the
+        # user's oldest sessions. Refusing the new login instead would let
+        # a stale/abandoned session (or an attacker who logged in first)
+        # lock the legitimate user out until that token expires.
+
         # All checks passed
         return True, None
         

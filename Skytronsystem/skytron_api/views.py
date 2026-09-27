@@ -19726,7 +19726,7 @@ def user_login(request ):
 
         # ===== DIRECT LOGIN BYPASS (TEMPORARY - skip captcha+OTP for testing) =====
         if DIRECT_LOGIN_BYPASS:
-            from .login_settings_cache import add_active_session
+            from .login_settings_cache import add_active_session, enforce_session_limit
             user.is_active = True
             user.login = True
             user.save()
@@ -19750,6 +19750,7 @@ def user_login(request ):
             if bypass_serializer.is_valid():
                 bypass_serializer.save()
                 add_active_session(user.id, token_value, session_expiry_mins)
+                enforce_session_limit(user.id, user.role, token_value)
                 try:
                     timenow = timezone.now()
                     user.last_login = timenow
@@ -19939,6 +19940,7 @@ def user_login_sosexecutive_direct(request):
             increment_daily_login_count,
             get_session_expiry_minutes,
             add_active_session,
+            enforce_session_limit,
         )
 
         is_allowed, error_message = validate_login_allowed(user.id, user.role)
@@ -19985,6 +19987,7 @@ def user_login_sosexecutive_direct(request):
         session_serializer.save()
 
         add_active_session(user.id, token_value, session_expiry_mins)
+        enforce_session_limit(user.id, user.role, token_value)
 
         try:
             timenow = timezone.now()
@@ -20753,7 +20756,7 @@ def validate_otp(request ):
             Token.objects.filter(user=session.user).delete()
             
             # ===== GET SESSION EXPIRY FROM LOGIN SETTINGS =====
-            from .login_settings_cache import add_active_session, get_session_expiry_minutes
+            from .login_settings_cache import add_active_session, get_session_expiry_minutes, enforce_session_limit
             
             # Get session expiry for user's role
             session_expiry_mins = get_session_expiry_minutes(session.user.role)
@@ -20789,6 +20792,8 @@ def validate_otp(request ):
             
             # Add session to Redis for simultaneous session tracking
             add_active_session(session.user.id, token_value, session_expiry_mins)
+            # Single/limited-session policy: end this user's older sessions
+            enforce_session_limit(session.user.id, session.user.role, token_value)
             # ===== END SESSION TRACKING =====
             
             try:
