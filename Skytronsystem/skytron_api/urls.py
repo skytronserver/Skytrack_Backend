@@ -155,6 +155,7 @@ urlpatterns = [
     path('deactivateUser/', deactivate_user, name='user_dactivate'),
     path('activateUser/', activate_user, name='user_activate'),
     path('user_logout/', user_logout, name='user_logout'),
+    path('session/verify/', session_verify, name='session_verify'),
     path('create_systemadmin/', create_superuser, name='create_superuser'),
     #path('user_get_parent/<int:user_id>/', user_get_parent, name='user_get_parent'),
     path('get_list/', get_list, name='get_list'),

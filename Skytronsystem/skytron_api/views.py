@@ -21067,6 +21067,28 @@ def list_holidays(request):
         return Response({'error': str(e)}, status=400)
     
           
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([UserRateThrottle])
+def session_verify(request):
+    """
+    Return the identity and permissions of the token making this request.
+
+    The frontend calls this right after OTP verification, with the token it
+    just received, and trusts only this server answer - not the fields of the
+    validate_otp response, which an attacker can alter in transit (VAPT: OTP
+    bypass via response manipulation). A pre-OTP/forged/ended token never
+    reaches this view (JWTAuthentication rejects it, so DRF returns 403).
+    """
+    user = request.user
+    return Response({
+        'authenticated': True,
+        'user_id': user.id,
+        'role': user.role,
+        'permissions': get_all_module_permissions(user),
+    }, status=status.HTTP_200_OK)
+
+
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
