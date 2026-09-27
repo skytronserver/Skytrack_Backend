@@ -306,15 +306,20 @@ REST_FRAMEWORK = {
     },
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-    # BrowsableAPIRenderer is only added when DEBUG=True. Left on by default,
-    # DRF renders an HTML/form UI for every endpoint that discloses available
-    # methods, serializer fields and API structure to anyone who hits an
-    # endpoint from a browser - unnecessary information exposure in production.
+    # VAPT (DRF page disclosure): JSON only. Left on, DRF renders an HTML/form
+    # UI for every endpoint that discloses available methods, serializer
+    # fields and API structure to anyone who opens it in a browser. This is
+    # deliberately NOT tied to DEBUG (DEBUG gets switched on temporarily for
+    # testing); set ENABLE_BROWSABLE_API=true only on a local machine.
     'DEFAULT_RENDERER_CLASSES': (
         ['rest_framework.renderers.JSONRenderer', 'rest_framework.renderers.BrowsableAPIRenderer']
-        if DEBUG else
+        if os.environ.get('ENABLE_BROWSABLE_API', 'false').lower() == 'true' else
         ['rest_framework.renderers.JSONRenderer']
     ),
+    # No OPTIONS self-description (endpoint name, docstring, formats, fields).
+    # CORS preflight is answered by corsheaders middleware before DRF, so
+    # browsers are unaffected; a plain OPTIONS to a view now returns 405.
+    'DEFAULT_METADATA_CLASS': None,
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
         'skytron_api.jwt_authentication.HybridAuthentication',   
