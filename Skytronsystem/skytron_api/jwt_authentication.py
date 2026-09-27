@@ -122,9 +122,15 @@ class JWTAuthentication(BaseAuthentication):
             # is allow-list (only 'login' passes) rather than deny-list, so a
             # token minted for an intermediate/unfinished auth step can never
             # be used to reach a general API even if its token_type were
-            # ever mis-set to "access".
+            # ever mis-set to "access". A token with no Session row at all is
+            # also rejected: every login flow persists its issued token in a
+            # Session, so an orphan token (never logged in, or its session was
+            # removed) must not be reusable just because its signature is valid.
             session = Session.objects.filter(token=token, user=user).last()
-            if session and session.status != 'login':
+            if not session:
+                logger.warning(f"No session found for JWT of user {user_id}")
+                return None
+            if session.status != 'login':
                 logger.warning(f"Session not fully authenticated (status={session.status}) for user {user_id}")
                 return None
 
