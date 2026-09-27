@@ -100,6 +100,9 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    # VAPT: rejects markup/script/injection payloads in any request input
+    # (INPUT_GUARD_MODE=block|log|off). After CORS so 400s still carry CORS headers.
+    'skytron_api.input_guard.InputGuardMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',

@@ -1,3 +1,4 @@
+import re
 # Serializer for GSM cell info input (cell location API)
 
 # skytron_api/serializers.py
@@ -2875,13 +2876,79 @@ class PublicBusStopSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'created_by', 'created_at', 'updated_at',
             'last_activation_date', 'last_deactivation_date',
+            # status only changes through the /toggle/ endpoint, which also
+            # records activation/deactivation dates
+            'status',
         ]
 
+    # VAPT (improper input validation): strict server-side allow-list for
+    # every client-supplied field of this endpoint.
+    WRITABLE_FIELDS = {'name', 'address', 'latitude', 'longitude', 'state', 'district', 'deactivation_date'}
+    # letters/digits (\w) plus Indic scripts incl. their vowel signs (U+0900-U+0DFF:
+    # Devanagari, Bengali/Assamese, ...), space and basic punctuation
+    NAME_RE    = re.compile(r"^[\w\u0900-\u0DFF .,()/&'-]+$")
+    ADDRESS_RE = re.compile(r"^[^<>{}`\\\x00-\x08\x0b-\x1f\x7f]*$")  # no markup/control characters
+    # India bounding box (with margin)
+    LAT_RANGE = (6, 38)
+    LON_RANGE = (68, 98)
+
+    def to_internal_value(self, data):
+        if hasattr(data, 'keys'):
+            unexpected = set(data.keys()) - self.WRITABLE_FIELDS
+            if unexpected:
+                raise serializers.ValidationError(
+                    {field: 'This field is not allowed.' for field in sorted(unexpected)}
+                )
+        return super().to_internal_value(data)
+
+    def validate_address(self, value):
+        if value is None:
+            return value
+        value = value.strip()
+        if len(value) > 500:
+            raise serializers.ValidationError('Address must be at most 500 characters.')
+        if not self.ADDRESS_RE.match(value):
+            raise serializers.ValidationError('Address contains characters that are not allowed.')
+        return value
+
+    def validate_latitude(self, value):
+        if value is not None and not (self.LAT_RANGE[0] <= value <= self.LAT_RANGE[1]):
+            raise serializers.ValidationError(f'Latitude must be between {self.LAT_RANGE[0]} and {self.LAT_RANGE[1]}.')
+        return value
+
+    def validate_longitude(self, value):
+        if value is not None and not (self.LON_RANGE[0] <= value <= self.LON_RANGE[1]):
+            raise serializers.ValidationError(f'Longitude must be between {self.LON_RANGE[0]} and {self.LON_RANGE[1]}.')
+        return value
+
+    def validate(self, attrs):
+        # District must belong to the chosen state (use stored values on partial update)
+        state    = attrs.get('state',    getattr(self.instance, 'state', None))
+        district = attrs.get('district', getattr(self.instance, 'district', None))
+        if state and district and district.state_id != state.id:
+            raise serializers.ValidationError({'district': 'District does not belong to the selected state.'})
+        if not self.instance:
+            for field in ('latitude', 'longitude'):
+                if attrs.get(field) is None:
+                    raise serializers.ValidationError({field: 'This field is required.'})
+        return attrs
+
     def validate_name(self, value):
+        value = value.strip()
+        if not 2 <= len(value) <= 100:
+            raise serializers.ValidationError('Name must be 2 to 100 characters.')
+        if not self.NAME_RE.match(value):
+            raise serializers.ValidationError(
+                "Name may contain only letters, digits, spaces and . , ( ) / & ' -"
+            )
         # No duplicate stop name in same state+district
         request = self.context.get('request')
-        state_id    = request.data.get('state')
-        district_id = request.data.get('district')
+        state_id    = request.data.get('state')    or getattr(self.instance, 'state_id', None)
+        district_id = request.data.get('district') or getattr(self.instance, 'district_id', None)
+        # Raw ids come straight from the request; if they are not integers the
+        # state/district fields report their own error - don't query with them.
+        if not (str(state_id).isdigit() and str(district_id).isdigit()):
+            return value
 
         qs = PublicBusStop.objects.filter(
             name__iexact=value,

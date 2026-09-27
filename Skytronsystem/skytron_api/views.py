@@ -35122,22 +35122,31 @@ class PISBusStopListCreateAPIView(APIView):
         if district:
             qs = qs.filter(district__district_code=district)
 
-        # Filters
+        # Filters - validated against an allow-list before use (VAPT: input validation)
         status_filter = request.query_params.get('status')
         if status_filter:
+            if status_filter not in dict(PublicBusStop.STATUS_CHOICES):
+                return error_response("Invalid status. Allowed: active, deactivated", status_code=400)
             qs = qs.filter(status=status_filter)
 
         search = request.query_params.get('search')
         if search:
+            search = search.strip()
+            if len(search) > 100 or not PublicBusStopSerializer.NAME_RE.match(search):
+                return error_response("Invalid search text", status_code=400)
             qs = qs.filter(name__icontains=search)
 
         state_id = request.query_params.get('state')
-        if state_id and _user_is_superadmin(request.user):
-            qs = qs.filter(state_id=state_id)
-
         district_id = request.query_params.get('district')
+        for label, value in (('state', state_id), ('district', district_id)):
+            if value and not value.isdigit():
+                return error_response(f"Invalid {label} id", status_code=400)
+
+        if state_id and _user_is_superadmin(request.user):
+            qs = qs.filter(state_id=int(state_id))
+
         if district_id:
-            qs = qs.filter(district_id=district_id)
+            qs = qs.filter(district_id=int(district_id))
 
         serializer = PublicBusStopSerializer(qs, many=True)
         return list_response(data=serializer.data, message="Bus stops fetched successfully")
@@ -35258,6 +35267,16 @@ class PISBusStopUpdateAPIView(APIView):
         )
 
         serializer.is_valid(raise_exception=True)
+
+        # Same scope rules as create: StateAdmin/DTO cannot move a stop out of
+        # their own state/district by changing state/district on update.
+        new_state    = serializer.validated_data.get('state', stop.state)
+        new_district = serializer.validated_data.get('district', stop.district)
+        if (_user_is_stateadmin(request.user) or _user_is_dtorto(request.user)) and new_state != state:
+            return error_response("You can update bus stops only in your assigned state", status_code=403)
+        if _user_is_dtorto(request.user) and new_district.district_code != district:
+            return error_response("You can update bus stops only in your assigned district", status_code=403)
+
         serializer.save()
 
         return success_response(
