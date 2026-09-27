@@ -5,18 +5,18 @@
    "UNIQUE UNIQUE (name)"
   ],
   "auth_group_permissions": [
-   "FK FOREIGN KEY (group_id) REFERENCES auth_group(id)",
-   "FK FOREIGN KEY (permission_id) REFERENCES auth_permission(id)",
+   "FK FOREIGN KEY (group_id) REFERENCES auth_group(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (permission_id) REFERENCES auth_permission(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (group_id, permission_id)"
   ],
   "auth_permission": [
-   "FK FOREIGN KEY (content_type_id) REFERENCES django_content_type(id)",
+   "FK FOREIGN KEY (content_type_id) REFERENCES django_content_type(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (content_type_id, codename)"
   ],
   "authtoken_token": [
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (key)",
    "UNIQUE UNIQUE (user_id)"
   ],
@@ -26,8 +26,8 @@
   ],
   "django_admin_log": [
    "CHECK CHECK ((action_flag >= 0))",
-   "FK FOREIGN KEY (content_type_id) REFERENCES django_content_type(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (content_type_id) REFERENCES django_content_type(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "django_content_type": [
@@ -42,10 +42,10 @@
   ],
   "favorites_favorite": [
    "CHECK CHECK (((bus_id IS NOT NULL) OR (route_id IS NOT NULL) OR (bus_stop_id IS NOT NULL)))",
-   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (bus_stop_id) REFERENCES skytron_api_publicbusstop(id)",
-   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_publicbusroute(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (bus_stop_id) REFERENCES skytron_api_publicbusstop(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_publicbusroute(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "incident_register": [
@@ -54,20 +54,20 @@
    "PK PRIMARY KEY (id)"
   ],
   "ota_command_definition": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (command_id)"
   ],
   "ota_command_history": [
-   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (ota_command_id) REFERENCES ota_command_definition(id)",
-   "FK FOREIGN KEY (sent_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (ota_command_id) REFERENCES ota_command_definition(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (sent_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "ota_command_value_suggestion": [
    "CHECK CHECK ((use_count >= 0))",
-   "FK FOREIGN KEY (ota_command_id) REFERENCES ota_command_definition(id)",
+   "FK FOREIGN KEY (ota_command_id) REFERENCES ota_command_definition(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (ota_command_id, value)"
   ],
@@ -76,28 +76,28 @@
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_activationcommanddispatch": [
-   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (reply_id) REFERENCES skytron_api_activationcommandreply(id)",
-   "FK FOREIGN KEY (sent_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (reply_id) REFERENCES skytron_api_activationcommandreply(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (sent_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_activationcommandreply": [
-   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id)",
+   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_activewhitelist": [
-   "FK FOREIGN KEY (device_stock_id) REFERENCES skytron_api_devicestock(id)",
-   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id)",
-   "FK FOREIGN KEY (source_request_id) REFERENCES skytron_api_whitelistrequest(id)",
+   "FK FOREIGN KEY (device_stock_id) REFERENCES skytron_api_devicestock(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (source_request_id) REFERENCES skytron_api_whitelistrequest(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_alertslog": [
-   "FK FOREIGN KEY (\"deviceTag_id\") REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (em_ref_id) REFERENCES skytron_api_emcall(id)",
-   "FK FOREIGN KEY (gps_ref_id) REFERENCES skytron_api_gpsdata(id)",
+   "FK FOREIGN KEY (\"deviceTag_id\") REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (em_ref_id) REFERENCES skytron_api_emcall(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (gps_ref_id) REFERENCES skytron_api_gpsdata(id) DEFERRABLE INITIALLY DEFERRED",
    "FK FOREIGN KEY (poi_ref_id) REFERENCES skytron_api_pointofinterests(id)",
-   "FK FOREIGN KEY (route_ref_id) REFERENCES skytron_api_route(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (route_ref_id) REFERENCES skytron_api_route(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_blekey": [
@@ -105,21 +105,21 @@
    "UNIQUE UNIQUE (key)"
   ],
   "skytron_api_busalert": [
-   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id)",
+   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_busschedule": [
-   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_publicbusroute(id)",
+   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_publicbusroute(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_busschedulestopeta": [
    "CHECK CHECK ((\"order\" >= 0))",
-   "FK FOREIGN KEY (route_stop_id) REFERENCES skytron_api_publicroutestop(id)",
-   "FK FOREIGN KEY (schedule_id) REFERENCES skytron_api_busschedule(id)",
+   "FK FOREIGN KEY (route_stop_id) REFERENCES skytron_api_publicroutestop(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (schedule_id) REFERENCES skytron_api_busschedule(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (schedule_id, route_stop_id)"
   ],
@@ -128,94 +128,94 @@
    "UNIQUE UNIQUE (key)"
   ],
   "skytron_api_complaintticket": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (device_stock_id) REFERENCES skytron_api_devicestock(id)",
-   "FK FOREIGN KEY (escalated_to_manufacturer_id) REFERENCES skytron_api_manufacturer(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (device_stock_id) REFERENCES skytron_api_devicestock(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (escalated_to_manufacturer_id) REFERENCES skytron_api_manufacturer(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (ticket_ref)"
   ],
   "skytron_api_confirmation": [
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (token)"
   ],
   "skytron_api_customalertlog": [
-   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (gps_ref_id) REFERENCES skytron_api_gpsdata(id)",
-   "FK FOREIGN KEY (rule_id) REFERENCES skytron_api_customalertrule(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (gps_ref_id) REFERENCES skytron_api_gpsdata(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (rule_id) REFERENCES skytron_api_customalertrule(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_customalertrule": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_customalertsubrule": [
    "CHECK CHECK ((\"order\" >= 0))",
-   "FK FOREIGN KEY (rule_id) REFERENCES skytron_api_customalertrule(id)",
+   "FK FOREIGN KEY (rule_id) REFERENCES skytron_api_customalertrule(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (rule_id, \"order\")"
   ],
   "skytron_api_device": [
-   "FK FOREIGN KEY (\"deviceModel_id\") REFERENCES skytron_api_devicemodel(id)",
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (\"deviceModel_id\") REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_deviceactivationlog": [
-   "FK FOREIGN KEY (changed_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (device_stock_id) REFERENCES skytron_api_devicestock(id)",
-   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id)",
+   "FK FOREIGN KEY (changed_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (device_stock_id) REFERENCES skytron_api_devicestock(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_devicecop": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (device_model_id) REFERENCES skytron_api_devicemodel(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (device_model_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_devicefirmwarelog": [
-   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id)",
+   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_devicemodel": [
    "CHECK CHECK ((threshold >= 0))",
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (rejected_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (rejected_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_devicemodel_eSimProviders": [
-   "FK FOREIGN KEY (devicemodel_id) REFERENCES skytron_api_devicemodel(id)",
-   "FK FOREIGN KEY (esimprovider_id) REFERENCES skytron_api_esimprovider(id)",
+   "FK FOREIGN KEY (devicemodel_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (esimprovider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (devicemodel_id, esimprovider_id)"
   ],
   "skytron_api_devicemodeltechnicalonboardingdemodevice": [
-   "FK FOREIGN KEY (onboarding_request_id) REFERENCES skytron_api_devicemodeltechnicalonboardingrequest(id)",
-   "FK FOREIGN KEY (receipt_confirmed_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (receipt_rejected_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (onboarding_request_id) REFERENCES skytron_api_devicemodeltechnicalonboardingrequest(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (receipt_confirmed_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (receipt_rejected_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_devicemodeltechnicalonboardingrequest": [
-   "FK FOREIGN KEY (device_model_id) REFERENCES skytron_api_devicemodel(id)",
-   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id)",
+   "FK FOREIGN KEY (device_model_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_devicerenewalrequest": [
    "CHECK CHECK ((requested_duration_years >= 0))",
-   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id)",
-   "FK FOREIGN KEY (device_id) REFERENCES skytron_api_devicestock(id)",
-   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id)",
-   "FK FOREIGN KEY (requested_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (device_id) REFERENCES skytron_api_devicestock(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (requested_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_devicestock": [
-   "FK FOREIGN KEY (assigned_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id)",
-   "FK FOREIGN KEY (kyc_updated_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (model_id) REFERENCES skytron_api_devicemodel(id)",
-   "FK FOREIGN KEY (upload_batch_id) REFERENCES skytron_api_devicestockuploadbatch(id)",
+   "FK FOREIGN KEY (assigned_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (kyc_updated_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (model_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (upload_batch_id) REFERENCES skytron_api_devicestockuploadbatch(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (device_esn)",
    "UNIQUE UNIQUE (iccid)",
@@ -225,8 +225,8 @@
    "UNIQUE UNIQUE (msisdn2)"
   ],
   "skytron_api_devicestock_esim_provider": [
-   "FK FOREIGN KEY (devicestock_id) REFERENCES skytron_api_devicestock(id)",
-   "FK FOREIGN KEY (esimprovider_id) REFERENCES skytron_api_esimprovider(id)",
+   "FK FOREIGN KEY (devicestock_id) REFERENCES skytron_api_devicestock(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (esimprovider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (devicestock_id, esimprovider_id)"
   ],
@@ -235,58 +235,58 @@
    "CHECK CHECK ((dealer_otp_attempts >= 0))",
    "CHECK CHECK ((no_of_emg_buttons >= 0))",
    "CHECK CHECK ((owner_otp_attempts >= 0))",
-   "FK FOREIGN KEY (category_id) REFERENCES skytron_api_settings_vehiclecategory(id)",
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (created_device_stock_id) REFERENCES skytron_api_devicestock(id)",
-   "FK FOREIGN KEY (created_device_tag_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id)",
-   "FK FOREIGN KEY (deleted_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (device_model_id) REFERENCES skytron_api_devicemodel(id)",
-   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id)",
-   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id)",
-   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id)",
-   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (vehicle_owner_id) REFERENCES skytron_api_vehicleowner(id)",
+   "FK FOREIGN KEY (category_id) REFERENCES skytron_api_settings_vehiclecategory(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (created_device_stock_id) REFERENCES skytron_api_devicestock(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (created_device_tag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (deleted_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (device_model_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (vehicle_owner_id) REFERENCES skytron_api_vehicleowner(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_devicestockuploadbatch": [
-   "FK FOREIGN KEY (device_model_id) REFERENCES skytron_api_devicemodel(id)",
-   "FK FOREIGN KEY (uploaded_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (device_model_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (uploaded_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (file_name)"
   ],
   "skytron_api_devicetag": [
    "CHECK CHECK ((no_of_emg_buttons >= 0))",
-   "FK FOREIGN KEY (category_code_id) REFERENCES skytron_api_settings_vehiclecategorycode(id)",
+   "FK FOREIGN KEY (category_code_id) REFERENCES skytron_api_settings_vehiclecategorycode(id) DEFERRABLE INITIALLY DEFERRED",
    "FK FOREIGN KEY (category_id) REFERENCES skytron_api_settings_vehiclecategory(id) ON DELETE CASCADE",
-   "FK FOREIGN KEY (device_id) REFERENCES skytron_api_devicestock(id)",
-   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id)",
-   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id)",
-   "FK FOREIGN KEY (tagged_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (vehicle_owner_id) REFERENCES skytron_api_vehicleowner(id)",
+   "FK FOREIGN KEY (device_id) REFERENCES skytron_api_devicestock(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (tagged_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (vehicle_owner_id) REFERENCES skytron_api_vehicleowner(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (chassis_no)",
    "UNIQUE UNIQUE (engine_no)",
    "UNIQUE UNIQUE (vehicle_reg_no)"
   ],
   "skytron_api_devicetag_drivers": [
-   "FK FOREIGN KEY (devicetag_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (driver_id) REFERENCES skytron_api_driver(id)",
+   "FK FOREIGN KEY (devicetag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (driver_id) REFERENCES skytron_api_driver(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (devicetag_id, driver_id)"
   ],
   "skytron_api_driver": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_dto_rto": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_dto_rto_users": [
-   "FK FOREIGN KEY (dto_rto_id) REFERENCES skytron_api_dto_rto(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (dto_rto_id) REFERENCES skytron_api_dto_rto(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (dto_rto_id, user_id)"
   ],
@@ -294,101 +294,101 @@
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_em_admin": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_em_admin_users": [
-   "FK FOREIGN KEY (em_admin_id) REFERENCES skytron_api_em_admin(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (em_admin_id) REFERENCES skytron_api_em_admin(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (em_admin_id, user_id)"
   ],
   "skytron_api_em_ex": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_em_ex_users": [
-   "FK FOREIGN KEY (em_ex_id) REFERENCES skytron_api_em_ex(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (em_ex_id) REFERENCES skytron_api_em_ex(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (em_ex_id, user_id)"
   ],
   "skytron_api_emcall": [
-   "FK FOREIGN KEY (device_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (team_id) REFERENCES skytron_api_emteams(id)",
+   "FK FOREIGN KEY (device_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (team_id) REFERENCES skytron_api_emteams(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_emcallassignment": [
-   "FK FOREIGN KEY (admin_id) REFERENCES skytron_api_em_admin(id)",
-   "FK FOREIGN KEY (call_id) REFERENCES skytron_api_emcall(id)",
-   "FK FOREIGN KEY (ex_id) REFERENCES skytron_api_em_ex(id)",
+   "FK FOREIGN KEY (admin_id) REFERENCES skytron_api_em_admin(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (call_id) REFERENCES skytron_api_emcall(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (ex_id) REFERENCES skytron_api_em_ex(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_emcallbackuprequest": [
-   "FK FOREIGN KEY (assignment_id) REFERENCES skytron_api_emcallassignment(id)",
-   "FK FOREIGN KEY (call_id) REFERENCES skytron_api_emcall(id)",
+   "FK FOREIGN KEY (assignment_id) REFERENCES skytron_api_emcallassignment(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (call_id) REFERENCES skytron_api_emcall(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_emcallbroadcast": [
-   "FK FOREIGN KEY (acceted_by_id) REFERENCES skytron_api_em_ex(id)",
-   "FK FOREIGN KEY (admin_id) REFERENCES skytron_api_em_admin(id)",
-   "FK FOREIGN KEY (call_id) REFERENCES skytron_api_emcall(id)",
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_em_ex(id)",
+   "FK FOREIGN KEY (acceted_by_id) REFERENCES skytron_api_em_ex(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (admin_id) REFERENCES skytron_api_em_admin(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (call_id) REFERENCES skytron_api_emcall(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_em_ex(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_emcallmessages": [
-   "FK FOREIGN KEY (assignment_id) REFERENCES skytron_api_emcallassignment(id)",
-   "FK FOREIGN KEY (call_id) REFERENCES skytron_api_emcall(id)",
+   "FK FOREIGN KEY (assignment_id) REFERENCES skytron_api_emcallassignment(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (call_id) REFERENCES skytron_api_emcall(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_emgpslocation": [
-   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id)",
+   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_emteams": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_em_admin(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
-   "FK FOREIGN KEY (teamlead_id) REFERENCES skytron_api_em_ex(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_em_admin(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (teamlead_id) REFERENCES skytron_api_em_ex(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_emteams_members": [
-   "FK FOREIGN KEY (em_ex_id) REFERENCES skytron_api_em_ex(id)",
-   "FK FOREIGN KEY (emteams_id) REFERENCES skytron_api_emteams(id)",
+   "FK FOREIGN KEY (em_ex_id) REFERENCES skytron_api_em_ex(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (emteams_id) REFERENCES skytron_api_emteams(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (emteams_id, em_ex_id)"
   ],
   "skytron_api_emuserlocation": [
-   "FK FOREIGN KEY (field_ex_id) REFERENCES skytron_api_em_ex(id)",
+   "FK FOREIGN KEY (field_ex_id) REFERENCES skytron_api_em_ex(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_esimactivationrequest": [
-   "FK FOREIGN KEY (\"eSim_provider_id\") REFERENCES skytron_api_esimprovider(id)",
-   "FK FOREIGN KEY (ceated_by_id) REFERENCES skytron_api_retailer(id)",
-   "FK FOREIGN KEY (device_id) REFERENCES skytron_api_devicestock(id)",
+   "FK FOREIGN KEY (\"eSim_provider_id\") REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (ceated_by_id) REFERENCES skytron_api_retailer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (device_id) REFERENCES skytron_api_devicestock(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_esimprovider": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_esimprovider_users": [
-   "FK FOREIGN KEY (esimprovider_id) REFERENCES skytron_api_esimprovider(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (esimprovider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (esimprovider_id, user_id)"
   ],
   "skytron_api_esimprovideriprange": [
-   "FK FOREIGN KEY (provider_id) REFERENCES skytron_api_esimprovider(id)",
+   "FK FOREIGN KEY (provider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_fota": [
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_gpsdata": [
-   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id)",
+   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_gpsdatalog": [
@@ -398,12 +398,12 @@
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_holiday": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_holiday_vehicles": [
-   "FK FOREIGN KEY (devicetag_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (holiday_id) REFERENCES skytron_api_holiday(id)",
+   "FK FOREIGN KEY (devicetag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (holiday_id) REFERENCES skytron_api_holiday(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (holiday_id, devicetag_id)"
   ],
@@ -415,81 +415,81 @@
    "UNIQUE UNIQUE (user_role)"
   ],
   "skytron_api_manufacturer": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_manufacturer_esim_provider": [
-   "FK FOREIGN KEY (esimprovider_id) REFERENCES skytron_api_esimprovider(id)",
-   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id)",
+   "FK FOREIGN KEY (esimprovider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (manufacturer_id, esimprovider_id)"
   ],
   "skytron_api_manufacturer_users": [
-   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (manufacturer_id, user_id)"
   ],
   "skytron_api_media_file1": [
-   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id)",
+   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_mediafile": [
-   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_device(id)",
+   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_device(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_notice": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_otprequest": [
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_parentprofile": [
-   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (user_id)"
   ],
   "skytron_api_parentprofile_students": [
-   "FK FOREIGN KEY (parentprofile_id) REFERENCES skytron_api_parentprofile(id)",
-   "FK FOREIGN KEY (student_id) REFERENCES skytron_api_student(id)",
+   "FK FOREIGN KEY (parentprofile_id) REFERENCES skytron_api_parentprofile(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (student_id) REFERENCES skytron_api_student(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (parentprofile_id, student_id)"
   ],
   "skytron_api_permitcondition": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (vehicle_category_id) REFERENCES skytron_api_settings_vehiclecategory(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (vehicle_category_id) REFERENCES skytron_api_settings_vehiclecategory(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_pointofinterests": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (name)"
   ],
   "skytron_api_publicbusroute": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (destination_stop_id) REFERENCES skytron_api_publicbusstop(id)",
-   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id)",
-   "FK FOREIGN KEY (source_stop_id) REFERENCES skytron_api_publicbusstop(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (destination_stop_id) REFERENCES skytron_api_publicbusstop(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (source_stop_id) REFERENCES skytron_api_publicbusstop(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (route_number)"
   ],
   "skytron_api_publicbusstop": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_publicroutestop": [
    "CHECK CHECK ((\"order\" >= 0))",
    "CHECK CHECK ((arrival_time_min >= 0))",
    "CHECK CHECK ((halt_time_min >= 0))",
-   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_publicbusroute(id)",
-   "FK FOREIGN KEY (stop_id) REFERENCES skytron_api_publicbusstop(id)",
+   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_publicbusroute(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (stop_id) REFERENCES skytron_api_publicbusstop(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_regnolookuplog": [
@@ -503,140 +503,140 @@
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_retailer": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_retailer_districts": [
-   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id)",
-   "FK FOREIGN KEY (settings_district_id) REFERENCES skytron_api_settings_district(id)",
+   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (settings_district_id) REFERENCES skytron_api_settings_district(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (dealer_id, settings_district_id)"
   ],
   "skytron_api_retailer_users": [
-   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (dealer_id, user_id)"
   ],
   "skytron_api_rolepermissionconfig": [
-   "FK FOREIGN KEY (role_id) REFERENCES skytron_api_userroletype(id)",
-   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (role_id) REFERENCES skytron_api_userroletype(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (role_id, module)"
   ],
   "skytron_api_route": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (device_id) REFERENCES skytron_api_devicestock(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (device_id) REFERENCES skytron_api_devicestock(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_routebusassignment": [
-   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_schoolroute(id)",
-   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id)",
+   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_schoolroute(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (school_id, bus_id)"
   ],
   "skytron_api_routestop": [
    "CHECK CHECK ((\"order\" >= 0))",
-   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_schoolroute(id)",
-   "FK FOREIGN KEY (stop_id) REFERENCES skytron_api_schoolbusstop(id)",
+   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_schoolroute(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (stop_id) REFERENCES skytron_api_schoolbusstop(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (route_id, stop_id)"
   ],
   "skytron_api_school": [
-   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_school_users": [
-   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (school_id, user_id)"
   ],
   "skytron_api_schoolapplication": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (email)",
    "UNIQUE UNIQUE (latitude, longitude)",
    "UNIQUE UNIQUE (mobile)"
   ],
   "skytron_api_schoolbusdocument": [
-   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id)",
+   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (bus_id, document_type)"
   ],
   "skytron_api_schoolbusstop": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (school_id, name)"
   ],
   "skytron_api_schoolbustag": [
-   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (requested_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (reviewed_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id)",
+   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (requested_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (reviewed_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_schoolbustrip": [
-   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_schoolroute(id)",
-   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id)",
+   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_schoolroute(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_schoolholiday": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id)",
-   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_schoolroute": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (school_id, name)"
   ],
   "skytron_api_session": [
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_settings": [
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_settings_district": [
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (district)",
    "UNIQUE UNIQUE (district_code)"
   ],
   "skytron_api_settings_firmware": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (devicemodel_id) REFERENCES skytron_api_devicemodel(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (devicemodel_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_settings_hp_freq": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (devicemodel_id) REFERENCES skytron_api_devicemodel(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (devicemodel_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_settings_ip": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (devicemodel_id) REFERENCES skytron_api_devicemodel(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (devicemodel_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_settings_ip3": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (devicemodel_id) REFERENCES skytron_api_devicemodel(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (devicemodel_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_settings_permitmaster": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (name)"
   ],
@@ -649,8 +649,8 @@
    "UNIQUE UNIQUE (category)"
   ],
   "skytron_api_settings_vehiclecategorycode": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (updated_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (category_code)"
   ],
@@ -661,35 +661,35 @@
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_stateadmin": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_stateadmin_users": [
-   "FK FOREIGN KEY (stateadmin_id) REFERENCES skytron_api_stateadmin(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (stateadmin_id) REFERENCES skytron_api_stateadmin(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (stateadmin_id, user_id)"
   ],
   "skytron_api_student": [
-   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id)",
+   "FK FOREIGN KEY (school_id) REFERENCES skytron_api_school(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (school_id, class_name, roll_number)"
   ],
   "skytron_api_studentattendance": [
-   "FK FOREIGN KEY (drop_stop_id) REFERENCES skytron_api_schoolbusstop(id)",
-   "FK FOREIGN KEY (pickup_stop_id) REFERENCES skytron_api_schoolbusstop(id)",
-   "FK FOREIGN KEY (student_id) REFERENCES skytron_api_student(id)",
-   "FK FOREIGN KEY (trip_id) REFERENCES skytron_api_schoolbustrip(id)",
+   "FK FOREIGN KEY (drop_stop_id) REFERENCES skytron_api_schoolbusstop(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (pickup_stop_id) REFERENCES skytron_api_schoolbusstop(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (student_id) REFERENCES skytron_api_student(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (trip_id) REFERENCES skytron_api_schoolbustrip(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (trip_id, student_id)"
   ],
   "skytron_api_studentbusallocation": [
-   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (drop_stop_id) REFERENCES skytron_api_schoolbusstop(id)",
-   "FK FOREIGN KEY (pickup_stop_id) REFERENCES skytron_api_schoolbusstop(id)",
-   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_schoolroute(id)",
-   "FK FOREIGN KEY (student_id) REFERENCES skytron_api_student(id)",
+   "FK FOREIGN KEY (bus_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (drop_stop_id) REFERENCES skytron_api_schoolbusstop(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (pickup_stop_id) REFERENCES skytron_api_schoolbusstop(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (route_id) REFERENCES skytron_api_schoolroute(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (student_id) REFERENCES skytron_api_student(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_technicalonboardingtestcase": [
@@ -702,11 +702,11 @@
   ],
   "skytron_api_technicalonboardingtestexecution": [
    "CHECK CHECK ((attempt_number >= 0))",
-   "FK FOREIGN KEY (completed_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (demo_device_id) REFERENCES skytron_api_devicemodeltechnicalonboardingdemodevice(id)",
-   "FK FOREIGN KEY (onboarding_request_id) REFERENCES skytron_api_devicemodeltechnicalonboardingrequest(id)",
-   "FK FOREIGN KEY (started_by_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (test_case_id) REFERENCES skytron_api_technicalonboardingtestcase(id)",
+   "FK FOREIGN KEY (completed_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (demo_device_id) REFERENCES skytron_api_devicemodeltechnicalonboardingdemodevice(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (onboarding_request_id) REFERENCES skytron_api_devicemodeltechnicalonboardingrequest(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (started_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (test_case_id) REFERENCES skytron_api_technicalonboardingtestcase(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (onboarding_request_id, demo_device_id, test_case_id)"
   ],
@@ -715,12 +715,12 @@
    "UNIQUE UNIQUE (session_key)"
   ],
   "skytron_api_testagency": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_testagency_users": [
-   "FK FOREIGN KEY (testagency_id) REFERENCES skytron_api_testagency(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (testagency_id) REFERENCES skytron_api_testagency(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (testagency_id, user_id)"
   ],
@@ -728,13 +728,13 @@
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_ticketactivity": [
-   "FK FOREIGN KEY (actor_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (ticket_id) REFERENCES skytron_api_complaintticket(id)",
+   "FK FOREIGN KEY (actor_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (ticket_id) REFERENCES skytron_api_complaintticket(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_ticketattachment": [
-   "FK FOREIGN KEY (ticket_id) REFERENCES skytron_api_complaintticket(id)",
-   "FK FOREIGN KEY (uploaded_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (ticket_id) REFERENCES skytron_api_complaintticket(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (uploaded_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_trip": [
@@ -747,19 +747,19 @@
    "UNIQUE UNIQUE (mobile)"
   ],
   "skytron_api_user_groups": [
-   "FK FOREIGN KEY (group_id) REFERENCES auth_group(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (group_id) REFERENCES auth_group(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (user_id, group_id)"
   ],
   "skytron_api_user_user_permissions": [
-   "FK FOREIGN KEY (permission_id) REFERENCES auth_permission(id)",
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (permission_id) REFERENCES auth_permission(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (user_id, permission_id)"
   ],
   "skytron_api_userroletype": [
-   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (code)"
   ],
@@ -768,44 +768,44 @@
    "UNIQUE UNIQUE (imei)"
   ],
   "skytron_api_vehicleowner": [
-   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (createdby_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_vehicleowner_users": [
-   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id)",
-   "FK FOREIGN KEY (vehicleowner_id) REFERENCES skytron_api_vehicleowner(id)",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (vehicleowner_id) REFERENCES skytron_api_vehicleowner(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (vehicleowner_id, user_id)"
   ],
   "skytron_api_violationreport": [
-   "FK FOREIGN KEY (alert_log_id) REFERENCES skytron_api_alertslog(id)",
-   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id)",
-   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id)",
-   "FK FOREIGN KEY (permit_condition_id) REFERENCES skytron_api_permitcondition(id)",
-   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id)",
+   "FK FOREIGN KEY (alert_log_id) REFERENCES skytron_api_alertslog(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (device_tag_id) REFERENCES skytron_api_devicetag(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (district_id) REFERENCES skytron_api_settings_district(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (permit_condition_id) REFERENCES skytron_api_permitcondition(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_whitelistentry": [
-   "FK FOREIGN KEY (request_id) REFERENCES skytron_api_whitelistrequest(id)",
+   "FK FOREIGN KEY (request_id) REFERENCES skytron_api_whitelistrequest(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_whitelistrequest": [
-   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id)",
-   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id)",
-   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id)",
-   "FK FOREIGN KEY (requested_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (requested_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_whitelistrequest_device_stocks": [
-   "FK FOREIGN KEY (devicestock_id) REFERENCES skytron_api_devicestock(id)",
-   "FK FOREIGN KEY (whitelistrequest_id) REFERENCES skytron_api_whitelistrequest(id)",
+   "FK FOREIGN KEY (devicestock_id) REFERENCES skytron_api_devicestock(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (whitelistrequest_id) REFERENCES skytron_api_whitelistrequest(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (whitelistrequest_id, devicestock_id)"
   ],
   "skytron_api_whitelistrequestreview": [
-   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id)",
-   "FK FOREIGN KEY (request_id) REFERENCES skytron_api_whitelistrequest(id)",
-   "FK FOREIGN KEY (reviewed_by_id) REFERENCES skytron_api_user(id)",
+   "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (request_id) REFERENCES skytron_api_whitelistrequest(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (reviewed_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (request_id)"
   ],
@@ -19126,91 +19126,109 @@
  },
  "rbac_roles": {
   "123": {
+   "description": "xyz",
    "display_name": "Traffic",
    "is_active": false,
    "is_builtin": false
   },
   "assamdto": {
+   "description": "Assam DTO",
    "display_name": "Assam DTO",
    "is_active": true,
    "is_builtin": false
   },
   "dealer": {
+   "description": "",
    "display_name": "Dealer",
    "is_active": true,
    "is_builtin": true
   },
   "devicemanufacture": {
+   "description": "",
    "display_name": "Device Manufacturer",
    "is_active": true,
    "is_builtin": true
   },
   "dtorto": {
+   "description": "",
    "display_name": "DTO / RTO",
    "is_active": true,
    "is_builtin": true
   },
   "esimprovider": {
+   "description": "",
    "display_name": "eSIM Provider",
    "is_active": true,
    "is_builtin": true
   },
   "field_assistant": {
+   "description": "Helps in field vist",
    "display_name": "Field Assistant",
    "is_active": true,
    "is_builtin": false
   },
   "filment": {
+   "description": "",
    "display_name": "Filment",
    "is_active": true,
    "is_builtin": true
   },
   "helpdesk": {
+   "description": "",
    "display_name": "Helpdesk",
    "is_active": true,
    "is_builtin": false
   },
   "owner": {
+   "description": "",
    "display_name": "Vehicle Owner",
    "is_active": true,
    "is_builtin": true
   },
   "parentuser": {
+   "description": "",
    "display_name": "Parent User",
    "is_active": true,
    "is_builtin": true
   },
   "schooladmin": {
+   "description": "",
    "display_name": "School Admin",
    "is_active": true,
    "is_builtin": true
   },
   "sosadmin": {
+   "description": "",
    "display_name": "SOS Admin",
    "is_active": true,
    "is_builtin": true
   },
   "sosexecutive": {
+   "description": "",
    "display_name": "SOS Executive",
    "is_active": true,
    "is_builtin": true
   },
   "stateadmin": {
+   "description": "",
    "display_name": "State Admin",
    "is_active": true,
    "is_builtin": true
   },
   "superadmin": {
+   "description": "",
    "display_name": "Super Admin",
    "is_active": true,
    "is_builtin": true
   },
   "teamleader": {
+   "description": "",
    "display_name": "Team Leader",
    "is_active": true,
    "is_builtin": true
   },
   "traffic": {
+   "description": "s",
    "display_name": "Traffic",
    "is_active": true,
    "is_builtin": false

@@ -62,7 +62,6 @@ def snapshot():
         WHERE n.nspname = 'public' AND con.contype IN ('p', 'u', 'f', 'c')"""):
         kind = {'p': 'PK', 'u': 'UNIQUE', 'f': 'FK', 'c': 'CHECK'}[ctype]
         definition = re.sub(r'\s+', ' ', definition)
-        definition = re.sub(r' DEFERRABLE INITIALLY DEFERRED', '', definition)
         cons.setdefault(t, []).append(f"{kind} {definition}")
     snap['constraints'] = {t: sorted(v) for t, v in sorted(cons.items())}
 
@@ -79,7 +78,8 @@ def snapshot():
     # RBAC configuration
     from skytron_api.models import UserRoleType, RolePermissionConfig
     snap['rbac_roles'] = {
-        r.code: {'display_name': r.display_name, 'is_builtin': r.is_builtin, 'is_active': r.is_active}
+        r.code: {'display_name': r.display_name, 'description': r.description or '',
+                 'is_builtin': r.is_builtin, 'is_active': r.is_active}
         for r in UserRoleType.objects.all().order_by('code')
     }
     snap['rbac_permissions'] = {
