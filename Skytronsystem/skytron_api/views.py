@@ -1165,8 +1165,8 @@ def set_login_settings(request):
             defaults={
                 'created_by': user.email,
                 'daily_login_limit': 0,
-                'session_expiry_minutes': 2880,
-                'max_simultaneous_sessions': 0,
+                'session_expiry_minutes': 1440,
+                'max_simultaneous_sessions': 2,
                 'login_start_time': time(0, 0, 0),
                 'login_end_time': time(23, 59, 59),
                 'enforce_time_boundary': False,
@@ -1190,10 +1190,11 @@ def set_login_settings(request):
             expiry = request.data.get('session_expiry_minutes')
             try:
                 settings.session_expiry_minutes = int(expiry)
-                if settings.session_expiry_minutes <= 0:
+                # VAPT: cap session lifetime at 24 hours (short token lifetimes)
+                if settings.session_expiry_minutes <= 0 or settings.session_expiry_minutes > 1440:
                     return Response({
                         'success': False,
-                        'error': 'session_expiry_minutes must be > 0'
+                        'error': 'session_expiry_minutes must be between 1 and 1440 (24 hours)'
                     }, status=status.HTTP_400_BAD_REQUEST)
             except (ValueError, TypeError):
                 return Response({

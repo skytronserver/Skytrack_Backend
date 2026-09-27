@@ -26,7 +26,7 @@ class SecureTokenManager:
         # Use RS256 algorithm with RSA keys for enhanced security
         self.algorithm = "RS256"
         # Default token lifetimes (can be overridden per-request)
-        self.default_access_token_lifetime = 60*60*24*2  # 2 days default
+        self.default_access_token_lifetime = 60*60*24  # 24 hours default
         self.default_refresh_token_lifetime = 60*60*24*7  # 7 days default
 
         # Load RSA keys from files
@@ -102,7 +102,7 @@ class SecureTokenManager:
             user_mobile (str): User mobile number (optional)
             session_data (dict): Additional session data (optional)
             token_type (str): "access" or "refresh"
-            expiry_minutes (int): Custom expiry time in minutes (optional, defaults to 2880 minutes = 2 days)
+            expiry_minutes (int): Custom expiry time in minutes (optional, defaults to 1440 minutes = 24 hours)
         
         Returns:
             str: Signed JWT token

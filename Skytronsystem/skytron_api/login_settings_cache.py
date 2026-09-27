@@ -363,19 +363,19 @@ def validate_login_allowed(user_id, user_role):
 def get_session_expiry_minutes(user_role):
     """
     Get session expiry time for a user role from cache.
-    If no settings defined, defaults to 2880 minutes (2 days).
+    If no settings defined, defaults to 1440 minutes (24 hours).
     
     Args:
         user_role: The user's role
     
     Returns:
-        int: Session expiry in minutes (default 2880 = 2 days)
+        int: Session expiry in minutes (default 1440 = 24 hours)
     """
     try:
         settings = get_login_settings_from_cache(user_role)
         if settings:
-            return settings.get('session_expiry_minutes', 2880)
-        return 2880  # Default 2 days if no settings found
+            return settings.get('session_expiry_minutes', 1440)
+        return 1440  # Default 24 hours if no settings found
     except Exception as e:
         logger.error(f"Error getting session expiry: {str(e)}")
-        return 2880  # Default 2 days on error
+        return 1440  # Default 24 hours on error
