@@ -7179,7 +7179,7 @@ def send_usercreation_otp(user, new_password, type):
     tpid = "1007515117119518623"
     text = ('Dear user, to confirm your registration on SkyTron platform, '
             'please click on the following link and validate the registration request- '
-            'https://' + DEPLOY_URL + '/new/' + str(new_password) +
+            'https://' + DEPLOY_URL + '/new?q=' + str(new_password) +
             '. The link will expire in 24 hours. -SkyTron')
     ok, msg = send_SMS(user.mobile, text, tpid)
     if not ok:
@@ -18979,7 +18979,7 @@ def send_email_confirmation(request ):
     email_confirmation_serializer = ConfirmationSerializer(data=email_confirmation_data)
     if email_confirmation_serializer.is_valid():
         email_confirmation_serializer.save()
-        url=f"https://{DEPLOY_URL}/new/{confirmation_token}"
+        url=f"https://{DEPLOY_URL}/new?q={confirmation_token}"
         tpid ="1007515117119518623"
         text=f"Dear user, to confirm your registration on SkyTron platform, please click on the following link and validate the registration request- {url}. The link will expire in 24 hours. -SkyTron"
 
@@ -19613,7 +19613,7 @@ def reset_password(request ):
 
         try:
             tpid ="1007407542374862466" #1007214796274246200"#"1007387007813205696" #1007274756418421381"
-            text='Dear user, to reset your password for SkyTron platform, please click on the following link and validate the password reset request.  '+DEPLOY_URL+'/reset-password/'+str(new_password)+'. The link will expire in 24 hours. -SkyTron'
+            text='Dear user, to reset your password for SkyTron platform, please click on the following link and validate the password reset request. https://'+DEPLOY_URL+'/reset-password?q='+str(new_password)+'. The link will expire in 24 hours. -SkyTron'
 
             #print("sending sms to",user.mobile,text)
             send_SMS(user.mobile,text,tpid)             
