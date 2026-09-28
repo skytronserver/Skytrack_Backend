@@ -41,10 +41,10 @@ DISABLE_THROTTLE = os.environ.get('DISABLE_THROTTLE', 'false').lower() == 'true'
 
 # Global limit on every /api/ request, per bearer token or client IP, per
 # minute (skytron_api.rate_limit.ApiRateLimitMiddleware). 0 turns it off.
-API_RATE_LIMIT = int(os.environ.get('API_RATE_LIMIT', '300'))
+API_RATE_LIMIT = int(os.environ.get('API_RATE_LIMIT') or '300')
 
 # Most trips one user may have in 'created' state at once.
-TRIP_MAX_ACTIVE = int(os.environ.get('TRIP_MAX_ACTIVE', '20'))
+TRIP_MAX_ACTIVE = int(os.environ.get('TRIP_MAX_ACTIVE') or '20')
 
 MQTT_HOST = os.environ.get('MQTT_HOST', '127.0.0.1')
 MQTT_PORT = os.environ.get('MQTT_PORT', '8883')
@@ -60,8 +60,8 @@ DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 # Fixed test OTP accepted alongside the real one (login, tagging, device
 # approvals). Independent of DEBUG so production can keep DEBUG=False.
 # Leave MASTER_OTP_ENABLED unset/false in production.
-MASTER_OTP_ENABLED = os.environ.get('MASTER_OTP_ENABLED', 'false').lower() == 'true'
-MASTER_OTP = os.environ.get('MASTER_OTP', '685472')
+MASTER_OTP_ENABLED = (os.environ.get('MASTER_OTP_ENABLED') or 'false').lower() == 'true'
+MASTER_OTP = os.environ.get('MASTER_OTP') or '685472'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 # ALLOWED_HOSTS = ['api.skytron.in', 'skytron.in','dev.skytron.in','api-dev.skytron.in', 'skytrack.tech']

@@ -104,6 +104,10 @@ docker build -t skytron-backend-api -f Skytronsystem/dockerfile.api \
   --build-arg ALLOWALLDEVMQTT="$ALLOWALLDEVMQTT" \
   --build-arg LOAD_TEST_SECRET="$LOAD_TEST_SECRET" \
   --build-arg DISABLE_THROTTLE="$DISABLE_THROTTLE" \
+  --build-arg MASTER_OTP_ENABLED="$MASTER_OTP_ENABLED" \
+  --build-arg MASTER_OTP="$MASTER_OTP" \
+  --build-arg API_RATE_LIMIT="$API_RATE_LIMIT" \
+  --build-arg TRIP_MAX_ACTIVE="$TRIP_MAX_ACTIVE" \
   Skytronsystem/
  
 # Stop any running container with the same name
