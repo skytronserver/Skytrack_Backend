@@ -4416,7 +4416,10 @@ class WhitelistRequest(models.Model):
     ]
 
     request_type   = models.CharField(max_length=10, choices=REQUEST_TYPE_CHOICES)
-    device_stocks  = models.ManyToManyField(DeviceStock, related_name='whitelist_requests')
+    # Model-level requests (current flow) set device_model; legacy requests
+    # were raised against individual device stocks.
+    device_model   = models.ForeignKey(DeviceModel, on_delete=models.CASCADE, null=True, blank=True, related_name='whitelist_requests')
+    device_stocks  = models.ManyToManyField(DeviceStock, related_name='whitelist_requests', blank=True)
     esim_provider  = models.ForeignKey(eSimProvider, on_delete=models.CASCADE, related_name='whitelist_requests_received')
     requested_by   = models.ForeignKey('User', on_delete=models.CASCADE, related_name='whitelist_requests_sent')
     requester_type = models.CharField(max_length=15, choices=REQUESTER_TYPE_CHOICES)
@@ -4475,7 +4478,9 @@ class ActiveWhitelist(models.Model):
         ('apn',   'APN'),
     ]
 
-    device_stock    = models.ForeignKey(DeviceStock, on_delete=models.CASCADE, related_name='active_whitelists')
+    # Exactly one of device_stock (legacy, per-device) or device_model (per-model) is set.
+    device_stock    = models.ForeignKey(DeviceStock, on_delete=models.CASCADE, null=True, blank=True, related_name='active_whitelists')
+    device_model    = models.ForeignKey(DeviceModel, on_delete=models.CASCADE, null=True, blank=True, related_name='active_whitelists')
     esim_provider   = models.ForeignKey(eSimProvider, on_delete=models.CASCADE, related_name='active_whitelists')
     whitelist_type  = models.CharField(max_length=10, choices=WHITELIST_TYPE_CHOICES)
     value           = models.CharField(max_length=500)
@@ -4489,7 +4494,8 @@ class ActiveWhitelist(models.Model):
 
     def __str__(self):
         state = 'active' if self.is_active else 'inactive'
-        return f"ActiveWhitelist [{state}]: {self.whitelist_type}={self.value} on device {self.device_stock_id}"
+        target = f"model {self.device_model_id}" if self.device_model_id else f"device {self.device_stock_id}"
+        return f"ActiveWhitelist [{state}]: {self.whitelist_type}={self.value} on {target}"
 
 
 class DeviceActivationLog(models.Model):

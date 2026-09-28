@@ -878,7 +878,7 @@ urlpatterns = [
     path('complaint/<int:pk>/activity/', ticket_activity_log, name='complaint_activity_log'),
 
     # Whitelist Request Management
-    ## INUSE by Manufacturer, Dealer, M2MProvider
+    ## INUSE by Manufacturer
     path('whitelist/request/create/', create_whitelist_request, name='whitelist_request_create'),
     ## INUSE by Manufacturer, Dealer, M2MProvider
     path('whitelist/request/list/', list_whitelist_requests, name='whitelist_request_list'),

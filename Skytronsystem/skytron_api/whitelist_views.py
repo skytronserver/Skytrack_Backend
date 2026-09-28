@@ -3,7 +3,7 @@ Whitelist Request Management — API views.
 
 Endpoints
 ---------
-POST  /api/whitelist/request/create/              – Create add/remove request (Manufacturer, Dealer)
+POST  /api/whitelist/request/create/              – Create add/remove request for a device model (Manufacturer)
 GET   /api/whitelist/request/list/                – List own requests (Manufacturer, Dealer)
 GET   /api/whitelist/request/esim/all/            – List requests directed to provider (eSimProvider)
 POST  /api/whitelist/request/<pk>/approve/        – Approve a request (eSimProvider)
@@ -17,11 +17,11 @@ from rest_framework.decorators import api_view, permission_classes, authenticati
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 
 from .jwt_authentication import JWTAuthentication
 from .models import (
-    ActiveWhitelist, Dealer, DeviceActivationLog, DeviceStock, Manufacturer,
+    ActiveWhitelist, Dealer, DeviceActivationLog, DeviceModel, DeviceStock, Manufacturer,
     WhitelistEntry, WhitelistRequest, WhitelistRequestReview, eSimProvider,
 )
 
@@ -45,22 +45,6 @@ def _get_manufacturer(user):
 
 def _get_dealer(user):
     return Dealer.objects.filter(users=user).first()
-
-
-def _accessible_stocks(user):
-    """DeviceStock queryset visible to the requesting user."""
-    role = getattr(user, 'role', None)
-    if role == 'devicemanufacture':
-        mfr = _get_manufacturer(user)
-        if not mfr:
-            return DeviceStock.objects.none()
-        return DeviceStock.objects.filter(dealer__manufacturer=mfr).exclude(stock_status='Deleted')
-    if role == 'dealer':
-        dealer = _get_dealer(user)
-        if not dealer:
-            return DeviceStock.objects.none()
-        return DeviceStock.objects.filter(dealer=dealer).exclude(stock_status='Deleted')
-    return DeviceStock.objects.none()
 
 
 def _serialize_request(req):
@@ -88,6 +72,8 @@ def _serialize_request(req):
         'esim_provider_name': req.esim_provider.company_name if req.esim_provider_id else '',
         'manufacturer_id': req.manufacturer_id,
         'dealer_id': req.dealer_id,
+        'device_model_id': req.device_model_id,
+        'device_model_name': req.device_model.model_name if req.device_model_id else '',
         'requester_remarks': req.requester_remarks,
         'device_stock_ids': list(req.device_stocks.values_list('id', flat=True)),
         'device_stock_count': req.device_stocks.count(),
@@ -107,19 +93,26 @@ def _serialize_request(req):
 @permission_classes([IsAuthenticated])
 def create_whitelist_request(request):
     """
-    Create a whitelist add or remove request.
+    Create a whitelist add or remove request for a device model.
+
+    The model must belong to the requesting manufacturer and be technically
+    onboarded (StateAdminApproved). On approval by the M2M provider the entries
+    apply to the model as a whole, independent of any uploaded device stock.
 
     Body (JSON):
       request_type      – "add" | "remove"
       esim_provider_id  – int
+      device_model_id   – int
       entries           – [{whitelist_type: "ip"|"url"|"phone"|"apn", value: str}, ...]
-      device_stock_ids  – list of int | "all"  (default: "all")
       requester_remarks – str (optional)
     """
     user = request.user
-    role = getattr(user, 'role', None)
-    if role not in _REQUESTER_ROLES:
-        return Response({'error': 'Only manufacturers and dealers can create whitelist requests.'}, status=403)
+    if getattr(user, 'role', None) != 'devicemanufacture':
+        return Response({'error': 'Only manufacturers can create whitelist requests.'}, status=403)
+
+    manufacturer = _get_manufacturer(user)
+    if not manufacturer:
+        return Response({'error': 'No manufacturer record found for this user.'}, status=400)
 
     data = request.data
     request_type = data.get('request_type')
@@ -134,13 +127,41 @@ def create_whitelist_request(request):
     except eSimProvider.DoesNotExist:
         return Response({'error': 'eSimProvider not found.'}, status=404)
 
+    device_model_id = data.get('device_model_id')
+    if not device_model_id:
+        return Response({'error': 'device_model_id is required.'}, status=400)
+
+    device_model = (
+        DeviceModel.objects
+        .filter(
+            id=device_model_id,
+            created_by__manufacturers_user=manufacturer,
+        )
+        .distinct()
+        .first()
+    )
+    if not device_model:
+        return Response({'error': 'Device model not found or does not belong to your manufacturer.'}, status=404)
+
+    onboarded = device_model.technical_onboarding_requests.filter(
+        manufacturer=manufacturer, status='StateAdminApproved',
+    ).exists()
+    if not onboarded:
+        return Response(
+            {'error': 'Device model is not technically onboarded (StateAdminApproved required).'},
+            status=400,
+        )
+
+    if not device_model.eSimProviders.filter(id=provider.id).exists():
+        return Response({'error': 'The specified eSimProvider is not linked to this device model.'}, status=400)
+
     entries_data = data.get('entries', [])
     if not entries_data or not isinstance(entries_data, list):
         return Response({'error': 'entries must be a non-empty list of {whitelist_type, value} objects.'}, status=400)
 
     valid_types = {'ip', 'url', 'phone', 'apn'}
     for entry in entries_data:
-        if entry.get('whitelist_type') not in valid_types:
+        if not isinstance(entry, dict) or entry.get('whitelist_type') not in valid_types:
             return Response(
                 {'error': f'Invalid whitelist_type. Must be one of: {", ".join(sorted(valid_types))}'},
                 status=400,
@@ -148,52 +169,16 @@ def create_whitelist_request(request):
         if not str(entry.get('value', '')).strip():
             return Response({'error': 'Each entry must have a non-empty value.'}, status=400)
 
-    # Resolve device stocks — must be accessible by this user AND linked to the provider
-    accessible_qs = _accessible_stocks(user)
-    device_stock_ids = data.get('device_stock_ids', 'all')
-
-    if device_stock_ids == 'all':
-        selected = accessible_qs.filter(esim_provider=provider)
-    else:
-        if not isinstance(device_stock_ids, list) or not device_stock_ids:
-            return Response({'error': 'device_stock_ids must be a list of IDs or the string "all".'}, status=400)
-        selected = accessible_qs.filter(id__in=device_stock_ids, esim_provider=provider)
-        found_ids = set(selected.values_list('id', flat=True))
-        missing = [i for i in device_stock_ids if i not in found_ids]
-        if missing:
-            return Response(
-                {'error': f'Device stocks not found / not accessible / not linked to the specified eSimProvider: {missing}'},
-                status=403,
-            )
-
-    if not selected.exists():
-        return Response({'error': 'No accessible device stocks found linked to the specified eSimProvider.'}, status=400)
-
-    # Identify requester entity
-    manufacturer = None
-    dealer = None
-    if role == 'devicemanufacture':
-        manufacturer = _get_manufacturer(user)
-        if not manufacturer:
-            return Response({'error': 'No manufacturer record found for this user.'}, status=400)
-        requester_type = 'manufacturer'
-    else:
-        dealer = _get_dealer(user)
-        if not dealer:
-            return Response({'error': 'No dealer record found for this user.'}, status=400)
-        requester_type = 'dealer'
-
     whitelist_req = WhitelistRequest.objects.create(
         request_type=request_type,
+        device_model=device_model,
         esim_provider=provider,
         requested_by=user,
-        requester_type=requester_type,
+        requester_type='manufacturer',
         manufacturer=manufacturer,
-        dealer=dealer,
         status='pending',
         requester_remarks=data.get('requester_remarks', ''),
     )
-    whitelist_req.device_stocks.set(selected)
 
     for entry in entries_data:
         WhitelistEntry.objects.create(
@@ -227,7 +212,7 @@ def list_whitelist_requests(request):
     qs = (
         WhitelistRequest.objects
         .filter(requested_by=user)
-        .select_related('requested_by', 'esim_provider', 'manufacturer', 'dealer')
+        .select_related('requested_by', 'esim_provider', 'manufacturer', 'dealer', 'device_model')
         .prefetch_related('entries', 'device_stocks')
     )
 
@@ -265,7 +250,7 @@ def esim_list_whitelist_requests(request):
     qs = (
         WhitelistRequest.objects
         .filter(esim_provider=provider)
-        .select_related('requested_by', 'esim_provider', 'manufacturer', 'dealer')
+        .select_related('requested_by', 'esim_provider', 'manufacturer', 'dealer', 'device_model')
         .prefetch_related('entries', 'device_stocks')
     )
 
@@ -319,13 +304,17 @@ def approve_whitelist_request(request, pk):
     whitelist_req.save(update_fields=['status', 'updated_at'])
 
     entries = list(whitelist_req.entries.all())
-    stocks = list(whitelist_req.device_stocks.all())
+    # Model-level requests target the model itself; legacy requests target each stock.
+    if whitelist_req.device_model_id:
+        targets = [{'device_model_id': whitelist_req.device_model_id, 'device_stock': None}]
+    else:
+        targets = [{'device_stock': stock} for stock in whitelist_req.device_stocks.all()]
 
     if whitelist_req.request_type == 'add':
-        for stock in stocks:
+        for target in targets:
             for entry in entries:
                 obj, created = ActiveWhitelist.objects.get_or_create(
-                    device_stock=stock,
+                    **target,
                     esim_provider=provider,
                     whitelist_type=entry.whitelist_type,
                     value=entry.value,
@@ -339,10 +328,10 @@ def approve_whitelist_request(request, pk):
 
     elif whitelist_req.request_type == 'remove':
         now = timezone.now()
-        for stock in stocks:
+        for target in targets:
             for entry in entries:
                 ActiveWhitelist.objects.filter(
-                    device_stock=stock,
+                    **target,
                     esim_provider=provider,
                     whitelist_type=entry.whitelist_type,
                     value=entry.value,
@@ -417,6 +406,7 @@ def list_active_whitelist(request):
     Query params (all optional):
       whitelist_type  – ip | url | phone | apn
       device_stock_id – int
+      device_model_id – int
       esim_provider_id – int
     """
     user = request.user
@@ -425,19 +415,21 @@ def list_active_whitelist(request):
     if role not in _ALL_ALLOWED_ROLES:
         return Response({'error': 'Access denied.'}, status=403)
 
-    qs = ActiveWhitelist.objects.select_related('device_stock', 'esim_provider').filter(is_active=True)
+    qs = ActiveWhitelist.objects.select_related('device_stock', 'device_model', 'esim_provider').filter(is_active=True)
 
     if role == 'devicemanufacture':
         mfr = _get_manufacturer(user)
         if not mfr:
             return Response({'error': 'No manufacturer record found for this user.'}, status=400)
-        qs = qs.filter(device_stock__dealer__manufacturer=mfr)
+        mfr_models = DeviceModel.objects.filter(created_by__manufacturers_user=mfr).values('id')
+        qs = qs.filter(Q(device_stock__dealer__manufacturer=mfr) | Q(device_model_id__in=mfr_models))
 
     elif role == 'dealer':
         dealer = _get_dealer(user)
         if not dealer:
             return Response({'error': 'No dealer record found for this user.'}, status=400)
-        qs = qs.filter(device_stock__dealer=dealer)
+        dealer_models = DeviceStock.objects.filter(dealer=dealer).values('model_id')
+        qs = qs.filter(Q(device_stock__dealer=dealer) | Q(device_model_id__in=dealer_models))
 
     elif role == _ESIM_ROLE:
         provider = _get_esim_provider(user)
@@ -451,6 +443,8 @@ def list_active_whitelist(request):
         qs = qs.filter(whitelist_type=wl_type)
     if stock_id := request.query_params.get('device_stock_id'):
         qs = qs.filter(device_stock_id=stock_id)
+    if model_id := request.query_params.get('device_model_id'):
+        qs = qs.filter(device_model_id=model_id)
     if esim_id := request.query_params.get('esim_provider_id'):
         qs = qs.filter(esim_provider_id=esim_id)
 
@@ -460,7 +454,9 @@ def list_active_whitelist(request):
         {
             'id': w.id,
             'device_stock_id': w.device_stock_id,
-            'device_esn': w.device_stock.device_esn,
+            'device_esn': w.device_stock.device_esn if w.device_stock_id else '',
+            'device_model_id': w.device_model_id,
+            'device_model_name': w.device_model.model_name if w.device_model_id else '',
             'esim_provider_id': w.esim_provider_id,
             'esim_provider_name': w.esim_provider.company_name if w.esim_provider_id else '',
             'whitelist_type': w.whitelist_type,
@@ -564,9 +560,14 @@ def _serialize_stock(stock, include_logs=False):
         for p in stock.esim_provider.all()
     ]
 
-    # Active whitelists (already prefetched as stock.prefetched_whitelists)
-    wl_qs = getattr(stock, 'prefetched_whitelists', stock.active_whitelists.filter(is_active=True))
-    whitelist = _group_whitelists(wl_qs)
+    # Active whitelists: device-level plus those applied to the device's model
+    wl_qs = getattr(stock, 'prefetched_whitelists', None)
+    if wl_qs is None:
+        wl_qs = stock.active_whitelists.filter(is_active=True)
+    model_wl_qs = getattr(stock.model, 'prefetched_model_whitelists', None)
+    if model_wl_qs is None:
+        model_wl_qs = stock.model.active_whitelists.filter(is_active=True)
+    whitelist = _group_whitelists(list(wl_qs) + list(model_wl_qs))
 
     # Dealer / manufacturer info
     dealer_id = stock.dealer_id
@@ -775,7 +776,6 @@ def device_dashboard(request):
     if iccid := p.get('iccid'):
         qs = qs.filter(iccid__icontains=iccid)
     if msisdn := p.get('msisdn'):
-        from django.db.models import Q
         qs = qs.filter(Q(msisdn1__icontains=msisdn) | Q(msisdn2__icontains=msisdn))
     if esim_status := p.get('esim_status'):
         qs = qs.filter(esim_status=esim_status)
@@ -802,6 +802,11 @@ def device_dashboard(request):
             'active_whitelists',
             queryset=ActiveWhitelist.objects.filter(is_active=True),
             to_attr='prefetched_whitelists',
+        ),
+        Prefetch(
+            'model__active_whitelists',
+            queryset=ActiveWhitelist.objects.filter(is_active=True),
+            to_attr='prefetched_model_whitelists',
         ),
     )
 
@@ -844,6 +849,11 @@ def device_detail(request, pk):
                     to_attr='prefetched_whitelists',
                 ),
                 Prefetch(
+                    'model__active_whitelists',
+                    queryset=ActiveWhitelist.objects.filter(is_active=True).select_related('esim_provider'),
+                    to_attr='prefetched_model_whitelists',
+                ),
+                Prefetch(
                     'activation_logs',
                     queryset=DeviceActivationLog.objects.select_related('changed_by', 'esim_provider'),
                     to_attr='prefetched_logs',
@@ -857,7 +867,8 @@ def device_detail(request, pk):
     # Full whitelist request history for this device
     wl_requests = (
         WhitelistRequest.objects
-        .filter(device_stocks=stock)
+        .filter(Q(device_stocks=stock) | Q(device_model_id=stock.model_id))
+        .distinct()
         .select_related('requested_by', 'esim_provider')
         .prefetch_related('entries')
         .order_by('-created_at')
