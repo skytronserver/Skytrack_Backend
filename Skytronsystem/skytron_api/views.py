@@ -40562,6 +40562,59 @@ def esim_provider_ip_range_list(request):
     }, status=status.HTTP_200_OK)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_permission('esim_management', 'view')
+def manufacturer_esim_provider_ip_range_list(request):
+    """
+    GET /api/manufacturer/esim-provider/ip-range/list/?esim_provider_id=<id>
+
+    IP ranges and ISP certificates uploaded by one M2M (eSIM) provider,
+    for the calling manufacturer. The provider must be linked to the
+    manufacturer.
+    """
+    manufacturer = get_user_object(request.user, "devicemanufacture")
+    if not manufacturer:
+        return Response(
+            {"error": "No Manufacturer account found for this user."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    provider_id = str(request.query_params.get('esim_provider_id') or '').strip()
+    if not provider_id.isdigit():
+        return Response(
+            {"errors": {"esim_provider_id": "A valid esim_provider_id is required."}},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    provider = manufacturer.esim_provider.filter(id=int(provider_id)).first()
+    if not provider:
+        return Response(
+            {"error": "This M2M provider is not linked to your account."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    entries = eSimProviderIPRange.objects.filter(
+        provider=provider, is_active=True
+    ).order_by('-created_at')
+
+    data = [{
+        "id": e.id,
+        "isp_name": e.isp_name,
+    } for e in entries]
+
+    return Response({
+        "status": "success",
+        "esim_provider": {
+            "id": provider.id,
+            "company_name": provider.company_name,
+        },
+        "count": len(data),
+        "data": data,
+    }, status=status.HTTP_200_OK)
+
+
 def _get_own_ip_range_entry(request, entry_id):
     """
     Fetch one IP range entry belonging to the calling provider.

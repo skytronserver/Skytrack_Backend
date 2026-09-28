@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from django.utils.deprecation import MiddlewareMixin
 from django.db import close_old_connections
+from django.http.request import RawPostDataException
 from .models import RequestLog
 
 
@@ -78,8 +79,26 @@ class RequestLoggerMiddleware(MiddlewareMixin):
             'request_url': request.build_absolute_uri(),
             'request_type': request.method,
             'headers': dict(request.headers),
-            'incoming_data': str(request.body) if request.body else {}
+            'incoming_data': self._get_incoming_data(request)
         }
+
+    @staticmethod
+    def _get_incoming_data(request):
+        # Multipart bodies are parsed as a stream (InputGuardMiddleware reads
+        # request.POST first), so request.body is no longer readable. Log the
+        # text fields and uploaded file names instead of the raw bytes.
+        if request.content_type == 'multipart/form-data':
+            try:
+                return {
+                    'fields': {k: request.POST.getlist(k) for k in request.POST.keys()},
+                    'files': {k: [f.name for f in request.FILES.getlist(k)] for k in request.FILES.keys()},
+                }
+            except Exception:
+                return {}
+        try:
+            return str(request.body) if request.body else {}
+        except RawPostDataException:
+            return {}
 
     def process_response(self, request, response):
         if getattr(request, '_skip_request_log', False):

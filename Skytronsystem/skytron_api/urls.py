@@ -1383,6 +1383,8 @@ urlpatterns += [
     path('esim-provider/ip-range/update/', esim_provider_ip_range_update, name='esim-provider-ip-range-update'),
     ## INUSE by M2MProvider
     path('esim-provider/ip-range/delete/', esim_provider_ip_range_delete, name='esim-provider-ip-range-delete'),
+    ## INUSE by Manufacturer
+    path('manufacturer/esim-provider/ip-range/list/', manufacturer_esim_provider_ip_range_list, name='manufacturer-esim-provider-ip-range-list'),
     
     path('m2m/ip-scan/', m2m_provider_ip_scan, name='m2m-ip-scan'),
 
