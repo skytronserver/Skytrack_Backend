@@ -15,8 +15,11 @@ GET    /api/complaint/<int:pk>/activity/         – Full activity log (staff + 
 GET    /api/complaint/track/<str:ticket_ref>/    – Public status lookup (no auth)
 """
 
+import re
 import secrets
 
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 from django.db.models import Case, IntegerField, Q, Value, When
 from django.utils import timezone
 from rest_framework import status
@@ -228,6 +231,35 @@ def _serialize_activities(ticket):
     ]
 
 
+_PHONE_RE = re.compile(r'^\+?[0-9]{10,15}$')
+_IMEI_RE = re.compile(r'^[0-9]{4,20}$')
+
+
+def _validate_ticket_input(name, phone, email, title, details, device_imei):
+    """Return a user-facing error message for invalid ticket input, else None."""
+    texts = (name, phone, email or '', title, details, device_imei or '')
+    if any('\x00' in t for t in texts):
+        return 'Input contains invalid characters.'
+    if len(name) > 255:
+        return 'Applicant name must be at most 255 characters.'
+    if not _PHONE_RE.match(phone):
+        return 'Enter a valid phone number (10 to 15 digits).'
+    if email:
+        try:
+            validate_email(email)
+        except DjangoValidationError:
+            return 'Enter a valid email address.'
+        if len(email) > 254:
+            return 'Email must be at most 254 characters.'
+    if len(title) > 500:
+        return 'Title must be at most 500 characters.'
+    if len(details) > 5000:
+        return 'Details must be at most 5000 characters.'
+    if device_imei and not _IMEI_RE.match(device_imei):
+        return 'Enter a valid device IMEI.'
+    return None
+
+
 def _get_manufacturer_ids_for_user(user):
     """Return list of Manufacturer PKs this user belongs to."""
     return list(Manufacturer.objects.filter(users=user).values_list('id', flat=True))
@@ -266,6 +298,12 @@ def create_ticket(request):
         return Response({'error': 'title is required'}, status=status.HTTP_400_BAD_REQUEST)
     if not details:
         return Response({'error': 'details is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    input_error = _validate_ticket_input(
+        applicant_name, applicant_phone, applicant_email, title, details, device_imei,
+    )
+    if input_error:
+        return Response({'error': input_error}, status=status.HTTP_400_BAD_REQUEST)
 
     valid_sources = {c[0] for c in ComplaintTicket.SOURCE_CHOICES}
     if source not in valid_sources:

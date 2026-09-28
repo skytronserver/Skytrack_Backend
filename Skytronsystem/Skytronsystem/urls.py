@@ -34,3 +34,9 @@ if settings.DEBUG:
         path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
         path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     ]
+
+# JSON error pages instead of Django's HTML ones (used when DEBUG=False).
+handler400 = 'skytron_api.error_handlers.handler400'
+handler403 = 'skytron_api.error_handlers.handler403'
+handler404 = 'skytron_api.error_handlers.handler404'
+handler500 = 'skytron_api.error_handlers.handler500'

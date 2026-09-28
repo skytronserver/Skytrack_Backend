@@ -21,6 +21,8 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from .rbac import require_permission, check_permission, get_all_module_permissions, get_data_scope
+from .auth_security import is_master_otp, remember_login_txn, consume_login_txn
+from .throttles import TripCreateRateThrottle, TripCreateDailyThrottle, TripWriteRateThrottle
 
 import re
 import requests
@@ -989,6 +991,7 @@ def reverse_geocode_poi(request):
 # Create Trip
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([TripCreateRateThrottle, TripCreateDailyThrottle])
 def create_trip(request):
     data = request.data.copy()
     user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
@@ -1001,9 +1004,17 @@ def create_trip(request):
             return Response({'error': 'Invalid temp user sessionid'}, status=status.HTTP_400_BAD_REQUEST)
         data['created_by'] = None
         data['mobile_no'] = temp_user.mobile
+        active_trips = Trip.objects.filter(mobile_no=temp_user.mobile, created_by__isnull=True, status='created')
     else:
         data['created_by'] = user.id
         data['mobile_no'] = None
+        active_trips = Trip.objects.filter(created_by=user, status='created')
+    max_active = getattr(settings, 'TRIP_MAX_ACTIVE', 20)
+    if active_trips.count() >= max_active:
+        return Response(
+            {'error': f'You already have {max_active} active trips. End or cancel a trip before creating a new one.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     serializer = TripSerializer(data=data)
     if serializer.is_valid():
         serializer.save()
@@ -1043,6 +1054,7 @@ def get_trip(request, trip_id=None):
 # Update Trip (only name and route, only by creator, only if not ended/canceled)
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([TripWriteRateThrottle])
 def update_trip(request, trip_id):
     trip = get_object_or_404(Trip, id=trip_id)
     user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
@@ -1071,6 +1083,7 @@ def update_trip(request, trip_id):
 # End Trip (only by creator, only if not ended/canceled)
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([TripWriteRateThrottle])
 def end_trip(request, trip_id):
     trip = get_object_or_404(Trip, id=trip_id)
     user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
@@ -1093,6 +1106,7 @@ def end_trip(request, trip_id):
 # Cancel Trip (only by creator, only if not ended/canceled)
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([TripWriteRateThrottle])
 def cancel_trip(request, trip_id):
     trip = get_object_or_404(Trip, id=trip_id)
     user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
@@ -12518,7 +12532,7 @@ def TagVerifyOwnerOtp(request ):
     if device_tag:
         if timezone.now() > device_tag.otp_time + timedelta(hours=24):
             return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
-        if otp == device_tag.otp or (settings.DEBUG and otp == '685472'):
+        if otp == device_tag.otp or is_master_otp(otp):
             device_tag.status = 'Owner_OTP_Verified'
             device_tag.save()
             #add_sms_queue("ACTV,123456,+9194016334212",device_tag.device.msisdn1)
@@ -12557,7 +12571,7 @@ def TagVerifyOwnerOtpFinal(request ):
     if device_tag:
         if timezone.now() > device_tag.otp_time + timedelta(hours=24):
             return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
-        if otp == device_tag.otp or (settings.DEBUG and otp == '685472'):
+        if otp == device_tag.otp or is_master_otp(otp):
             device_tag.status = 'Owner_Final_OTP_Verified'
             
             device_tag.device.stock_status = 'Fitted'
@@ -12600,7 +12614,7 @@ def TagVerifyDealerOtp(request  ):
         if device_tag:
             if timezone.now() > device_tag.otp_time + timedelta(hours=24):
                 return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
-            if otp == device_tag.otp or (settings.DEBUG and otp == '685472'):
+            if otp == device_tag.otp or is_master_otp(otp):
 
                 #data = {
                 #    'ceated_by':man,  
@@ -14393,7 +14407,7 @@ def DeviceVerifyStateAdminOtp(request ):
     otp = request.data.get('otp')
     if timezone.now() > device_model.otp_time + timedelta(hours=24):
         return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
-    if device_model.otp != otp and not (settings.DEBUG and otp == "685472"):
+    if device_model.otp != otp and not is_master_otp(otp):
             return JsonResponse({'error': "Invalid OTP"}, status=400)
 
 
@@ -14461,7 +14475,7 @@ def DeviceCreateManufacturerOtpVerify(request  ):
 
     if timezone.now() > device_model.otp_time + timedelta(hours=24):
         return JsonResponse({'error': "OTP has expired. Please request a new OTP."}, status=400)
-    if otp == device_model.otp or (settings.DEBUG and otp == '685472'):
+    if otp == device_model.otp or is_master_otp(otp):
         device_model.status = 'Manufacturer_OTP_Verified'
         device_model.save()
         return Response({"message": "Manufacturer OTP verified successfully."}, status=200)
@@ -19775,7 +19789,14 @@ def user_login(request ):
         user.is_active=True
         user.login=True
         user.save()
-        existing_session = Session.objects.filter(user=user.id, status='login').last()
+
+        # A new login has passed the password check: revoke earlier tokens
+        # beyond the role's session limit now (not only after OTP), and drop
+        # any unfinished OTP transactions, so a token captured from an earlier
+        # login cannot be replayed into this one (VAPT: token reuse).
+        from .login_settings_cache import enforce_session_limit
+        enforce_session_limit(user.id, user.role)
+        Session.objects.filter(user=user, status='otpsent').update(status='timeout')
         #if existing_session:
         #    return Response({'token': existing_session.token}, status=status.HTTP_200_OK)
 
@@ -20751,7 +20772,7 @@ def validate_otp(request ):
 
         # Validate the OTP server-side. The literal-OTP bypass is only ever
         # live when DEBUG=True (local/dev), never in production.
-        if str(otp) == str(session.otp) or (settings.DEBUG and str(otp) == "685472"):
+        if str(otp) == str(session.otp) or is_master_otp(otp):
             session.status = 'login'
             Token.objects.filter(user=session.user).delete()
             
@@ -20795,6 +20816,10 @@ def validate_otp(request ):
             # Single/limited-session policy: end this user's older sessions
             enforce_session_limit(session.user.id, session.user.role, token_value)
             # ===== END SESSION TRACKING =====
+
+            # The frontend must confirm this exact token against this login
+            # transaction (the pre-OTP token) via /api/session/verify/.
+            remember_login_txn(token, token_value)
             
             try:
                 timenow= timezone.now()
@@ -21067,7 +21092,7 @@ def list_holidays(request):
         return Response({'error': str(e)}, status=400)
     
           
-@api_view(['GET'])
+@api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([UserRateThrottle])
 def session_verify(request):
@@ -21079,7 +21104,17 @@ def session_verify(request):
     validate_otp response, which an attacker can alter in transit (VAPT: OTP
     bypass via response manipulation). A pre-OTP/forged/ended token never
     reaches this view (JWTAuthentication rejects it, so DRF returns 403).
+
+    POST with {"login_txn": <pre-OTP token>} additionally requires that the
+    bearer token is the one validate_otp issued for that login transaction,
+    and only once - an older, still-valid token replayed into a manipulated
+    validate_otp response is rejected.
     """
+    if request.method == 'POST':
+        login_txn = request.data.get('login_txn')
+        if not consume_login_txn(login_txn, request.auth):
+            return Response({'authenticated': False, 'error': 'Login verification failed.'},
+                            status=status.HTTP_403_FORBIDDEN)
     user = request.user
     return Response({
         'authenticated': True,
@@ -21094,7 +21129,6 @@ def session_verify(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
-@require_permission('user_management', 'view')
 def user_logout(request ): 
     errors = validate_inputs(request)
     if errors:
@@ -21110,8 +21144,10 @@ def user_logout(request ):
         if not token:
             return Response({'error': 'Session token not provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Find the session based on the provided token
-        session = Session.objects.filter(token=token).last()
+        # Every logged-in user may end their own session (no RBAC module
+        # needed - otherwise some roles could never revoke their token), but
+        # only their own.
+        session = Session.objects.filter(token=token, user=request.user).last()
 
         if not session:
             return Response({'error': 'Invalid session token'}, status=status.HTTP_404_NOT_FOUND)
@@ -42181,10 +42217,8 @@ def device_tagging_step2_esim(request):
  # Wrong OTP submissions allowed before the OTP is invalidated.
 TAGGING_OTP_MAX_ATTEMPTS = 5
 
-# TEMPORARY: accept this OTP alongside the real one, for both dealer and
-# owner OTP in the tagging flow.
-# Set to None to switch off. Must be removed before production go-live.
-TAGGING_DEFAULT_TEST_OTP = '685472'
+# The fixed test OTP for the tagging flow is controlled by MASTER_OTP_ENABLED
+# (see auth_security.is_master_otp).
  
 
 
@@ -42310,9 +42344,8 @@ def _tagging_otp_matches(stored_otp, submitted_otp):
     """
     Compare a submitted OTP against the stored one.
 
-    TAGGING_DEFAULT_TEST_OTP is also accepted, so the flow can be tested
-    without waiting for a real SMS. This is deliberate and temporary —
-    see the constant for how to switch it off.
+    The master OTP (MASTER_OTP_ENABLED) is also accepted, so the flow can be
+    tested without waiting for a real SMS.
     """
     if not stored_otp or not submitted_otp:
         return False
@@ -42320,10 +42353,7 @@ def _tagging_otp_matches(stored_otp, submitted_otp):
     if secrets.compare_digest(str(stored_otp), str(submitted_otp)):
         return True
 
-    if TAGGING_DEFAULT_TEST_OTP and secrets.compare_digest(
-        str(TAGGING_DEFAULT_TEST_OTP), str(submitted_otp)
-    ):
-        logger.warning("Tagging OTP accepted via default test OTP.")
+    if is_master_otp(submitted_otp):
         return True
 
     return False

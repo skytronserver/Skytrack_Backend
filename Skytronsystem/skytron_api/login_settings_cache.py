@@ -284,14 +284,20 @@ def get_active_session_count(user_id):
         return -1
 
 
-def enforce_session_limit(user_id, user_role, keep_token):
+def enforce_session_limit(user_id, user_role, keep_token=None):
     """
-    Enforce max_simultaneous_sessions for a user right after a login completes.
+    Enforce max_simultaneous_sessions for a user.
 
-    Keeps the newest `max_simultaneous_sessions` logged-in sessions (always
-    including `keep_token`, the one just issued) and terminates the rest:
-    Session.status -> 'logout' (JWTAuthentication only accepts 'login'),
-    token blacklisted, and removed from Redis session tracking.
+    With `keep_token` (right after a login completes): keeps the newest
+    `max_simultaneous_sessions` logged-in sessions, always including
+    `keep_token`, the one just issued.
+    Without `keep_token` (a new login has just passed the password check):
+    keeps only the newest `max_simultaneous_sessions - 1`, making room for the
+    session about to be issued. With the default limit of 1 this revokes every
+    earlier token as soon as a new login starts (VAPT: token reuse).
+
+    Terminated sessions: Session.status -> 'logout' (JWTAuthentication only
+    accepts 'login'), token blacklisted, and removed from Redis tracking.
     max_simultaneous_sessions = 0 means unlimited.
 
     Returns:
@@ -308,8 +314,9 @@ def enforce_session_limit(user_id, user_role, keep_token):
 
         others = (Session.objects
                   .filter(user_id=user_id, status='login')
-                  .exclude(token=keep_token)
                   .order_by('-loginTime', '-id'))
+        if keep_token:
+            others = others.exclude(token=keep_token)
         to_end = list(others[max_sessions - 1:])
 
         for session in to_end:

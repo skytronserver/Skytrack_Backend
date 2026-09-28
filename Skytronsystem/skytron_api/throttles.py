@@ -1,7 +1,7 @@
 """
 Custom throttle classes for Skytrack API
 """
-from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle, SimpleRateThrottle
 from django.core.cache import cache
 from django.conf import settings
 import time
@@ -189,3 +189,34 @@ class VehicleOBDStatusRateThrottle(LoadTestBypassMixin, UserRateThrottle):
 class IPViolationDummyRateThrottle(LoadTestBypassMixin, AnonRateThrottle):
     """Throttle for the public dummy IP-violation list endpoint."""
     scope = 'ip_violation_dummy'
+
+
+class _TripThrottleMixin(LoadTestBypassMixin):
+    """
+    Per-caller throttle for the trip APIs (VAPT: no rate limiting on trip
+    creation). Keyed on the logged-in user, else the temp-user `sessionid`
+    header, else the client IP - these views are AllowAny.
+    """
+
+    def get_cache_key(self, request, view):
+        user = getattr(request, 'user', None)
+        if user is not None and user.is_authenticated:
+            ident = f"user_{user.pk}"
+        elif request.headers.get('sessionid'):
+            ident = f"temp_{request.headers.get('sessionid')[:64]}"
+        else:
+            ident = f"ip_{self.get_ident(request)}"
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
+class TripCreateRateThrottle(_TripThrottleMixin, SimpleRateThrottle):
+    scope = 'trip_create'
+
+
+class TripCreateDailyThrottle(_TripThrottleMixin, SimpleRateThrottle):
+    scope = 'trip_create_daily'
+
+
+class TripWriteRateThrottle(_TripThrottleMixin, SimpleRateThrottle):
+    """update / end / cancel"""
+    scope = 'trip_write'

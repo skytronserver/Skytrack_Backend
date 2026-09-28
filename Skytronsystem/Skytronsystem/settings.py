@@ -39,6 +39,13 @@ LOAD_TEST_SECRET = os.environ.get('LOAD_TEST_SECRET', '')
 # Set DISABLE_THROTTLE=true to turn off ALL throttling (use only during load tests).
 DISABLE_THROTTLE = os.environ.get('DISABLE_THROTTLE', 'false').lower() == 'true'
 
+# Global limit on every /api/ request, per bearer token or client IP, per
+# minute (skytron_api.rate_limit.ApiRateLimitMiddleware). 0 turns it off.
+API_RATE_LIMIT = int(os.environ.get('API_RATE_LIMIT', '300'))
+
+# Most trips one user may have in 'created' state at once.
+TRIP_MAX_ACTIVE = int(os.environ.get('TRIP_MAX_ACTIVE', '20'))
+
 MQTT_HOST = os.environ.get('MQTT_HOST', '127.0.0.1')
 MQTT_PORT = os.environ.get('MQTT_PORT', '8883')
 MQTT_ADMIN_USER = os.environ.get('MQTT_ADMIN_USER', '')
@@ -49,6 +56,12 @@ ALLOW_ALL_DEV_MQTT = os.environ.get('ALLOWALLDEVMQTT', 'false').lower() == 'true
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
+
+# Fixed test OTP accepted alongside the real one (login, tagging, device
+# approvals). Independent of DEBUG so production can keep DEBUG=False.
+# Leave MASTER_OTP_ENABLED unset/false in production.
+MASTER_OTP_ENABLED = os.environ.get('MASTER_OTP_ENABLED', 'false').lower() == 'true'
+MASTER_OTP = os.environ.get('MASTER_OTP', '685472')
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 # ALLOWED_HOSTS = ['api.skytron.in', 'skytron.in','dev.skytron.in','api-dev.skytron.in', 'skytrack.tech']
@@ -96,6 +109,9 @@ FORM_RENDERER = 'django.forms.renderers.DjangoTemplates'
 MIDDLEWARE = [
 
     'corsheaders.middleware.CorsMiddleware',
+    # VAPT: global per-client limit on /api/ (API_RATE_LIMIT). After CORS so
+    # 429s still carry CORS headers.
+    'skytron_api.rate_limit.ApiRateLimitMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -306,6 +322,9 @@ REST_FRAMEWORK = {
         'device_data_health': '20/minute',  # Device protocol-format validator lookups
         'vehicle_obd_status': '20/minute',  # Vehicle OBD/GPS status lookup
         'ip_violation_dummy': '30/minute',  # Public dummy IP-violation list
+        'trip_create': '5/minute',         # Trip creation (route-eta), per user
+        'trip_create_daily': '50/day',     # Trip creation daily cap, per user
+        'trip_write': '20/minute',         # Trip update / end / cancel, per user
     },
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
@@ -323,6 +342,8 @@ REST_FRAMEWORK = {
     # CORS preflight is answered by corsheaders middleware before DRF, so
     # browsers are unaffected; a plain OPTIONS to a view now returns 405.
     'DEFAULT_METADATA_CLASS': None,
+    # VAPT: unhandled errors return short JSON, never HTML/tracebacks.
+    'EXCEPTION_HANDLER': 'skytron_api.error_handlers.api_exception_handler',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
         'skytron_api.jwt_authentication.HybridAuthentication',   
@@ -369,9 +390,9 @@ OTP_MAX_ATTEMPTS = 3
 # Only expose OTP in development
 SHOW_OTP_IN_RESPONSE = DEBUG
 
-# (for testing phase only)
-ALLOW_DEFAULT_TEST_OTP = True
-DEFAULT_TEST_OTP = "685472"
+# (for testing phase only) - follows MASTER_OTP_ENABLED
+ALLOW_DEFAULT_TEST_OTP = MASTER_OTP_ENABLED
+DEFAULT_TEST_OTP = MASTER_OTP
 
 
 AUTHENTICATION_BACKENDS = [
