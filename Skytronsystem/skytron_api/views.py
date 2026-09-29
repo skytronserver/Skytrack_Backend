@@ -5365,8 +5365,8 @@ def update_eSimProvider(request ):
         esimprovider = eSimProvider.objects.filter(id=id).last()
         if not esimprovider:
             return Response({'error': "Invalid eSimProvider id"}, status=400)
-        if esimprovider.createdby != request.user:
-            return Response({'error': "User can be edited by only the creator"}, status=400)
+        # Any superadmin with esim_management.update may edit/approve; self-registered
+        # providers are owned by the default superadmin, so a creator check blocks approval.
 
         ep_user = esimprovider.users.last()
         if not ep_user:
@@ -7930,18 +7930,24 @@ def create_SOS_user(request ):
         if user:  
             try: 
                 file_idProof = save_file(request,'file_idProof','fileuploads/man')
-                if not  file_idProof: 
+                if not  file_idProof:
                     user.delete()
                     return Response({'error': "Invalid file." }, status=400)
+                file_authorization_letter = None
+                if 'file_authorization_letter' in request.FILES:
+                    file_authorization_letter = save_file(request, 'file_authorization_letter', 'fileuploads/man')
+                    if not file_authorization_letter:
+                        user.delete()
+                        return Response({'error': "Invalid authorization letter file."}, status=400)
 
-
-                dealer,error = EM_ex.objects.safe_create( 
+                dealer,error = EM_ex.objects.safe_create(
                     created=created,
-                    state_id=state, 
+                    state_id=state,
                     #district_id=district,
-                    expirydate=expirydate, 
-                    idProofno=idProofno, 
+                    expirydate=expirydate,
+                    idProofno=idProofno,
                     file_idProof=file_idProof,
+                    file_authorization_letter=file_authorization_letter,
                     user_type=user_type,
                     createdby=createdby,
                     status="Created",

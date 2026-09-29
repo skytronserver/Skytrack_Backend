@@ -774,12 +774,13 @@ class EM_ex(models.Model):
         ])
     idProofno = models.CharField(max_length=255, blank=True, null=True)
     file_idProof = models.CharField(max_length=255, blank=True, null=True)
+    file_authorization_letter = models.CharField(max_length=255, blank=True, null=True)
     createdby = models.ForeignKey('User', on_delete=models.CASCADE)
     status_choices = [
             ('Created', 'Created'),
             ('UserVerified', 'UserVerified'),
             ('StateAdminVerified', 'StateAdminVerified'),
-            ('UserExpired', 'UserExpired'), 
+            ('UserExpired', 'UserExpired'),
             ('Discontinued', 'Discontinued'),
         ]
     status = models.CharField(max_length=20, choices=status_choices)
