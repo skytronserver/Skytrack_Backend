@@ -27,11 +27,13 @@ from rest_framework.decorators import (
     api_view,
     authentication_classes,
     permission_classes,
+    throttle_classes,
 )
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .jwt_authentication import JWTAuthentication
+from .throttles import ComplaintCreateRateThrottle, ComplaintCreateDailyThrottle
 from .models import ComplaintTicket, DeviceStock, Manufacturer, TicketActivity, TicketAttachment
 
 # Roles that may view and manage tickets (internal staff)
@@ -272,6 +274,7 @@ def _get_manufacturer_ids_for_user(user):
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([AllowAny])
+@throttle_classes([ComplaintCreateRateThrottle, ComplaintCreateDailyThrottle])
 def create_ticket(request):
     """
     Create a complaint ticket.

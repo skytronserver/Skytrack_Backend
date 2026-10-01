@@ -220,3 +220,36 @@ class TripCreateDailyThrottle(_TripThrottleMixin, SimpleRateThrottle):
 class TripWriteRateThrottle(_TripThrottleMixin, SimpleRateThrottle):
     """update / end / cancel"""
     scope = 'trip_write'
+
+
+# Staff log tickets on behalf of callers, so they skip the daily cap.
+_COMPLAINT_STAFF_ROLES = {'helpdesk', 'teamleader', 'sosexecutive', 'sosadmin', 'stateadmin', 'superadmin'}
+
+
+class _ComplaintThrottleMixin(LoadTestBypassMixin):
+    """
+    Per-caller throttle for complaint ticket creation (AllowAny view).
+    Keyed on the logged-in user, else the client IP.
+    """
+
+    def get_cache_key(self, request, view):
+        user = getattr(request, 'user', None)
+        if user is not None and user.is_authenticated:
+            ident = f"user_{user.pk}"
+        else:
+            ident = f"ip_{self.get_ident(request)}"
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
+class ComplaintCreateRateThrottle(_ComplaintThrottleMixin, SimpleRateThrottle):
+    scope = 'complaint_create'
+
+
+class ComplaintCreateDailyThrottle(_ComplaintThrottleMixin, SimpleRateThrottle):
+    scope = 'complaint_create_daily'
+
+    def allow_request(self, request, view):
+        user = getattr(request, 'user', None)
+        if user is not None and user.is_authenticated and getattr(user, 'role', '') in _COMPLAINT_STAFF_ROLES:
+            return True
+        return super().allow_request(request, view)

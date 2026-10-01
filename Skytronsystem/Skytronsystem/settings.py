@@ -325,6 +325,8 @@ REST_FRAMEWORK = {
         'trip_create': '5/minute',         # Trip creation (route-eta), per user
         'trip_create_daily': '50/day',     # Trip creation daily cap, per user
         'trip_write': '20/minute',         # Trip update / end / cancel, per user
+        'complaint_create': '5/minute',    # Complaint ticket creation, per user / IP
+        'complaint_create_daily': '20/day',  # Complaint ticket daily cap (non-staff), per user / IP
     },
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
