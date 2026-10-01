@@ -4260,7 +4260,11 @@ def validate_bhuvan_response(response_json):
 @require_http_methods(['GET', 'POST'])   
 def get_routePath(request): 
     # The target external API URL
-    url = 'https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_new_v2.php?token=fb46cfb86bea498dce694350fb6dd16d161ff8eb' 
+    token = getattr(settings, 'BHUVAN_ROUTING_TOKEN', '')
+    if not token:
+        logger.error("get_routePath: BHUVAN_ROUTING_TOKEN is not configured")
+        return Response({"error": "Routing service is temporarily unavailable. Please try again later."}, status=503)
+    url = 'https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_new_v2.php'
     points_data = request.data.get("points", [])
     
     if not points_data:
@@ -4290,15 +4294,18 @@ def get_routePath(request):
     try:
         response = requests.post(
             url,
+            params={"token": token},
             json={"points": points_data},  # Send points data in the correct format
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
+            timeout=30,
         )
-        
+
         response.raise_for_status()
         json_output = response.json()
 
         # Catch upstream API errors (e.g. expired token) before schema validation
         if isinstance(json_output, dict) and "error" in json_output:
+            logger.error(f"get_routePath: Bhuvan error {json_output.get('error')}: {json_output.get('error_description')}")
             return Response({"error": "Routing service is temporarily unavailable. Please try again later."}, status=503)
 
         # Convert JSON output to string and sanitize it
