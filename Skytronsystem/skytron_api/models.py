@@ -2183,6 +2183,10 @@ class GPSData(models.Model):
             models.Index(fields=['device_tag', '-packet_datetime', '-id'], name='gpsdata_tag_packet_dt_idx'),
             # Supports fast GROUP BY device_tag_id + MAX(id) for latest-per-device queries
             models.Index(fields=['device_tag', 'id'], name='gpsdata_tag_id_asc_idx'),
+            # Latest GPS-fix packet per device (gps_track_data_api); without it
+            # Postgres walks the whole pkey backwards for devices with no recent fix.
+            models.Index(fields=['device_tag', '-id'], name='gpsdata_tag_fix_id_idx',
+                         condition=models.Q(gps_status='1')),
         ]
 
 
