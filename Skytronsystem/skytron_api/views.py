@@ -20696,6 +20696,11 @@ def user_login_app(request ):
             uu=get_user_object(user,user.role)
             if uu:
                 uu = recursive_model_to_dict(uu,["users"])
+                # User.createdby is a CharField (superadmin); return it as an
+                # integer like the role models' createdby FK ids.
+                if user.role == "superadmin" and 'createdby' in uu:
+                    cb = str(uu['createdby'] or '').strip()
+                    uu['createdby'] = int(cb) if cb.isdigit() else None
             delivery_info = {}
             if not sms_ok:
                 delivery_info['sms_status'] = 'failed'
