@@ -322,6 +322,10 @@ urlpatterns = [
     path('SOS/report/', SOS_detailed_report, name='SOS_detailed_report'),
     
     path('SOS/SOS_TL_report2/', SOS_TLreport2, name='SOS_TLreport'),
+    ## SOSExecutive / team lead records an unattended (away) period
+    path('SOS/unattended/record/', SOS_record_unattended, name='SOS_record_unattended'),
+    ## SOSAdmin, SuperAdmin: per-executive daily performance
+    path('SOS/executive_performance_report/', SOS_executive_performance_report, name='SOS_executive_performance_report'),
 
     
     path('homepageandstat/homepage_user1/', homepage_user1, name='homepage_user1'),

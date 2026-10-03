@@ -36,6 +36,8 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "SOS_TLreport":               ["dashboard", "dashboard_central", "sos_call_list"],
     "SOS_EXreport":               ["dashboard"],
     "SOS_detailed_report":        ["report_sos"],
+    "SOS_executive_performance_report": ["report_sos", "dashboard_central"],
+    "SOS_record_unattended":      ["sos_call_list", "emergency_management"],
 
     # MORTH dashboard
     "global_counts_summary":      ["dashboard_morth"],

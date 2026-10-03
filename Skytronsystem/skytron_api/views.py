@@ -8715,6 +8715,8 @@ def DEx_getPendingCallList(request ):
             user.login = True
             user.last_activity = timezone.now()
             user.save(update_fields=['login', 'last_activity'])
+        if uo:
+            _record_em_online_heartbeat(uo)
 
         # Base queryset: only pending calls, excluding closed assignments.
         # No age cutoff — a call still in status="pending" is by definition
@@ -8855,6 +8857,8 @@ def DEx_getPendingCallListTL(request ):
             _auto_reassign_stale_desk_ex_calls(state=uo3.state)
         elif uo and getattr(uo, 'state', None):
             _auto_reassign_stale_desk_ex_calls(state=uo.state)
+        if uo:
+            _record_em_online_heartbeat(uo)
 
         # Base queryset: only pending calls and excluding closed assignments
         qs_base = EMCallAssignment.objects.all()
@@ -9075,7 +9079,7 @@ def CheckLive(request ):
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    
+    _record_em_online_heartbeat(get_user_object(request.user, "sosexecutive"))
     return Response({'detail':"live"}, status=200)
 
 @api_view(['POST'])
@@ -17206,6 +17210,300 @@ def SOS_EXreport(request ):
 
     except Exception as e:
         return Response({'error': "Unable to process request."+str(e)}, status=400)
+
+
+# ── SOS executive online tracking / unattended time / performance report ────
+
+# The SOS dashboard polls the pending-call list every 10s. Polls closer together
+# than this gap are treated as one continuous online span. Kept generous because
+# browsers throttle timers in background tabs to ~1/min.
+EM_ONLINE_HEARTBEAT_GAP_SECONDS = 120
+SOS_REPORT_TZ = 'Asia/Kolkata'
+SOS_REPORT_MAX_DAYS = 31
+SOS_UNATTENDED_MAX_SECONDS = 24 * 60 * 60
+
+
+def _record_em_online_heartbeat(ex):
+    """Extend the executive's current online span, or open a new one. Never raises."""
+    if not ex:
+        return
+    try:
+        now = timezone.now()
+        gap_start = now - timedelta(seconds=EM_ONLINE_HEARTBEAT_GAP_SECONDS)
+        updated = EMExOnlineSession.objects.filter(
+            id__in=EMExOnlineSession.objects.filter(ex=ex, last_seen__gte=gap_start)
+            .order_by('-last_seen').values('id')[:1]
+        ).update(last_seen=now)
+        if not updated:
+            EMExOnlineSession.objects.create(ex=ex, start_time=now, last_seen=now)
+    except Exception as e:
+        logger.warning(f"[EMOnline] heartbeat failed for EM_ex {getattr(ex, 'id', None)}: {e}")
+
+
+def _parse_sos_datetime(value):
+    """Parse an ISO-8601 datetime; naive values are taken as IST."""
+    from zoneinfo import ZoneInfo
+    if not value or not isinstance(value, str):
+        return None
+    dt = parse_datetime(value.strip())
+    if dt is None:
+        return None
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt, ZoneInfo(SOS_REPORT_TZ))
+    return dt
+
+
+def _fmt_hms(seconds):
+    seconds = int(round(seconds or 0))
+    return f"{seconds // 3600:02d}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}"
+
+
+def _merged_overlap_seconds(spans, win_start, win_end):
+    """Total seconds covered by the union of (start, end) spans, clipped to the window."""
+    clipped = sorted(
+        (max(s, win_start), min(e, win_end))
+        for s, e in spans
+        if e > win_start and s < win_end
+    )
+    total = 0.0
+    cur_s = cur_e = None
+    for s, e in clipped:
+        if cur_e is None or s > cur_e:
+            if cur_e is not None:
+                total += (cur_e - cur_s).total_seconds()
+            cur_s, cur_e = s, e
+        elif e > cur_e:
+            cur_e = e
+    if cur_e is not None:
+        total += (cur_e - cur_s).total_seconds()
+    return total
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['POST'])
+@require_permission('emergency_management', 'create')
+def SOS_record_unattended(request):
+    """
+    SOS executive / team lead records a period they were away from the desk.
+    Body: start_time, end_time (ISO-8601; naive = IST), reason (optional).
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    role = "sosexecutive"
+    user = request.user
+    profile = get_user_object(user, role)
+    if not profile or profile.user_type not in ('desk_ex', 'teamlead'):
+        return Response({"error": "Request must be from SOS executive or team lead."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        start_time = _parse_sos_datetime(request.data.get('start_time'))
+        end_time = _parse_sos_datetime(request.data.get('end_time'))
+        if not start_time or not end_time:
+            return Response({'error': 'start_time and end_time are required in ISO-8601 format, e.g. 2026-10-03T14:05:00+05:30'}, status=400)
+        if end_time <= start_time:
+            return Response({'error': 'end_time must be after start_time.'}, status=400)
+        if end_time > timezone.now() + timedelta(minutes=5):
+            return Response({'error': 'end_time cannot be in the future.'}, status=400)
+        duration = (end_time - start_time).total_seconds()
+        if duration > SOS_UNATTENDED_MAX_SECONDS:
+            return Response({'error': 'Unattended period cannot exceed 24 hours.'}, status=400)
+
+        reason = request.data.get('reason')
+        if reason is not None:
+            reason = str(reason).strip()[:1000] or None
+
+        overlap = EMExUnattendedTime.objects.filter(
+            ex=profile, start_time__lt=end_time, end_time__gt=start_time
+        ).first()
+        if overlap:
+            return Response({
+                'error': 'This period overlaps an already recorded unattended time.',
+                'overlapping_id': overlap.id,
+                'overlapping_start_time': overlap.start_time,
+                'overlapping_end_time': overlap.end_time,
+            }, status=400)
+
+        record, error = EMExUnattendedTime.objects.safe_create(
+            ex=profile,
+            user=user,
+            start_time=start_time,
+            end_time=end_time,
+            duration_seconds=int(duration),
+            reason=reason,
+        )
+        if error:
+            return error
+
+        return Response({
+            'id': record.id,
+            'ex_id': profile.id,
+            'user_id': user.id,
+            'start_time': record.start_time,
+            'end_time': record.end_time,
+            'duration_seconds': record.duration_seconds,
+            'duration': _fmt_hms(record.duration_seconds),
+            'reason': record.reason,
+            'created_at': record.created_at,
+        }, status=201)
+
+    except Exception as e:
+        return Response({'error': "Unable to process request." + str(e)}, status=400)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET'])
+@require_permission('reports', 'view')
+def SOS_executive_performance_report(request):
+    """
+    Per-executive daily performance for SOS admin (own state) and super admin.
+
+    Query params:
+      date=YYYY-MM-DD                          single day, or
+      start_date=YYYY-MM-DD&end_date=YYYY-MM-DD inclusive range (max 31 days)
+      state_id   (superadmin only, optional)
+      user_type  desk_ex | teamlead (optional, default both)
+      ex_id      (optional) single executive
+    Day boundaries are IST.
+    """
+    from datetime import datetime as dt_datetime, time as dt_time
+    from zoneinfo import ZoneInfo
+
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = request.user
+        admin_profile = get_user_object(user, "sosadmin")
+        is_superadmin = get_user_object(user, "superadmin") is not None
+        if not (admin_profile or is_superadmin):
+            return Response({"error": "Request must be from SOS admin or super admin."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ── Date window (IST) ────────────────────────────────────────────
+        qp = request.query_params
+        single = qp.get('date')
+        start_str = qp.get('start_date') or single
+        end_str = qp.get('end_date') or single
+        if not start_str or not end_str:
+            return Response({'error': 'Provide date, or start_date and end_date (YYYY-MM-DD).'}, status=400)
+        try:
+            start_date = dt_datetime.strptime(start_str, '%Y-%m-%d').date()
+            end_date = dt_datetime.strptime(end_str, '%Y-%m-%d').date()
+        except ValueError:
+            return Response({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=400)
+        if end_date < start_date:
+            return Response({'error': 'end_date must be on or after start_date.'}, status=400)
+        if (end_date - start_date).days + 1 > SOS_REPORT_MAX_DAYS:
+            return Response({'error': f'Date range cannot exceed {SOS_REPORT_MAX_DAYS} days.'}, status=400)
+
+        tz = ZoneInfo(SOS_REPORT_TZ)
+        win_start = dt_datetime.combine(start_date, dt_time.min, tzinfo=tz)
+        win_end = dt_datetime.combine(end_date + timedelta(days=1), dt_time.min, tzinfo=tz)
+        now = timezone.now()
+        # Offline is only counted for time that has already elapsed
+        elapsed_end = min(win_end, now)
+        elapsed_seconds = max(0.0, (elapsed_end - win_start).total_seconds())
+
+        # ── Executives in scope ──────────────────────────────────────────
+        ex_qs = EM_ex.objects.filter(user_type__in=['desk_ex', 'teamlead']).select_related('state')
+        if admin_profile:
+            ex_qs = ex_qs.filter(state=admin_profile.state)
+        elif qp.get('state_id'):
+            ex_qs = ex_qs.filter(state_id=qp.get('state_id'))
+        user_type = qp.get('user_type')
+        if user_type:
+            if user_type not in ('desk_ex', 'teamlead'):
+                return Response({'error': 'user_type must be desk_ex or teamlead.'}, status=400)
+            ex_qs = ex_qs.filter(user_type=user_type)
+        if qp.get('ex_id'):
+            ex_qs = ex_qs.filter(id=qp.get('ex_id'))
+
+        executives = list(ex_qs.prefetch_related('users').order_by('id'))
+        ex_ids = [ex.id for ex in executives]
+
+        # ── Online spans ────────────────────────────────────────────────
+        online_spans = {}
+        for ex_id, s, e in EMExOnlineSession.objects.filter(
+            ex_id__in=ex_ids, start_time__lt=win_end, last_seen__gt=win_start
+        ).values_list('ex_id', 'start_time', 'last_seen'):
+            online_spans.setdefault(ex_id, []).append((s, e))
+
+        # ── Attended SOS calls (accepted within window) ─────────────────
+        calls = {}
+        for ex_id, accept_time, complete_time, call_end in EMCallAssignment.objects.filter(
+            ex_id__in=ex_ids, accept_time__gte=win_start, accept_time__lt=win_end
+        ).values_list('ex_id', 'accept_time', 'complete_time', 'call__end_time'):
+            c = calls.setdefault(ex_id, {'count': 0, 'completed': 0, 'seconds': 0.0})
+            c['count'] += 1
+            finished = complete_time or call_end
+            if finished and finished >= accept_time:
+                c['completed'] += 1
+                c['seconds'] += (finished - accept_time).total_seconds()
+
+        # ── Unattended periods (started within window) ──────────────────
+        unattended = {}
+        for ex_id, secs in EMExUnattendedTime.objects.filter(
+            ex_id__in=ex_ids, start_time__gte=win_start, start_time__lt=win_end
+        ).values_list('ex_id', 'duration_seconds'):
+            u = unattended.setdefault(ex_id, {'count': 0, 'seconds': 0})
+            u['count'] += 1
+            u['seconds'] += secs
+
+        results = []
+        for ex in executives:
+            ex_user = next(iter(ex.users.all()), None)
+            online = _merged_overlap_seconds(online_spans.get(ex.id, []), win_start, elapsed_end)
+            offline = max(0.0, elapsed_seconds - online)
+            c = calls.get(ex.id, {'count': 0, 'completed': 0, 'seconds': 0.0})
+            avg_call = c['seconds'] / c['completed'] if c['completed'] else 0
+            u = unattended.get(ex.id, {'count': 0, 'seconds': 0})
+            avg_unattended = u['seconds'] / u['count'] if u['count'] else 0
+
+            results.append({
+                'ex_id': ex.id,
+                'user_id': ex_user.id if ex_user else None,
+                'name': ex_user.name if ex_user else None,
+                'email': ex_user.email if ex_user else None,
+                'mobile': ex_user.mobile if ex_user else None,
+                'user_type': ex.user_type,
+                'state': ex.state.state if ex.state else None,
+                'status': ex.status,
+
+                'online_duration_seconds': int(online),
+                'online_duration': _fmt_hms(online),
+                'offline_duration_seconds': int(offline),
+                'offline_duration': _fmt_hms(offline),
+
+                'total_sos_calls': c['count'],
+                'completed_sos_calls': c['completed'],
+                'total_sos_call_duration_seconds': int(c['seconds']),
+                'total_sos_call_duration': _fmt_hms(c['seconds']),
+                'average_sos_call_time_seconds': round(avg_call, 2),
+                'average_sos_call_time': _fmt_hms(avg_call),
+
+                'unattended_count': u['count'],
+                'unattended_total_duration_seconds': int(u['seconds']),
+                'unattended_total_duration': _fmt_hms(u['seconds']),
+                'unattended_average_seconds': round(avg_unattended, 2),
+                'unattended_average': _fmt_hms(avg_unattended),
+            })
+
+        return Response({
+            'start_date': str(start_date),
+            'end_date': str(end_date),
+            'timezone': SOS_REPORT_TZ,
+            'count': len(results),
+            'results': results,
+        })
+
+    except Exception as e:
+        return Response({'error': "Unable to process request." + str(e)}, status=400)
 
 
 
