@@ -19380,9 +19380,9 @@ def password_reset(request ):
             if token_key:
                 if not user.password==token_key:
                     return Response({'error': 'Invalid Token'}, status=status.HTTP_400_BAD_REQUEST)
-            # If no token provided, this might be a direct password reset from an authorized user
-            elif not request.user.is_authenticated:
-                return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            # token2 is compulsory - no reset without it, even for a logged-in user
+            else:
+                return Response({'error': 'token2 not provided'}, status=status.HTTP_400_BAD_REQUEST)
                 
             
             valid=True
