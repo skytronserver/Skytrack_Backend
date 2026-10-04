@@ -1871,18 +1871,11 @@ class SchoolApplicationSubmitSerializer(serializers.Serializer):
         existing_user = None  # Will be set if this is a resubmission
 
         # ── Check mobile ──────────────────────────────────────────────────────
-        user_by_mobile = User.objects.filter(mobile=mobile).first()
-        if user_by_mobile:
-            has_active_application = School.objects.filter(
-                users=user_by_mobile,
-                status__in=ACTIVE_STATUSES
-            ).exists()
-            if has_active_application:
-                raise serializers.ValidationError({
-                    "mobile": "An active application already exists for this mobile number."
-                })
-            # User exists but all schools were rejected — allow resubmission
-            existing_user = user_by_mobile
+        # Phone number already in the database - do not allow it.
+        if User.objects.filter(mobile=mobile).exists():
+            raise serializers.ValidationError({
+                "mobile": "User already exists."
+            })
 
         # ── Check email ───────────────────────────────────────────────────────
         user_by_email = User.objects.filter(email=email).first()
