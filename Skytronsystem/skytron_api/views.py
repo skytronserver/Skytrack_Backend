@@ -26822,8 +26822,13 @@ def gps_packet_dashboard(request):
         return HttpResponse(html)
 
 
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 @require_http_methods(['GET', 'POST'])
 def gps_data_log_table(request ): 
+    # Superadmin only
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -26842,8 +26847,13 @@ def gps_data_log_table(request ):
         'search_query': search_query
     }, status=200)
     
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 @require_http_methods(['GET', 'POST'])
 def gps_em_data_log_table(request ): 
+    # Superadmin only
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
