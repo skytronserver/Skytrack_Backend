@@ -36,6 +36,10 @@ JWT_PUBLIC_KEY_PATH = os.path.join(BASE_DIR, 'keys', 'jwt_public_key.pem')
 # Used exclusively for JMeter / load-test runs. Leave blank (or unset) in production.
 LOAD_TEST_SECRET = os.environ.get('LOAD_TEST_SECRET', '')
 
+# Bhuvan (NRSC) routing API token used by get_routePath. Tokens expire;
+# renew in .env and rebuild - no code change needed.
+BHUVAN_ROUTING_TOKEN = os.environ.get('BHUVAN_ROUTING_TOKEN', '')
+
 # Set DISABLE_THROTTLE=true to turn off ALL throttling (use only during load tests).
 DISABLE_THROTTLE = os.environ.get('DISABLE_THROTTLE', 'false').lower() == 'true'
 
@@ -325,6 +329,8 @@ REST_FRAMEWORK = {
         'trip_create': '5/minute',         # Trip creation (route-eta), per user
         'trip_create_daily': '50/day',     # Trip creation daily cap, per user
         'trip_write': '20/minute',         # Trip update / end / cancel, per user
+        'complaint_create': '5/minute',    # Complaint ticket creation, per user / IP
+        'complaint_create_daily': '20/day',  # Complaint ticket daily cap (non-staff), per user / IP
     },
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',

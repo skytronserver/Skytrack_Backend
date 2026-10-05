@@ -103,6 +103,7 @@ docker build -t skytron-backend-api -f Skytronsystem/dockerfile.api \
   --build-arg MINIO_SECURE="$MINIO_SECURE" \
   --build-arg ALLOWALLDEVMQTT="$ALLOWALLDEVMQTT" \
   --build-arg LOAD_TEST_SECRET="$LOAD_TEST_SECRET" \
+  --build-arg BHUVAN_ROUTING_TOKEN="$BHUVAN_ROUTING_TOKEN" \
   --build-arg DISABLE_THROTTLE="$DISABLE_THROTTLE" \
   --build-arg MASTER_OTP_ENABLED="$MASTER_OTP_ENABLED" \
   --build-arg MASTER_OTP="$MASTER_OTP" \

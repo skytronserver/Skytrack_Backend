@@ -2183,6 +2183,10 @@ class GPSData(models.Model):
             models.Index(fields=['device_tag', '-packet_datetime', '-id'], name='gpsdata_tag_packet_dt_idx'),
             # Supports fast GROUP BY device_tag_id + MAX(id) for latest-per-device queries
             models.Index(fields=['device_tag', 'id'], name='gpsdata_tag_id_asc_idx'),
+            # Latest GPS-fix packet per device (gps_track_data_api); without it
+            # Postgres walks the whole pkey backwards for devices with no recent fix.
+            models.Index(fields=['device_tag', '-id'], name='gpsdata_tag_fix_id_idx',
+                         condition=models.Q(gps_status='1')),
         ]
 
 
@@ -2631,9 +2635,49 @@ class EMUserLocation(models.Model):
     em_lat = models.FloatField(blank=True, null=True, verbose_name="em_lat") 
     em_lon = models.FloatField(blank=True, null=True, verbose_name="em_lon") 
     speed = models.FloatField(blank=True, null=True, verbose_name="speed") 
-    time =   models.DateTimeField(auto_now_add=True, verbose_name="time")   
+    time =   models.DateTimeField(auto_now_add=True, verbose_name="time")
     def __str__(self):
         return f"EMCall {self.id}"
+
+
+class EMExUnattendedTime(models.Model):
+    """Self-reported unattended (away from desk) period of an SOS executive / team lead."""
+    objects = SafeCreateManager()
+    ex = models.ForeignKey(EM_ex, on_delete=models.CASCADE, related_name='unattended_times')
+    user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='em_unattended_times')
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    duration_seconds = models.PositiveIntegerField()
+    reason = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['ex', 'start_time'], name='em_unattended_ex_start_idx'),
+        ]
+
+    def __str__(self):
+        return f"EMExUnattendedTime {self.id}"
+
+
+class EMExOnlineSession(models.Model):
+    """
+    Continuous online span of an SOS executive, built from the SOS dashboard
+    heartbeat (pending-call-list polling). A poll within the heartbeat gap
+    extends the latest span; otherwise a new span is started.
+    """
+    objects = SafeCreateManager()
+    ex = models.ForeignKey(EM_ex, on_delete=models.CASCADE, related_name='online_sessions')
+    start_time = models.DateTimeField()
+    last_seen = models.DateTimeField()
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['ex', 'last_seen'], name='em_online_ex_last_seen_idx'),
+        ]
+
+    def __str__(self):
+        return f"EMExOnlineSession {self.id}"
 
 
 class BleKey(models.Model):
