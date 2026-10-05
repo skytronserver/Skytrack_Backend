@@ -38,39 +38,43 @@ SORT_FIELD_MAP = {
 
 
 def _scope_device_tags(user):
-    """Role-scope a DeviceTag queryset the same way get_device_health_status does.
+    """Role-scope a DeviceTag queryset.
+
+    H-3: only superadmin (all devices), device manufacturer (own devices)
+    and dealer (own devices) are allowed. Every other role gets a 403.
 
     Returns (queryset, error_response). error_response is None on success.
     """
+    role = getattr(user, 'role', None)
     device_tags_query = DeviceTag.objects.all()
 
-    if user.role == 'devicemanufacture':
+    if role == 'superadmin':
+        return device_tags_query, None
+
+    if role == 'devicemanufacture':
         manufacturer = get_user_object(user, 'devicemanufacture')
         if not manufacturer:
             return None, Response(
                 {'status': 'error', 'message': 'Manufacturer profile not found'},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        device_tags_query = device_tags_query.filter(
+        return device_tags_query.filter(
             device__model__created_by__in=manufacturer.users.all()
-        )
-    elif user.role == 'sosadmin':
-        pass
-    elif user.role == 'owner':
-        owner = get_user_object(user, 'owner')
-        if not owner:
+        ), None
+
+    if role == 'dealer':
+        dealer = get_user_object(user, 'dealer')
+        if not dealer:
             return None, Response(
-                {'status': 'error', 'message': 'Owner profile not found'},
+                {'status': 'error', 'message': 'Dealer profile not found'},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        device_tags_query = device_tags_query.filter(vehicle_owner=owner)
-    elif user.role == 'dealer':
-        dealer = get_user_object(user, 'dealer')
-        if dealer:
-            device_tags_query = device_tags_query.filter(device__dealer=dealer)
-    # superadmin, stateadmin, dtorto see everything -- no additional filter
+        return device_tags_query.filter(device__dealer=dealer), None
 
-    return device_tags_query, None
+    return None, Response(
+        {'status': 'error', 'message': 'You do not have access to this.'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
 
 
 def _resolve_date_range(range_param, date_from, date_to):
