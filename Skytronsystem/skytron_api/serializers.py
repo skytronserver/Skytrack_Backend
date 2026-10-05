@@ -283,6 +283,19 @@ class eSimProviderSerializer(SanitizingModelSerializer):
         fields = '__all__'
 
 
+# C-6: public (no login) versions - only id, company name and company phone number
+class PublicESimProviderSerializer(SanitizingModelSerializer):
+    class Meta:
+        model = eSimProvider
+        fields = ['id', 'company_name', 'company_phoneno']
+
+
+class PublicManufacturerSerializer(SanitizingModelSerializer):
+    class Meta:
+        model = Manufacturer
+        fields = ['id', 'company_name', 'company_phoneno']
+
+
 class TestAgencySerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     class Meta:

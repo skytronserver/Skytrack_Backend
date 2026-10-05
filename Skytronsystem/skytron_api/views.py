@@ -5997,7 +5997,7 @@ def filter_eSimProvider_pub(request ):
         manufacturers = manufacturers.select_related('state').distinct()
 
         # Serialize the queryset
-        dealer_serializer = eSimProviderSerializer(manufacturers, many=True)
+        dealer_serializer = PublicESimProviderSerializer(manufacturers, many=True)
 
         # Return the serialized data as JSON response
         return Response(dealer_serializer.data)
@@ -6634,7 +6634,7 @@ def create_manufacturer_pub(request ):
             
             manufacturer.users.add(user) 
             #send_usercreation_otp(user, new_password, 'Device Manufacture ')
-            return Response(ManufacturerSerializer(manufacturer).data)
+            return Response(PublicManufacturerSerializer(manufacturer).data)
         else:
             return Response(error, status=400)
 
