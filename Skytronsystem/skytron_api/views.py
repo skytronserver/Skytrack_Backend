@@ -1600,7 +1600,7 @@ def send_general_mqtt_message(imei, message_json):
 
 # API: Concatenate command_base + value and send to device via MQTT
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def send_mqtt_command(request):
     """
     POST body:
@@ -1627,6 +1627,31 @@ def send_mqtt_command(request):
                 'message': 'Missing required fields: imei, command_base, value.'
             },
             status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # C-2: who may send a command, and to which devices
+    role = getattr(request.user, 'role', None)
+    if role in ('superadmin', 'sosadmin', 'sosexecutive'):
+        allowed = True   # all devices
+    elif role == 'devicemanufacture':
+        manufacturer = get_user_object(request.user, 'devicemanufacture')
+        # A manufacturer's devices: the device model was created by one of its users.
+        # (Stock rows made during tagging record the dealer as creator, so the
+        # stock creator alone is not enough.)
+        mfr_users = manufacturer.users.all() if manufacturer else []
+        allowed = bool(manufacturer) and DeviceStock.objects.filter(
+            Q(model__created_by__in=mfr_users) | Q(created_by__in=mfr_users),
+            imei=imei,
+        ).exists()
+    elif role == 'dealer':
+        dealer = get_user_object(request.user, 'dealer')
+        allowed = bool(dealer) and DeviceStock.objects.filter(imei=imei, dealer=dealer).exists()
+    else:
+        allowed = False
+    if not allowed:
+        return Response(
+            {'status': 'error', 'message': 'You do not have access to this device.'},
+            status=status.HTTP_403_FORBIDDEN,
         )
 
     final_command = f"@{str(command_base)}*"
