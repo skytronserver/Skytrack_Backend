@@ -1582,6 +1582,11 @@ DUMMY_API_ROUTES = {
     'verify-captcha/',
     'vltddata/imei-continuity/',
     'vltddata/imei-continuity/view/',
+    # HTML pages 
+    'alert-stats/dashboard/',
+    'device-data-health/dashboard/',
+    'device-inspector/dashboard/',
+    'server-health/dashboard/',
 }
 
 if not DUMMY_APIS_ENABLED:
