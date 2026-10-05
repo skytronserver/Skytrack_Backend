@@ -447,6 +447,7 @@ urlpatterns = [
     path('pub/gps_by_imei/', gps_by_imei, name='gps_by_imei'),  # public: latest GPS by IMEI
     path('pub/vahan_by_imei/', vahan_by_imei, name='vahan_by_imei'),      # public: Parivahan lookup by IMEI
     path('pub/vahan_by_regno/', vahan_by_regno, name='vahan_by_regno'),  # public: Parivahan lookup by regno+chassis
+    path('pub/vahan_dummy_data/set/', set_vahan_dummy_data, name='set_vahan_dummy_data'),  # public: set Vahan dummy data by IMEI
     ## INUSE by Manufacturer, Owner, StateAdmin, SOSAdmin
     path('gps_track_data_api/',gps_track_data_api, name='gps_track_data_api'),  # live tracking api
     path('gps_track_lite/', gps_track_lite_api, name='gps_track_lite_api'),             # lightweight tracking api

@@ -3952,3 +3952,17 @@ class CustomAlertLogSerializer(serializers.ModelSerializer):
             'details',
             'fired_at',
         ]
+
+
+class VahanDummyDataSerializer(SanitizingModelSerializer):
+    """Validates input for the public Vahan dummy data set API."""
+    class Meta:
+        model = VahanDummyData
+        fields = [
+            'id', 'imei', 'reg_no', 'date_of_registration', 'chassis_no',
+            'engine_no', 'device_serial_no', 'veh_class', 'maker_name',
+            'model_name', 'owner_name', 'fitment_centre_name',
+            'gnss_constellation_code', 'device_activation_status', 'tac_no',
+            'tac_valid_upto', 'iccid', 'is_active', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']

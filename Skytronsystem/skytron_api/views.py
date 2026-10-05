@@ -41695,6 +41695,52 @@ def call_vahan_api(imei, iccid=None):
     # -----------------------------------------------------------------
  
  
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
+def set_vahan_dummy_data(request):
+    """
+    Public POST API: set a row of Vahan dummy data by IMEI.
+
+    POST /api/pub/vahan_dummy_data/set/
+
+    Body: imei (required, 15 digits) plus any VahanDummyData fields.
+    - IMEI already in the table: only the fields sent are updated.
+    - IMEI not in the table: a new row is created (chassis_no, engine_no,
+      device_serial_no and veh_class are then required).
+
+    No authentication required. Remove together with VahanDummyData once
+    the real Vahan integration is live.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    imei = str(request.data.get('imei') or '').strip()
+    if not imei:
+        return Response({'error': 'imei is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not imei.isdigit() or len(imei) != 15:
+        return Response({'error': 'imei must be exactly 15 digits.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = request.data.copy()
+    data['imei'] = imei
+
+    record = VahanDummyData.objects.filter(imei=imei).first()
+    serializer = VahanDummyDataSerializer(record, data=data, partial=record is not None)
+    if not serializer.is_valid():
+        return Response({'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    saved = serializer.save()
+    return Response(
+        {
+            'status': 'updated' if record is not None else 'created',
+            'data': VahanDummyDataSerializer(saved).data,
+            'vahan_response': saved.to_vahan_response(),
+        },
+        status=status.HTTP_200_OK if record is not None else status.HTTP_201_CREATED,
+    )
+
+
 def _validate_vahan_response(vahan_data):
     """
     Confirm the Vahan response carries everything the NOT NULL columns
