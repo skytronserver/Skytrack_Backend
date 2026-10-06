@@ -1485,7 +1485,6 @@ DUMMY_API_ROUTES = {
     'dealer/update_dealer/',
     'debug/check_file_paths/',
     'dev/create-user/',
-    'dev/technical-onboarding/force-pass-test/',
     'dev/token/',
     'dev/users/',
     'device-tagging/certificate/',
@@ -1594,3 +1593,16 @@ DUMMY_API_ROUTES = {
 
 if not DUMMY_APIS_ENABLED:
     urlpatterns = [p for p in urlpatterns if str(p.pattern) not in DUMMY_API_ROUTES]
+
+
+# Temporary APIs: needed at present, registered only when ENABLE_TEMPORARY_APIS=True.
+# Will be removed at the time of final deployment.
+TEMPORARY_APIS_ENABLED = os.getenv('ENABLE_TEMPORARY_APIS', '').strip().lower() == 'true'
+
+TEMPORARY_API_ROUTES = {
+    'dev/technical-onboarding/force-pass-test/',
+    'pub/vahan_dummy_data/set/',
+}
+
+if not TEMPORARY_APIS_ENABLED:
+    urlpatterns = [p for p in urlpatterns if str(p.pattern) not in TEMPORARY_API_ROUTES]
