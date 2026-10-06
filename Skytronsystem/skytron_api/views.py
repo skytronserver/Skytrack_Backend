@@ -800,7 +800,7 @@ def vehicle_status_metrics(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def public_device_onboarding_dashboard(request):
     """
     Public dashboard API for device onboarding and inventory metrics.
@@ -815,6 +815,10 @@ def public_device_onboarding_dashboard(request):
     - Total offline devices.
     - Manufacturer list with at least one accepted technical onboarding request.
     """
+    # H-6: superadmin only
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
+
     from .models import (
         DeviceModelTechnicalOnboardingRequest,
         eSimProvider,
