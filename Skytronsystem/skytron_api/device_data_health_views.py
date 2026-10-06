@@ -125,7 +125,7 @@ def device_data_health_lookup(request):
         lookback_days = DEFAULT_LOOKBACK_DAYS
     lookback_days = max(1, min(lookback_days, MAX_LOOKBACK_DAYS))
 
-    device_tags_qs, err = _scope_device_tags(request.user)
+    device_tags_qs, err = _scope_device_tags(request.user, allow_state_district=True)
     if err:
         return err
     if not _find_device_tag(device_tags_qs, imei):

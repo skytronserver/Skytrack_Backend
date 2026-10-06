@@ -5,7 +5,7 @@ selectable date range, plus a self-contained HTML dashboard for ops use.
 import json
 from datetime import datetime, timedelta
 
-from django.db.models import Count, Max
+from django.db.models import Count, Max, Q
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import status
@@ -37,16 +37,42 @@ SORT_FIELD_MAP = {
 }
 
 
-def _scope_device_tags(user):
+def _scope_device_tags(user, allow_state_district=False):
     """Role-scope a DeviceTag queryset.
 
     H-3: only superadmin (all devices), device manufacturer (own devices)
     and dealer (own devices) are allowed. Every other role gets a 403.
 
+    allow_state_district=True (report APIs only) also lets stateadmin see
+    its own state's vehicles and dtorto its own district's vehicles.
+
     Returns (queryset, error_response). error_response is None on success.
     """
     role = getattr(user, 'role', None)
     device_tags_query = DeviceTag.objects.all()
+
+    if allow_state_district and role == 'stateadmin':
+        state_admin = get_user_object(user, 'stateadmin')
+        if not state_admin or not state_admin.state_id:
+            return None, Response(
+                {'status': 'error', 'message': 'State admin profile not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return device_tags_query.filter(district__state_id=state_admin.state_id), None
+
+    if allow_state_district and role == 'dtorto':
+        dto = get_user_object(user, 'dtorto')
+        # dto_rto.district holds a district code (e.g. 'AS01') or, on older rows, the name
+        district_value = (getattr(dto, 'district', None) or '').strip()
+        if not dto or not district_value:
+            return None, Response(
+                {'status': 'error', 'message': 'DTO/RTO district not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return device_tags_query.filter(
+            Q(district__district_code=district_value) | Q(district__district=district_value),
+            district__state_id=dto.state_id,
+        ), None
 
     if role == 'superadmin':
         return device_tags_query, None
@@ -151,7 +177,7 @@ def alert_stats_summary(request):
     except ValueError as e:
         return Response({'status': 'error', 'message': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    device_tags_qs, err = _scope_device_tags(user)
+    device_tags_qs, err = _scope_device_tags(user, allow_state_district=True)
     if err:
         return err
 

@@ -1881,42 +1881,16 @@ class SchoolApplicationSubmitSerializer(serializers.Serializer):
             School.STATUS_SETUP_LINK_APPROVED,
         ]
 
-        existing_user = None  # Will be set if this is a resubmission
-
-        # ── Check mobile ──────────────────────────────────────────────────────
-        # Phone number already in the database - do not allow it.
+        # ── C-4: a public form must never reuse or modify an existing account ─
+        # Mobile or email already in the database - do not allow it.
         if User.objects.filter(mobile=mobile).exists():
             raise serializers.ValidationError({
                 "mobile": "User already exists."
             })
-
-        # ── Check email ───────────────────────────────────────────────────────
-        user_by_email = User.objects.filter(email=email).first()
-        if user_by_email:
-            # Different user already owns this email — hard block
-            if existing_user and user_by_email.id != existing_user.id:
-                raise serializers.ValidationError({
-                    "email": "This email is already registered to a different account."
-                })
-            # Same user (found by both mobile and email) — check active school
-            has_active_application = School.objects.filter(
-                users=user_by_email,
-                status__in=ACTIVE_STATUSES
-            ).exists()
-            if has_active_application:
-                raise serializers.ValidationError({
-                    "email": "An active application already exists for this email."
-                })
-            existing_user = user_by_email
-
-        # ── If email changed on resubmission, ensure new email is free ────────
-        if existing_user and user_by_email is None:
-            # Mobile matched an existing user but they're submitting with a new email
-            # user_by_email is None means no one owns the new email yet — safe to proceed
-            pass
-
-        # Store for the view to consume
-        attrs["existing_user"] = existing_user  # None = brand new user
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError({
+                "email": "User already exists."
+            })
 
         # ── Duplicate School check ────────────────────────────────────────────
         school_email = attrs.get("school_email", "").lower()

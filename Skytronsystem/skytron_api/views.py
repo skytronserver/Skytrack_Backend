@@ -11,7 +11,7 @@ from django.db import transaction
 from .models import Trip
 from .serializers import TripSerializer
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework import status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
@@ -17380,7 +17380,8 @@ def SOS_record_unattended(request):
         }, status=201)
 
     except Exception as e:
-        return Response({'error': "Unable to process request." + str(e)}, status=400)
+        logger.exception(f"SOS_record_unattended failed: {e}")
+        return Response({'error': "Unable to process request."}, status=400)
 
 
 @api_view(['GET'])
@@ -17532,7 +17533,8 @@ def SOS_executive_performance_report(request):
         })
 
     except Exception as e:
-        return Response({'error': "Unable to process request." + str(e)}, status=400)
+        logger.exception(f"SOS_executive_performance_report failed: {e}")
+        return Response({'error': "Unable to process request."}, status=400)
 
 
 
@@ -19649,11 +19651,18 @@ def invalidate_user_sessions(user, reason="security"):
 @api_view(['POST'])
 @throttle_classes([PasswordResetRateThrottle])  # 3 requests per minute, block IP for 5 min
 @permission_classes([AllowAny])
+# Identity comes only from mobile + dob + link token, never from a logged-in
+# session; this also stops a stray "Authorization: Token <link token>" header
+# (sent by the frontend SetPassword page) from failing authentication with 401.
+@authentication_classes([])
 @require_http_methods(['GET', 'POST'])
 def password_reset(request ):
+    # One identical response for every failure (missing field, mobile/dob/id_no
+    # mismatch, bad or expired link, ...) so nothing reveals which detail was wrong.
+    failed = Response({'error': 'Unable to reset password. Please check your details or request a new link.'}, status=status.HTTP_400_BAD_REQUEST)
     errors = validate_inputs(request)
     if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+        return failed
 
     
     """
@@ -19667,20 +19676,22 @@ def password_reset(request ):
         dob = dob.replace('/', '-') or None
 
         if not dob:
-            return Response({'error': 'dob not provided'}, status=status.HTTP_400_BAD_REQUEST)
+            return failed
         if not mobile:
-            return Response({'error': 'Mobile no not provided'}, status=status.HTTP_400_BAD_REQUEST)
+            return failed
         if not new_password:
-            return Response({'error': 'Password not provided'}, status=status.HTTP_400_BAD_REQUEST)
+            return failed
         
         
-        # Generate a random password, set and hash it
-        new_password = decrypt_field(new_password,PRIVATE_KEY)  
+        try:
+            new_password = decrypt_field(new_password,PRIVATE_KEY)
+        except Exception:  # malformed base64 etc.
+            new_password = None
         if not new_password:
-            return Response({'error': 'Invalid Password Encription','message': 'Invalid password'}, status=status.HTTP_404_NOT_FOUND)
+            return failed
 
         if not is_valid_string(new_password):
-            return Response({'error': new_password+'Password must contain at least one Capital, Small, Numaric, and Special Charecter'}, status=status.HTTP_400_BAD_REQUEST)
+            return failed
 
         try:
             dob_candidates = set()
@@ -19704,20 +19715,25 @@ def password_reset(request ):
             ).last()
             
             if not user:
-                return Response({'error': 'user information missmatch'}, status=status.HTTP_400_BAD_REQUEST)
+                return failed
 
             
-            # During password reset, we don't need to check request.user.id 
-            # The token validation is handled by the Token authentication system
-            # Let's verify the token directly
-            token_key = request.data.get('token2', None)
-            if token_key:
-                if not user.password==token_key:
-                    return Response({'error': 'Invalid Token'}, status=status.HTTP_400_BAD_REQUEST)
-            # token2 is compulsory - no reset without it, even for a logged-in user
+            # C-3: a link token is compulsory.
+            #   token2 - registration link (/new?q=), raw one-time token kept in user.password
+            #   token  - forgot-password link (/reset-password?q=), issued by reset_password_request
+            onboarding_token = request.data.get('token2', None)
+            forgot_token = request.data.get('token', None)
+            if onboarding_token:
+                is_forgot_flow = False
+                if not _check_onboarding_token(user, onboarding_token):
+                    return failed
+            elif forgot_token:
+                is_forgot_flow = True
+                if not _check_password_reset_token(user, forgot_token):
+                    return failed
             else:
-                return Response({'error': 'token2 not provided'}, status=status.HTTP_400_BAD_REQUEST)
-                
+                return failed
+
             
             valid=True
             pas=False
@@ -19781,37 +19797,45 @@ def password_reset(request ):
                 # Custom IAM roles: use id_card_name (stores ID card number) for last-4-char validation
                 if user.id_card_name:
                     if not id_no:
-                        return Response({'error': 'id_no not provided'}, status=status.HTTP_400_BAD_REQUEST)
+                        return failed
                     if id_no != user.id_card_name[-4:]:
                         user = None
                 pas = True
             if not pas:
                 if not id_no:
-                    return Response({'error': 'id_no not provided'}, status=status.HTTP_400_BAD_REQUEST)
+                    return failed
                 if not prof:
-                    return Response({'error': 'Invalid user role for password reset'}, status=status.HTTP_400_BAD_REQUEST)
+                    return failed
                 if not prof.idProofno:
-                    return Response({'error': 'ID proof number not found for user'}, status=status.HTTP_400_BAD_REQUEST)
+                    return failed
             
                 if id_no != prof.idProofno[-4:]:
                     user=None
                 
                 
             if not user:
-                return Response({'error': 'user information missmatch'}, status=status.HTTP_400_BAD_REQUEST)
+                return failed
 
             
-        except User.DoesNotExist:
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-            
+        except Exception as e:
+            logger.exception(f"password_reset failed: {e}")
+            return failed
+
         if not user:
-            return Response({'error': 'User not matched with details'}, status=status.HTTP_404_NOT_FOUND)
+            return failed
 
         hashed_password = make_password(new_password)
         user.password = hashed_password
-        user.status='active'
-        user.is_active = True
-        user.save()
+        if is_forgot_flow:
+            # Forgot password only changes the password - it must not
+            # re-activate an account an admin has deactivated.
+            user.save(update_fields=['password'])
+            cache.delete(_password_reset_cache_key(user.id))  # one-time link
+        else:
+            # Registration link: first password set activates the account
+            user.status='active'
+            user.is_active = True
+            user.save()
 
         # Password changed: any token/session issued before this point must
         # stop working immediately rather than remaining valid until its
@@ -19911,86 +19935,109 @@ def send_sms_otp(request ):
 
 
 
+# ── Forgot-password link token (C-3) ─────────────────────────────────────────
+# reset_password_request SMSes a random one-time token; only its SHA-256 is kept
+# in Redis, per user, for 24h. A newer request replaces the older link, a
+# successful reset consumes it, and too many wrong tries burn it.
+PASSWORD_RESET_TOKEN_TTL_SECONDS = 24 * 60 * 60
+PASSWORD_RESET_TOKEN_MAX_ATTEMPTS = 5
+
+
+def _password_reset_cache_key(user_id):
+    return f"pwreset_token:{user_id}"
+
+
+def _password_reset_token_hash(token):
+    import hashlib
+    return hashlib.sha256(str(token).encode()).hexdigest()
+
+
+def _issue_password_reset_token(user):
+    import time as _time
+    token = ''.join(secrets.choice('0123456789') for _ in range(30))
+    cache.set(
+        _password_reset_cache_key(user.id),
+        {
+            'hash': _password_reset_token_hash(token),
+            'attempts': 0,
+            'expires_at': _time.time() + PASSWORD_RESET_TOKEN_TTL_SECONDS,
+        },
+        timeout=PASSWORD_RESET_TOKEN_TTL_SECONDS,
+    )
+    return token
+
+
+def _check_password_reset_token(user, token):
+    """True if token matches the user's live forgot-password token (not consumed here)."""
+    import hmac
+    import time as _time
+    key = _password_reset_cache_key(user.id)
+    data = cache.get(key)
+    if not data or not token:
+        return False
+    if hmac.compare_digest(data['hash'], _password_reset_token_hash(token)):
+        return True
+    data['attempts'] += 1
+    remaining = int(data['expires_at'] - _time.time())
+    if data['attempts'] >= PASSWORD_RESET_TOKEN_MAX_ATTEMPTS or remaining <= 0:
+        cache.delete(key)
+    else:
+        cache.set(key, data, timeout=remaining)
+    return False
+
+
+def _check_onboarding_token(user, token):
+    """
+    Registration (/new?q=) link: create_user stores the raw one-time token in
+    user.password until the first password is set. Once user.password is a
+    real hash it is never accepted as a token.
+    """
+    import hmac
+    from django.contrib.auth.hashers import identify_hasher
+    stored = user.password or ''
+    if not stored or not token:
+        return False
+    try:
+        identify_hasher(stored)
+        return False  # already a real password hash
+    except ValueError:
+        pass
+    return hmac.compare_digest(stored, str(token))
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @throttle_classes([PasswordResetRateThrottle])  # 3 requests per minute, block IP for 5 min
-@transaction.atomic
 @require_http_methods(['GET', 'POST'])
-def reset_password(request ): 
+def reset_password(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    
-    try: 
-        email = request.data.get('email', '')
-        mobile = request.data.get('mobile', '')   
+    # Same answer whether or not the email + mobile pair exists (no user oracle)
+    generic_ok = Response({'Success': "If the details match an account, a password reset link has been sent by SMS."}, status=200)
 
-        new_password=''.join(secrets.choice('0123456789') for _ in range(30))
-        hashed_password = make_password(new_password)
-         
-        user = User.objects.filter( 
-            email=email,
-            mobile=mobile 
-        ).last()
+    try:
+        email = (request.data.get('email') or '').strip()
+        mobile = (request.data.get('mobile') or '').strip()
+        if not email or not mobile:
+            return Response({'error': "email and mobile are required"}, status=400)
+
+        user = User.objects.filter(email__iexact=email, mobile=mobile).last()
         if not user:
-            return Response({'error': "Invalid email and mobile no"}, status=400)
-        #user.password  = hashed_password
-        user.status='pwreset'
-        user.save()
-        
-        # Save the User instance
-        
-        Token.objects.filter(user=user).delete()
-        
-        # Create token with JWT
-        from .secure_token import generate_jwt_token
-        jwt_token = generate_jwt_token(
-            user_id=user.id,
-            user_mobile=user.mobile,
-            session_data={
-                "session_type": "password_reset",
-                "role": user.role
-            }
-        )
-        # Do not persist JWT into legacy Token table. Use JWT directly when
-        # available; otherwise create a short legacy Token.
-        if jwt_token:
-            token_value = jwt_token
-        else:
-            token_obj = Token.objects.create(user=user)
-            token_value = token_obj.key
-        
-        #if error:  # Rollback user creation if dealer creation fails
-        #            return error  # Return the Response object from safe_create
+            return generic_ok
 
+        token = _issue_password_reset_token(user)
 
-        try:
-            tpid ="1007407542374862466" #1007214796274246200"#"1007387007813205696" #1007274756418421381"
-            text='Dear user, to reset your password for SkyTron platform, please click on the following link and validate the password reset request. https://'+DEPLOY_URL+'/reset-password?q='+str(new_password)+'. The link will expire in 24 hours. -SkyTron'
-
-            #print("sending sms to",user.mobile,text)
-            send_SMS(user.mobile,text,tpid)             
-            """send_mail( 
-                    'Password Reset',
-                    text,
-                    'noreply@skytron.in',
-                    [email],
-                    fail_silently=False,
-            ) """
-            
-            #print("sms sent to",user.mobile,text)
-            return Response({'Success': "Password reset sms sent", 'mobile': user.mobile}, status=200)
-        except Exception as e: 
-            #print(f"SMS/Email error: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return Response({'error': "Error in sendig sms/email "+str(e)}, status=400)
+        tpid ="1007407542374862466" #1007214796274246200"#"1007387007813205696" #1007274756418421381"
+        text='Dear user, to reset your password for SkyTron platform, please click on the following link and validate the password reset request. https://'+DEPLOY_URL+'/reset-password?q='+str(token)+'. The link will expire in 24 hours. -SkyTron'
+        ok, msg = send_SMS(user.mobile,text,tpid)
+        if not ok:
+            logger.error(f"reset_password: SMS to user {user.id} failed: {msg}")
+        return generic_ok
     except Exception as e:
-        #print(f"Reset password error: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return Response({'error': "Something went wrong: "+str(e)}, status=400)
+        logger.exception(f"reset_password failed: {e}")
+        return Response({'error': "Unable to process request."}, status=400)
                
 
 
@@ -34501,41 +34548,23 @@ class SchoolApplicationSubmitAPIView(APIView):
 
         with transaction.atomic():
 
-            existing_user = d.get("existing_user")
-            temp_password = None  # only set for fresh / resubmission users
-
-            if existing_user:
-                # ── RESUBMISSION — reuse existing user, update their details ──
-                temp_password = secrets.token_urlsafe(10)
-                existing_user.name        = d["name"]
-                existing_user.email       = d["email"]
-                existing_user.dob         = d.get("dob") or ""
-                existing_user.address     = d.get("address", "")
-                existing_user.address_pin = d.get("pin", "")
-                existing_user.status      = "pending"
-                existing_user.is_active   = False
-                existing_user.password    = make_password(temp_password)
-                existing_user.save(update_fields=[
-                    "name", "email", "dob", "address",
-                    "address_pin", "status", "is_active", "password",
-                ])
-                user = existing_user
-            else:
-                # ── FRESH APPLICATION — create new user ───────────────────────
-                temp_password = secrets.token_urlsafe(10)
-                user = User.objects.create(
-                    email=d["email"],
-                    password=make_password(temp_password),
-                    name=d["name"],
-                    mobile=d["mobile"],
-                    dob=d.get("dob") or "",
-                    address=d.get("address", ""),
-                    address_pin=d.get("pin", ""),
-                    role="schooladmin",
-                    status="pending",
-                    is_active=False,
-                    createdby=str(request.user.id),
-                )
+            # C-4: always a brand-new user. This public endpoint never reuses
+            # or modifies an existing account (the serializer rejects any
+            # mobile / email that already exists).
+            temp_password = secrets.token_urlsafe(10)
+            user = User.objects.create(
+                email=d["email"],
+                password=make_password(temp_password),
+                name=d["name"],
+                mobile=d["mobile"],
+                dob=d.get("dob") or "",
+                address=d.get("address", ""),
+                address_pin=d.get("pin", ""),
+                role="schooladmin",
+                status="pending",
+                is_active=False,
+                createdby=str(request.user.id) if request.user.is_authenticated else "",
+            )
 
             # ── Create fresh School application ───────────────────────────────
             school = School.objects.create(
@@ -41700,11 +41729,11 @@ def call_vahan_api(imei, iccid=None):
  
  
 @api_view(['POST'])
-@permission_classes([AllowAny])
-@throttle_classes([AnonRateThrottle])
+@permission_classes([IsAuthenticated])
+@throttle_classes([UserRateThrottle])
 def set_vahan_dummy_data(request):
     """
-    Public POST API: set a row of Vahan dummy data by IMEI.
+    Superadmin POST API: set a row of Vahan dummy data by IMEI.
 
     POST /api/pub/vahan_dummy_data/set/
 
@@ -41713,9 +41742,13 @@ def set_vahan_dummy_data(request):
     - IMEI not in the table: a new row is created (chassis_no, engine_no,
       device_serial_no and veh_class are then required).
 
-    No authentication required. Remove together with VahanDummyData once
-    the real Vahan integration is live.
+    Superadmin only: device_tagging_step1_create trusts this table as the
+    Vahan record. Remove together with VahanDummyData once the real Vahan
+    integration is live.
     """
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
+
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
