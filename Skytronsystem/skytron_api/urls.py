@@ -1588,6 +1588,8 @@ DUMMY_API_ROUTES = {
     'device-data-health/dashboard/',
     'device-inspector/dashboard/',
     'server-health/dashboard/',
+    # M-1: legacy API, no calls found in the request log
+    'EM/DEx/get-media/',
 }
 
 if not DUMMY_APIS_ENABLED:
