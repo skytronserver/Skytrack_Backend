@@ -128,11 +128,16 @@ def device_data_health_lookup(request):
     device_tags_qs, err = _scope_device_tags(request.user, allow_state_district=True)
     if err:
         return err
-    if not _find_device_tag(device_tags_qs, imei):
+    device_tag = _find_device_tag(device_tags_qs, imei)
+    if not device_tag:
         return Response(
             {'status': 'error', 'message': f'No device found for IMEI {imei} in your scope'},
             status=status.HTTP_404_NOT_FOUND,
         )
+    # H-3: only superadmin may search logs by part of an IMEI. Everyone else
+    # gets logs only for the full IMEI of the device found in their own scope.
+    if getattr(request.user, 'role', None) != 'superadmin' and device_tag.device:
+        imei = device_tag.device.imei
 
     cutoff = timezone.now() - timedelta(days=lookback_days)
 
