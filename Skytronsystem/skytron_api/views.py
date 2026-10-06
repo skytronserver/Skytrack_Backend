@@ -43390,16 +43390,38 @@ def _run_pvt_prechecks(record):
     )
 
     latest = None
+    any_packet = False
+    pvt_with_other_reg = None
     for raw_data, received_at in rows.iterator():
-        if reg_no and reg_no not in raw_data:
-            continue
+        any_packet = True
         if not _is_pvt_packet(raw_data) or not _is_normal_pvt_packet(raw_data):
+            continue
+        if reg_no and reg_no not in raw_data:
+            if pvt_with_other_reg is None:
+                pvt_with_other_reg = raw_data
             continue
         latest = (raw_data, received_at)
         break
 
     if not latest:
-        return "No data found.", None
+        window = PVT_PRECHECK_WINDOW_MINUTES
+        if pvt_with_other_reg is not None:
+            parts = _packet_fields(pvt_with_other_reg)
+            idx = next((i for i, p in enumerate(parts) if p.upper() == 'PVT'), None)
+            device_reg = parts[idx + 7] if idx is not None and len(parts) > idx + 7 else ''
+            return (
+                f"Device is transmitting with registration number '{device_reg}', "
+                f"not '{reg_no}'. Configure the device with the vehicle's registration number."
+            ), {'raw_data': pvt_with_other_reg, 'expected_reg_no': reg_no}
+        if any_packet:
+            return (
+                f"No normal PVT (location) packet received from the device in the last "
+                f"{window} minutes. Make sure the device has a GPS fix and is sending live data."
+            ), None
+        return (
+            f"No data received from the device in the last {window} minutes. "
+            "Make sure the device is powered on and transmitting."
+        ), None
 
     raw_data, received_at = latest
     details = {'raw_data': raw_data, 'received_at': received_at.isoformat()}
@@ -43407,12 +43429,16 @@ def _run_pvt_prechecks(record):
     # ── Check 1: device clock against server receive time ────────────
     packet_time = _extract_pvt_datetime(raw_data)
     if packet_time is None:
-        return "No data found.", details
+        return "Could not read the date/time in the device's PVT packet.", details
     drift = abs((received_at - packet_time).total_seconds())
     details['packet_datetime'] = packet_time.isoformat()
     details['clock_drift_seconds'] = drift
     if drift > PVT_MAX_CLOCK_DRIFT_SECONDS:
-        return "No data found.", details
+        return (
+            f"Device time is off by {int(drift)} seconds from server time "
+            f"(max {PVT_MAX_CLOCK_DRIFT_SECONDS}). Check the device clock / GPS fix, "
+            "or wait for live (not buffered) packets."
+        ), details
 
     # ── Check 2: coordinates present, non-zero, and inside Assam ─────
     latitude, longitude = _extract_pvt_lat_lon(raw_data)
@@ -43604,7 +43630,7 @@ def device_tagging_step4_packet_check(request):
         _run_packet_check(record.imei, record.vahan_reg_no)
     )
     if precheck_error:
-        logger.info(
+        logger.warning(
             "Tagging step 4 pre-check failed for record %s (imei %s): %s | %s",
             record.id, record.imei, precheck_error, precheck_details,
         )
