@@ -283,6 +283,19 @@ class eSimProviderSerializer(SanitizingModelSerializer):
         fields = '__all__'
 
 
+# C-6: public (no login) versions - only id, company name and company phone number
+class PublicESimProviderSerializer(SanitizingModelSerializer):
+    class Meta:
+        model = eSimProvider
+        fields = ['id', 'company_name', 'company_phoneno']
+
+
+class PublicManufacturerSerializer(SanitizingModelSerializer):
+    class Meta:
+        model = Manufacturer
+        fields = ['id', 'company_name', 'company_phoneno']
+
+
 class TestAgencySerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     class Meta:
@@ -1871,18 +1884,11 @@ class SchoolApplicationSubmitSerializer(serializers.Serializer):
         existing_user = None  # Will be set if this is a resubmission
 
         # ── Check mobile ──────────────────────────────────────────────────────
-        user_by_mobile = User.objects.filter(mobile=mobile).first()
-        if user_by_mobile:
-            has_active_application = School.objects.filter(
-                users=user_by_mobile,
-                status__in=ACTIVE_STATUSES
-            ).exists()
-            if has_active_application:
-                raise serializers.ValidationError({
-                    "mobile": "An active application already exists for this mobile number."
-                })
-            # User exists but all schools were rejected — allow resubmission
-            existing_user = user_by_mobile
+        # Phone number already in the database - do not allow it.
+        if User.objects.filter(mobile=mobile).exists():
+            raise serializers.ValidationError({
+                "mobile": "User already exists."
+            })
 
         # ── Check email ───────────────────────────────────────────────────────
         user_by_email = User.objects.filter(email=email).first()
@@ -3946,3 +3952,17 @@ class CustomAlertLogSerializer(serializers.ModelSerializer):
             'details',
             'fired_at',
         ]
+
+
+class VahanDummyDataSerializer(SanitizingModelSerializer):
+    """Validates input for the public Vahan dummy data set API."""
+    class Meta:
+        model = VahanDummyData
+        fields = [
+            'id', 'imei', 'reg_no', 'date_of_registration', 'chassis_no',
+            'engine_no', 'device_serial_no', 'veh_class', 'maker_name',
+            'model_name', 'owner_name', 'fitment_centre_name',
+            'gnss_constellation_code', 'device_activation_status', 'tac_no',
+            'tac_valid_upto', 'iccid', 'is_active', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']

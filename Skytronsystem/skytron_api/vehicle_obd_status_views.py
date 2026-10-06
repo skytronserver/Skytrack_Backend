@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .alert_stats_views import _scope_device_tags
@@ -215,7 +215,7 @@ def _speed_state(packet):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 @throttle_classes([VehicleOBDStatusRateThrottle])
 def vehicle_obd_status_lookup(request):
     """
@@ -233,6 +233,13 @@ def vehicle_obd_status_lookup(request):
         ("Active" only if the latest VLTD_LATEST_N packets are all
         GPS-valid, else "offline").
     """
+    # H-3: superadmin only for now
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response(
+            {'status': 'error', 'message': 'You do not have access to this.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     imei = (request.GET.get('imei') or DEFAULT_EXAMPLE_IMEI).strip()
     if not imei:
         return Response({'status': 'error', 'message': 'imei is required'}, status=status.HTTP_400_BAD_REQUEST)

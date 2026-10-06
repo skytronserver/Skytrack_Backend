@@ -800,7 +800,7 @@ def vehicle_status_metrics(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def public_device_onboarding_dashboard(request):
     """
     Public dashboard API for device onboarding and inventory metrics.
@@ -815,6 +815,10 @@ def public_device_onboarding_dashboard(request):
     - Total offline devices.
     - Manufacturer list with at least one accepted technical onboarding request.
     """
+    # H-6: superadmin only
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
+
     from .models import (
         DeviceModelTechnicalOnboardingRequest,
         eSimProvider,
@@ -1600,7 +1604,7 @@ def send_general_mqtt_message(imei, message_json):
 
 # API: Concatenate command_base + value and send to device via MQTT
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def send_mqtt_command(request):
     """
     POST body:
@@ -1627,6 +1631,31 @@ def send_mqtt_command(request):
                 'message': 'Missing required fields: imei, command_base, value.'
             },
             status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # C-2: who may send a command, and to which devices
+    role = getattr(request.user, 'role', None)
+    if role in ('superadmin', 'sosadmin', 'sosexecutive'):
+        allowed = True   # all devices
+    elif role == 'devicemanufacture':
+        manufacturer = get_user_object(request.user, 'devicemanufacture')
+        # A manufacturer's devices: the device model was created by one of its users.
+        # (Stock rows made during tagging record the dealer as creator, so the
+        # stock creator alone is not enough.)
+        mfr_users = manufacturer.users.all() if manufacturer else []
+        allowed = bool(manufacturer) and DeviceStock.objects.filter(
+            Q(model__created_by__in=mfr_users) | Q(created_by__in=mfr_users),
+            imei=imei,
+        ).exists()
+    elif role == 'dealer':
+        dealer = get_user_object(request.user, 'dealer')
+        allowed = bool(dealer) and DeviceStock.objects.filter(imei=imei, dealer=dealer).exists()
+    else:
+        allowed = False
+    if not allowed:
+        return Response(
+            {'status': 'error', 'message': 'You do not have access to this device.'},
+            status=status.HTTP_403_FORBIDDEN,
         )
 
     final_command = f"@{str(command_base)}*"
@@ -5972,7 +6001,7 @@ def filter_eSimProvider_pub(request ):
         manufacturers = manufacturers.select_related('state').distinct()
 
         # Serialize the queryset
-        dealer_serializer = eSimProviderSerializer(manufacturers, many=True)
+        dealer_serializer = PublicESimProviderSerializer(manufacturers, many=True)
 
         # Return the serialized data as JSON response
         return Response(dealer_serializer.data)
@@ -6609,7 +6638,7 @@ def create_manufacturer_pub(request ):
             
             manufacturer.users.add(user) 
             #send_usercreation_otp(user, new_password, 'Device Manufacture ')
-            return Response(ManufacturerSerializer(manufacturer).data)
+            return Response(PublicManufacturerSerializer(manufacturer).data)
         else:
             return Response(error, status=400)
 
@@ -19685,9 +19714,9 @@ def password_reset(request ):
             if token_key:
                 if not user.password==token_key:
                     return Response({'error': 'Invalid Token'}, status=status.HTTP_400_BAD_REQUEST)
-            # If no token provided, this might be a direct password reset from an authorized user
-            elif not request.user.is_authenticated:
-                return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            # token2 is compulsory - no reset without it, even for a logged-in user
+            else:
+                return Response({'error': 'token2 not provided'}, status=status.HTTP_400_BAD_REQUEST)
                 
             
             valid=True
@@ -27132,8 +27161,13 @@ def gps_packet_dashboard(request):
         return HttpResponse(html)
 
 
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 @require_http_methods(['GET', 'POST'])
 def gps_data_log_table(request ): 
+    # Superadmin only
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -27152,8 +27186,13 @@ def gps_data_log_table(request ):
         'search_query': search_query
     }, status=200)
     
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 @require_http_methods(['GET', 'POST'])
 def gps_em_data_log_table(request ): 
+    # Superadmin only
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -41660,6 +41699,52 @@ def call_vahan_api(imei, iccid=None):
     # -----------------------------------------------------------------
  
  
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
+def set_vahan_dummy_data(request):
+    """
+    Public POST API: set a row of Vahan dummy data by IMEI.
+
+    POST /api/pub/vahan_dummy_data/set/
+
+    Body: imei (required, 15 digits) plus any VahanDummyData fields.
+    - IMEI already in the table: only the fields sent are updated.
+    - IMEI not in the table: a new row is created (chassis_no, engine_no,
+      device_serial_no and veh_class are then required).
+
+    No authentication required. Remove together with VahanDummyData once
+    the real Vahan integration is live.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    imei = str(request.data.get('imei') or '').strip()
+    if not imei:
+        return Response({'error': 'imei is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not imei.isdigit() or len(imei) != 15:
+        return Response({'error': 'imei must be exactly 15 digits.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = request.data.copy()
+    data['imei'] = imei
+
+    record = VahanDummyData.objects.filter(imei=imei).first()
+    serializer = VahanDummyDataSerializer(record, data=data, partial=record is not None)
+    if not serializer.is_valid():
+        return Response({'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    saved = serializer.save()
+    return Response(
+        {
+            'status': 'updated' if record is not None else 'created',
+            'data': VahanDummyDataSerializer(saved).data,
+            'vahan_response': saved.to_vahan_response(),
+        },
+        status=status.HTTP_200_OK if record is not None else status.HTTP_201_CREATED,
+    )
+
+
 def _validate_vahan_response(vahan_data):
     """
     Confirm the Vahan response carries everything the NOT NULL columns

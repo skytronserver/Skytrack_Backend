@@ -254,6 +254,15 @@ def device_inspector_command_history(request):
     imei = (request.GET.get('imei') or '').strip()
     if not imei:
         return Response({'status': 'error', 'message': 'imei is required'}, status=status.HTTP_400_BAD_REQUEST)
+    # H-3: same role and device scope as the other inspector APIs
+    device_tags_qs, err = _scope_device_tags(request.user)
+    if err:
+        return err
+    if getattr(request.user, 'role', None) != 'superadmin' and not device_tags_qs.filter(device__imei=imei).exists():
+        return Response(
+            {'status': 'error', 'message': f'No device found for IMEI {imei} in your scope'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
     return Response({
         'status': 'success',
         'imei': imei,
