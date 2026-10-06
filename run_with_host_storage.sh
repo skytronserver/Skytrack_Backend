@@ -110,6 +110,7 @@ docker build -t skytron-backend-api -f Skytronsystem/dockerfile.api \
   --build-arg API_RATE_LIMIT="$API_RATE_LIMIT" \
   --build-arg TRIP_MAX_ACTIVE="$TRIP_MAX_ACTIVE" \
   --build-arg ENABLE_DUMMY_APIS="$ENABLE_DUMMY_APIS" \
+  --build-arg ENABLE_TEMPORARY_APIS="$ENABLE_TEMPORARY_APIS" \
   Skytronsystem/
  
 # Stop any running container with the same name
