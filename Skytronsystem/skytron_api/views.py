@@ -23964,38 +23964,38 @@ def state_admin_combined_approval_report(request):
 
     
 
-def _user_can_access_device_tag(user, device_tag):
+def _device_tags_user_can_access(user):
     """
-    M-9: may this user see data of this device tag?
+    M-9: the device tags this user is allowed to see.
 
     Same per-role rules the project already uses (gps_history_map_data and
-    _scope_device_tags). A role without a rule here gets no access.
+    _scope_device_tags). A role without a rule here gets no devices.
     """
     role = getattr(user, 'role', None)
+    tags = DeviceTag.objects.all()
     if role == 'superadmin':
-        return True
+        return tags
     if role == 'stateadmin':
-        district = device_tag.district
-        return bool(district and district.state_id) and StateAdmin.objects.filter(
-            users=user, state_id=district.state_id).exists()
+        return tags.filter(district__state_id__in=StateAdmin.objects.filter(users=user).values('state_id'))
     if role == 'dtorto':
-        district = device_tag.district
-        return bool(district) and dto_rto.objects.filter(
-            users=user, district=district.district_code).exists()
+        return tags.filter(district__district_code__in=dto_rto.objects.filter(users=user).values('district'))
     if role == 'owner':
-        return DeviceTag.objects.filter(
-            id=device_tag.id, status='Owner_Final_OTP_Verified', vehicle_owner__users=user).exists()
+        return tags.filter(status='Owner_Final_OTP_Verified', vehicle_owner__users=user)
     if role == 'devicemanufacture':
         manufacturer = get_user_object(user, 'devicemanufacture')
-        return bool(manufacturer) and DeviceTag.objects.filter(
-            id=device_tag.id, device__model__created_by__in=manufacturer.users.all()).exists()
+        return tags.filter(device__model__created_by__in=manufacturer.users.all()) if manufacturer else tags.none()
     if role == 'dealer':
         dealer = get_user_object(user, 'dealer')
-        return bool(dealer) and DeviceTag.objects.filter(id=device_tag.id, device__dealer=dealer).exists()
+        return tags.filter(device__dealer=dealer) if dealer else tags.none()
     if role == 'schooladmin':
-        return SchoolBusTag.objects.filter(
-            bus_id=device_tag.id, is_active=True, status='approved', school__users=user).exists()
-    return False
+        return tags.filter(school_tags__is_active=True, school_tags__status='approved',
+                           school_tags__school__users=user)
+    return tags.none()
+
+
+def _user_can_access_device_tag(user, device_tag):
+    """M-9: may this user see data of this device tag?"""
+    return _device_tags_user_can_access(user).filter(id=device_tag.id).exists()
 
 
 

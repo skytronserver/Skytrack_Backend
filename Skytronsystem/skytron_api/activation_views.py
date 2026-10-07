@@ -14,7 +14,7 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from .models import ActivationCommandDispatch, ActivationCommandReply, DeviceStock, DeviceTag
 from .rbac import require_permission
 from .serializers import ActivationCommandDispatchSerializer
-from .views import add_sms_queue, get_user_object
+from .views import add_sms_queue, get_user_object, _device_tags_user_can_access, _user_can_access_device_tag
 
 _MIN_FIELDS = 12
 
@@ -304,6 +304,11 @@ def get_activation_status(request):
     if not dispatch:
         return Response({"error": "No activation command has been sent for this device."}, status=status.HTTP_404_NOT_FOUND)
 
+    # M-9: only devices this user is allowed to see
+    if getattr(request.user, 'role', None) != 'superadmin' and (
+            not dispatch.device_tag or not _user_can_access_device_tag(request.user, dispatch.device_tag)):
+        return Response({"error": "Unauthorised access to this device."}, status=status.HTTP_403_FORBIDDEN)
+
     return Response(
         {
             "reply_received": dispatch.send_status == 'replied',
@@ -331,8 +336,17 @@ def list_pending_activations(request):
         'device_tag', 'device_tag__device', 'device_tag__device__dealer', 'device_tag__vehicle_owner'
     ).order_by('sent_at')
 
+    # M-9: only devices this user is allowed to see
+    role = getattr(request.user, 'role', None)
+    if role != 'superadmin':
+        queryset = queryset.filter(device_tag__in=_device_tags_user_can_access(request.user))
+
     dealer_id = request.GET.get('dealer_id')
     if dealer_id:
+        if role == 'dealer':
+            own_dealer = get_user_object(request.user, 'dealer')
+            if not own_dealer or str(own_dealer.id) != str(dealer_id):
+                return Response({"error": "Unauthorised access to this dealer."}, status=status.HTTP_403_FORBIDDEN)
         queryset = queryset.filter(device_tag__device__dealer_id=dealer_id)
 
     imei = request.GET.get('imei')
