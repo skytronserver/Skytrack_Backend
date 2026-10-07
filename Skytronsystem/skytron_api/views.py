@@ -8064,6 +8064,11 @@ def list_alert_logs(request ):
 
         queryset = AlertsLog.objects.all()
 
+        # M-9: only alerts of devices this user is allowed to see.
+        # SOS admin and SOS executive see all alerts, like superadmin.
+        if getattr(request.user, 'role', None) not in ('superadmin', 'sosadmin', 'sosexecutive'):
+            queryset = queryset.filter(deviceTag__in=_device_tags_user_can_access(request.user))
+
         # Filter queryset based on optional POST inputs
         if start_datetime:
             queryset = queryset.filter(timestamp__gte=start_datetime)
