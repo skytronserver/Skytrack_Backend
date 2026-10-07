@@ -90,7 +90,7 @@ class SafeCreateManager(models.Manager):
             return None, Response({'error': "A database integrity error occurred."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             # Handle other exceptions
-            return None, Response({'error': f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+            return None, Response({'error': "An unexpected error occurred."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class Captcha(models.Model):
