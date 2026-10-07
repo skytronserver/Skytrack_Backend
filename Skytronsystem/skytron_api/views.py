@@ -4347,7 +4347,7 @@ def get_routePath(request):
     except ValueError:
         return Response({"error": "Invalid response received from the external API."}, status=400)
     except Exception as e:
-        return Response({"error": "An unexpected error occurred."+str(e)}, status=400)
+        return Response({"error": "An unexpected error occurred."}, status=400)
     
 @csrf_exempt
 @api_view(['POST'])
@@ -4876,7 +4876,7 @@ def get_live_vehicle_no(request):
         )
         return Response(vehicle_list)
     except Exception as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
  
     
 @api_view(['POST'])
@@ -9597,7 +9597,7 @@ def dummy_insert_data(request):
             return JsonResponse({"success": "Data inserted successfully", "media_id": media_file.id}, status=201)
 
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            return JsonResponse({"error": "Unable to process request."}, status=500)
 
     return JsonResponse({"error": "Only GET requests are allowed"}, status=405)
 
@@ -10139,7 +10139,7 @@ def create_poi(request):
         )
         return Response({'message': 'poi created successfully', 'data': model_to_dict(poi)}, status=201)
     except Exception as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
     
 
 @api_view(['POST'])
@@ -10187,7 +10187,7 @@ def update_poi(request):
     except poi.DoesNotExist:
         return Response({'error': 'poi not found'}, status=404)
     except Exception as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
     
      
  
@@ -10205,7 +10205,7 @@ def delete_poi(request):
     except poi.DoesNotExist:
         return Response({'error': 'poi not found'}, status=404)
     except Exception as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
     
 
 @api_view(['GET'])
@@ -10245,7 +10245,7 @@ def list_pois(request):
             d['speed_limit'] = poi.speed_limit
         return Response({'data': data, 'count': len(data)}, status=200)
     except Exception as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['GET'])
@@ -10262,7 +10262,7 @@ def list_poi_types(request):
         )
         return Response({'data': list(types), 'count': len(types)}, status=200)
     except Exception as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 def _resolve_request_log_time_window(request):
@@ -12986,7 +12986,7 @@ def StockAssignToDealer(request ):
     try:
         device_ids = ast.literal_eval(str(raw_device))
     except (ValueError, SyntaxError) as e:
-        return JsonResponse({'error': "Invalid 'device' field format: " + str(e)}, status=400)
+        return JsonResponse({'error': "Invalid 'device' field format."}, status=400)
     if not isinstance(device_ids, (list, tuple)) or len(device_ids) == 0:
         return JsonResponse({'error': "'device' must be a non-empty list of device IDs."}, status=400)
     dealer = Dealer.objects.filter(id=dealer_id).last()#,manufacturer=man
@@ -20064,7 +20064,7 @@ def user_login(request ):
                                      'user': UserSerializer2(user).data, 'info': uu,
                                      'permissions': get_all_module_permissions(user)}, status=status.HTTP_200_OK)
                 except Exception as e:
-                    return Response({'error': 'Failed to complete login: ' + str(e)}, status=400)
+                    return Response({'error': 'Failed to complete login.'}, status=400)
             else:
                 return Response({'error': 'Failed to create session', 'details': bypass_serializer.errors}, status=400)
         # ===== END DIRECT LOGIN BYPASS =====
@@ -21278,7 +21278,7 @@ def deactivate_user(request):
     except User.DoesNotExist:
         return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({"error": "Unable to process request."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -21303,7 +21303,7 @@ def activate_user(request):
     except User.DoesNotExist:
         return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({"error": "Unable to process request."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     
     
@@ -21328,7 +21328,7 @@ def create_holiday(request):
         holiday.save()
         return Response({'message': 'Holiday created successfully', 'data': model_to_dict(holiday)}, status=201)
     except Exception as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
     
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -21351,7 +21351,7 @@ def update_holiday(request, holiday_id):
     except Holiday.DoesNotExist:
         return Response({'error': 'Holiday not found or access denied'}, status=404)
     except Exception as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
     
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -21365,7 +21365,7 @@ def delete_holiday(request, holiday_id):
     except Holiday.DoesNotExist:
         return Response({'error': 'Holiday not found or access denied'}, status=404)
     except Exception as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
     
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -21377,7 +21377,7 @@ def list_holidays(request):
         data = list(holidays.values())
         return Response({'data': data}, status=200)
     except Exception as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
     
           
 @api_view(['GET', 'POST'])
@@ -22188,7 +22188,7 @@ def upload_media_file(request):
         }, status=201)
 
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+        return JsonResponse({"error": "Unable to process request."}, status=500)
     
     
     
@@ -28955,7 +28955,7 @@ def create_testAgency(request):
                     return Response({'error': 'Invalid or missing ID proof file.'}, status=400)
             except Exception as e:
                 new_user.delete()
-                return Response({'error': 'Unable to process files: ' + str(e)}, status=400)
+                return Response({'error': 'Unable to process files.'}, status=400)
 
             agency, db_error = TestAgency.objects.safe_create(
                 agency_name=agency_name,
