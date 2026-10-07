@@ -1572,7 +1572,6 @@ DUMMY_API_ROUTES = {
     'students/<int:student_id>/bus-allocation/',
     'tag/GetVahanAPIInfoByRegnNo/',
     'tag/getVehicle/',
-    'temp/password-hash/',
     'temp_user_BLEValidate/',
     'temp_user_Feedback/',
     'temp_user_OTPValidate/',
@@ -1609,6 +1608,7 @@ TEMPORARY_APIS_ENABLED = os.getenv('ENABLE_TEMPORARY_APIS', '').strip().lower() 
 TEMPORARY_API_ROUTES = {
     'dev/technical-onboarding/force-pass-test/',
     'pub/vahan_dummy_data/set/',
+    'temp/password-hash/',
 }
 
 if not TEMPORARY_APIS_ENABLED:
