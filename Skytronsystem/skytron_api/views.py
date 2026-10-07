@@ -23964,6 +23964,41 @@ def state_admin_combined_approval_report(request):
 
     
 
+def _user_can_access_device_tag(user, device_tag):
+    """
+    M-9: may this user see data of this device tag?
+
+    Same per-role rules the project already uses (gps_history_map_data and
+    _scope_device_tags). A role without a rule here gets no access.
+    """
+    role = getattr(user, 'role', None)
+    if role == 'superadmin':
+        return True
+    if role == 'stateadmin':
+        district = device_tag.district
+        return bool(district and district.state_id) and StateAdmin.objects.filter(
+            users=user, state_id=district.state_id).exists()
+    if role == 'dtorto':
+        district = device_tag.district
+        return bool(district) and dto_rto.objects.filter(
+            users=user, district=district.district_code).exists()
+    if role == 'owner':
+        return DeviceTag.objects.filter(
+            id=device_tag.id, status='Owner_Final_OTP_Verified', vehicle_owner__users=user).exists()
+    if role == 'devicemanufacture':
+        manufacturer = get_user_object(user, 'devicemanufacture')
+        return bool(manufacturer) and DeviceTag.objects.filter(
+            id=device_tag.id, device__model__created_by__in=manufacturer.users.all()).exists()
+    if role == 'dealer':
+        dealer = get_user_object(user, 'dealer')
+        return bool(dealer) and DeviceTag.objects.filter(id=device_tag.id, device__dealer=dealer).exists()
+    if role == 'schooladmin':
+        return SchoolBusTag.objects.filter(
+            bus_id=device_tag.id, is_active=True, status='approved', school__users=user).exists()
+    return False
+
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @require_permission('trip_management', 'view')
@@ -24008,6 +24043,13 @@ def get_device_trip_details(request):
                 'status': 'error',
                 'message': 'Device tag not found'
             }, status=status.HTTP_404_NOT_FOUND)
+
+        # M-9: only devices this user is allowed to see
+        if not _user_can_access_device_tag(request.user, device_tag):
+            return Response({
+                'status': 'error',
+                'message': 'Unauthorised access to this device'
+            }, status=status.HTTP_403_FORBIDDEN)
         
         # Set default time range (last 24 hours)
         now = timezone.now()
