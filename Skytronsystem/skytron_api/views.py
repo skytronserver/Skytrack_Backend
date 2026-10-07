@@ -14997,14 +14997,18 @@ def create_Settings_VehicleCategory(request ):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-@throttle_classes([AnonRateThrottle]) 
+@permission_classes([IsAuthenticated])
+@throttle_classes([UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 def manufacturer_model_stock_statistics(request):
     """
     Get stock statistics per model per manufacturer with device tag and online device info
-    Public API - No authentication required
+    Superadmin only.
     """
+    # H-6: superadmin only
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
+
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -15100,15 +15104,19 @@ def manufacturer_model_stock_statistics(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-@throttle_classes([AnonRateThrottle]) 
+@permission_classes([IsAuthenticated])
+@throttle_classes([UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 def user_statistics(request):
     """
     Get user statistics including registered users (User table), temporary users (TempUser table), 
     online users, and login counts
-    Public API - No authentication required
+    Superadmin only.
     """
+    # H-6: superadmin only
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
+
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -15233,16 +15241,20 @@ def user_statistics(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-@throttle_classes([AnonRateThrottle]) 
+@permission_classes([IsAuthenticated])
+@throttle_classes([UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 def vehicle_alert_statistics(request):
     """
     Get vehicle and alert statistics including:
     - Total tagged vehicles and online vehicles
     - SOS calls, broadcasts, and alerts counts (daily, weekly, monthly, yearly)
-    Public API - No authentication required
+    Superadmin only.
     """
+    # H-6: superadmin only
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
+
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
