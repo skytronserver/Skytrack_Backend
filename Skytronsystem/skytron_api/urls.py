@@ -52,6 +52,7 @@ from .technical_onboarding_testing_views import (
 )
 from .vltd_summary_views import superadmin_vltd_summary
 from .device_ip_views import device_ip_unique, device_ip_imeis, device_ip_by_imei, mqtt_client_ip_report
+from .ble_sos_app_log_views import ble_sos_app_log_create, ble_sos_app_log_list
 from .alert_stats_views import (
     alert_stats_type_options,
     alert_stats_summary,
@@ -1400,6 +1401,10 @@ urlpatterns += [
     path('device-ip/imeis/', device_ip_imeis, name='device_ip_imeis'),
     path('device-ip/by-imei/', device_ip_by_imei, name='device_ip_by_imei'),
 
+    # SOS feedback from the BLE mobile app (ble_sos_app_log_views.py).
+    path('ble-sos/app-log/', ble_sos_app_log_create, name='ble_sos_app_log_create'),  # Mobile app only (HMAC-signed, no login)
+    path('ble-sos/app-log/list/', ble_sos_app_log_list, name='ble_sos_app_log_list'),  # Superadmin
+
     path('superadmin/vltd-summary/', superadmin_vltd_summary, name='superadmin_vltd_summary'),
 ]
 
@@ -1578,8 +1583,7 @@ DUMMY_API_ROUTES = {
     'temp_user_emcall/',
     'temp_user_login/',
     'temp_user_logout/',
-    'temp_user_resendOTP/',
-    'user_login_app/',
+    'temp_user_resendOTP/', 
     'users/logged-in/',
     'validate_ble/',
     'validate_email_confirmation',

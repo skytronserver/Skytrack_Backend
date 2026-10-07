@@ -5613,3 +5613,46 @@ class eSimProviderIPRange(models.Model):
 
     def __str__(self):
         return f"{self.provider_id} - {self.ip_range}"
+
+class BleSosAppLog(models.Model):
+    """
+    One SOS button press reported by the mobile app that talks to the BLE
+    device. Written by the public, app-signed POST /api/ble-sos/app-log/
+    (ble_sos_app_log_views.py); read by superadmin only.
+    """
+    SOS_TYPE_CHOICES = [
+        # Same codes as EMCall.em_type for BLE-triggered calls.
+        ('BLE_Public', 'BLE Public'),
+        ('BLE_Login', 'BLE Login'),
+        ('BLE_TM_PW_Fail', 'BLE Trip Monitor Password Fail'),
+        ('BLE_TM_Route', 'BLE Trip Monitor Route Violation'),
+    ]
+
+    ble_mac = models.CharField(max_length=17)
+    ble_device_name = models.CharField(max_length=100, blank=True, default='')
+    registration_no = models.CharField(max_length=20)
+    phone_device_id = models.CharField(max_length=128)
+    user_mobile = models.CharField(max_length=15, blank=True, default='')
+    sos_type = models.CharField(max_length=20, choices=SOS_TYPE_CHOICES)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    phone_battery = models.PositiveSmallIntegerField(null=True, blank=True)
+    signal_strength_dbm = models.SmallIntegerField(null=True, blank=True)
+    cell_ids = models.JSONField(default=list, blank=True)
+    event_time = models.DateTimeField(null=True, blank=True)   # button press time on the phone
+    app_version = models.CharField(max_length=30, blank=True, default='')
+    source_ip = models.GenericIPAddressField(null=True, blank=True)
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'skytron_api'
+        db_table = 'ble_sos_app_log'
+        indexes = [
+            models.Index(fields=['-received_at'], name='blesos_received_idx'),
+            models.Index(fields=['ble_mac', '-received_at'], name='blesos_mac_idx'),
+            models.Index(fields=['registration_no', '-received_at'], name='blesos_regno_idx'),
+            models.Index(fields=['phone_device_id', '-received_at'], name='blesos_phone_idx'),
+        ]
+
+    def __str__(self):
+        return f"BleSosAppLog {self.id} {self.ble_mac} {self.registration_no}"
