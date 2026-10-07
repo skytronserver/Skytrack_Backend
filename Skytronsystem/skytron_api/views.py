@@ -1679,7 +1679,7 @@ def send_mqtt_command(request):
         return Response(
             {
                 'status': 'error',
-                'message': f'Failed to publish MQTT command: {e}'
+                'message': 'Failed to publish MQTT command.'
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
@@ -2560,7 +2560,7 @@ def gps_track_data_api(request ):
                 else:
                     geofence_message = "Route has no valid points. Geofence filter not applied."
             except Exception as e:
-                geofence_message = f"Route geofence error: {e}. Geofence filter not applied."
+                geofence_message = "Route geofence error. Geofence filter not applied."
         elif active_type == 'poi':
             # POI geofence: prefer polygon from POI.location when available or requested; otherwise fall back to 100m radius
             try:
@@ -2592,7 +2592,7 @@ def gps_track_data_api(request ):
                         else:
                             geofence_message = 'POI location polygon invalid or too few points; falling back to radius.'
                     except Exception as e:
-                        geofence_message = f'POI polygon parse error: {e}; falling back to radius.'
+                        geofence_message = 'POI polygon parse error; falling back to radius.'
 
                 if not built_polygon:
                     poi_lat = getattr(poi, 'lat', None)
@@ -2604,7 +2604,7 @@ def gps_track_data_api(request ):
                         return JsonResponse({'data': [], 'geofence_message': 'POI has neither lat/lon nor valid polygon. Returning blank.'})
             except Exception as e:
                 # POI lookup failed -> return blank
-                return JsonResponse({'data': [], 'geofence_message': f'POI lookup error: {e}. Returning blank.'})
+                return JsonResponse({'data': [], 'geofence_message': 'POI lookup error. Returning blank.'})
         elif active_type == 'polygon':
             try:
                 coords = json.loads(polygon_param)
@@ -2614,7 +2614,7 @@ def gps_track_data_api(request ):
                 else:
                     geofence_message = "Custom polygon has no valid points. Geofence filter not applied."
             except Exception as e:
-                geofence_message = f"Custom polygon geofence error: {e}. Geofence filter not applied."
+                geofence_message = "Custom polygon geofence error. Geofence filter not applied."
         # --- End geofence logic ---
 
         include_proximity = str(request.GET.get('include_proximity', 'false')).strip().lower() == 'true'
@@ -3202,7 +3202,7 @@ def gps_track_data_api_pub(request ):
                 else:
                     geofence_message = "Route has no valid points. Geofence filter not applied."
             except Exception as e:
-                geofence_message = f"Route geofence error: {e}. Geofence filter not applied."
+                geofence_message = "Route geofence error. Geofence filter not applied."
         elif active_type == 'poi':
             # POI geofence: prefer polygon from POI.location when available or requested; otherwise fall back to 100m radius
             try:
@@ -3234,7 +3234,7 @@ def gps_track_data_api_pub(request ):
                         else:
                             geofence_message = 'POI location polygon invalid or too few points; falling back to radius.'
                     except Exception as e:
-                        geofence_message = f'POI polygon parse error: {e}; falling back to radius.'
+                        geofence_message = 'POI polygon parse error; falling back to radius.'
 
                 if not built_polygon:
                     poi_lat = getattr(poi, 'lat', None)
@@ -3246,7 +3246,7 @@ def gps_track_data_api_pub(request ):
                         return JsonResponse({'data': [], 'geofence_message': 'POI has neither lat/lon nor valid polygon. Returning blank.'})
             except Exception as e:
                 # POI lookup failed -> return blank
-                return JsonResponse({'data': [], 'geofence_message': f'POI lookup error: {e}. Returning blank.'})
+                return JsonResponse({'data': [], 'geofence_message': 'POI lookup error. Returning blank.'})
         elif active_type == 'polygon':
             try:
                 coords = json.loads(polygon_param)
@@ -3256,7 +3256,7 @@ def gps_track_data_api_pub(request ):
                 else:
                     geofence_message = "Custom polygon has no valid points. Geofence filter not applied."
             except Exception as e:
-                geofence_message = f"Custom polygon geofence error: {e}. Geofence filter not applied."
+                geofence_message = "Custom polygon geofence error. Geofence filter not applied."
         # --- End geofence logic ---
 
         # --- Helper utility for POI radius geofence ---
@@ -3952,7 +3952,7 @@ def global_counts_summary(request):
         }
         return JsonResponse(result)
     except Exception as e:
-        return JsonResponse({'error': f'Failed to compute summary: {e}'}, status=500)
+        return JsonResponse({'error': 'Failed to compute summary.'}, status=500)
 
 
 
