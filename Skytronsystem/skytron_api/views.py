@@ -400,6 +400,11 @@ def SOS_detailed_report(request):
         .order_by('-start_time', '-id')
     )
 
+    # M-9: device-based roles see only SOS calls of their own devices.
+    # Superadmin and SOS roles see all calls, as before.
+    if getattr(request.user, 'role', None) in ('stateadmin', 'dtorto', 'owner', 'devicemanufacture', 'dealer', 'schooladmin'):
+        qs = qs.filter(device__in=_device_tags_user_can_access(request.user))
+
     if start_dt:
         qs = qs.filter(start_time__gte=start_dt)
     if end_dt:
