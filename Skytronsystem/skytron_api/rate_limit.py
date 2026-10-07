@@ -29,6 +29,7 @@ WINDOW_SECONDS = 60
 EXEMPT_PATH_PREFIXES = (
     '/api/mqtt/validate-connection/',
     '/api/mqtt/validate-acl/',
+    '/api/mqtt/client-ip/report/',
 )
 
 

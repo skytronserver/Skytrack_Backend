@@ -27222,15 +27222,27 @@ def gps_data_log_table(request ):
     
     # Filter data based on the search query
     search_query = request.GET.get('search', '')
+    ip_query = (request.GET.get('ip') or '').strip()
+    imei_query = (request.GET.get('imei') or '').strip()
+    qs = GPSDataLog.objects.all()
     if search_query:
-        data = GPSDataLog.objects.filter(raw_data__contains=search_query).order_by('-timestamp')[:200]
-    else:
-        data = GPSDataLog.objects.all().order_by('-timestamp')[:200]
+        qs = qs.filter(raw_data__contains=search_query)
+    if ip_query:
+        try:
+            qs = qs.filter(source_ip=str(ipaddress.ip_address(ip_query)))
+        except ValueError:
+            return Response({'error': 'ip must be a valid IPv4/IPv6 address.'}, status=status.HTTP_400_BAD_REQUEST)
+    if imei_query:
+        qs = qs.filter(imei=imei_query)
+    # Each row's fields include source_ip, imei and network_name.
+    data = qs.order_by('-timestamp')[:200]
     serialized_data = serialize('json', data)
     
     return JsonResponse({
         'data': serialized_data,
-        'search_query': search_query
+        'search_query': search_query,
+        'ip': ip_query,
+        'imei': imei_query,
     }, status=200)
     
 @api_view(['GET', 'POST'])
@@ -27247,15 +27259,27 @@ def gps_em_data_log_table(request ):
     
     # Filter data based on the search query
     search_query = request.GET.get('search', '')
+    ip_query = (request.GET.get('ip') or '').strip()
+    imei_query = (request.GET.get('imei') or '').strip()
+    qs = GPSemDataLog.objects.all()
     if search_query:
-        data = GPSemDataLog.objects.filter(raw_data__contains=search_query).order_by('-timestamp')[:200]
-    else:
-        data = GPSemDataLog.objects.all().order_by('-timestamp')[:200]
+        qs = qs.filter(raw_data__contains=search_query)
+    if ip_query:
+        try:
+            qs = qs.filter(source_ip=str(ipaddress.ip_address(ip_query)))
+        except ValueError:
+            return Response({'error': 'ip must be a valid IPv4/IPv6 address.'}, status=status.HTTP_400_BAD_REQUEST)
+    if imei_query:
+        qs = qs.filter(imei=imei_query)
+    # Each row's fields include source_ip, imei and network_name.
+    data = qs.order_by('-timestamp')[:200]
     serialized_data = serialize('json', data)
     
     return JsonResponse({
         'data': serialized_data,
-        'search_query': search_query
+        'search_query': search_query,
+        'ip': ip_query,
+        'imei': imei_query,
     }, status=200)
      
         

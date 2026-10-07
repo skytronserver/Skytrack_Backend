@@ -19,11 +19,12 @@ django.setup()
 # Django / local app
 from django.utils import timezone
 from skytron_api.data_processor import (
+    extract_log_meta,
     get_device_response_data,
     process_device_tracking_data,
     process_emergency_data,
 )
-from skytron_api import connection_registry
+from skytron_api import connection_registry, mqtt_client_ip
 from skytron_api.jwt_authentication import HybridAuthentication
 from skytron_api.models import (  # noqa: F401 – wildcard kept for dynamic model access
     EMCallAssignment, EMCallBroadcast, EMCallMessages,
@@ -365,7 +366,7 @@ def _tracking_worker_init():
     connections.close_all()
 
 
-def _process_tracking_message(payload):
+def _process_tracking_message(payload, source_ip=None):
     """Process one deviceTracking message. Runs in a worker PROCESS (not a
     thread) so CPU-bound work (parsing, ORM hydration, alert evaluation)
     gets real multi-core parallelism instead of competing for one GIL.
@@ -377,7 +378,7 @@ def _process_tracking_message(payload):
     start = time.perf_counter()
     try:
         data_str = payload.decode()
-        process_device_tracking_data(data_str, source="MQTT")
+        process_device_tracking_data(data_str, source="MQTT", source_ip=source_ip)
 
         # Extract IMEI for PVT format: $,PVT,<model>,<ver>,NR,<seq>,L,<imei>,...
         imei = None
@@ -420,10 +421,22 @@ def _publish_tracking_response(future):
             print(f"[MQTT] Error sending device response: {e}", flush=True)
 
 
-def Process_EM_Data(msg):
+def Process_EM_Data(msg, source_ip=None):
     """Process emergency data using common processor."""
     data_str = str(msg.payload.decode())
-    process_emergency_data(data_str, source="MQTT", publish_callback=client.publish)
+    process_emergency_data(data_str, source="MQTT", publish_callback=client.publish, source_ip=source_ip)
+
+
+def _device_source_ip(topic_parts, payload):
+    """Device's public IP as reported from the broker VM (see mqtt_client_ip).
+    Devices publish on <prefix>/<imei>; fall back to the IMEI in the payload."""
+    ip = mqtt_client_ip.lookup(topic_parts[1])
+    if ip is None:
+        try:
+            ip = mqtt_client_ip.lookup(extract_log_meta(payload.decode(errors='ignore'))[0])
+        except Exception:
+            ip = None
+    return ip
 
 
 def on_message(client, userdata, msg):
@@ -443,10 +456,12 @@ def on_message(client, userdata, msg):
             return
 
         if len(topic_parts) == 2 and topic_parts[0] == 'deviceTracking':
-            future = _tracking_executor.submit(_process_tracking_message, msg.payload)
+            future = _tracking_executor.submit(
+                _process_tracking_message, msg.payload, _device_source_ip(topic_parts, msg.payload))
             future.add_done_callback(_publish_tracking_response)
         elif len(topic_parts) == 2 and topic_parts[0] == 'deviceEM':
-            _em_executor.submit(_safe_exec, "Process_EM_Data", Process_EM_Data, msg)
+            _em_executor.submit(_safe_exec, "Process_EM_Data", Process_EM_Data, msg,
+                                _device_source_ip(topic_parts, msg.payload))
         elif len(topic_parts) >= 2 and topic_parts[0] == 'sosEx':
             _em_executor.submit(_safe_exec, "Process_sosEx_Data", Process_sosEx_Data, msg, topic_parts)
         elif len(topic_parts) == 2 and topic_parts[0] == 'owner':

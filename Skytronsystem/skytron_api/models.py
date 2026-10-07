@@ -2446,12 +2446,37 @@ class GPSDataLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     raw_data = models.TextField()
     source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
+    # IMEI and network operator pulled from the packet itself (first parsable
+    # $-segment); null when the packet is unparseable or has no such field.
+    imei = models.CharField(max_length=20, null=True, blank=True)
+    network_name = models.CharField(max_length=30, null=True, blank=True)
+
+    class Meta:
+        # Partial: only rows that carry an IP (all pre-existing rows are null).
+        # Built CONCURRENTLY in migration 0106.
+        indexes = [
+            models.Index(fields=['source_ip', 'imei', 'timestamp'], name='gpsdatalog_ip_imei_ts_idx',
+                         condition=models.Q(source_ip__isnull=False)),
+            models.Index(fields=['imei', 'source_ip', 'timestamp'], name='gpsdatalog_imei_ip_ts_idx',
+                         condition=models.Q(source_ip__isnull=False)),
+        ]
 
 class GPSemDataLog(models.Model):
     objects = SafeCreateManager()
     timestamp = models.DateTimeField(auto_now_add=True)
     raw_data = models.TextField()
     source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
+    imei = models.CharField(max_length=20, null=True, blank=True)
+    # EPB packets carry no operator field today, so this is usually null.
+    network_name = models.CharField(max_length=30, null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['source_ip', 'imei', 'timestamp'], name='gpsemdatalog_ip_imei_ts_idx',
+                         condition=models.Q(source_ip__isnull=False)),
+            models.Index(fields=['imei', 'source_ip', 'timestamp'], name='gpsemdatalog_imei_ip_ts_idx',
+                         condition=models.Q(source_ip__isnull=False)),
+        ]
 
   
 class AlertsLog(models.Model):

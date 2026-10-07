@@ -14,6 +14,7 @@ import socket
 import threading
 from django.db.models import Q
 from skytron_api import connection_registry
+from skytron_api.data_processor import extract_log_meta
 
 # Live socket registry: imei -> connected socket, so the command dispatcher
 # thread (running in this same process) can find a live connection to
@@ -40,9 +41,11 @@ def handle_gps_data(data_string):
     location = EMGPSLocation.create_from_string(data_string)
     location.save()
 
-def processEM(str_data, on_imei_seen=None):
+def processEM(str_data, on_imei_seen=None, source_ip=None):
         try:
-            GPSemDataLog.objects.create(raw_data=str_data)
+            log_imei, log_network = extract_log_meta(str_data)
+            GPSemDataLog.objects.create(raw_data=str_data, source_ip=source_ip,
+                                        imei=log_imei, network_name=log_network)
         except Exception as e:
             print("Data processing error log:", e, flush=True)
         print("EM Data processing :", str_data, flush=True)
@@ -120,7 +123,7 @@ def handle_client(client_socket, client_address):
             str_data=data.decode('utf-8')
             print(f"Received data from {client_address}: {str_data}:::: ")
             RegNo=""
-            processEM(str_data, on_imei_seen=_on_imei_seen)
+            processEM(str_data, on_imei_seen=_on_imei_seen, source_ip=client_address[0])
             """if len(RegNo)>2:
 
                 existing_emergency_call = EmergencyCall.objects.filter(Q(vehicle_no=RegNo)).order_by('-start_time').last()

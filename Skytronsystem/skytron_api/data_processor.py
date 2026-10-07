@@ -987,7 +987,39 @@ def process_route_alerts(gps_data, loc_id, device_tag, lat, lon):
         print(f"Error processing route alerts: {e}", flush=True)
 
 
-def process_device_tracking_data(data_str, source="unknown", on_imei_seen=None):
+def extract_log_meta(data_str):
+    """Best-effort (imei, network_name) for a raw-log row, taken from the first
+    $-segment that has them. Deliberately looser than process_gps_data(): a
+    packet without a GPS fix is still logged, and should still be attributed.
+
+      PVT / legacy T: $,PVT|T,<vendor>,<ver>,<type>,<seq>,<L|H>,<imei>,<reg>,...,<operator @22>,...
+      EPB:            $,EPB,<event>,<imei>,...            (no operator field)
+    """
+    imei = None
+    network_name = None
+    try:
+        for part in (data_str or '').split('$'):
+            fields = [f.strip() for f in ('$' + part).split(',')]
+            if len(fields) < 4 or fields[0] != '$':
+                continue
+            if fields[1] in ('PVT', 'T') and len(fields) > 22:
+                cand_imei, cand_net = fields[7], fields[22]
+            elif fields[1] == 'EPB':
+                cand_imei, cand_net = fields[3], ''
+            else:
+                continue
+            if imei is None and cand_imei.isdigit() and 14 <= len(cand_imei) <= 17:
+                imei = cand_imei
+            if network_name is None and cand_net and cand_net.replace(' ', '').isalnum():
+                network_name = cand_net[:30]
+            if imei and network_name:
+                break
+    except Exception:
+        pass
+    return imei, network_name
+
+
+def process_device_tracking_data(data_str, source="unknown", on_imei_seen=None, source_ip=None):
     """
     Main function to process device tracking data
     Used by both TCP server and MQTT deviceTracking topic
@@ -997,6 +1029,9 @@ def process_device_tracking_data(data_str, source="unknown", on_imei_seen=None):
     multiple $-delimited packets (potentially from different IMEIs) in the
     loop below, so this is a per-packet callback rather than a single
     return value.
+
+    source_ip: the device's public IP as seen by the TCP socket / MQTT broker
+    (None when unknown). Stored on GPSDataLog and GPSData.
     """
     _t_total_start = time.perf_counter()
     # Close old database connections to prevent leaks
@@ -1073,6 +1108,7 @@ def process_device_tracking_data(data_str, source="unknown", on_imei_seen=None):
                             gps_data['device_tag'] = device_tag
                             gps_data.pop('imei', None)
                             gps_data.pop('vehicle_registration_number', None)
+                            gps_data['source_ip'] = source_ip
 
                             # Save GPS data.
                             # Note: GPSData post_save signal already performs enrichment.
@@ -1100,7 +1136,9 @@ def process_device_tracking_data(data_str, source="unknown", on_imei_seen=None):
 
     # Log raw data (with DL01AB1234 replaced when device_tag is present)
     try:
-        GPSDataLog.objects.create(raw_data=data_str_for_log)
+        log_imei, log_network = extract_log_meta(data_str)
+        GPSDataLog.objects.create(raw_data=data_str_for_log, source_ip=source_ip,
+                                  imei=log_imei, network_name=log_network)
     except Exception as e:
         print(f"Data logging error ({source}):", e, flush=True)
     finally:
@@ -1109,10 +1147,12 @@ def process_device_tracking_data(data_str, source="unknown", on_imei_seen=None):
     print(f"[Tracking][Perf] TOTAL process_device_tracking_data={( time.perf_counter()-_t_total_start)*1000:.1f}ms source={source}", flush=True)
 
 
-def process_emergency_data(data_str, source="unknown", publish_callback=None):
+def process_emergency_data(data_str, source="unknown", publish_callback=None, source_ip=None):
     """
     Main function to process emergency data
     Used by both EM server and MQTT deviceEM topic
+
+    source_ip: the device's public IP (None when unknown), stored on GPSemDataLog.
     """
     try:
         # Close old database connections to prevent leaks
@@ -1144,7 +1184,9 @@ def process_emergency_data(data_str, source="unknown", publish_callback=None):
 
         # Log raw data
         try:
-            GPSemDataLog.objects.create(raw_data=data_str_for_log)
+            log_imei, log_network = extract_log_meta(data_str)
+            GPSemDataLog.objects.create(raw_data=data_str_for_log, source_ip=source_ip,
+                                        imei=log_imei, network_name=log_network)
         except Exception as e:
             print(f"EM data logging error ({source}):", e, flush=True)
         

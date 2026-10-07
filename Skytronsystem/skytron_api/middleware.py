@@ -57,6 +57,7 @@ class RequestLoggerMiddleware(MiddlewareMixin):
     _SKIP_PATH_PREFIXES = (
         '/api/mqtt/validate-connection/',
         '/api/mqtt/validate-acl/',
+        '/api/mqtt/client-ip/report/',
     )
 
     @staticmethod

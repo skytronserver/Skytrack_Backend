@@ -1,0 +1,22 @@
+# Installed on the MQTT broker VM by install_mqtt_ip_reporter.sh.
+# Settings (URL, key, log path) live in /etc/skytrack/mqtt-ip-reporter.env (root-only).
+[Unit]
+Description=Report MQTT device IPs from the Mosquitto log to the Skytrack backend
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+# mosquitto owns /var/log/mosquitto (mode 750/600), so run as that user.
+User=mosquitto
+Group=mosquitto
+EnvironmentFile=/etc/skytrack/mqtt-ip-reporter.env
+ExecStart=/usr/bin/python3 /opt/skytrack/mqtt_ip_reporter.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import pytz
 
 # Import common data processor (same as MQTT) - handles both PVT and legacy formats
-from skytron_api.data_processor import process_gps_data
+from skytron_api.data_processor import process_gps_data, extract_log_meta
 from skytron_api import connection_registry
 
 # Timezone setup
@@ -453,7 +453,9 @@ def handle_client(conn, client_address):
                 data_str = data.decode('utf-8')
 
                 try:
-                    GPSDataLog.objects.create(raw_data=data_str)
+                    log_imei, log_network = extract_log_meta(data_str)
+                    GPSDataLog.objects.create(raw_data=data_str, source_ip=client_address[0],
+                                              imei=log_imei, network_name=log_network)
                 except Exception as e:
                     print("Data processing error log:", e, flush=True)
 
@@ -483,6 +485,7 @@ def handle_client(conn, client_address):
                                         gps_data['device_tag']=device_tag
                                         gps_data.pop('imei', None)
                                         gps_data.pop('vehicle_registration_number', None)
+                                        gps_data['source_ip']=client_address[0]
 
                                         g=GPSData.objects.create(**gps_data)
                                         g.save()

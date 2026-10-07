@@ -51,6 +51,7 @@ from .technical_onboarding_testing_views import (
     dev_force_pass_test,
 )
 from .vltd_summary_views import superadmin_vltd_summary
+from .device_ip_views import device_ip_unique, device_ip_imeis, device_ip_by_imei, mqtt_client_ip_report
 from .alert_stats_views import (
     alert_stats_type_options,
     alert_stats_summary,
@@ -740,6 +741,7 @@ urlpatterns = [
     path('mqtt/dual-auth/', mqtt_dual_auth, name='mqtt_dual_auth'),  # NEW: Dual authentication mode
     path('mqtt/validate-connection/', mqtt_validate_connection, name='mqtt_validate_connection'),  # For mosquitto-go-auth
     path('mqtt/validate-acl/', mqtt_validate_acl, name='mqtt_validate_acl'),  # For mosquitto-go-auth ACL
+    path('mqtt/client-ip/report/', mqtt_client_ip_report, name='mqtt_client_ip_report'),  # From mqtt_ip_reporter.py on the broker VM
 
     # Module access check
     path('check-module-access/', check_module_access, name='check_module_access'),
@@ -1393,6 +1395,11 @@ urlpatterns += [
     
     path('m2m/ip-scan/', m2m_provider_ip_scan, name='m2m-ip-scan'),
 
+    # Device source IP (from GPSDataLog / GPSemDataLog). Superadmin only.
+    path('device-ip/unique/', device_ip_unique, name='device_ip_unique'),
+    path('device-ip/imeis/', device_ip_imeis, name='device_ip_imeis'),
+    path('device-ip/by-imei/', device_ip_by_imei, name='device_ip_by_imei'),
+
     path('superadmin/vltd-summary/', superadmin_vltd_summary, name='superadmin_vltd_summary'),
 ]
 
@@ -1524,8 +1531,8 @@ DUMMY_API_ROUTES = {
     'mqtt/dual-auth/',
     'mqtt/prepare-auth-token/',
     'mqtt/prepare-auth/',
-    # mqtt/validate-connection/ and mqtt/validate-acl/ must stay OUT of this
-    # list: mosquitto-go-auth calls them for every device connect / ACL check.
+    # mqtt/validate-connection/, mqtt/validate-acl/ and mqtt/client-ip/report/
+    # must stay OUT of this list: the broker VM calls them continuously.
     'ota/command/history/update/',
     'ota/update/',
     'parents/<int:parent_id>/students/',
