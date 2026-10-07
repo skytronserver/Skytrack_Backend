@@ -1281,7 +1281,7 @@ def set_login_settings(request):
         logger.error(f"Error in set_login_settings: {str(e)}")
         return Response({
             'success': False,
-            'error': f'Internal server error: {str(e)}'
+            'error': 'Internal server error.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET', 'POST'])
@@ -1357,7 +1357,7 @@ def get_login_settings(request):
         logger.error(f"Error in get_login_settings: {str(e)}")
         return Response({
             'success': False,
-            'error': f'Internal server error: {str(e)}'
+            'error': 'Internal server error.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 # skytron_api/views.py
 from rest_framework.authtoken.models import Token 
@@ -5127,7 +5127,7 @@ def create_superuser(request):
         except Exception as e:
             transaction.savepoint_rollback(sid)
             return Response({
-                'error': f"Unable to create superuser: {str(e)}"
+                'error': "Unable to create superuser."
             }, status=status.HTTP_400_BAD_REQUEST)
     
     except Exception as e:
@@ -14804,7 +14804,7 @@ def create_Settings_firmware(request):
         if abs_path and os.path.exists(abs_path):
             os.remove(abs_path)
         return Response(
-            {'error': f'Firmware creation failed: {str(e)}'},
+            {'error': 'Firmware creation failed.'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -22521,7 +22521,7 @@ def get_device_tag_alerts(request):
     except Exception as e:
         return Response({
             'success': False,
-            'error': f'An error occurred while fetching alerts: {str(e)}'
+            'error': 'An error occurred while fetching alerts.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # ...existing code...
@@ -22785,7 +22785,7 @@ def get_device_tags(request):
     except Exception as e:
         return Response({
             'success': False,
-            'error': f'An error occurred while fetching device tags: {str(e)}'
+            'error': 'An error occurred while fetching device tags.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
  
@@ -23053,7 +23053,7 @@ def activated_device_list(request):
     except Exception as e:
         return Response({
             'status': 'error', 
-            'message': f'An error occurred while retrieving activated devices: {str(e)}'
+            'message': 'An error occurred while retrieving activated devices.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -23347,7 +23347,7 @@ def homepage_esimProvider(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         
@@ -23538,7 +23538,7 @@ def state_admin_approved_models_report(request):
     except Exception as e:
         return Response({
             'status': 'error', 
-            'message': f'An error occurred while retrieving approved models report: {str(e)}'
+            'message': 'An error occurred while retrieving approved models report.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -23777,7 +23777,7 @@ def state_admin_approved_cops_report(request):
     except Exception as e:
         return Response({
             'status': 'error', 
-            'message': f'An error occurred while retrieving approved COPs report: {str(e)}'
+            'message': 'An error occurred while retrieving approved COPs report.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -23958,7 +23958,7 @@ def state_admin_combined_approval_report(request):
     except Exception as e:
         return Response({
             'status': 'error', 
-            'message': f'An error occurred while retrieving combined approval report: {str(e)}'
+            'message': 'An error occurred while retrieving combined approval report.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
  
 
@@ -24287,7 +24287,7 @@ def get_device_trip_details(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred while retrieving trip details: {str(e)}'
+            'message': 'An error occurred while retrieving trip details.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 
@@ -24601,7 +24601,7 @@ def get_device_health_status(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred while retrieving device health status: {str(e)}'
+            'message': 'An error occurred while retrieving device health status.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -24678,7 +24678,7 @@ def check_module_access(request):
 
     except Exception as e:
         return Response(
-            {'error': f'An error occurred: {str(e)}'},
+            {'error': 'An error occurred.'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -24769,7 +24769,7 @@ def check_user_type(request):
 
     except Exception as e:
         return Response(
-            {'error': f'An error occurred: {str(e)}'},
+            {'error': 'An error occurred.'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -25414,7 +25414,7 @@ def set_bus_stand(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -25454,7 +25454,7 @@ def activate_deactivate_bus_stand(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -25536,7 +25536,7 @@ def filter_bus_stand(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -25571,7 +25571,7 @@ def create_ota_settings(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -25614,7 +25614,7 @@ def update_ota_settings(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -25671,7 +25671,7 @@ def filter_ota_settings(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -25721,7 +25721,7 @@ def register_incident(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -25878,7 +25878,7 @@ def filter_incident(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -25927,7 +25927,7 @@ def update_incident(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -26024,7 +26024,7 @@ def create_alert_log(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -26086,7 +26086,7 @@ def update_alert_log(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -26302,7 +26302,7 @@ def filter_alert_log(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -26392,7 +26392,7 @@ def update_notification_preferences(request):
         logger.error(f"Error updating notification preferences: {str(e)}")
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -26498,7 +26498,7 @@ def archive_gps_data_log(request):
         
     except Exception as e:
         logger.error(f"Error in archive_gps_data_log: {str(e)}")
-        return Response({'status': 'error', 'message': f'An error occurred: {str(e)}'}, 
+        return Response({'status': 'error', 'message': 'An error occurred.'}, 
                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -27262,7 +27262,7 @@ def restore_gps_data_log(request):
         
     except Exception as e:
         logger.error(f"Error in restore_gps_data_log: {str(e)}")
-        return Response({'status': 'error', 'message': f'An error occurred: {str(e)}'}, 
+        return Response({'status': 'error', 'message': 'An error occurred.'}, 
                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -27314,7 +27314,7 @@ def list_gps_data_archives(request):
         
     except Exception as e:
         logger.error(f"Error in list_gps_data_archives: {str(e)}")
-        return Response({'status': 'error', 'message': f'An error occurred: {str(e)}'}, 
+        return Response({'status': 'error', 'message': 'An error occurred.'}, 
                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -27426,7 +27426,7 @@ def get_cell_tower_info(request):
         
     except Exception as e:
         logger.error(f"Error in get_cell_tower_info: {str(e)}")
-        return Response({'status': 'error', 'message': f'An error occurred: {str(e)}'}, 
+        return Response({'status': 'error', 'message': 'An error occurred.'}, 
                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -27607,7 +27607,7 @@ def list_logged_in_users(request):
         logger.error(f"Error in list_logged_in_users: {str(e)}")
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -27771,7 +27771,7 @@ def vehicle_monitoring_dashboard(request):
     except Exception as e:
         logger.error(f"Error in vehicle_monitoring_dashboard: {str(e)}")
         return Response({
-            'error': f'An error occurred: {str(e)}'
+            'error': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -27915,7 +27915,7 @@ def get_dashboard_filter_options(request):
     except Exception as e:
         logger.error(f"Error in get_dashboard_filter_options: {str(e)}")
         return Response({
-            'error': f'An error occurred: {str(e)}'
+            'error': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -28139,7 +28139,7 @@ def get_areawise_device_tag_count(request):
     except Exception as e:
         logger.error(f"Error in get_areawise_device_tag_count: {str(e)}")
         return Response({
-            'error': f'An error occurred: {str(e)}'
+            'error': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -28297,7 +28297,7 @@ def get_latest_vehicle_locations(request):
     except Exception as e:
         logger.error(f"Error in get_latest_vehicle_locations: {str(e)}")
         return Response({
-            'error': f'An error occurred: {str(e)}'
+            'error': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -28419,7 +28419,7 @@ def erss_dashboard_summary(request):
 
     except Exception as e:
         logger.error(f"Error in erss_dashboard_summary: {str(e)}")
-        return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'error': 'An error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @csrf_exempt
@@ -28743,7 +28743,7 @@ def sos_analysis_dashboard(request):
 
     except Exception as e:
         logger.error(f"Error in sos_analysis_dashboard: {str(e)}")
-        return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'error': 'An error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @csrf_exempt
@@ -28897,7 +28897,7 @@ def sos_monitoring_dashboard(request):
 
     except Exception as e:
         logger.error(f"Error in sos_monitoring_dashboard: {str(e)}")
-        return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'error': 'An error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -29746,7 +29746,7 @@ def create_ota_command_definition(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -29785,7 +29785,7 @@ def update_ota_command_definition(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -29850,7 +29850,7 @@ def filter_ota_command_definitions(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -29895,7 +29895,7 @@ def search_devices_for_ota_command(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -30029,7 +30029,7 @@ def send_ota_command(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -30077,7 +30077,7 @@ def update_ota_command_history(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -30147,7 +30147,7 @@ def filter_ota_command_history(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -30173,7 +30173,7 @@ def get_ota_command_value_suggestions(request):
     except Exception as e:
         return Response({
             'status': 'error',
-            'message': f'An error occurred: {str(e)}'
+            'message': 'An error occurred.'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -34946,7 +34946,7 @@ class CreateTestUserAPIView(APIView):
                 createdby=str(request.user.id),
             )
         except Exception as e:
-            return error_response(f"Failed to create user: {str(e)}")
+            return error_response("Failed to create user.")
 
         return success_response(
             data={
