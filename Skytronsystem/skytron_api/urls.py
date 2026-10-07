@@ -1595,6 +1595,9 @@ DUMMY_API_ROUTES = {
     'server-health/dashboard/',
     # M-1: legacy API, no calls found in the request log
     'EM/DEx/get-media/',
+    # L-5: legacy APIs not used by the frontend
+    'ip-violations/dummy/',
+    'sell/SellFitDevice/',
 }
 
 if not DUMMY_APIS_ENABLED:
