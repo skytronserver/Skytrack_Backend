@@ -7330,7 +7330,7 @@ def resend_usercreation_otp(request):
     try:
         send_usercreation_otp(target_user, token_str, account_type)
     except Exception as e:
-        return Response({"error": "Failed to send OTP.", "sms_error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"error": "Failed to send OTP.", "sms_error": "SMS could not be sent."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     return Response({"message": "User creation OTP sent successfully."}, status=status.HTTP_200_OK)
 
@@ -29983,7 +29983,7 @@ def send_ota_command(request):
                 send_general_mqtt_message(imei, {'keys': wire_command})
                 send_status_value = 'queued'
             except Exception as e:
-                dispatch_error = str(e)
+                dispatch_error = 'Failed to send MQTT command'
                 send_status_value = 'failed'
         else:  # sms
             device_stock = DeviceStock.objects.filter(imei=imei).first()
@@ -33821,7 +33821,7 @@ class DashboardAPIView(APIView):
         except Exception as e:
             return error_response(
                 message="Failed to fetch dashboard data",
-                errors=str(e),
+                errors=None,
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -33863,7 +33863,7 @@ class SchoolWiseDistributionAPIView(APIView):
         except Exception as e:
             return error_response(
                 message="Failed to fetch data",
-                errors=str(e)
+                errors=None
             )
 
 class ActiveTripMonitorAPIView(APIView):
@@ -33913,7 +33913,7 @@ class ActiveTripMonitorAPIView(APIView):
                 message="Active trips fetched successfully"
             )
         except Exception as e:
-            return error_response(message="Failed to fetch trips", errors=str(e))
+            return error_response(message="Failed to fetch trips", errors=None)
 
 class BusOperationalStatusAPIView(APIView):
     """
@@ -33961,7 +33961,7 @@ class BusOperationalStatusAPIView(APIView):
                 message="Bus operational status fetched successfully"
             )
         except Exception as e:
-            return error_response(message="Failed to fetch status", errors=str(e))
+            return error_response(message="Failed to fetch status", errors=None)
 
 class LiveAlertsFeedAPIView(APIView):
     """
@@ -34019,7 +34019,7 @@ class LiveAlertsFeedAPIView(APIView):
             return list_response(data=data, message="Live alerts fetched successfully")
 
         except Exception as e:
-            return error_response(message="Failed to fetch alerts", errors=str(e))
+            return error_response(message="Failed to fetch alerts", errors=None)
 
     def map_system_type(self, alert_type):
         if alert_type in self.EMERGENCY_TYPES:
