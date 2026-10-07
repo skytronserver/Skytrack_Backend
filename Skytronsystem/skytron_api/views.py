@@ -4144,7 +4144,7 @@ def gps_history_map_data(request ):
             }
         })
     except Exception as e:
-        return JsonResponse({'error': "Unable to process request." + str(e)})
+        return JsonResponse({'error': "Unable to process request."})
 
 
  
@@ -5132,7 +5132,7 @@ def create_superuser(request):
     
     except Exception as e:
         return Response({
-            'error': f"Unable to process request: {str(e)}"
+            'error': "Unable to process request."
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -5922,7 +5922,7 @@ def filter_eSimProvider(request ):
 
     except Exception as e:
         
-        return Response({'error': "Unable to process request." + str(e)}, status=400)
+        return Response({'error': "Unable to process request."}, status=400)
 
 
 
@@ -5997,7 +5997,7 @@ def filter_eSimProvider_pub(request ):
 
     except Exception as e:
         
-        return Response({'error': "Unable to process request." + str(e)}, status=400)
+        return Response({'error': "Unable to process request."}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -6282,7 +6282,7 @@ def filter_dealer(request ):
 
 
     except Exception as e:
-        return Response({'error': "Unable to process request." + str(e)}, status=400)
+        return Response({'error': "Unable to process request."}, status=400)
 
 
 
@@ -7017,7 +7017,7 @@ def approve_manufacturer_tech_onboarding(request):
         return Response(manufacturer_serializer.data)
 
     except Exception as e:
-        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -7078,7 +7078,7 @@ def filter_TechOnboardmanufacturers(request):
         return Response(serializer.data)
 
     except Exception as e:
-        return Response({'error': "Unable to process request." + str(e)}, status=400)
+        return Response({'error': "Unable to process request."}, status=400)
 
 
 from django.db import IntegrityError
@@ -7211,7 +7211,7 @@ def create_user(role, req):
 
     except Exception as e:
         # General exception handling
-        return [None, {'error': "Unable to process request.1"+str(e)}, None]
+        return [None, {'error': "Unable to process request.1"}, None]
 
 
 def send_usercreation_otp(user, new_password, type):
@@ -7460,7 +7460,7 @@ def create_StateAdmin(request ):
                 
             except Exception as e:
                 transaction.savepoint_rollback(sid)
-                return Response({'error': "Unable to process request1."+str(e)}, status=400)
+                return Response({'error': "Unable to process request1."}, status=400)
             dealer.users.add(user)
             dealer.save()  # Save the dealer after adding users
             send_usercreation_otp(user,new_password,'State Admin ')
@@ -9717,7 +9717,7 @@ def  DEx_getloc(request ):
         
 
     except Exception as e:
-        return Response({'error': "Unable to process request."+ str(e)}, status=400)
+        return Response({'error': "Unable to process request."}, status=400)
 
 
 
@@ -13566,7 +13566,7 @@ def deviceStockCreateBulk(request ):
     try:
         excel_data = pd.read_excel(request.FILES['excel_file'], engine='openpyxl')
     except Exception as e:
-        return JsonResponse({'error': 'Error reading Excel file.', 'details': f"Unable to process request. {str(e)}"}, status=400)
+        return JsonResponse({'error': 'Error reading Excel file.', 'details': "Unable to process request."}, status=400)
 
     # Normalize column names to lowercase so 'IMEI', 'Imei', etc. all work
     excel_data.columns = excel_data.columns.str.lower()
@@ -14612,7 +14612,7 @@ def filter_Settings_District(request):
         return Response(formatted_data, status=200)
 
     except Exception as e:
-        return Response({'error': "Unable to process request." + str(e)}, status=400)
+        return Response({'error': "Unable to process request."}, status=400)
 
 
 
@@ -14984,7 +14984,7 @@ def manufacturer_model_stock_statistics(request):
         return Response(response_data, status=status.HTTP_200_OK)
         
     except Exception as e:
-        return Response({'error': 'Unable to process request: ' + str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'Unable to process request.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['GET'])
@@ -15121,7 +15121,7 @@ def user_statistics(request):
         return Response(response_data, status=status.HTTP_200_OK)
         
     except Exception as e:
-        return Response({'error': 'Unable to process request: ' + str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'Unable to process request.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['GET'])
@@ -15341,7 +15341,7 @@ def vehicle_alert_statistics(request):
         return Response(response_data, status=status.HTTP_200_OK)
         
     except Exception as e:
-        return Response({'error': 'Unable to process request: ' + str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'Unable to process request.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
@@ -15652,7 +15652,7 @@ def alart_list(request ):
         return Response({"alertHistory":[]}, status=200)
         
     except Exception as e:
-        return Response({"error":"Unable to process request: " + str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error":"Unable to process request."}, status=status.HTTP_400_BAD_REQUEST)
     
  
      
@@ -16092,7 +16092,7 @@ def homepage_DTO(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': f"Unable to process request: {str(e)}"}, status=400)
+        return Response({'error': "Unable to process request."}, status=400)
 
 
 
@@ -16306,7 +16306,7 @@ def homepage_VehicleOwner(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': f"Unable to process request: {str(e)}"}, status=400)
+        return Response({'error': "Unable to process request."}, status=400)
 
 
 @api_view(['POST'])
@@ -16365,7 +16365,7 @@ def update_vehicle_owner_expiry(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        return Response({"error": f"Unable to process request: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "Unable to process request."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
@@ -16612,7 +16612,7 @@ def homepage_Dealer(request ):
             return Response({'error': "Unauthorised user"}, status=400)
 
     except Exception as e:
-        return Response({'error': f"Unable to process request: {str(e)}"}, status=400)
+        return Response({'error': "Unable to process request."}, status=400)
 
 
 @api_view(['GET'])
@@ -20321,7 +20321,7 @@ def user_login_sosexecutive_direct(request):
                 status=status.HTTP_200_OK,
             )
         except Exception as e:
-            return Response({'error': "Unable to process request." + str(e)}, status=400)
+            return Response({'error': "Unable to process request."}, status=400)
 
     return JsonResponse({'success': False, 'error': 'Invalid input'})
 
@@ -22359,7 +22359,7 @@ def StateAdmin_view_all_tagging(request):
     except Exception as e:
         return Response({
             'success': False,
-            'error': f"Unable to process request: {str(e)}",
+            'error': "Unable to process request.",
             'debug_info': {
                 'user_role': request.user.role if hasattr(request, 'user') else 'Unknown',
                 'error_type': type(e).__name__
@@ -23223,7 +23223,7 @@ def dealer_check_esim_status(request):
         }, status=200)
         
     except Exception as e:
-        return Response({'error': "Unable to process request. " + str(e)}, status=400)
+        return Response({'error': "Unable to process request."}, status=400)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -28979,7 +28979,7 @@ def create_testAgency(request):
             return Response({'error': str(error)}, status=400)
 
     except Exception as e:
-        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29066,7 +29066,7 @@ def update_testAgency(request):
         return Response(TestAgencySerializer(agency).data)
 
     except Exception as e:
-        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29089,7 +29089,7 @@ def get_testAgency_list(request):
         agencies = TestAgency.objects.all()
         return Response(TestAgencySerializer(agencies, many=True).data)
     except Exception as e:
-        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29124,7 +29124,7 @@ def create_testAgencyDetails(request):
         )
         return Response(TestAgencyDetailsSerializer(detail).data, status=201)
     except Exception as e:
-        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29167,7 +29167,7 @@ def update_testAgencyDetails(request):
         detail.save()
         return Response(TestAgencyDetailsSerializer(detail).data)
     except Exception as e:
-        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29185,7 +29185,7 @@ def get_testAgency_name_list(request):
         qs = TestAgencyDetails.objects.all().order_by('name')
         return Response(TestAgencyDetailsSerializer(qs, many=True).data)
     except Exception as e:
-        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['GET'])
@@ -29197,7 +29197,7 @@ def public_testAgencyDetails_list(request):
         qs = TestAgencyDetails.objects.all().order_by('name')
         return Response(TestAgencyDetailsSerializer(qs, many=True).data)
     except Exception as e:
-        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29221,7 +29221,7 @@ def get_testAgency_device_models(request):
         device_models = DeviceModel.objects.filter(test_agency__iexact=agency.agency_name)
         return Response(DeviceModelForTestAgencySerializer(device_models, many=True).data)
     except Exception as e:
-        return Response({'error': 'Unable to process request: ' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 # ---------------------------------------------------------------------------
@@ -29487,7 +29487,7 @@ def pub_list_vehicle_category_code(request):
         serializer = Settings_VehicleCategoryCodeSerializer(qs, many=True)
         return Response(serializer.data)
     except Exception as e:
-        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29514,7 +29514,7 @@ def create_vehicle_category_code(request):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29547,7 +29547,7 @@ def edit_vehicle_category_code(request):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29570,7 +29570,7 @@ def list_all_vehicle_category_code(request):
         serializer = Settings_VehicleCategoryCodeSerializer(qs, many=True)
         return Response(serializer.data)
     except Exception as e:
-        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 # ─── Settings_PermitMaster ───────────────────────────────────────────────────
@@ -29591,7 +29591,7 @@ def list_permit_master(request):
         serializer = Settings_PermitMasterSerializer(qs, many=True)
         return Response(serializer.data)
     except Exception as e:
-        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29618,7 +29618,7 @@ def create_permit_master(request):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29651,7 +29651,7 @@ def edit_permit_master(request):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 @api_view(['POST'])
@@ -29674,7 +29674,7 @@ def list_all_permit_master(request):
         serializer = Settings_PermitMasterSerializer(qs, many=True)
         return Response(serializer.data)
     except Exception as e:
-        return Response({'error': 'Unable to process request.' + str(e)}, status=400)
+        return Response({'error': 'Unable to process request.'}, status=400)
 
 
 # ================================
