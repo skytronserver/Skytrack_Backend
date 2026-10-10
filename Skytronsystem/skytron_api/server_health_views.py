@@ -6,7 +6,7 @@ connection registry. Superadmin-only, click-to-reload (no polling).
 import os
 import socket
 import ssl
-import time
+import threading
 
 import paho.mqtt.client as mqtt
 import psutil
@@ -123,22 +123,31 @@ def _collect_mqtt_sys_stats(timeout_seconds=2.5):
         password = os.getenv('MQTT_PASSWORD', '')
         ca_cert = '/app/keys/ca.crt'
 
+        all_collected = threading.Event()
+
         def _on_message(client, userdata, msg):
             try:
                 collected[msg.topic] = msg.payload.decode('utf-8', errors='replace')
             except Exception:
                 pass
+            if all(topic in collected for topic in _SYS_KEYS_OF_INTEREST):
+                all_collected.set()
 
         client = mqtt.Client()
         client.username_pw_set(username, password)
         client.tls_set(ca_certs=ca_cert, cert_reqs=ssl.CERT_REQUIRED, tls_version=ssl.PROTOCOL_TLSv1_2)
         client.on_message = _on_message
         client.connect(broker_host, broker_port, 60)
-        client.subscribe('$SYS/#')
+        # Only the topics we report, and stop as soon as all have arrived
+        # (they are retained, so normally immediately) instead of always
+        # sleeping for the full window.
+        client.subscribe([(topic, 0) for topic in _SYS_KEYS_OF_INTEREST])
         client.loop_start()
-        time.sleep(timeout_seconds)
-        client.loop_stop()
+        all_collected.wait(timeout_seconds)
+        # Disconnect first: it wakes the network loop, so loop_stop() returns
+        # at once instead of waiting out the loop's 1s select timeout.
         client.disconnect()
+        client.loop_stop()
 
         stats = {
             key: collected[topic]
@@ -173,13 +182,25 @@ def server_health_summary(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
+    # The MQTT collection is a network wait, so run it alongside the others.
+    # It touches no Django DB connection, which keeps it safe in a thread.
+    mqtt_stats = {}
+    mqtt_thread = threading.Thread(target=lambda: mqtt_stats.update(_collect_mqtt_sys_stats()), daemon=True)
+    mqtt_thread.start()
+
+    collected_at = timezone.now()
+    host_stats = _collect_host_stats()
+    postgres_stats = _collect_postgres_stats()
+    tcp_stats = _collect_tcp_stats()
+    mqtt_thread.join()
+
     return Response({
         'status': 'success',
-        'collected_at': timezone.now(),
-        'host': _collect_host_stats(),
-        'postgres': _collect_postgres_stats(),
-        'mqtt': _collect_mqtt_sys_stats(),
-        'tcp': _collect_tcp_stats(),
+        'collected_at': collected_at,
+        'host': host_stats,
+        'postgres': postgres_stats,
+        'mqtt': mqtt_stats,
+        'tcp': tcp_stats,
     })
 
 

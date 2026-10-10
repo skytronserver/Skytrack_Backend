@@ -25,6 +25,7 @@ import re
 from datetime import timedelta
 
 from django.contrib.postgres.aggregates import ArrayAgg
+from django.core.cache import cache
 from django.db.models import Count, Max, Min, Q
 from django.utils import timezone
 from rest_framework import status
@@ -41,6 +42,7 @@ DEFAULT_DAYS = 7
 MAX_DAYS = 90
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
+UNIQUE_IP_CACHE_SECONDS = 60
 
 
 class _BadParam(Exception):
@@ -156,8 +158,15 @@ def device_ip_unique(request):
     if search and not all(c in '0123456789abcdefABCDEF.:' for c in search):
         return _bad('search may contain only IP characters (digits, a-f, "." and ":").')
 
-    since = timezone.now() - timedelta(days=days)
-    rows = _grouped(sources, since, 'source_ip', {}, count_imeis=True)
+    # This aggregates every IP-bearing log row in the window, so the merged
+    # result is kept briefly: paging and searching through it then cost
+    # nothing instead of repeating the full aggregation per click.
+    cache_key = f"device_ip:unique:{'+'.join(sources)}:{days}"
+    rows = cache.get(cache_key)
+    if rows is None:
+        since = timezone.now() - timedelta(days=days)
+        rows = _grouped(sources, since, 'source_ip', {}, count_imeis=True)
+        cache.set(cache_key, rows, UNIQUE_IP_CACHE_SECONDS)
     if search:
         rows = [r for r in rows if r['source_ip'].startswith(search)]
     page_rows, pagination = _paginate(rows, page, page_size)

@@ -17,7 +17,7 @@ import statistics
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -50,6 +50,7 @@ from .serializers import (
     TechnicalOnboardingCompleteTestSerializer,
     TechnicalOnboardingTestExecutionSerializer,
     TechnicalOnboardingDemoDeviceHistorySerializer,
+    build_checkpoint_status_map,
 )
 from .views import (
     validate_inputs,
@@ -138,21 +139,29 @@ def _sweep_stale_executions(onboarding_request):
     ).update(status='incomplete')
 
 
+def _complete_counts_by_test_case(onboarding_request):
+    """{test_case_id: number of demo devices with a complete execution}, in one query."""
+    return dict(
+        TechnicalOnboardingTestExecution.objects.filter(
+            onboarding_request=onboarding_request,
+            status='complete',
+        ).values_list('test_case_id').annotate(complete_count=Count('id'))
+    )
+
+
 def _current_unlocked_serial_no(onboarding_request):
     """
     Lowest serial_no among active, non-optional test cases where not all
     5 demo devices are complete. None means everything gate-worthy is done.
     """
     device_count = onboarding_request.demo_devices.count()
-    test_cases = TechnicalOnboardingTestCase.objects.filter(active=True, is_optional=False).order_by('serial_no')
-    for test_case in test_cases:
-        complete_count = TechnicalOnboardingTestExecution.objects.filter(
-            onboarding_request=onboarding_request,
-            test_case=test_case,
-            status='complete',
-        ).count()
-        if complete_count < device_count:
-            return test_case.serial_no
+    complete_counts = _complete_counts_by_test_case(onboarding_request)
+    test_cases = TechnicalOnboardingTestCase.objects.filter(
+        active=True, is_optional=False
+    ).order_by('serial_no').values_list('id', 'serial_no')
+    for test_case_id, serial_no in test_cases:
+        if complete_counts.get(test_case_id, 0) < device_count:
+            return serial_no
     return None
 
 
@@ -160,15 +169,11 @@ def _all_tests_complete(onboarding_request):
     device_count = onboarding_request.demo_devices.count()
     if device_count == 0:
         return False
-    for test_case in TechnicalOnboardingTestCase.objects.filter(active=True, is_optional=False):
-        complete_count = TechnicalOnboardingTestExecution.objects.filter(
-            onboarding_request=onboarding_request,
-            test_case=test_case,
-            status='complete',
-        ).count()
-        if complete_count < device_count:
-            return False
-    return True
+    complete_counts = _complete_counts_by_test_case(onboarding_request)
+    test_case_ids = TechnicalOnboardingTestCase.objects.filter(
+        active=True, is_optional=False
+    ).values_list('id', flat=True)
+    return all(complete_counts.get(test_case_id, 0) >= device_count for test_case_id in test_case_ids)
 
 
 def _window_start(execution):
@@ -836,14 +841,16 @@ def technical_onboarding_test_case_upsert(request):
 # ===========================================================================
 
 def _serialize_board(onboarding_request):
-    test_cases = TechnicalOnboardingTestCase.objects.filter(active=True).order_by('serial_no')
+    test_cases = list(TechnicalOnboardingTestCase.objects.filter(active=True).order_by('serial_no'))
     demo_devices = list(onboarding_request.demo_devices.all().order_by('id'))
 
-    existing = {
-        (e.demo_device_id, e.test_case_id): e
-        for e in TechnicalOnboardingTestExecution.objects.filter(onboarding_request=onboarding_request)
-        .select_related('test_case', 'demo_device')
-    }
+    def load_existing():
+        return {
+            (e.demo_device_id, e.test_case_id): e
+            for e in TechnicalOnboardingTestExecution.objects.filter(onboarding_request=onboarding_request)
+        }
+
+    existing = load_existing()
 
     to_create = []
     for test_case in test_cases:
@@ -854,18 +861,26 @@ def _serialize_board(onboarding_request):
                 ))
     if to_create:
         TechnicalOnboardingTestExecution.objects.bulk_create(to_create, ignore_conflicts=True)
-        existing = {
-            (e.demo_device_id, e.test_case_id): e
-            for e in TechnicalOnboardingTestExecution.objects.filter(onboarding_request=onboarding_request)
-            .select_related('test_case', 'demo_device')
-        }
+        existing = load_existing()
+
+    # Each execution embeds its test case and demo device. Attach the objects
+    # already loaded above and share one serializer context, so the board
+    # needs one checkpoint query in total instead of one per execution.
+    test_case_by_id = {test_case.id: test_case for test_case in test_cases}
+    demo_device_by_id = {demo_device.id: demo_device for demo_device in demo_devices}
+    for execution in existing.values():
+        if execution.test_case_id in test_case_by_id:
+            execution.test_case = test_case_by_id[execution.test_case_id]
+        if execution.demo_device_id in demo_device_by_id:
+            execution.demo_device = demo_device_by_id[execution.demo_device_id]
+    context = {'_checkpoint_status_cache': build_checkpoint_status_map(demo_device_by_id)}
 
     rows = []
     for test_case in test_cases:
         executions = [existing[(d.id, test_case.id)] for d in demo_devices if (d.id, test_case.id) in existing]
         rows.append({
             'test_case': TechnicalOnboardingTestCaseSerializer(test_case).data,
-            'executions': TechnicalOnboardingTestExecutionSerializer(executions, many=True).data,
+            'executions': TechnicalOnboardingTestExecutionSerializer(executions, many=True, context=context).data,
         })
 
     return {

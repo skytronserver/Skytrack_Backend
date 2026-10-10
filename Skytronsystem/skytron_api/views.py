@@ -6,7 +6,7 @@ from rest_framework.pagination import PageNumberPagination
 from math import radians, sin, cos, sqrt, asin
 # --- API: Get latest EMUserLocation for all unique field executives ---
 from django.db.models import OuterRef, Subquery, Max, Count
-from django.db import transaction
+from django.db import OperationalError, connection, transaction
 
 from .models import Trip
 from .serializers import TripSerializer
@@ -768,8 +768,53 @@ def police_fleet_metrics(request):
     })
 
 
+def cache_public_dashboard(seconds):
+    """
+    Cache a public dashboard's successful response for a few seconds, keyed by
+    its request parameters.
+
+    Only for AllowAny views whose numbers do not depend on who is asking: such
+    a dashboard is polled by every open browser, so without this each poll
+    recounts the whole fleet. Place it directly above the view function.
+    """
+    import hashlib
+    from functools import wraps
+    from django.core.cache import cache as _cache
+
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(request, *args, **kwargs):
+            params = sorted(request.GET.items())
+            body = getattr(request, 'data', None)
+            if hasattr(body, 'items'):
+                params += sorted((str(key), str(value)) for key, value in body.items())
+            digest = hashlib.md5(repr(params).encode()).hexdigest()
+            cache_key = f'public_dashboard:{view_func.__name__}:{digest}'
+            try:
+                cached = _cache.get(cache_key)
+            except Exception:
+                cached = None
+            if cached is not None:
+                return Response(cached, status=status.HTTP_200_OK)
+
+            response = view_func(request, *args, **kwargs)
+            if response.status_code == 200:
+                try:
+                    _cache.set(cache_key, response.data, seconds)
+                except Exception:
+                    pass
+            return response
+        return wrapper
+    return decorator
+
+
+# How long the public fleet dashboards may serve the same numbers.
+PUBLIC_DASHBOARD_CACHE_SECONDS = 15
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@cache_public_dashboard(PUBLIC_DASHBOARD_CACHE_SECONDS)
 def vehicle_status_metrics(request):
     """
     Unauthenticated API: totals for registered vehicles, online, offline, and live SOS.
@@ -784,14 +829,7 @@ def vehicle_status_metrics(request):
     window_start = now - timedelta(minutes=15)
 
     total = DeviceTag.objects.count()
-    online = (
-        GPSData.objects
-        .filter(entry_time__gte=window_start)
-        .exclude(device_tag__isnull=True)
-        .values_list('device_tag_id', flat=True)
-        .distinct()
-        .count()
-    )
+    online = _count_tags_with_gps_since(DeviceTag.objects.all(), window_start)
     offline = max(0, total - online)
     live_sos = EMCall.objects.filter(status='pending').count()
 
@@ -4277,6 +4315,12 @@ def validate_bhuvan_response(response_json):
         return False, f"Invalid response: {e.message}"
 
 
+# One HTTPS session for the external routing service (connection reuse), and
+# how long a validated route for a given list of points is reused.
+_BHUVAN_SESSION = requests.Session()
+BHUVAN_ROUTE_CACHE_SECONDS = 6 * 60 * 60
+
+
 @csrf_exempt
 @api_view(['POST'])
 #@permission_classes([IsAuthenticated]) #
@@ -4316,13 +4360,28 @@ def get_routePath(request):
             return Response({"error": f"Point {point} is outside the rectangular boundary of India."}, status=status.HTTP_400_BAD_REQUEST)
     
     
+    # A route between the same points does not change from one request to
+    # the next, so a validated answer is reused instead of asking the external
+    # routing service again (each call there takes 0.4s to 30s).
+    from django.core.cache import cache as route_cache
+    route_cache_key = 'bhuvan_route:' + hashlib.sha256(json.dumps(points_data).encode()).hexdigest()
     try:
-        response = requests.post(
+        cached_route = route_cache.get(route_cache_key)
+    except Exception:
+        cached_route = None
+    if cached_route is not None:
+        return Response({"data": cached_route}, status=200)
+
+    try:
+        # Shared session: keeps the HTTPS connection open between calls
+        # instead of a new TLS handshake each time. Fail fast (5s) when the
+        # service cannot be reached at all; still allow 30s for the answer.
+        response = _BHUVAN_SESSION.post(
             url,
             params={"token": token},
             json={"points": points_data},  # Send points data in the correct format
             headers={"Content-Type": "application/json"},
-            timeout=30,
+            timeout=(5, 30),
         )
 
         response.raise_for_status()
@@ -4344,9 +4403,11 @@ def get_routePath(request):
         if not is_valid:
             return Response({"error": "Incoming path data is invalid." }, status=400)
         
-        hash_object = hashlib.sha256(json_output_str.encode())
-        hash_hex = hash_object.hexdigest()  
-        
+        try:
+            route_cache.set(route_cache_key, sanitized_json_output, BHUVAN_ROUTE_CACHE_SECONDS)
+        except Exception:
+            pass
+
         return Response({"data": sanitized_json_output}, status=200)
     
     except requests.exceptions.RequestException:
@@ -6957,6 +7018,17 @@ def filter_manufacturers(request ):
                     users__mobile__icontains=phone_no, 
                 ).distinct()
 
+        # Load everything ManufacturerSerializer embeds per row in bulk
+        # (users with their groups/permissions, state, eSIM providers).
+        # prefetch only: it leaves the DISTINCT query, and so the row order,
+        # exactly as it was.
+        manufacturers = manufacturers.prefetch_related(
+            'state',
+            'users__groups', 'users__user_permissions',
+            'esim_provider__state',
+            'esim_provider__users__groups', 'esim_provider__users__user_permissions',
+        )
+
         # Serialize the queryset
         manufacturer_serializer = ManufacturerSerializer(manufacturers, many=True)
 
@@ -7602,6 +7674,13 @@ def filter_StateAdmin(request ):
                 users__name__icontains=name,
                 users__mobile__icontains=phone_no, 
             ).distinct()
+
+        # Load everything StateadminSerializer embeds per row in bulk.
+        manufacturers = manufacturers.prefetch_related(
+            'state',
+            'users__groups', 'users__user_permissions',
+            'createdby__groups', 'createdby__user_permissions',
+        )
 
         # Serialize the queryset
         serializer = StateadminSerializer(manufacturers, many=True)
@@ -9694,34 +9773,57 @@ def  DEx_getloc(request ):
                 }
                 for g in gps_vals
             ]
+        # Everything below belongs to the same call, and each serializer
+        # embeds that call in full. Load it once, with its relations in bulk,
+        # and share the instance instead of re-querying it per row.
+        call = _load_em_call_for_serialization(assignment.call_id)
+        # One context for every serializer here, so UserSerializer's
+        # created-by-name lookups are done once per creator, not per row.
+        shared_context = {}
+
+        all_assignments = list(
+            EMCallAssignment.objects.filter(call=call)
+            .select_related('admin', 'ex')
+            .prefetch_related(*_em_person_paths('admin__'), *_em_person_paths('ex__'))
+        )
+        assignment_by_id = {}
+        for a in all_assignments:
+            a.call = call
+            assignment_by_id[a.id] = a
+
         fieldEx=[]
-         
-        assignments =EMCallAssignment.objects.filter(call=assignment.call ).all()
-        for a in assignments:
+        for a in all_assignments:
             try:
-                fieldEx.append({"Assignment":EMCallAssignmentSerializer(a,many=False).data,"loc":EMUserLocation.objects.filter(field_ex = a.ex).order_by('-id')[:1].values()})
+                fieldEx.append({"Assignment":EMCallAssignmentSerializer(a,many=False, context=shared_context).data,"loc":EMUserLocation.objects.filter(field_ex = a.ex).order_by('-id')[:1].values()})
             
             except:
                 pass
 
         # Add comprehensive call information
-        call_info = EMCallSerializer(assignment.call, many=False).data
+        call_info = EMCallSerializer(call, many=False, context=shared_context).data
         
         # Get all assignments for this call
-        all_assignments = EMCallAssignment.objects.filter(call=assignment.call).all()
-        assignments_info = EMCallAssignmentSerializer(all_assignments, many=True).data
+        assignments_info = EMCallAssignmentSerializer(all_assignments, many=True, context=shared_context).data
         
         # Get all broadcasts for this call
-        broadcasts = EMCallBroadcast.objects.filter(call=assignment.call).all()
-        broadcasts_info = EMCallBroadcastSerializer(broadcasts, many=True).data
+        broadcasts = list(EMCallBroadcast.objects.filter(call=call))
+        for broadcast in broadcasts:
+            broadcast.call = call
+        broadcasts_info = EMCallBroadcastSerializer(broadcasts, many=True, context=shared_context).data
         
         # Get all messages for this call
-        messages = EMCallMessages.objects.filter(call=assignment.call).order_by('time').all()
-        messages_info = EMCallMessagesSerializer(messages, many=True).data
+        messages = list(EMCallMessages.objects.filter(call=call).order_by('time'))
+        for message in messages:
+            message.call = call
+            if message.assignment_id in assignment_by_id:
+                message.assignment = assignment_by_id[message.assignment_id]
+        messages_info = EMCallMessagesSerializer(messages, many=True, context=shared_context).data
         
         # Get all backup requests for this call
-        backup_requests = EMCallBackupRequest.objects.filter(call=assignment.call).all()
-        backup_requests_info = EMCallBackupRequestSerializer(backup_requests, many=True).data
+        backup_requests = list(EMCallBackupRequest.objects.filter(call=call))
+        for backup_request in backup_requests:
+            backup_request.call = call
+        backup_requests_info = EMCallBackupRequestSerializer(backup_requests, many=True, context=shared_context).data
 
         
         return Response( {
@@ -11445,30 +11547,10 @@ def Tag_ownerlist(request ):
         devices = (
             DeviceTag.objects
             .filter(status="Owner_Final_OTP_Verified")
-            .select_related(
-                'device', 'device__model', 'device__dealer',
-                'device__dealer__manufacturer', 'device__dealer__manufacturer__state',
-                'device__created_by',
-                'vehicle_owner', 'district', 'district__state', 'category', 'category_code',
-            )
-            .prefetch_related(
-                'drivers',
-                'device__esim_provider', 'device__esim_provider__users',
-                'device__esim_provider__users__groups', 'device__esim_provider__users__user_permissions',
-                'device__esim_provider__state',
-                'device__dealer__users', 'device__dealer__users__groups', 'device__dealer__users__user_permissions',
-                'device__dealer__districts', 'device__dealer__districts__state',
-                'device__dealer__manufacturer__users',
-                'device__dealer__manufacturer__users__groups', 'device__dealer__manufacturer__users__user_permissions',
-                'device__dealer__manufacturer__esim_provider',
-                'device__dealer__manufacturer__esim_provider__users',
-                'device__dealer__manufacturer__esim_provider__users__groups',
-                'device__dealer__manufacturer__esim_provider__users__user_permissions',
-                'device__dealer__manufacturer__esim_provider__state',
-                'vehicle_owner__users', 'vehicle_owner__users__groups', 'vehicle_owner__users__user_permissions',
-            )
+            .select_related(*_device_tag_detail_paths(_DEVICE_TAG_DETAIL_SELECT))
+            .prefetch_related(*_device_tag_detail_paths(_DEVICE_TAG_DETAIL_PREFETCH))
         )
-        
+
         # Apply role-based filtering
         if request.user:
             user_role = request.user.role
@@ -11584,53 +11666,10 @@ def Tag_ownerlist(request ):
         devices = list(devices.order_by('-id')[offset:offset + limit])
 
         # Attach latest 10 GPS points per device tag in a single bounded query.
-        # This avoids:
-        # - N+1 queries inside DeviceTagSerializer2.get_deviceloc
-        # - unbounded prefetch that can pull millions of GPS rows
-        try:
-            from django.db.models import F, Window
-            from django.db.models.functions import RowNumber
-
-            device_tag_ids = [d.id for d in devices]
-            if device_tag_ids:
-                gps_rows = list(
-                    GPSData.objects
-                    .filter(device_tag_id__in=device_tag_ids, gps_status='1')
-                    .annotate(
-                        _rn=Window(
-                            expression=RowNumber(),
-                            partition_by=[F('device_tag_id')],
-                            order_by=[F('entry_time').desc(), F('id').desc()],
-                        )
-                    )
-                    .filter(_rn__lte=10)
-                    .values(
-                        'id',
-                        'date',
-                        'time',
-                        'latitude',
-                        'latitude_dir',
-                        'longitude',
-                        'longitude_dir',
-                        'altitude',
-                        'speed',
-                        'network_operator',
-                        'device_tag_id',
-                    )
-                )
-
-                gps_by_tag_id = {}
-                for row in gps_rows:
-                    tag_id = row.get('device_tag_id')
-                    if tag_id is None:
-                        continue
-                    gps_by_tag_id.setdefault(tag_id, []).append(row)
-
-                for d in devices:
-                    setattr(d, '_prefetched_gps_vals', gps_by_tag_id.get(d.id, []))
-        except Exception:
-            # If window functions aren't supported by the DB backend, serializer will fallback to per-row queries.
-            pass
+        # This avoids N+1 queries inside DeviceTagSerializer2.get_deviceloc.
+        gps_by_tag_id = _latest_gps_fix_vals_by_tag([d.id for d in devices], per_tag=10)
+        for d in devices:
+            setattr(d, '_prefetched_gps_vals', gps_by_tag_id.get(d.id, []))
 
         serializer = DeviceTagSerializer2(devices, many=True)
         return Response(serializer.data)
@@ -13125,9 +13164,6 @@ def deviceStockFilter(request ):
     # Build the base query with only essential fields
     base_query = DeviceStock.objects.filter(**serializer.validated_data).exclude(stock_status=DEVICE_STOCK_DELETED_STATUS)
     
-    # Get total count
-    total_count = base_query.count()
-    
     # Apply is_tagged filter at database level if specified
     if is_tagged_filter is not None:
         is_tagged_bool = is_tagged_filter == 'True'
@@ -13135,7 +13171,9 @@ def deviceStockFilter(request ):
         base_query = base_query.annotate(
             is_tagged=Exists(tagged_subquery)
         ).filter(is_tagged=is_tagged_bool)
-        total_count = base_query.count()
+
+    # Get total count (once, after every filter is applied)
+    total_count = base_query.count()
     
     # Use values() to get only required data as dictionaries (much faster than model instances)
     device_data = base_query.select_related('model', 'dealer', 'created_by').values(
@@ -13163,9 +13201,17 @@ def deviceStockFilter(request ):
     esim_provider_map = {}
     if device_ids:
         from .serializers import eSimProviderSerializer
-        ds_with_providers = DeviceStock.objects.filter(id__in=device_ids).prefetch_related('esim_provider')
+        ds_with_providers = DeviceStock.objects.filter(id__in=device_ids).prefetch_related(
+            'esim_provider__state',
+            'esim_provider__users__groups', 'esim_provider__users__user_permissions',
+        )
+        # One shared context, so UserSerializer's created-by-name lookups are
+        # reused across the page instead of repeated per device.
+        provider_context = {}
         for ds in ds_with_providers:
-            esim_provider_map[ds.id] = eSimProviderSerializer(ds.esim_provider.all(), many=True).data
+            esim_provider_map[ds.id] = eSimProviderSerializer(
+                ds.esim_provider.all(), many=True, context=provider_context
+            ).data
 
     # Fetch latest device tag info for each device in this page
     device_tag_map = {}
@@ -13993,7 +14039,12 @@ def list_devicemodel(request ):
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    device_models = DeviceModel.objects.all()
+    # Load everything DeviceModelSerializer_disp embeds per row in bulk.
+    device_models = DeviceModel.objects.select_related('created_by').prefetch_related(
+        'created_by__groups', 'created_by__user_permissions',
+        'eSimProviders__state',
+        'eSimProviders__users__groups', 'eSimProviders__users__user_permissions',
+    )
     is_manufacturer = get_user_object(request.user, "devicemanufacture") is not None
     serializer = DeviceModelSerializer_disp(device_models, many=True, context={'show_mqtt_pw': is_manufacturer})
     return Response(serializer.data)
@@ -15363,6 +15414,154 @@ def vehicle_alert_statistics(request):
         return Response({'error': 'Unable to process request.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
+# Relations DeviceTagSerializer2 walks for every tag it renders (device ->
+# dealer -> manufacturer -> esim_provider -> users -> groups/permissions, plus
+# vehicle_owner.users and dealer.districts). Any view that serializes tags
+# with it must load these in bulk, or each hop is re-queried per row.
+_DEVICE_TAG_DETAIL_SELECT = (
+    'device', 'device__model', 'device__dealer',
+    'device__dealer__manufacturer', 'device__dealer__manufacturer__state',
+    'device__created_by',
+    'vehicle_owner', 'district', 'district__state', 'category', 'category_code',
+)
+_DEVICE_TAG_DETAIL_PREFETCH = (
+    'drivers',
+    'device__created_by__groups', 'device__created_by__user_permissions',
+    'device__model__eSimProviders',
+    'device__esim_provider', 'device__esim_provider__users',
+    'device__esim_provider__users__groups', 'device__esim_provider__users__user_permissions',
+    'device__esim_provider__state',
+    'device__dealer__users', 'device__dealer__users__groups', 'device__dealer__users__user_permissions',
+    'device__dealer__districts', 'device__dealer__districts__state',
+    'device__dealer__manufacturer__users',
+    'device__dealer__manufacturer__users__groups', 'device__dealer__manufacturer__users__user_permissions',
+    'device__dealer__manufacturer__esim_provider',
+    'device__dealer__manufacturer__esim_provider__users',
+    'device__dealer__manufacturer__esim_provider__users__groups',
+    'device__dealer__manufacturer__esim_provider__users__user_permissions',
+    'device__dealer__manufacturer__esim_provider__state',
+    'vehicle_owner__users', 'vehicle_owner__users__groups', 'vehicle_owner__users__user_permissions',
+)
+
+
+def _device_tag_detail_paths(paths, prefix=''):
+    """The relation paths above, optionally reached through `prefix` (e.g. 'deviceTag__')."""
+    return [f'{prefix}{path}' for path in paths]
+
+
+# Relations EM_exSerializer / EM_adminSerializer walk for each person.
+_EM_PERSON_PREFETCH = (
+    'state',
+    'users__groups', 'users__user_permissions',
+    'createdby__groups', 'createdby__user_permissions',
+)
+
+
+def _em_person_paths(prefix):
+    return [f'{prefix}{path}' for path in _EM_PERSON_PREFETCH]
+
+
+def _load_em_call_for_serialization(call_id):
+    """
+    One EMCall with everything EMCallSerializer embeds (team, team members,
+    the tagged device and its whole DeviceTagSerializer2 chain) loaded in
+    bulk. Share the returned instance between all rows of that call that are
+    serialized together, so the call is not re-queried for each of them.
+    """
+    call = (
+        EMCall.objects
+        .select_related('team', 'device', *_device_tag_detail_paths(_DEVICE_TAG_DETAIL_SELECT, prefix='device__'))
+        .prefetch_related(
+            'team__state',
+            *_em_person_paths('team__teamlead__'),
+            *_em_person_paths('team__members__'),
+            *_em_person_paths('team__created_by__'),
+            *_device_tag_detail_paths(_DEVICE_TAG_DETAIL_PREFETCH, prefix='device__'),
+        )
+        .get(id=call_id)
+    )
+    if call.device_id:
+        gps_by_tag_id = _latest_gps_fix_vals_by_tag([call.device_id], per_tag=10, newest_by='id')
+        call.device._prefetched_gps_vals = gps_by_tag_id.get(call.device_id, [])
+    return call
+
+
+_LATEST_GPS_FIX_COLUMNS = (
+    'id', 'date', 'time', 'latitude', 'latitude_dir', 'longitude',
+    'longitude_dir', 'altitude', 'speed', 'network_operator', 'device_tag_id',
+)
+
+
+def _latest_gps_fix_vals_by_tag(device_tag_ids, per_tag=10, newest_by='entry_time'):
+    """
+    {device_tag_id: [newest-first dicts of its latest `per_tag` valid-fix GPS rows]}.
+
+    A LATERAL top-N per tag reads only `per_tag` index entries for each tag.
+    Ranking with ROW_NUMBER() over the tags' rows instead has to read each
+    tag's entire GPS history before it can keep the newest few.
+
+    newest_by='id' gives the same rows and order as DeviceTagSerializer2's own
+    per-tag fallback query (order_by('-id')), for views that relied on it.
+    """
+    device_tag_ids = [int(tag_id) for tag_id in device_tag_ids]
+    gps_by_tag_id = {}
+    if not device_tag_ids:
+        return gps_by_tag_id
+
+    columns = ', '.join(f'g."{column}"' for column in _LATEST_GPS_FIX_COLUMNS)
+    sql = f"""
+        SELECT {columns}
+        FROM unnest(%s::bigint[]) AS tag(id)
+        CROSS JOIN LATERAL (
+            SELECT *
+            FROM skytron_api_gpsdata
+            WHERE device_tag_id = tag.id AND gps_status = '1'
+            ORDER BY {'id DESC' if newest_by == 'id' else 'entry_time DESC, id DESC'}
+            LIMIT %s
+        ) g
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(sql, [device_tag_ids, int(per_tag)])
+        for row in cursor.fetchall():
+            values = dict(zip(_LATEST_GPS_FIX_COLUMNS, row))
+            gps_by_tag_id.setdefault(values['device_tag_id'], []).append(values)
+    return gps_by_tag_id
+
+
+def _count_tags_with_gps_since(device_tags, since):
+    """
+    Number of DeviceTags in `device_tags` that sent GPS data on/after `since`.
+
+    One (device_tag, entry_time) index probe per tag, so the cost depends on
+    the number of tags, not on how many packets they sent in the window.
+    Counting DISTINCT device_tag over GPSData instead has to read every packet
+    in the window (thousands per device per day).
+    """
+    recent_gps = GPSData.objects.filter(device_tag_id=OuterRef('pk'), entry_time__gte=since)
+    return device_tags.filter(Exists(recent_gps)).count()
+
+
+def _alert_period_counts(alerts, groups, month_start, today):
+    """
+    For each named alert group (name -> Q), the (total, since month_start, on
+    `today`) counts over the `alerts` queryset, all in one query instead of
+    three queries per group.
+
+    Counts the (never null) timestamp column, which every alert index carries,
+    so Postgres can answer from the index without reading the table.
+    """
+    aggregates = {}
+    for name, condition in groups.items():
+        aggregates[f'{name}__total'] = Count('timestamp', filter=condition)
+        aggregates[f'{name}__month'] = Count('timestamp', filter=condition & Q(timestamp__gte=month_start))
+        aggregates[f'{name}__today'] = Count('timestamp', filter=condition & Q(timestamp__date=today))
+    counts = alerts.aggregate(**aggregates)
+    return {
+        name: (counts[f'{name}__total'], counts[f'{name}__month'], counts[f'{name}__today'])
+        for name in groups
+    }
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
@@ -15398,14 +15597,6 @@ def homepage(request ):
             except ValueError:
                 return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, status=400)
 
-        total_alerts = AlertsLog.objects.filter(status="in").count()
-        total_alerts_month = AlertsLog.objects.filter(status="in", timestamp__gte=current_month_start).count()
-        total_alerts_today = AlertsLog.objects.filter(status="in", timestamp__date=current_date).count()
-
-        speed_alerts = AlertsLog.objects.filter(type='OverSpeed', status="in").count()
-        speed_alerts_month = AlertsLog.objects.filter(type='OverSpeed', status="in", timestamp__gte=current_month_start).count()
-        speed_alerts_today = AlertsLog.objects.filter(type='OverSpeed', status="in", timestamp__date=current_date).count()
-
         # Emergency alerts (AlertsLog `type` choices use 'Em' and related variants; exclude 'EmTemp')
         emergency_types = [
             'Em',
@@ -15417,30 +15608,22 @@ def homepage(request ):
             'EmMonitorTripDeviated',
             'Incident',
         ]
-        emergency_alerts = AlertsLog.objects.filter(type__in=emergency_types, status="in").count()
-        emergency_alerts_month = AlertsLog.objects.filter(
-            type__in=emergency_types,
-            status="in",
-            timestamp__gte=current_month_start
-        ).count()
-        emergency_alerts_today = AlertsLog.objects.filter(
-            type__in=emergency_types,
-            status="in",
-            timestamp__date=current_date
-        ).count()
-
-        # Temperature alerts (BoxTemp + EmTemp)
-        temperature_alerts = AlertsLog.objects.filter(type__in=['BoxTemp', 'EmTemp'], status="in").count()
-        temperature_alerts_month = AlertsLog.objects.filter(
-            type__in=['BoxTemp', 'EmTemp'],
-            status="in",
-            timestamp__gte=current_month_start
-        ).count()
-        temperature_alerts_today = AlertsLog.objects.filter(
-            type__in=['BoxTemp', 'EmTemp'],
-            status="in",
-            timestamp__date=current_date
-        ).count()
+        alert_counts = _alert_period_counts(
+            AlertsLog.objects.filter(status="in"),
+            {
+                'total': Q(),
+                'speed': Q(type='OverSpeed'),
+                'emergency': Q(type__in=emergency_types),
+                # Temperature alerts (BoxTemp + EmTemp)
+                'temperature': Q(type__in=['BoxTemp', 'EmTemp']),
+            },
+            current_month_start,
+            current_date,
+        )
+        total_alerts, total_alerts_month, total_alerts_today = alert_counts['total']
+        speed_alerts, speed_alerts_month, speed_alerts_today = alert_counts['speed']
+        emergency_alerts, emergency_alerts_month, emergency_alerts_today = alert_counts['emergency']
+        temperature_alerts, temperature_alerts_month, temperature_alerts_today = alert_counts['temperature']
 
         # Device online/offline (15-min window)
         # TotalDevice = total tagged devices (i.e., any tag-device except untagged/deleted)
@@ -15454,10 +15637,7 @@ def homepage(request ):
         
 
         online_threshold = timezone.now() - timedelta(minutes=15)
-        total_online_devices = GPSData.objects.filter(
-            device_tag_id__in=tagged_device_ids,
-            entry_time__gte=online_threshold
-        ).values('device_tag_id').distinct().count()
+        total_online_devices = _count_tags_with_gps_since(tagged_devices_qs, online_threshold)
         total_offline_devices = max(0, total_tagged_devices - total_online_devices)
 
         # Active user counters (role-based + SOS teamlead/desk-executive breakdowns)
@@ -16009,40 +16189,23 @@ def homepage_DTO(request ):
             
             activated_devices = devices_in_state.filter(status="Device_Active")
             
-            for device in devices_in_state:
-                latest_gps = GPSData.objects.filter(device_tag=device).order_by('-entry_time').first()
-                if latest_gps:
-                    # Check if device is online (data received within last 30 minutes)
-                    if latest_gps.entry_time >= now - timedelta(minutes=30):
-                        online_devices += 1
-                    
-                    # Check offline periods
-                    if latest_gps.entry_time < today_start:
-                        offline_today += 1
-                    if latest_gps.entry_time < week_ago:
-                        offline_7day += 1
-                    if latest_gps.entry_time < now - timedelta(days=30):
-                        offline_30day += 1
-                else:
-                    # No GPS data means offline for all periods
-                    offline_today += 1
-                    offline_7day += 1
-                    offline_30day += 1
+            # Online = data received within the last 30 minutes. Offline for a
+            # period = no data since its start (which includes devices that
+            # never sent any). Counted in the database, not device by device.
+            online_devices = _count_tags_with_gps_since(devices_in_state, now - timedelta(minutes=30))
+            offline_today = total_vehicles - _count_tags_with_gps_since(devices_in_state, today_start)
+            offline_7day = total_vehicles - _count_tags_with_gps_since(devices_in_state, week_ago)
+            offline_30day = total_vehicles - _count_tags_with_gps_since(devices_in_state, now - timedelta(days=30))
             
             # Calculate alert statistics for the jurisdiction
-            total_alerts = AlertsLog.objects.filter(
-                deviceTag__in=devices_in_state
-            ).count()
-            
-            alerts_month = AlertsLog.objects.filter(
-                deviceTag__in=devices_in_state,
-                timestamp__gte=month_start
-            ).count()
-            
-            alerts_today = AlertsLog.objects.filter(
-                deviceTag__in=devices_in_state,
-                timestamp__gte=today_start
-            ).count()
+            alert_counts = AlertsLog.objects.filter(deviceTag__in=devices_in_state).aggregate(
+                total=Count('timestamp'),
+                month=Count('timestamp', filter=Q(timestamp__gte=month_start)),
+                today=Count('timestamp', filter=Q(timestamp__gte=today_start)),
+            )
+            total_alerts = alert_counts['total']
+            alerts_month = alert_counts['month']
+            alerts_today = alert_counts['today']
             
             # Calculate activation statistics (device tagging/activation)
             total_activations = devices_in_state.filter(
@@ -16189,26 +16352,13 @@ def homepage_VehicleOwner(request ):
             stopped_count = idle_count
 
             # Keep existing "online" semantics for this endpoint (last 30 minutes)
-            online_count = GPSData.objects.filter(
-                device_tag__in=activated_devices,
-                entry_time__gte=now - timedelta(minutes=30)
-            ).values('device_tag').distinct().count()
+            online_count = _count_tags_with_gps_since(activated_devices, now - timedelta(minutes=30))
             
             # Calculate offline devices for different periods
-            offline_today = activated_devices.count() - GPSData.objects.filter(
-                device_tag__in=activated_devices,
-                entry_time__gte=today_start
-            ).values('device_tag').distinct().count()
-            
-            offline_7day = activated_devices.count() - GPSData.objects.filter(
-                device_tag__in=activated_devices,
-                entry_time__gte=week_ago
-            ).values('device_tag').distinct().count()
-            
-            offline_30day = activated_devices.count() - GPSData.objects.filter(
-                device_tag__in=activated_devices,
-                entry_time__gte=now - timedelta(days=30)
-            ).values('device_tag').distinct().count()
+            activated_count = activated_devices.count()
+            offline_today = activated_count - _count_tags_with_gps_since(activated_devices, today_start)
+            offline_7day = activated_count - _count_tags_with_gps_since(activated_devices, week_ago)
+            offline_30day = activated_count - _count_tags_with_gps_since(activated_devices, now - timedelta(days=30))
             
             # Calculate total travel distance from odometer (single query via
             # subquery instead of one GPSData query per device, which timed
@@ -16221,31 +16371,21 @@ def homepage_VehicleOwner(request ):
             ).aggregate(total=Sum('latest_odometer'))['total'] or 0
             
             # Calculate alert statistics
-            total_alerts = AlertsLog.objects.filter(deviceTag__in=owned_devices).count()
-            alerts_month = AlertsLog.objects.filter(
-                deviceTag__in=owned_devices,
-                timestamp__gte=month_start
-            ).count()
-            alerts_today = AlertsLog.objects.filter(
-                deviceTag__in=owned_devices,
-                timestamp__gte=today_start
-            ).count()
-            
-            # Calculate specific alert types
-            harsh_braking = AlertsLog.objects.filter(
-                deviceTag__in=owned_devices,
-                type='HarshBreak'
-            ).count()
-            
-            harsh_turn = AlertsLog.objects.filter(
-                deviceTag__in=owned_devices,
-                type='HarshTurn'
-            ).count()
-            
-            overspeeding = AlertsLog.objects.filter(
-                deviceTag__in=owned_devices,
-                type='OverSpeed'
-            ).count()
+            # Totals and the specific alert types in one query.
+            alert_counts = AlertsLog.objects.filter(deviceTag__in=owned_devices).aggregate(
+                total=Count('timestamp'),
+                month=Count('timestamp', filter=Q(timestamp__gte=month_start)),
+                today=Count('timestamp', filter=Q(timestamp__gte=today_start)),
+                harsh_braking=Count('timestamp', filter=Q(type='HarshBreak')),
+                harsh_turn=Count('timestamp', filter=Q(type='HarshTurn')),
+                overspeeding=Count('timestamp', filter=Q(type='OverSpeed')),
+            )
+            total_alerts = alert_counts['total']
+            alerts_month = alert_counts['month']
+            alerts_today = alert_counts['today']
+            harsh_braking = alert_counts['harsh_braking']
+            harsh_turn = alert_counts['harsh_turn']
+            overspeeding = alert_counts['overspeeding']
             
             # Calculate SOS calls
             total_sos = EMCall.objects.filter(device__in=owned_devices).count()
@@ -16259,9 +16399,22 @@ def homepage_VehicleOwner(request ):
             ).count()
             
             # Get recent alerts for alert list
-            recent_alerts = AlertsLog.objects.filter(
-                deviceTag__in=owned_devices
-            ).select_related('gps_ref', 'deviceTag').order_by('-timestamp')[:10]
+            # Pick the 10 newest from the (deviceTag, type, timestamp) index
+            # alone, then load just those rows. Sorting the full rows directly
+            # reads every alert the owner's vehicles have ever raised.
+            newest_alert_keys = list(
+                AlertsLog.objects.filter(deviceTag__in=owned_devices)
+                .order_by('-timestamp')
+                .values_list('deviceTag_id', 'timestamp')[:10]
+            )
+            recent_alerts = []
+            if newest_alert_keys:
+                newest_alert_filter = Q()
+                for device_tag_id, alert_time in newest_alert_keys:
+                    newest_alert_filter |= Q(deviceTag_id=device_tag_id, timestamp=alert_time)
+                recent_alerts = AlertsLog.objects.filter(newest_alert_filter).select_related(
+                    'gps_ref', 'deviceTag'
+                ).order_by('-timestamp')[:10]
             
             alert_list = []
             for alert in recent_alerts:
@@ -16558,26 +16711,14 @@ def homepage_Dealer(request ):
 
             # Online = unique tags with GPS data in last 15 minutes
             online_threshold = now - timedelta(minutes=15)
-            online_now = GPSData.objects.filter(
-                device_tag_id__in=tagged_device_ids,
-                entry_time__gte=online_threshold
-            ).values('device_tag_id').distinct().count()
+            online_now = _count_tags_with_gps_since(tagged_devices_qs, online_threshold)
 
             # Online today = unique tags with GPS data since start of day
-            online_today = GPSData.objects.filter(
-                device_tag_id__in=tagged_device_ids,
-                entry_time__gte=today_start
-            ).values('device_tag_id').distinct().count()
+            online_today = _count_tags_with_gps_since(tagged_devices_qs, today_start)
 
             # Offline N days = tagged devices with no GPS data in last N days
-            gps_seen_7days = GPSData.objects.filter(
-                device_tag_id__in=tagged_device_ids,
-                entry_time__gte=now - timedelta(days=7)
-            ).values('device_tag_id').distinct().count()
-            gps_seen_30days = GPSData.objects.filter(
-                device_tag_id__in=tagged_device_ids,
-                entry_time__gte=now - timedelta(days=30)
-            ).values('device_tag_id').distinct().count()
+            gps_seen_7days = _count_tags_with_gps_since(tagged_devices_qs, now - timedelta(days=7))
+            gps_seen_30days = _count_tags_with_gps_since(tagged_devices_qs, now - timedelta(days=30))
 
             offline_7days = max(0, total_tagged_devices - gps_seen_7days)
             offline_30days = max(0, total_tagged_devices - gps_seen_30days)
@@ -17552,20 +17693,11 @@ def homepage_stateAdmin(request ):
             total_tagged_devices = tagged_devices_qs.count()
 
             online_threshold = timezone.now() - timedelta(minutes=15)
-            total_online_devices = GPSData.objects.filter(
-                device_tag_id__in=tagged_device_ids,
-                entry_time__gte=online_threshold
-            ).values('device_tag_id').distinct().count()
+            total_online_devices = _count_tags_with_gps_since(tagged_devices_qs, online_threshold)
             total_offline_devices = max(0, total_tagged_devices - total_online_devices)
 
-            gps_seen_7days = GPSData.objects.filter(
-                device_tag_id__in=tagged_device_ids,
-                entry_time__gte=now - timedelta(days=7)
-            ).values('device_tag_id').distinct().count()
-            gps_seen_30days = GPSData.objects.filter(
-                device_tag_id__in=tagged_device_ids,
-                entry_time__gte=now - timedelta(days=30)
-            ).values('device_tag_id').distinct().count()
+            gps_seen_7days = _count_tags_with_gps_since(tagged_devices_qs, now - timedelta(days=7))
+            gps_seen_30days = _count_tags_with_gps_since(tagged_devices_qs, now - timedelta(days=30))
             offline_since_7_days = max(0, total_tagged_devices - gps_seen_7days)
             offline_since_30_days = max(0, total_tagged_devices - gps_seen_30days)
 
@@ -17602,25 +17734,6 @@ def homepage_stateAdmin(request ):
                 users__is_active=True
             ).values('users').distinct().count()
 
-            # Sudden-turn alerts from AlertsLog (HarshTurn)
-            sudden_turn_total = AlertsLog.objects.filter(
-                deviceTag__device__dealer__manufacturer__state=state_filter,
-                type='HarshTurn',
-                status='in'
-            ).count()
-            sudden_turn_month = AlertsLog.objects.filter(
-                deviceTag__device__dealer__manufacturer__state=state_filter,
-                type='HarshTurn',
-                status='in',
-                timestamp__gte=current_month_start
-            ).count()
-            sudden_turn_today = AlertsLog.objects.filter(
-                deviceTag__device__dealer__manufacturer__state=state_filter,
-                type='HarshTurn',
-                status='in',
-                timestamp__date=today
-            ).count()
-
             emergency_types = [
                 'Em',
                 'EmPublicApp',
@@ -17631,6 +17744,24 @@ def homepage_stateAdmin(request ):
                 'EmMonitorTripDeviated',
                 'Incident',
             ]
+
+            # All per-type alert counters for the state in one query.
+            state_alert_counts = _alert_period_counts(
+                AlertsLog.objects.filter(
+                    deviceTag__device__dealer__manufacturer__state=state_filter,
+                    status='in',
+                ),
+                {
+                    'sudden_turn': Q(type='HarshTurn'),
+                    'overspeed': Q(type='OverSpeed'),
+                    'emergency': Q(type__in=emergency_types),
+                    'harsh_brake': Q(type='HarshBreak'),
+                },
+                current_month_start,
+                today,
+            )
+            # Sudden-turn alerts from AlertsLog (HarshTurn)
+            sudden_turn_total, sudden_turn_month, sudden_turn_today = state_alert_counts['sudden_turn']
 
             count_dict = {
                 # User counts filtered by state
@@ -17668,65 +17799,23 @@ def homepage_stateAdmin(request ):
                 ).count(),
                 
                 # Alert counts (from AlertsLog)
-                'Total_overspeeding_Alert': AlertsLog.objects.filter(
-                    deviceTag__device__dealer__manufacturer__state=state_filter,
-                    type='OverSpeed',
-                    status='in'
-                ).count(),
-                'Monthly_overspeeding_Alert': AlertsLog.objects.filter(
-                    deviceTag__device__dealer__manufacturer__state=state_filter,
-                    type='OverSpeed',
-                    status='in',
-                    timestamp__gte=current_month_start
-                ).count(),
-                'Today_overspeeding_Alert': AlertsLog.objects.filter(
-                    deviceTag__device__dealer__manufacturer__state=state_filter,
-                    type='OverSpeed',
-                    status='in',
-                    timestamp__date=today
-                ).count(),
+                'Total_overspeeding_Alert': state_alert_counts['overspeed'][0],
+                'Monthly_overspeeding_Alert': state_alert_counts['overspeed'][1],
+                'Today_overspeeding_Alert': state_alert_counts['overspeed'][2],
                 
                 # Emergency alerts
-                'Total_emergency_Alert': AlertsLog.objects.filter(
-                    deviceTag__device__dealer__manufacturer__state=state_filter,
-                    type__in=emergency_types,
-                    status='in'
-                ).count(),
-                'This_month_emergency_Alert': AlertsLog.objects.filter(
-                    deviceTag__device__dealer__manufacturer__state=state_filter,
-                    type__in=emergency_types,
-                    status='in',
-                    timestamp__gte=current_month_start
-                ).count(),
-                'Today_emergency_Alert': AlertsLog.objects.filter(
-                    deviceTag__device__dealer__manufacturer__state=state_filter,
-                    type__in=emergency_types,
-                    status='in',
-                    timestamp__date=today
-                ).count(),
+                'Total_emergency_Alert': state_alert_counts['emergency'][0],
+                'This_month_emergency_Alert': state_alert_counts['emergency'][1],
+                'Today_emergency_Alert': state_alert_counts['emergency'][2],
 
                 'Total_sudden_turn_Alert': sudden_turn_total,
                 'This_month_sudden_turn_Alert': sudden_turn_month,
                 'Today_sudden_turn_Alert': sudden_turn_today,
                 
                 # Harsh brake alerts
-                'Total_harsh_brake_Alert': AlertsLog.objects.filter(
-                    deviceTag__device__dealer__manufacturer__state=state_filter,
-                    type='HarshBreak',
-                    status='in'
-                ).count(),
-                'This_month_harsh_brake_Alert': AlertsLog.objects.filter(
-                    deviceTag__device__dealer__manufacturer__state=state_filter,
-                    type='HarshBreak',
-                    status='in',
-                    timestamp__gte=current_month_start
-                ).count(),
-                'Today_harsh_brake_Alert': AlertsLog.objects.filter(
-                    deviceTag__device__dealer__manufacturer__state=state_filter,
-                    type='HarshBreak',
-                    status='in',
-                    timestamp__date=today
-                ).count(),
+                'Total_harsh_brake_Alert': state_alert_counts['harsh_brake'][0],
+                'This_month_harsh_brake_Alert': state_alert_counts['harsh_brake'][1],
+                'Today_harsh_brake_Alert': state_alert_counts['harsh_brake'][2],
 
                 # Device stock counts filtered by state
                 'Total_device_stock': device_stock_in_state.count(),
@@ -18319,6 +18408,40 @@ def create_device_model_technical_onboarding_request(request):
     return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
+def _serialize_technical_onboarding_requests(onboarding_requests):
+    """
+    Serialize a DeviceModelTechnicalOnboardingRequest queryset for the list
+    APIs with a fixed number of queries, whatever the number of requests.
+    """
+    onboarding_requests = list(
+        onboarding_requests.select_related(
+            'manufacturer__state',
+            'device_model__created_by'
+        ).prefetch_related(
+            'demo_devices',
+            'manufacturer__users__groups',
+            'manufacturer__users__user_permissions',
+            'manufacturer__esim_provider__state',
+            'manufacturer__esim_provider__users__groups',
+            'manufacturer__esim_provider__users__user_permissions',
+            'device_model__eSimProviders__state',
+            'device_model__eSimProviders__users__groups',
+            'device_model__eSimProviders__users__user_permissions',
+            'device_model__created_by__groups',
+            'device_model__created_by__user_permissions',
+        ).order_by('-request_datetime', '-id')
+    )
+    demo_device_ids = [
+        demo_device.id
+        for onboarding_request in onboarding_requests
+        for demo_device in onboarding_request.demo_devices.all()
+    ]
+    context = {'_checkpoint_status_cache': build_checkpoint_status_map(demo_device_ids)}
+    return DeviceModelTechnicalOnboardingRequestDetailSerializer(
+        onboarding_requests, many=True, context=context
+    ).data
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
@@ -18332,18 +18455,8 @@ def superadmin_list_device_model_technical_onboarding_requests(request):
     if not get_user_object(request.user, 'superadmin'):
         return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    onboarding_requests = DeviceModelTechnicalOnboardingRequest.objects.select_related(
-        'manufacturer__state',
-        'device_model__created_by'
-    ).prefetch_related(
-        'demo_devices',
-        'manufacturer__users',
-        'manufacturer__esim_provider',
-        'device_model__eSimProviders'
-    ).order_by('-request_datetime', '-id')
-
-    serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_requests, many=True)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    onboarding_requests = DeviceModelTechnicalOnboardingRequest.objects.all()
+    return Response(_serialize_technical_onboarding_requests(onboarding_requests), status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
@@ -18469,18 +18582,7 @@ def manufacturer_list_own_device_model_technical_onboarding_requests(request):
     onboarding_requests = DeviceModelTechnicalOnboardingRequest.objects.all()
     if manufacturer:
         onboarding_requests = onboarding_requests.filter(manufacturer=manufacturer)
-    onboarding_requests = onboarding_requests.select_related(
-        'manufacturer__state',
-        'device_model__created_by'
-    ).prefetch_related(
-        'demo_devices',
-        'manufacturer__users',
-        'manufacturer__esim_provider',
-        'device_model__eSimProviders'
-    ).order_by('-request_datetime', '-id')
-
-    serializer = DeviceModelTechnicalOnboardingRequestDetailSerializer(onboarding_requests, many=True)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(_serialize_technical_onboarding_requests(onboarding_requests), status=status.HTTP_200_OK)
    
 
 @api_view(['POST'])
@@ -20155,10 +20257,8 @@ def user_login(request ):
                 user.last_activity =  timenow
                 user.login=True
                 user.save()
-                uu=get_user_object(user,user.role)
-                if uu:
-                    uu = recursive_model_to_dict(uu,["users","esim_provider"])
-                #return Response({'status':'Login Successful','token': token,'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
+                # The role profile ("info") is only returned after OTP
+                # validation, so it is not loaded here.
             
   
                 #return Response({'status':'Login Successful','token': str(token),'user':UserSerializer2(user).data,"info":uu}, status=status.HTTP_200_OK)
@@ -20170,21 +20270,31 @@ def user_login(request ):
 
             text="Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp)
             tpid="1007536593942813283"
+
+            # The SMS gateway and the mail server are both slow network calls.
+            # Send the email in a thread while the SMS goes out, so login waits
+            # for the slower of the two instead of one after the other. Both
+            # outcomes are still reported below.
+            email_failure = []
+
+            def _send_login_otp_email():
+                try:
+                    send_mail(
+                        'Login OTP',
+                        text,
+                        'noreply@skytron.in',
+                        [user.email],
+                        fail_silently=False,
+                    )
+                except Exception as mail_exc:
+                    email_failure.append(str(mail_exc))
+
+            email_thread = threading.Thread(target=_send_login_otp_email, daemon=True)
+            email_thread.start()
             sms_ok, sms_err = send_SMS(user.mobile, text, tpid)
-            email_ok = True
-            email_err = None
-            try:
-                send_mail(
-                    'Login OTP',
-                    "Dear user, your Login OTP for SkyTron portal is {}. DO NOT disclose it to anyone. Warm Regards, SkyTron.".format(otp),
-                    'noreply@skytron.in',
-                    [user.email],
-                    fail_silently=False,
-                )
-            except Exception as mail_exc:
-                email_ok = False
-                email_err = str(mail_exc)
-                #print("Loginotpsend Mail Error:", mail_exc)
+            email_thread.join()
+            email_ok = not email_failure
+            email_err = email_failure[0] if email_failure else None
             delivery_info = {}
             if not sms_ok:
                 delivery_info['sms_status'] = 'failed'
@@ -24979,6 +25089,18 @@ def rbac_update_role_permissions(request):
     updated = []
     errors = []
 
+    # The role's rows are read once and written back in two statements. A
+    # per-module update_or_create costs several round trips (and a cache
+    # eviction) for each of the ~100 modules in a typical payload.
+    configs = {cfg.module: cfg for cfg in RolePermissionConfig.objects.filter(role=role)}
+    to_create = {}
+    to_update = {}
+    now = timezone.now()
+    permission_fields = [
+        'can_view', 'can_create', 'can_update', 'can_delete',
+        'can_filter', 'show_in_menu', 'data_scope', 'updated_by',
+    ]
+
     for item in permissions:
         module = (item.get('module') or '').strip()
         if module not in valid_modules:
@@ -24989,22 +25111,31 @@ def rbac_update_role_permissions(request):
             errors.append(f"Unknown data_scope '{data_scope}' for module '{module}'")
             continue
 
-        cfg, _ = RolePermissionConfig.objects.update_or_create(
-            role=role,
-            module=module,
-            defaults={
-                'can_view':     bool(item.get('can_view', False)),
-                'can_create':   bool(item.get('can_create', False)),
-                'can_update':   bool(item.get('can_update', False)),
-                'can_delete':   bool(item.get('can_delete', False)),
-                'can_filter':   bool(item.get('can_filter', False)),
-                'show_in_menu': bool(item.get('show_in_menu', False)),
-                'data_scope':   data_scope,
-                'updated_by':   request.user,
-            },
-        )
+        cfg = configs.get(module)
+        if cfg is None:
+            cfg = configs[module] = to_create[module] = RolePermissionConfig(role=role, module=module)
+        elif module not in to_create:
+            to_update[module] = cfg
+        cfg.can_view = bool(item.get('can_view', False))
+        cfg.can_create = bool(item.get('can_create', False))
+        cfg.can_update = bool(item.get('can_update', False))
+        cfg.can_delete = bool(item.get('can_delete', False))
+        cfg.can_filter = bool(item.get('can_filter', False))
+        cfg.show_in_menu = bool(item.get('show_in_menu', False))
+        cfg.data_scope = data_scope
+        cfg.updated_by = request.user
+        cfg.updated_at = now  # bulk_update does not apply auto_now
         updated.append(module)
 
+    with transaction.atomic():
+        if to_create:
+            RolePermissionConfig.objects.bulk_create(list(to_create.values()))
+        if to_update:
+            RolePermissionConfig.objects.bulk_update(
+                list(to_update.values()), permission_fields + ['updated_at']
+            )
+
+    # Bulk writes send no post_save signal, so evict the role's cache here.
     _rbac.invalidate_role_cache(role_code)
 
     response = {'status': 'ok', 'updated_modules': updated}
@@ -26152,16 +26283,8 @@ def filter_alert_log(request):
         page          = request.data.get('page', 1)
         page_size     = request.data.get('page_size', 10)
 
-        # ── Base query with eager-loaded relations ───────────────────────────
-        query = AlertsLog.objects.select_related(
-            'gps_ref',
-            'deviceTag',
-            'deviceTag__device',
-            'deviceTag__device__model',
-            'deviceTag__district',
-            'deviceTag__vehicle_owner',
-            'state',
-        ).all()
+        # ── Base query (relations are loaded for the requested page only) ────
+        query = AlertsLog.objects.all()
 
         # ── Role-based scoping ───────────────────────────────────────────────
         user = request.user
@@ -26269,24 +26392,24 @@ def filter_alert_log(request):
 
                 lat1, lon1 = radians(lat_c), radians(lon_c)
                 within_radius = []
-                for alert in query.only('id', 'gps_ref_id').select_related('gps_ref'):
-                    if alert.gps_ref:
-                        lat2 = radians(float(alert.gps_ref.latitude))
-                        lon2 = radians(float(alert.gps_ref.longitude))
-                        dlat, dlon = lat2 - lat1, lon2 - lon1
-                        a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-                        if 6371 * 2 * asin(sqrt(a)) <= radius:
-                            within_radius.append(alert.id)
-                query = AlertsLog.objects.select_related(
-                    'gps_ref', 'deviceTag', 'deviceTag__device',
-                    'deviceTag__device__model', 'deviceTag__district',
-                    'deviceTag__vehicle_owner', 'state',
-                ).filter(id__in=within_radius)
+                candidates = query.filter(gps_ref__isnull=False).values_list(
+                    'id', 'gps_ref__latitude', 'gps_ref__longitude'
+                )
+                for alert_id, alert_lat, alert_lon in candidates.iterator():
+                    lat2 = radians(float(alert_lat))
+                    lon2 = radians(float(alert_lon))
+                    dlat, dlon = lat2 - lat1, lon2 - lon1
+                    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+                    if 6371 * 2 * asin(sqrt(a)) <= radius:
+                        within_radius.append(alert_id)
+                query = AlertsLog.objects.filter(id__in=within_radius)
             except (ValueError, TypeError):
                 return Response({'status': 'error', 'message': 'Invalid latitude, longitude, or radius format'}, status=status.HTTP_400_BAD_REQUEST)
 
         # ── Ordering + Pagination ────────────────────────────────────────────
-        query = query.order_by('-timestamp')
+        # Page through ids only, then load the full rows (and everything the
+        # serializer embeds per alert) for just that page in bulk.
+        query = query.order_by('-timestamp').values_list('id', flat=True)
 
         try:
             page = int(page)
@@ -26303,7 +26426,25 @@ def filter_alert_log(request):
         except Exception:
             alerts = paginator.page(1)
 
-        serializer = AlertsLogSerializer(alerts, many=True)
+        page_ids = list(alerts.object_list)
+        page_position = {alert_id: position for position, alert_id in enumerate(page_ids)}
+        page_alerts = sorted(
+            AlertsLog.objects.filter(id__in=page_ids)
+            .select_related(
+                'gps_ref', 'route_ref', 'state', 'deviceTag',
+                *_device_tag_detail_paths(_DEVICE_TAG_DETAIL_SELECT, prefix='deviceTag__'),
+            )
+            .prefetch_related(*_device_tag_detail_paths(_DEVICE_TAG_DETAIL_PREFETCH, prefix='deviceTag__')),
+            key=lambda alert: page_position[alert.id],
+        )
+        gps_by_tag_id = _latest_gps_fix_vals_by_tag(
+            {alert.deviceTag_id for alert in page_alerts if alert.deviceTag_id}, per_tag=10, newest_by='id'
+        )
+        for alert in page_alerts:
+            if alert.deviceTag_id:
+                alert.deviceTag._prefetched_gps_vals = gps_by_tag_id.get(alert.deviceTag_id, [])
+
+        serializer = AlertsLogSerializer(page_alerts, many=True)
 
         return Response({
             'status': 'success',
@@ -27160,81 +27301,72 @@ def gps_packet_dashboard(request):
         return HttpResponse(html)
 
 
+# A free-text search has to read log rows newest-first until it has found 200
+# matches, which is unbounded when the text is rare or the device has gone
+# silent. Cap it so one search can never hold a worker for minutes; the imei
+# and ip filters are index lookups and are not affected.
+RAW_LOG_SEARCH_TIMEOUT_MS = 20000
+
+
+def _raw_log_table_response(request, model):
+    # Superadmin only
+    if getattr(request.user, 'role', None) != 'superadmin':
+        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Filter data based on the search query
+    search_query = request.GET.get('search', '')
+    ip_query = (request.GET.get('ip') or '').strip()
+    imei_query = (request.GET.get('imei') or '').strip()
+    qs = model.objects.all()
+    if search_query:
+        qs = qs.filter(raw_data__contains=search_query)
+    if ip_query:
+        try:
+            qs = qs.filter(source_ip=str(ipaddress.ip_address(ip_query)))
+        except ValueError:
+            return Response({'error': 'ip must be a valid IPv4/IPv6 address.'}, status=status.HTTP_400_BAD_REQUEST)
+    if imei_query:
+        qs = qs.filter(imei=imei_query)
+    # Each row's fields include source_ip, imei and network_name.
+    qs = qs.order_by('-timestamp')[:200]
+    try:
+        with transaction.atomic():
+            if search_query:
+                with connection.cursor() as cursor:
+                    cursor.execute(f"SET LOCAL statement_timeout = {RAW_LOG_SEARCH_TIMEOUT_MS}")
+            data = list(qs)
+    except OperationalError:
+        return Response(
+            {'error': 'The search took too long. Narrow it with the imei or ip filter and try again.'},
+            status=status.HTTP_504_GATEWAY_TIMEOUT,
+        )
+    serialized_data = serialize('json', data)
+
+    return JsonResponse({
+        'data': serialized_data,
+        'search_query': search_query,
+        'ip': ip_query,
+        'imei': imei_query,
+    }, status=200)
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 @require_http_methods(['GET', 'POST'])
 def gps_data_log_table(request ): 
-    # Superadmin only
-    if getattr(request.user, 'role', None) != 'superadmin':
-        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    return _raw_log_table_response(request, GPSDataLog)
 
-    
-    # Filter data based on the search query
-    search_query = request.GET.get('search', '')
-    ip_query = (request.GET.get('ip') or '').strip()
-    imei_query = (request.GET.get('imei') or '').strip()
-    qs = GPSDataLog.objects.all()
-    if search_query:
-        qs = qs.filter(raw_data__contains=search_query)
-    if ip_query:
-        try:
-            qs = qs.filter(source_ip=str(ipaddress.ip_address(ip_query)))
-        except ValueError:
-            return Response({'error': 'ip must be a valid IPv4/IPv6 address.'}, status=status.HTTP_400_BAD_REQUEST)
-    if imei_query:
-        qs = qs.filter(imei=imei_query)
-    # Each row's fields include source_ip, imei and network_name.
-    data = qs.order_by('-timestamp')[:200]
-    serialized_data = serialize('json', data)
-    
-    return JsonResponse({
-        'data': serialized_data,
-        'search_query': search_query,
-        'ip': ip_query,
-        'imei': imei_query,
-    }, status=200)
-    
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 @require_http_methods(['GET', 'POST'])
 def gps_em_data_log_table(request ): 
-    # Superadmin only
-    if getattr(request.user, 'role', None) != 'superadmin':
-        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    return _raw_log_table_response(request, GPSemDataLog)
 
-    
-    # Filter data based on the search query
-    search_query = request.GET.get('search', '')
-    ip_query = (request.GET.get('ip') or '').strip()
-    imei_query = (request.GET.get('imei') or '').strip()
-    qs = GPSemDataLog.objects.all()
-    if search_query:
-        qs = qs.filter(raw_data__contains=search_query)
-    if ip_query:
-        try:
-            qs = qs.filter(source_ip=str(ipaddress.ip_address(ip_query)))
-        except ValueError:
-            return Response({'error': 'ip must be a valid IPv4/IPv6 address.'}, status=status.HTTP_400_BAD_REQUEST)
-    if imei_query:
-        qs = qs.filter(imei=imei_query)
-    # Each row's fields include source_ip, imei and network_name.
-    data = qs.order_by('-timestamp')[:200]
-    serialized_data = serialize('json', data)
-    
-    return JsonResponse({
-        'data': serialized_data,
-        'search_query': search_query,
-        'ip': ip_query,
-        'imei': imei_query,
-    }, status=200)
-     
-        
+
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -27667,6 +27799,7 @@ def list_logged_in_users(request):
 @permission_classes([AllowAny])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@cache_public_dashboard(PUBLIC_DASHBOARD_CACHE_SECONDS)
 def vehicle_monitoring_dashboard(request):
     """
     Central Dashboard API for vehicle monitoring with following data:
@@ -27742,39 +27875,15 @@ def vehicle_monitoring_dashboard(request):
         now = timezone.now()
         fifteen_mins_ago = now - timedelta(minutes=15)
         
-        device_tag_ids = list(device_tags_qs.values_list('id', flat=True))
-        
-        # Get latest GPS entry for each device
-        latest_gps_subquery = GPSData.objects.filter(
-            device_tag_id=OuterRef('id')
-        ).order_by('-entry_time').values('entry_time')[:1]
-        
-        device_stats = device_tags_qs.annotate(
-            latest_gps_time=Subquery(latest_gps_subquery)
-        ).values('id', 'latest_gps_time')
-        
-        online_count = 0
-        offline_count = 0
-        
-        for device in device_stats:
-            if device['latest_gps_time']:
-                if device['latest_gps_time'] >= fifteen_mins_ago:
-                    online_count += 1
-                else:
-                    offline_count += 1
-            else:
-                offline_count += 1
+        # Online = at least one GPS entry in the window; everything else
+        # (older data, or none at all) is offline. Counted in the database
+        # instead of loading every tag and its latest GPS time into Python.
+        online_count = _count_tags_with_gps_since(device_tags_qs, fifteen_mins_ago)
+        offline_count = max(0, total_active_device_tags - online_count)
         
         # Get today's date at midnight
         today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
-        
-        # Get alerts for filtered devices
-        today_alerts = AlertsLog.objects.filter(
-            deviceTag__in=device_tag_ids,
-            timestamp__gte=today_start,
-            timestamp__lt=today_end
-        )
         
         # Emergency alert types
         emergency_types = [
@@ -27784,13 +27893,18 @@ def vehicle_monitoring_dashboard(request):
             'Incident'
         ]
         
-        emergency_alerts_count = today_alerts.filter(
-            type__in=emergency_types
-        ).count()
-        
-        other_alerts_count = today_alerts.exclude(
-            type__in=emergency_types
-        ).count()
+        # Get alerts for filtered devices (tags matched by subquery, not by
+        # sending every tag id to the database)
+        today_alert_counts = AlertsLog.objects.filter(
+            deviceTag__in=device_tags_qs,
+            timestamp__gte=today_start,
+            timestamp__lt=today_end
+        ).aggregate(
+            total=Count('timestamp'),
+            emergency=Count('timestamp', filter=Q(type__in=emergency_types)),
+        )
+        emergency_alerts_count = today_alert_counts['emergency']
+        other_alerts_count = today_alert_counts['total'] - emergency_alerts_count
         
         # Prepare response
         response_data = {
@@ -28349,6 +28463,7 @@ def get_latest_vehicle_locations(request):
 @permission_classes([AllowAny])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
+@cache_public_dashboard(PUBLIC_DASHBOARD_CACHE_SECONDS)
 def erss_dashboard_summary(request):
     """
     ERSS overview metrics:
@@ -28390,18 +28505,12 @@ def erss_dashboard_summary(request):
             except (ValueError, TypeError):
                 return Response({'error': 'Invalid vehicle_category_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
 
-        latest_gps = GPSData.objects.filter(device_tag_id=OuterRef('id')).order_by('-entry_time', '-id')
-        tagged_with_latest = device_tags_qs.annotate(
-            last_seen=Subquery(latest_gps.values('entry_time')[:1]),
-            last_speed=Subquery(latest_gps.values('speed')[:1]),
-        )
-
         now = timezone.now()
         gps_online_threshold = now - timedelta(minutes=15)
         exec_online_threshold = now - timedelta(minutes=5)
 
         total_tagged_devices = device_tags_qs.count()
-        online_devices = tagged_with_latest.filter(last_seen__gte=gps_online_threshold).count()
+        online_devices = _count_tags_with_gps_since(device_tags_qs, gps_online_threshold)
         offline_devices = total_tagged_devices - online_devices
 
         active_call_statuses = ['pending', 'desk_ex_assigned', 'broadcast_pending', 'field_ex_aproaching', 'field_ex_arrived']
@@ -43346,6 +43455,34 @@ def _reverse_geocode_state_iso(latitude, longitude):
     return iso_code, None
 
 
+def _raw_log_packets_for_imei(model, imei, since, limit):
+    """
+    Newest-first (raw_data, timestamp) rows of one device from a raw log
+    table (GPSDataLog / GPSemDataLog) since `since`, at most `limit`.
+
+    Same rows as filtering on raw_data containing the IMEI, but found through
+    the imei column's indexes: rows attributed to this IMEI, plus the few
+    rows with no IMEI recorded whose text mentions it. Matching the text over
+    the time window instead reads every packet from every device in it.
+
+    The two parts are separate UNION ALL branches so each gets its own index.
+    The text match in the second is written as a position test on purpose: a
+    LIKE there invites the planner to combine in the trigram index on
+    raw_data, which is far slower for an IMEI.
+    """
+    from django.db.models.functions import StrIndex
+
+    attributed = model.objects.filter(imei=imei, timestamp__gte=since).values_list('raw_data', 'timestamp')
+    unattributed = (
+        model.objects
+        .filter(imei__isnull=True, timestamp__gte=since)
+        .annotate(_imei_position=StrIndex('raw_data', V(imei)))
+        .filter(_imei_position__gt=0)
+        .values_list('raw_data', 'timestamp')
+    )
+    return attributed.union(unattributed, all=True).order_by('-timestamp')[:limit]
+
+
 def _run_pvt_prechecks(record):
     """
     Three checks on the device's latest normal PVT packet, run before the
@@ -43358,12 +43495,7 @@ def _run_pvt_prechecks(record):
     cutoff = now - timedelta(minutes=PVT_PRECHECK_WINDOW_MINUTES)
     reg_no = (record.vahan_reg_no or '').strip()
 
-    rows = (
-        GPSDataLog.objects
-        .filter(timestamp__gte=cutoff, raw_data__contains=record.imei)
-        .order_by('-timestamp')
-        .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
-    )
+    rows = _raw_log_packets_for_imei(GPSDataLog, record.imei, cutoff, GPS_PACKET_SCAN_LIMIT)
 
     latest = None
     for raw_data, received_at in rows.iterator():
@@ -43458,11 +43590,8 @@ def _run_packet_check(imei, reg_no):
     its DeviceStockMaster record) and the device-renewal flow, which has
     no DeviceStockMaster row to hang off.
 
-    Query strategy: the GPS log tables have no IMEI column and no index on
-    raw_data, so matching by IMEI alone would mean a full scan of tables
-    holding tens of millions of rows. Restricting to the freshness window
-    first bounds the work — which is why the threshold is not just a
-    validation rule.
+    Query strategy: the device's packets are found through the raw logs'
+    imei index (see _raw_log_packets_for_imei), bounded by the freshness window.
 
     Returns (precheck_error, precheck_details, results, all_received, missing, latitude, longitude).
     precheck_error is None when the PVT pre-checks passed; results/all_received/
@@ -43495,18 +43624,8 @@ def _run_packet_check(imei, reg_no):
         if TAGGING_PACKET_MATCHERS[pt][0] == 'gpsem'
     }
 
-    gps_qs = (
-        GPSDataLog.objects
-        .filter(timestamp__gte=cutoff, raw_data__contains=imei)
-        .order_by('-timestamp')
-        .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
-    )
-    gpsem_qs = (
-        GPSemDataLog.objects
-        .filter(timestamp__gte=cutoff, raw_data__contains=imei)
-        .order_by('-timestamp')
-        .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
-    )
+    gps_qs = _raw_log_packets_for_imei(GPSDataLog, imei, cutoff, GPS_PACKET_SCAN_LIMIT)
+    gpsem_qs = _raw_log_packets_for_imei(GPSemDataLog, imei, cutoff, GPS_PACKET_SCAN_LIMIT)
 
     found_by_type = {
         **_scan_for_packets(gps_qs, gps_types, reg_no),

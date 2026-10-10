@@ -2445,7 +2445,7 @@ class GPSDataLog(models.Model):
     objects = SafeCreateManager()
     timestamp = models.DateTimeField(auto_now_add=True)
     raw_data = models.TextField()
-    source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
+    source_ip = models.GenericIPAddressField(null=True, blank=True)
     # IMEI and network operator pulled from the packet itself (first parsable
     # $-segment); null when the packet is unparseable or has no such field.
     imei = models.CharField(max_length=20, null=True, blank=True)
@@ -2457,15 +2457,24 @@ class GPSDataLog(models.Model):
         indexes = [
             models.Index(fields=['source_ip', 'imei', 'timestamp'], name='gpsdatalog_ip_imei_ts_idx',
                          condition=models.Q(source_ip__isnull=False)),
-            models.Index(fields=['imei', 'source_ip', 'timestamp'], name='gpsdatalog_imei_ip_ts_idx',
+            # Newest-first lookups for one IMEI / one IP (log table filters and
+            # the device-ip APIs) without walking the whole timestamp index.
+            models.Index(fields=['imei', '-timestamp'], name='gpsdatalog_imei_ts_idx',
+                         condition=models.Q(imei__isnull=False)),
+            models.Index(fields=['source_ip', '-timestamp'], name='gpsdatalog_ip_ts_idx',
                          condition=models.Q(source_ip__isnull=False)),
+            # The few rows no IMEI could be read from (not device packets, or
+            # logged before the imei column existed), newest first, so a
+            # per-IMEI lookup can still cover them without a full scan.
+            models.Index(fields=['-timestamp'], name='gpsdatalog_noimei_ts_idx',
+                         condition=models.Q(imei__isnull=True)),
         ]
 
 class GPSemDataLog(models.Model):
     objects = SafeCreateManager()
     timestamp = models.DateTimeField(auto_now_add=True)
     raw_data = models.TextField()
-    source_ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
+    source_ip = models.GenericIPAddressField(null=True, blank=True)
     imei = models.CharField(max_length=20, null=True, blank=True)
     # EPB packets carry no operator field today, so this is usually null.
     network_name = models.CharField(max_length=30, null=True, blank=True)
@@ -2474,8 +2483,17 @@ class GPSemDataLog(models.Model):
         indexes = [
             models.Index(fields=['source_ip', 'imei', 'timestamp'], name='gpsemdatalog_ip_imei_ts_idx',
                          condition=models.Q(source_ip__isnull=False)),
-            models.Index(fields=['imei', 'source_ip', 'timestamp'], name='gpsemdatalog_imei_ip_ts_idx',
+            # Newest-first lookups for one IMEI / one IP (log table filters and
+            # the device-ip APIs) without walking the whole timestamp index.
+            models.Index(fields=['imei', '-timestamp'], name='gpsemdatalog_imei_ts_idx',
+                         condition=models.Q(imei__isnull=False)),
+            models.Index(fields=['source_ip', '-timestamp'], name='gpsemdatalog_ip_ts_idx',
                          condition=models.Q(source_ip__isnull=False)),
+            # The few rows no IMEI could be read from (not device packets, or
+            # logged before the imei column existed), newest first, so a
+            # per-IMEI lookup can still cover them without a full scan.
+            models.Index(fields=['-timestamp'], name='gpsemdatalog_noimei_ts_idx',
+                         condition=models.Q(imei__isnull=True)),
         ]
 
   
@@ -2542,6 +2560,10 @@ class AlertsLog(models.Model):
         app_label = 'skytron_api'
         indexes = [
             models.Index(fields=['deviceTag', 'type', '-timestamp'], name='alertslog_tag_type_ts_idx'),
+            # Dashboard counters (status + type + period) answered from the index alone.
+            models.Index(fields=['status', 'type', 'timestamp'], name='alertslog_status_type_ts_idx'),
+            # Newest-first alert listing/paging.
+            models.Index(fields=['-timestamp'], name='alertslog_ts_idx'),
         ]
 
 

@@ -178,7 +178,7 @@ def scan_live_count(transport):
     (never blocking KEYS) since this may run against a large keyspace."""
     conn = get_redis_connection("default")
     count = 0
-    for _ in conn.scan_iter(match=f"sk:conn:{transport}:*", count=200):
+    for _ in conn.scan_iter(match=f"sk:conn:{transport}:*", count=5000):
         count += 1
     return count
 

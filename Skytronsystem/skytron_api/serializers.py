@@ -1151,6 +1151,38 @@ class PointOfInterestSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+def build_checkpoint_status_map(demo_device_ids):
+    """
+    checkpoint_status dict for each demo device id, using one query for all
+    of them instead of one query per device.
+    """
+    demo_device_ids = list(demo_device_ids)
+    progress = {device_id: [None, None] for device_id in demo_device_ids}  # [last_completed, next_test]
+    if demo_device_ids:
+        executions = TechnicalOnboardingTestExecution.objects.filter(
+            demo_device_id__in=demo_device_ids, test_case__active=True
+        ).order_by('test_case__serial_no').values_list(
+            'demo_device_id', 'status', 'test_case__serial_no', 'test_case__name'
+        )
+        for device_id, execution_status, serial_no, name in executions:
+            entry = progress[device_id]
+            if execution_status == 'complete':
+                entry[0] = (serial_no, name)
+            elif entry[1] is None:
+                entry[1] = (serial_no, name, execution_status)
+
+    return {
+        device_id: {
+            'last_completed_test_no': last_completed[0] if last_completed else None,
+            'last_completed_test_name': last_completed[1] if last_completed else None,
+            'next_test_no': next_test[0] if next_test else None,
+            'next_test_name': next_test[1] if next_test else None,
+            'next_test_status': next_test[2] if next_test else None,
+        }
+        for device_id, (last_completed, next_test) in progress.items()
+    }
+
+
 class DeviceModelTechnicalOnboardingDemoDeviceSerializer(serializers.ModelSerializer):
     checkpoint_status = serializers.SerializerMethodField()
 
@@ -1179,27 +1211,13 @@ class DeviceModelTechnicalOnboardingDemoDeviceSerializer(serializers.ModelSerial
         ]
 
     def get_checkpoint_status(self, obj):
-        executions = list(
-            TechnicalOnboardingTestExecution.objects.filter(
-                demo_device=obj, test_case__active=True
-            ).select_related('test_case').order_by('test_case__serial_no')
-        )
-
-        last_completed = None
-        next_test = None
-        for execution in executions:
-            if execution.status == 'complete':
-                last_completed = execution
-            elif next_test is None:
-                next_test = execution
-
-        return {
-            'last_completed_test_no': last_completed.test_case.serial_no if last_completed else None,
-            'last_completed_test_name': last_completed.test_case.name if last_completed else None,
-            'next_test_no': next_test.test_case.serial_no if next_test else None,
-            'next_test_name': next_test.test_case.name if next_test else None,
-            'next_test_status': next_test.status if next_test else None,
-        }
+        # Shared per serialization pass: a demo device is rendered once per
+        # execution on the test board, and list views pre-fill this for every
+        # demo device with a single query (see build_checkpoint_status_map).
+        cache = self.context.setdefault('_checkpoint_status_cache', {})
+        if obj.pk not in cache:
+            cache.update(build_checkpoint_status_map([obj.pk]))
+        return cache[obj.pk]
 
 
 class DeviceModelTechnicalOnboardingRequestCreateSerializer(serializers.ModelSerializer):

@@ -987,6 +987,9 @@ def process_route_alerts(gps_data, loc_id, device_tag, lat, lon):
         print(f"Error processing route alerts: {e}", flush=True)
 
 
+_LOG_IMEI_FALLBACK_RE = re.compile(r'(?<!\d)\d{15}(?!\d)')
+
+
 def extract_log_meta(data_str):
     """Best-effort (imei, network_name) for a raw-log row, taken from the first
     $-segment that has them. Deliberately looser than process_gps_data(): a
@@ -1014,6 +1017,15 @@ def extract_log_meta(data_str):
                 network_name = cand_net[:30]
             if imei and network_name:
                 break
+        if imei is None:
+            # Other layouts (health, login, activation replies, "$PVT," with
+            # no comma after the $, ...). A device packet names exactly one
+            # IMEI, so a single standalone 15-digit number is that IMEI; this
+            # keeps every device packet findable through the imei index.
+            # Anything ambiguous stays unattributed.
+            candidates = set(_LOG_IMEI_FALLBACK_RE.findall(data_str or ''))
+            if len(candidates) == 1:
+                imei = candidates.pop()
     except Exception:
         pass
     return imei, network_name
