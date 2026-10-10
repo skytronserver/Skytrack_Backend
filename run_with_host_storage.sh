@@ -120,12 +120,15 @@ docker rm skytron-backend-api-container || true
 # Run the container with the volume mount (environment variables are now baked into the image)
 # MQTT_IP_REPORT_KEY: shared key for mqtt_ip_reporter.py on the broker VM
 # (POST /api/mqtt/client-ip/report/); passed at run time, empty = endpoint disabled.
+# BLE_SOS_APP_SECRETS: HMAC secret(s) the mobile app signs POST /api/ble-sos/app-log/
+# with; empty = endpoint disabled.
 sudo docker run -d --restart=always \
   --network "$NETWORK_NAME" \
   -p 2000:2000 \
   -v $STORAGE_DIR:/host_storage \
   -v /home/azureuser/Skytrack_Backend/SKTN:/app/SKTN \
   -e MQTT_IP_REPORT_KEY="${MQTT_IP_REPORT_KEY:-}" \
+  -e BLE_SOS_APP_SECRETS="${BLE_SOS_APP_SECRETS:-}" \
   --name skytron-backend-api-container \
   skytron-backend-api
 

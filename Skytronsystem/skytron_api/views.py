@@ -4175,8 +4175,10 @@ def delRoute(request ):
         sa=get_user_object(user,role1)
         role2="stateadmin"
         sa2=get_user_object(user,role2)
-        if not man and not sa and not sa2:
-            return Response({"error":"Request must be from  "+role+' or '+role1+' or '+role2+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        role3="dtorto"
+        dto_obj=get_user_object(user,role3)
+        if not man and not sa and not sa2 and not dto_obj:
+            return Response({"error":"Request must be from  "+role+' or '+role1+' or '+role2+' or '+role3+'.'}, status=status.HTTP_400_BAD_REQUEST)
 
         data =json.loads( request.body )
         try:
@@ -4375,8 +4377,10 @@ def saveRoute(request ):
         sa=get_user_object(user,role1)
         role2="stateadmin"
         sa2=get_user_object(user,role2)
-        if not man and not sa and not sa2:
-            return Response({"error":"Request must be from  "+role+' or '+role1+' or '+role2+'.'}, status=status.HTTP_400_BAD_REQUEST)
+        role3="dtorto"
+        dto_obj=get_user_object(user,role3)
+        if not man and not sa and not sa2 and not dto_obj:
+            return Response({"error":"Request must be from  "+role+' or '+role1+' or '+role2+' or '+role3+'.'}, status=status.HTTP_400_BAD_REQUEST)
 
         #print(request.body)
         data =json.loads( request.body )
@@ -4397,6 +4401,9 @@ def saveRoute(request ):
                 tag=DeviceTag.objects.filter(  device_id=device,   vehicle_owner =man, status='Owner_Final_OTP_Verified')
             elif sa or sa2  :
                 tag=DeviceTag.objects.filter( device_id=device, status='Owner_Final_OTP_Verified')
+            elif dto_obj:
+                # DTO can save routes for devices in their district
+                tag=DeviceTag.objects.filter( device_id=device, district__district_code=dto_obj.district, status='Owner_Final_OTP_Verified')
             if not tag:
                     return JsonResponse({"error": "Unauthorised owner "}, status=405)
 
@@ -4404,21 +4411,21 @@ def saveRoute(request ):
                 route = Route.objects.get(id=id,device=device,status='Active', createdby=user)
                 if not route:
                     return JsonResponse({"error": "existing route not fond for given id "}, status=405)
-                route.route = data['route']
-                route.routepoints = data['routepoints']
-                
                 for k in ["route","routepoints"]:
-                    points_data = data[k]
+                    points_data = data.get(k)
                 
                     if not points_data or not isinstance(points_data, list):
                         return Response({"error": k+" is required and must be a list"}, status=status.HTTP_400_BAD_REQUEST)
                     if len(points_data)<2:
                         return Response({"error": "At least two points are required to extract the path."}, status=status.HTTP_400_BAD_REQUEST)
                     for point in points_data:
-                        if not isinstance(point, list) or len(point) != 2:
-                            return Response({"error": f"Invalid point format: {point}. Each point must be a list of two coordinates [longitude, latitude]."}, status=status.HTTP_400_BAD_REQUEST)
+                        if not isinstance(point, list) or len(point) not in (2, 3):
+                            return Response({"error": f"Invalid point format: {point}. Each point must be a list of coordinates [longitude, latitude] or [longitude, latitude, altitude]."}, status=status.HTTP_400_BAD_REQUEST)
                         
-                        longitude, latitude = point
+                        # third field is optional, default 0
+                        if len(point) == 2:
+                            point.append(0)
+                        longitude, latitude = point[0], point[1]
                         
                         # Validate longitude and latitude ranges
                         if not (-180 <= longitude <= 180 and -90 <= latitude <= 90):
@@ -4428,6 +4435,8 @@ def saveRoute(request ):
                         if not (68.0 <= longitude <= 97.0 and 6.0 <= latitude <= 37.0):
                             return Response({"error": f"Point {point} is outside the rectangular boundary of India."}, status=status.HTTP_400_BAD_REQUEST)
                     
+                route.route = data['route']
+                route.routepoints = data['routepoints']
                 
                 route.createdby = createdby #User.objects.get(id=data['createdby_id']) 
                 route.save()
@@ -4500,10 +4509,10 @@ def getRoute(request ):
                     status='Owner_Final_OTP_Verified'
                 )
             elif dto_obj:
-                # DTO can access devices in their state
+                # DTO can access devices in their district
                 tag=DeviceTag.objects.filter(
                     device_id=device,
-                    district__state=dto_obj.state,
+                    district__district_code=dto_obj.district,
                     status='Owner_Final_OTP_Verified'
                 )
             if not tag:
