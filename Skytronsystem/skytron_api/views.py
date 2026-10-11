@@ -4402,7 +4402,12 @@ def get_routePath(request):
         is_valid, message = validate_bhuvan_response(sanitized_json_output)
         if not is_valid:
             return Response({"error": "Incoming path data is invalid." }, status=400)
-        
+
+        # The routing service answers with no paths when a point is too far
+        # from any road. Say so, and do not cache the empty answer.
+        if not sanitized_json_output.get("paths"):
+            return Response({"error": "No road route found between the selected points. Place each point on or close to a road and try again."}, status=400)
+
         try:
             route_cache.set(route_cache_key, sanitized_json_output, BHUVAN_ROUTE_CACHE_SECONDS)
         except Exception:
@@ -12969,18 +12974,13 @@ def SellListAvailableDeviceStock(request ):
         return Response({"error":"Request must be from "+role+" or "+role1+" or "+role2+"."}, status=status.HTTP_400_BAD_REQUEST)
     if man2:
         device_stock =  DeviceStock.objects.filter(  dealer__manufacturer=man2,stock_status='Available_for_fitting') 
-        if not device_stock:
-            return JsonResponse({'error': "no device found "  }, status=400)
     elif man3:
         device_stock =  DeviceStock.objects.filter(  dealer__manufacturer__state=man3.state,stock_status='Available_for_fitting') 
-        if not device_stock:
-            return JsonResponse({'error': "no device found "  }, status=400)
 
     else:
         device_stock =  DeviceStock.objects.filter(  dealer=man,stock_status='Available_for_fitting') 
      
-    if not device_stock:
-        return JsonResponse({'error': "no device found for this user avaialble for fitting "  }, status=400)
+    # No stock is a normal state: return an empty list, not an error.
 
     # Include nested eSimProvider and related info in the response
     serializer =DeviceStockSerializer2(device_stock, many=True)
@@ -12989,7 +12989,7 @@ def SellListAvailableDeviceStock(request ):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
-@require_http_methods(['GET', 'POST'])
+@require_http_methods(['PATCH'])
 @require_permission('device_stock', 'create')
 def SellFitDevice(request ): 
     errors = validate_inputs(request)
@@ -13004,7 +13004,10 @@ def SellFitDevice(request ):
     if not man:
         return Response({"error":"Request must be from "+role+"."}, status=status.HTTP_400_BAD_REQUEST)
     
-    device_id=int(request.data['device_id'])
+    try:
+        device_id=int(request.data.get('device_id'))
+    except (TypeError, ValueError):
+        return JsonResponse({'error': "device_id is required and must be a number"}, status=400)
     stock_assignment =  DeviceStock.objects.filter(id=device_id, dealer=man,stock_status='Available_for_fitting').last()
     if not stock_assignment:
         return JsonResponse({'error': "device not found, error in dealer or status"  }, status=400)
@@ -13141,6 +13144,10 @@ def deviceStockFilter(request ):
         man=get_user_object(user,"dealer")
         data['dealer_id'] = man.id 
         #is_tagged_filter=True
+    elif user.role=="owner":
+        # Vehicle owner: only devices tagged to the owner's own vehicles.
+        owner_profile=get_user_object(user,"owner")
+        man=owner_profile
 
 
     
@@ -13163,6 +13170,8 @@ def deviceStockFilter(request ):
     
     # Build the base query with only essential fields
     base_query = DeviceStock.objects.filter(**serializer.validated_data).exclude(stock_status=DEVICE_STOCK_DELETED_STATUS)
+    if user.role=="owner":
+        base_query = base_query.filter(devicetag__vehicle_owner=man).distinct()
     
     # Apply is_tagged filter at database level if specified
     if is_tagged_filter is not None:
@@ -15959,32 +15968,38 @@ def homepage_Manufacturer(request ):
             
             # Get manufacturer profile user
             manufacturer_user = profile.users.last()
+            # Every login of this manufacturer. Devices belong to the
+            # manufacturer through its device models: in the tagging flow the
+            # stock row is created by the dealer, not by the manufacturer.
+            mfr_user_ids = list(profile.users.values_list('id', flat=True))
+            own_stock = Q(created_by_id__in=mfr_user_ids) | Q(model__created_by_id__in=mfr_user_ids)
+            own_device = Q(device__created_by_id__in=mfr_user_ids) | Q(device__model__created_by_id__in=mfr_user_ids)
             
             # Basic manufacturer statistics
-            mod = DeviceModel.objects.filter(created_by=manufacturer_user, technical_onboarding_requests__status='accepted').distinct()
+            mod = DeviceModel.objects.filter(created_by_id__in=mfr_user_ids, status='StateAdminApproved')
             dealers = Dealer.objects.filter(manufacturer=profile)
-            stock = DeviceStock.objects.filter(created_by=manufacturer_user).exclude(stock_status=DEVICE_STOCK_DELETED_STATUS)
+            stock = DeviceStock.objects.filter(own_stock).exclude(stock_status=DEVICE_STOCK_DELETED_STATUS)
             associated_vehicle_owners = VehicleOwner.objects.filter(
-                devicetag__device__created_by=manufacturer_user
+                Q(devicetag__device__created_by_id__in=mfr_user_ids) | Q(devicetag__device__model__created_by_id__in=mfr_user_ids)
             ).distinct()
             
             # Calculate activations (devices that are actually activated/tagged)
             total_activations = DeviceTag.objects.filter(
-                device__created_by=manufacturer_user,
+                own_device,
                 status='Owner_Final_OTP_Verified'
             ).count()
             
             total_returns = DeviceTag.objects.filter(
-                device__created_by=manufacturer_user,
+                own_device,
                 device__stock_status__in=['Returned_to_manufacturer']
             ).count()
             total_faulty = DeviceTag.objects.filter(
-                device__created_by=manufacturer_user,
+                own_device,
                 device__stock_status__in=['Device_Defective']
             ).count()
             
             # Calculate eSIM statistics from esimActivationRequest model
-            esim_act_requests = esimActivationRequest.objects.filter(device__created_by=manufacturer_user)
+            esim_act_requests = esimActivationRequest.objects.filter(own_device)
             esim_pending = esim_act_requests.filter(status="pending").count()
             esim_validated = esim_act_requests.filter(status="valid").count()
             esim_invalid = esim_act_requests.filter(status="invalid").count()
@@ -16009,7 +16024,7 @@ def homepage_Manufacturer(request ):
             
             # Calculate device connectivity statistics
             # Get all devices manufactured by this manufacturer
-            manufacturer_devices = DeviceTag.objects.filter(device__created_by=manufacturer_user,status = 'Owner_Final_OTP_Verified') 
+            manufacturer_devices = DeviceTag.objects.filter(own_device,status = 'Owner_Final_OTP_Verified') 
             
             online_devices = 0
             online_today = 0
@@ -20470,6 +20485,11 @@ def get_settings(request):
     return JsonResponse(data)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('emergency_management', 'view')
 def DEx_getMedia(request):
     if request.method != 'POST':
         return Response({"error": "Invalid request method."}, status=status.HTTP_400_BAD_REQUEST)
@@ -26317,10 +26337,16 @@ def filter_alert_log(request):
                 query = query.filter(state_id__in=fallback_states)
 
         elif user_role == 'devicemanufacture':
-            model_ids = Manufacturer.objects.filter(users=user).values_list('device_model_details', flat=True)
-            if not model_ids:
+            manufacturers = Manufacturer.objects.filter(users=user)
+            if not manufacturers.exists():
                 return Response({'status': 'error', 'message': 'No manufacturer record found for this user.'}, status=status.HTTP_403_FORBIDDEN)
-            query = query.filter(deviceTag__device__model_id__in=list(model_ids))
+            # A manufacturer's devices are those of its own device models
+            # (stock rows are created by the dealer in the tagging flow).
+            mfr_user_ids = [uid for uid in manufacturers.values_list('users', flat=True) if uid]
+            query = query.filter(
+                Q(deviceTag__device__model__created_by_id__in=mfr_user_ids)
+                | Q(deviceTag__device__created_by_id__in=mfr_user_ids)
+            )
 
         elif user_role == 'owner':
             vehicle_owners = VehicleOwner.objects.filter(users=user)
@@ -42679,10 +42705,10 @@ def device_tagging_step2_esim(request):
     record.m2m_activation_date = activation_date
     record.m2m_expiry_date = expiry_date
     record.m2m_primary_tsp = normalised.get('telecom_provider')
-    record.m2m_primary_msisdn = normalised.get('msisdn')
+    record.m2m_primary_msisdn = _clean_msisdn(normalised.get('msisdn'))
     record.m2m_primary_status = normalised.get('primary_status')
     record.m2m_fallback_tsp = normalised.get('fallback_tsp') or None
-    record.m2m_fallback_msisdn = normalised.get('fallback_msisdn') or None
+    record.m2m_fallback_msisdn = _clean_msisdn(normalised.get('fallback_msisdn')) or None
     record.m2m_fallback_status = normalised.get('fallback_status') or None
     record.m2m_data_usage = normalised.get('data_usage')
     record.m2m_data_usage_date = normalised.get('data_usage_date')
@@ -42809,6 +42835,16 @@ def _build_certificate_no(record):
     return f"{CERTIFICATE_NO_PREFIX}{record.id}"
 
 
+def _clean_msisdn(value):
+    """
+    M2M providers sometimes send numbers the way a spreadsheet exports them,
+    with a leading apostrophe ('9157...). Drop it and any surrounding space.
+    """
+    if value is None:
+        return value
+    return str(value).strip().lstrip("'`").strip()
+
+
 def _get_fitment_centre_details(dealer):
     """
     Fitment centre details come from the dealer who did the tagging.
@@ -42848,7 +42884,7 @@ def _build_certificate_fields(record):
             record.m2m_expiry_date.isoformat() if record.m2m_expiry_date else ''
         ),
         "primary_msisdn": record.m2m_primary_msisdn or '',
-        "fallback_msisdn": record.m2m_fallback_msisdn or '',
+        "fallback_msisdn": _clean_msisdn(record.m2m_fallback_msisdn) or '',
         "no_of_emg_buttons": (
             str(record.no_of_emg_buttons) if record.no_of_emg_buttons else ''
         ),

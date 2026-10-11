@@ -649,7 +649,8 @@ urlpatterns = [
     path('devicestock/combined/', combined_device_stock, name='combined_device_stock'),
     
     #sell
-    ## path('sell/SellFitDevice/', SellFitDevice, name='SellFitDevice'),
+    ## INUSE by Dealer
+    path('sell/SellFitDevice/', SellFitDevice, name='SellFitDevice'),
     ## INUSE by Dealer
     path('sell/SellListAvailableDeviceStock/', SellListAvailableDeviceStock, name='SellListAvailableDeviceStock'),
     #path('sell/activate_esim_request/', ActivateESIMRequest, name='activate_esim_request'),
@@ -1438,7 +1439,6 @@ DUMMY_API_ROUTES = {
     'admin/bus-allocations/',
     'admin/bus-documents/<int:document_id>/delete/',
     'admin/bus-documents/<int:document_id>/download/',
-    'admin/bus-stops/',
     'admin/bus-stops/<int:pk>/',
     'admin/bus-stops/<int:pk>/delete/',
     'admin/buses/<int:bus_id>/documents/',
@@ -1464,7 +1464,6 @@ DUMMY_API_ROUTES = {
     'admin/reports/trips/<int:trip_id>/student-status/',
     'admin/reports/unplanned-trips/',
     'admin/reports/unplanned-trips/summary/',
-    'admin/routes/<int:route_id>/stops/add/',
     'admin/school/documents/',
     'admin/school/documents/<str:doc_type>/download/',
     'admin/students/<int:student_id>/',
@@ -1583,11 +1582,6 @@ DUMMY_API_ROUTES = {
     'device-data-health/dashboard/',
     'device-inspector/dashboard/',
     'server-health/dashboard/',
-    # M-1: legacy API, no calls found in the request log
-    'EM/DEx/get-media/',
-    # L-5: legacy APIs not used by the frontend
-    'ip-violations/dummy/',
-    'sell/SellFitDevice/',
 }
 
 if not DUMMY_APIS_ENABLED:

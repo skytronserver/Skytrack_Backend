@@ -292,6 +292,11 @@ _DASHBOARD_HTML = """<!doctype html>
 </div>
 
 <script>
+// Escape API values before they go into innerHTML (device packets, names
+// and error text are not trusted).
+function esc(v) {
+  return String(v === null || v === undefined ? '' : v).replace(/[&<>"'`]/g, c => '&#' + c.charCodeAt(0) + ';');
+}
 const API_BASE = '/api/device-data-health';
 
 function getToken() { return localStorage.getItem('deviceDataHealthToken') || ''; }
@@ -373,7 +378,7 @@ function renderCards(categories) {
     const ts = entry.received_at ? new Date(entry.received_at).toLocaleString() : '—';
     let note = '';
     if (cat === 'packet') note = '<div class="note">raw availability, format-independent</div>';
-    card.innerHTML = `<h3>${CATEGORY_LABELS[cat]}</h3><div class="ts">${ts}</div><div class="status">${entry.status.replace(/_/g, ' ')}</div>${note}`;
+    card.innerHTML = `<h3>${CATEGORY_LABELS[cat]}</h3><div class="ts">${esc(ts)}</div><div class="status">${esc(entry.status.replace(/_/g, ' '))}</div>${note}`;
     card.addEventListener('click', () => {
       document.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
@@ -392,12 +397,12 @@ function showDetail(cat, entry) {
   tbody.innerHTML = '';
 
   if (!entry.fields) {
-    tbody.innerHTML = `<tr><td colspan="4">No field-level breakdown for this category (${entry.status.replace(/_/g,' ')}).</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4">No field-level breakdown for this category (${esc(entry.status.replace(/_/g,' '))}).</td></tr>`;
   } else {
     Object.entries(entry.fields).forEach(([name, f]) => {
       const tr = document.createElement('tr');
       const val = f.value === null || f.value === undefined ? '' : f.value;
-      tr.innerHTML = `<td>${name}</td><td>${val}</td><td><span class="badge ${f.status}">${f.status}</span></td><td>${f.error || ''}</td>`;
+      tr.innerHTML = `<td>${esc(name)}</td><td>${esc(val)}</td><td><span class="badge ${esc(f.status)}">${esc(f.status)}</span></td><td>${esc(f.error || '')}</td>`;
       tbody.appendChild(tr);
     });
   }
@@ -423,7 +428,7 @@ function renderAlertReference(rows) {
     const tr = document.createElement('tr');
     const badge = r.available ? '<span class="badge green">available</span>' : '<span class="badge yellow">not available</span>';
     const ts = r.last_seen ? new Date(r.last_seen).toLocaleString() : '—';
-    tr.innerHTML = `<td>${r.packet_type}</td><td>${r.alert_id}</td><td>${r.trigger}</td><td>${badge}</td><td>${ts}</td>`;
+    tr.innerHTML = `<td>${esc(r.packet_type)}</td><td>${esc(r.alert_id)}</td><td>${esc(r.trigger)}</td><td>${badge}</td><td>${esc(ts)}</td>`;
     tbody.appendChild(tr);
   });
   wrap.classList.add('show');

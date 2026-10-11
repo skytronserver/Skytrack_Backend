@@ -2326,9 +2326,63 @@ def _geocode_and_patch(pk, lat, lon):
         if geo.get('road'):      patch['road']      = geo['road']
         if geo.get('road_type'): patch['road_type'] = geo['road_type']
         if patch:
+            _border_cross_alerts(pk, patch)
             GPSData.objects.filter(pk=pk).update(**patch)
     except Exception:
         pass
+
+
+def _border_cross_alerts(pk, resolved):
+    """
+    Raise state/district/city border-cross alerts for GPS point *pk*.
+
+    *resolved* is the location the reverse geocoder returned for this point.
+    It is compared with the location of the previous point of the same
+    vehicle, so an alert is raised once, when the resolved area really
+    changes. (The location a row carries at insert time is provisional and
+    must not be used for this.)
+    """
+    try:
+        current = GPSData.objects.filter(pk=pk).only('id', 'device_tag_id', 'entry_time').first()
+        if current is None or not current.device_tag_id:
+            return
+        prev = (
+            GPSData.objects.filter(device_tag_id=current.device_tag_id, entry_time__lte=current.entry_time)
+            .exclude(pk=pk)
+            .order_by('-entry_time', '-id')
+            .only('id', 'state', 'district', 'city')
+            .first()
+        )
+        if prev is None:
+            return
+        crossed = []
+        for field, alert_type in (
+            ('state', 'state_border_cross'),
+            ('district', 'district_border_cross'),
+            ('city', 'city_border_cross'),
+        ):
+            before = _gps_norm_text(getattr(prev, field))
+            after = _gps_norm_text(resolved.get(field))
+            if before and after and before != after:
+                crossed.append(alert_type)
+        if not crossed:
+            return
+        device_tag = DeviceTag.objects.select_related('device__dealer__manufacturer__state').get(pk=current.device_tag_id)
+        try:
+            alert_state = device_tag.device.dealer.manufacturer.state
+        except Exception:
+            alert_state = None
+        for alert_type in crossed:
+            AlertsLog.objects.create(
+                type=alert_type,
+                status='in',
+                gps_ref_id=pk,
+                deviceTag=device_tag,
+                state=alert_state,
+                alert_details='',
+            )
+    except Exception as exc:
+        print(f"Border-cross alert error: {exc}", flush=True)
 
 
 @receiver(post_save, sender=GPSData, dispatch_uid="gpsdata_populate_location_and_consecutive_time")
@@ -2352,21 +2406,6 @@ def gpsdata_populate_location_and_consecutive_time(sender, instance, created, **
     # Geocoding is done asynchronously in the background (_geocode_and_patch).
     # Here we only carry forward location from the previous GPS point so the
     # record has useful data immediately, without blocking on an HTTP call.
-
-    # Fallback from device-tag registration hierarchy where possible.
-    try:
-        dt = instance.device_tag
-        if dt is not None:
-            if not update_data.get('state') and not instance.state:
-                st_obj = getattr(getattr(getattr(dt, 'district', None), 'state', None), 'state', None)
-                if st_obj:
-                    update_data['state'] = st_obj
-            if not update_data.get('district') and not instance.district:
-                dist_obj = getattr(getattr(dt, 'district', None), 'district', None)
-                if dist_obj:
-                    update_data['district'] = dist_obj
-    except Exception:
-        pass
 
     # Fetch previous point for this device_tag.
     prev = (
@@ -2404,6 +2443,22 @@ def gpsdata_populate_location_and_consecutive_time(sender, instance, created, **
             update_data['road'] = prev.road
         if not update_data.get('road_type', instance.road_type) and prev.road_type:
             update_data['road_type'] = prev.road_type
+
+    # Last resort (first point of a vehicle, nothing to carry forward): the
+    # state/district the vehicle is registered in.
+    try:
+        reg_district = getattr(instance.device_tag, 'district', None)
+        if reg_district is not None:
+            if not current_state:
+                reg_state_name = getattr(getattr(reg_district, 'state', None), 'state', None)
+                if reg_state_name:
+                    update_data['state'] = reg_state_name
+                    current_state = reg_state_name
+            if not current_district and getattr(reg_district, 'district', None):
+                update_data['district'] = reg_district.district
+                current_district = reg_district.district
+    except Exception:
+        pass
 
     if current_state is None:
         update_data['time_in_same_state'] = None

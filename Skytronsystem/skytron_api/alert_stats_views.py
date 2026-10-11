@@ -345,6 +345,11 @@ _DASHBOARD_HTML = """<!doctype html>
 </div>
 
 <script>
+// Escape API values before they go into innerHTML (device packets, names
+// and error text are not trusted).
+function esc(v) {
+  return String(v === null || v === undefined ? '' : v).replace(/[&<>"'`]/g, c => '&#' + c.charCodeAt(0) + ';');
+}
 const API_BASE = '/api/alert-stats';
 let state = {
   types: [],
@@ -485,8 +490,8 @@ function renderRows(devices, types) {
   tbody.innerHTML = '';
   devices.forEach(d => {
     const tr = document.createElement('tr');
-    const breakdown = types.map(t => `${t}: ${d.breakdown[t] || 0}`).join(', ');
-    tr.innerHTML = `<td>${d.vehicle_reg_no || ''}</td><td>${d.imei || ''}</td><td>${d.alert_count}</td><td>${d.last_alert_at || ''}</td><td>${breakdown}</td>`;
+    const breakdown = types.map(t => `${esc(t)}: ${esc(d.breakdown[t] || 0)}`).join(', ');
+    tr.innerHTML = `<td>${esc(d.vehicle_reg_no || '')}</td><td>${esc(d.imei || '')}</td><td>${esc(d.alert_count)}</td><td>${esc(d.last_alert_at || '')}</td><td>${breakdown}</td>`;
     tbody.appendChild(tr);
   });
 }

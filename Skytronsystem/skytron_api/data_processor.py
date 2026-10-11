@@ -782,45 +782,10 @@ def process_alerts(gps_data, loc_id):
         if packet_type in harsh_event_types:
             create_alert(harsh_event_types[packet_type], "in", loc_id, device_tag)
 
-        # Border-cross alerts (state/district/city) on actual administrative change
-        try:
-            current_loc = (
-                GPSData.objects
-                .filter(id=loc_id, device_tag=device_tag)
-                .only('id', 'state', 'district', 'city', 'device_tag_id', 'entry_time')
-                .first()
-            )
-            if current_loc is not None:
-                prev_loc = (
-                    GPSData.objects
-                    .filter(device_tag=device_tag)
-                    .exclude(id=current_loc.id)
-                    .order_by('-entry_time', '-id')
-                    .only('id', 'state', 'district', 'city')
-                    .first()
-                )
-
-                def _norm_admin(value):
-                    text = (value or '').strip()
-                    return text.casefold() if text else None
-
-                if prev_loc is not None:
-                    prev_state = _norm_admin(prev_loc.state)
-                    cur_state = _norm_admin(current_loc.state)
-                    if prev_state and cur_state and prev_state != cur_state:
-                        create_alert('state_border_cross', 'in', loc_id, device_tag)
-
-                    prev_district = _norm_admin(prev_loc.district)
-                    cur_district = _norm_admin(current_loc.district)
-                    if prev_district and cur_district and prev_district != cur_district:
-                        create_alert('district_border_cross', 'in', loc_id, device_tag)
-
-                    prev_city = _norm_admin(prev_loc.city)
-                    cur_city = _norm_admin(current_loc.city)
-                    if prev_city and cur_city and prev_city != cur_city:
-                        create_alert('city_border_cross', 'in', loc_id, device_tag)
-        except Exception as _e:
-            print(f"Border-cross alert error: {_e}", flush=True)
+        # Border-cross alerts (state/district/city) are raised in
+        # models._geocode_and_patch, once the reverse geocoder has resolved
+        # this point. At this stage the row only carries a provisional
+        # location, so comparing it here raised an alert on every packet.
 
         # Prohibited_Area: alert when vehicle is within 100m of a Prohibited_Area POI
         try:

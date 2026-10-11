@@ -359,6 +359,11 @@ _DASHBOARD_HTML = """<!doctype html>
 </div>
 
 <script>
+// Escape API values before they go into innerHTML (device packets, names
+// and error text are not trusted).
+function esc(v) {
+  return String(v === null || v === undefined ? '' : v).replace(/[&<>"'`]/g, c => '&#' + c.charCodeAt(0) + ';');
+}
 const API_BASE = '/api/device-inspector';
 let currentImei = '';
 let logState = { type: 'both', page: 1, totalPages: 0 };
@@ -408,10 +413,10 @@ async function lookup() {
   }
   const conn = data.connection || {};
   document.getElementById('connBadge').innerHTML = conn.live
-    ? `<span class="badge live">LIVE via ${conn.primary_transport}</span>`
+    ? `<span class="badge live">LIVE via ${esc(conn.primary_transport)}</span>`
     : `<span class="badge offline">OFFLINE</span>`;
   document.getElementById('deviceInfo').innerHTML =
-    `Vehicle: <b>${data.vehicle_reg_no || ''}</b> &nbsp; Status: ${data.device_status || ''} &nbsp; Owner: ${data.vehicle_owner || ''}`;
+    `Vehicle: <b>${esc(data.vehicle_reg_no || '')}</b> &nbsp; Status: ${esc(data.device_status || '')} &nbsp; Owner: ${esc(data.vehicle_owner || '')}`;
   logState = { type: logState.type, page: 1, totalPages: 0 };
   loadLogs();
   loadHistory();
@@ -437,7 +442,7 @@ async function loadLogs() {
   tbody.innerHTML = '';
   (data.logs || []).forEach(l => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${l.log_type}</td><td>${l.timestamp}</td><td>${l.raw_data}</td>`;
+    tr.innerHTML = `<td>${esc(l.log_type)}</td><td>${esc(l.timestamp)}</td><td>${esc(l.raw_data)}</td>`;
     tbody.appendChild(tr);
   });
   document.getElementById('logPageInfo').textContent = `Page ${data.page} of ${data.total_pages}`;

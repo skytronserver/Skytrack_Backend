@@ -241,6 +241,11 @@ _DASHBOARD_HTML = """<!doctype html>
 </div>
 
 <script>
+// Escape API values before they go into innerHTML (device packets, names
+// and error text are not trusted).
+function esc(v) {
+  return String(v === null || v === undefined ? '' : v).replace(/[&<>"'`]/g, c => '&#' + c.charCodeAt(0) + ';');
+}
 const API_URL = '/api/server-health/summary/';
 
 function getToken() { return localStorage.getItem('serverHealthToken') || ''; }
@@ -271,7 +276,7 @@ function seedTokenFromQuery(storageKey) {
 
 function kvTable(title, obj) {
   if (!obj) return '';
-  let rows = Object.entries(obj).map(([k, v]) => `<tr><th>${k}</th><td>${v === null || v === undefined ? '' : v}</td></tr>`).join('');
+  let rows = Object.entries(obj).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v === null || v === undefined ? '' : v)}</td></tr>`).join('');
   return `<h3>${title}</h3><table>${rows}</table>`;
 }
 
@@ -284,20 +289,20 @@ async function reload() {
     const res = await fetch(API_URL, { headers });
     const data = await res.json();
     if (!res.ok) {
-      content.innerHTML = `<div class="err">Error ${res.status}: ${data.message || 'request failed'}</div>`;
+      content.innerHTML = `<div class="err">Error ${esc(res.status)}: ${esc(data.message || 'request failed')}</div>`;
       return;
     }
     let html = '';
     html += kvTable('Host', data.host);
-    if (data.postgres && !data.postgres.ok) html += `<div class="err">Postgres: ${data.postgres.error}</div>`;
+    if (data.postgres && !data.postgres.ok) html += `<div class="err">Postgres: ${esc(data.postgres.error)}</div>`;
     html += kvTable('Postgres', data.postgres);
-    if (data.mqtt && data.mqtt.partial) html += `<div class="warn">MQTT $SYS collection was partial (${data.mqtt.collected_keys}/${data.mqtt.expected_keys} keys)</div>`;
+    if (data.mqtt && data.mqtt.partial) html += `<div class="warn">MQTT $SYS collection was partial (${esc(data.mqtt.collected_keys)}/${esc(data.mqtt.expected_keys)} keys)</div>`;
     html += kvTable('MQTT Broker', data.mqtt);
     html += kvTable('Live TCP Connections', data.tcp);
     content.innerHTML = html;
     document.getElementById('lastFetched').textContent = 'Last fetched: ' + new Date(data.collected_at).toLocaleString();
   } catch (e) {
-    content.innerHTML = `<div class="err">Request failed: ${e}</div>`;
+    content.innerHTML = `<div class="err">Request failed: ${esc(e)}</div>`;
   }
 }
 </script>

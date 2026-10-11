@@ -65,6 +65,7 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "DEx_closeCase":              ["sos_call_list", "emergency_management"],
     "DEx_sendMsg":                ["sos_call_list", "emergency_management"],
     "DEx_rcvMsg":                 ["sos_call_list", "emergency_management"],
+    "get_media":                  ["sos_call_list", "emergency_management"],
     "DEx_commentFE":              ["sos_call_list", "emergency_management"],
     "DEx_getCallAllLoc":          ["sos_call_list", "emergency_management"],
     "DEx_broadcastlist":          ["sos_call_list", "emergency_management"],
@@ -211,7 +212,8 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "state_admin_approved_models_report":   ["vltd_approved_models"],
     "state_admin_approved_cops_report":     ["vltd_approved_cops"],
     "state_admin_combined_approval_report": ["vltd_approved_models", "vltd_approved_cops"],
-    "devicemodel-list":                     ["vltd_pending_model", "vltd_approved_models", "dm_create_model"],
+    "devicemodel-list":                     ["vltd_pending_model", "vltd_approved_models", "dm_create_model",
+                                             "wkyc_requests", "wkyc_device_dashboard"],
 
     # ── A.9  Whitelist & KYC ─────────────────────────────────────────────────
     "whitelist_request_list":     ["wkyc_requests"],
@@ -245,6 +247,7 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "SellListAvailableDeviceStock": [
         "device_stock", "dealer_untagged", "dealer_tag_device", "report_fitment",
     ],
+    "SellFitDevice":              ["device_stock", "dealer_tag_device", "vehicle_tagging"],
     "deviceStockFilter":          ["ds_individual", "dealer_download_cert"],
     "deviceStockUntaggedFilter":  ["ds_individual", "ds_assign"],
     "deviceStockSoftDelete":      ["device_stock", "ds_individual"],
@@ -357,7 +360,7 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "download_static_file":       ["ds_bulk", "ds_assign"],
     "deviceStockCreateBulk":      ["ds_bulk"],
     "StockAssignToDealer":        ["ds_assign"],
-    "esim_provider_list":         ["ds_assign", "device_management"],
+    "esim_provider_list":         ["ds_assign", "device_management", "wkyc_requests", "wkyc_device_dashboard"],
 
     # Device eSIM Renewal
     "device-renewal-eligible":    ["device_renewal_management"],
