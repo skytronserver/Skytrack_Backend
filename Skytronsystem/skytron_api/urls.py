@@ -1388,7 +1388,9 @@ urlpatterns += [
     path('esim-provider/ip-range/add/',  esim_provider_ip_range_add,  name='esim-provider-ip-range-add'),
     ## INUSE by M2MProvider
     path('esim-provider/ip-range/list/', esim_provider_ip_range_list, name='esim-provider-ip-range-list'),
-    
+    ## INUSE by M2MProvider (authenticated view of the uploaded certificate)
+    path('esim-provider/ip-range/certificate/', esim_provider_ip_range_certificate, name='esim-provider-ip-range-certificate'),
+
     ## INUSE by M2MProvider
     path('esim-provider/ip-range/update/', esim_provider_ip_range_update, name='esim-provider-ip-range-update'),
     ## INUSE by M2MProvider

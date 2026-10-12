@@ -41176,6 +41176,54 @@ def _get_own_ip_range_entry(request, entry_id):
     return entry, None
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+def esim_provider_ip_range_certificate(request):
+    """
+    GET /api/esim-provider/ip-range/certificate/?id=<id>
+
+    The ISP certificate uploaded with one IP range, served only to a logged-in
+    user: the provider that owns the entry, or a superadmin. Use this instead
+    of a direct link to the stored file.
+    """
+    entry_id = request.query_params.get('id')
+
+    if getattr(request.user, 'role', None) == 'superadmin':
+        if not str(entry_id or '').isdigit():
+            return Response({"error": "A valid id is required."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        entry = eSimProviderIPRange.objects.filter(id=entry_id, is_active=True).first()
+        if not entry:
+            return Response({"error": "No IP range found with this id."},
+                            status=status.HTTP_404_NOT_FOUND)
+    else:
+        entry, error_response = _get_own_ip_range_entry(request, entry_id)
+        if error_response:
+            return error_response
+
+    object_key = find_file_in_folders(entry.certificate_file, folders) if entry.certificate_file else None
+    if not object_key:
+        return Response({"error": "Certificate file not found."},
+                        status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        from . import minio_storage
+        file_bytes = minio_storage.download_bytes(object_key)
+    except Exception:
+        return Response({"error": "Certificate file not found."},
+                        status=status.HTTP_404_NOT_FOUND)
+
+    import mimetypes
+    filename = os.path.basename(object_key)
+    content_type = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+    response = HttpResponse(file_bytes, content_type=content_type)
+    response['Content-Disposition'] = f'inline; filename="{filename}"'
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['Cache-Control'] = 'private, no-store'
+    return response
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
@@ -42865,6 +42913,20 @@ def _get_fitment_centre_details(dealer):
                 (dealer_user.address_pin or '').strip(),
             ]
             address = ', '.join(p for p in parts if p)
+
+        # No street address on record (dealer onboarding does not collect
+        # one): fall back to the district(s) and state the dealer operates in,
+        # so the certificate never prints a blank address.
+        if not address:
+            try:
+                parts = [d.district for d in dealer.districts.all() if d.district]
+                state = getattr(getattr(dealer, 'manufacturer', None), 'state', None)
+                state_name = getattr(state, 'state', None)
+                if state_name:
+                    parts.append(state_name)
+                address = ', '.join(parts)
+            except Exception:
+                address = ''
 
     return name, address
 
