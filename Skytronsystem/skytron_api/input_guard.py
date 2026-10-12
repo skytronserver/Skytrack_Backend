@@ -44,6 +44,10 @@ _REGEX = [(name, re.compile(p, re.IGNORECASE)) for name, p in _PATTERNS]
 # or are verified by other means (tokens, OTP, captcha). Never scanned.
 _EXEMPT_KEY_RE = re.compile(r'pass(?:word|wd)?|pwd|secret|token|otp|captcha|signature|jwt', re.IGNORECASE)
 
+# Always skipped: an SMS forwarded by Airtel's gateway may hold any text. It is
+# only stored (airtel_sms_views.py), behind the gateway's shared key.
+_BUILTIN_EXEMPT_PATHS = ('/api/airtel-sms/receive/',)
+
 _MAX_BODY_SCAN = 5 * 1024 * 1024   # don't parse bodies above 5 MB (uploads are form/multipart anyway)
 
 
@@ -80,12 +84,12 @@ class InputGuardMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         self.mode = os.environ.get('INPUT_GUARD_MODE', 'block').strip().lower()
-        self.exempt = tuple(
+        self.exempt = _BUILTIN_EXEMPT_PATHS + tuple(
             p.strip() for p in os.environ.get('INPUT_GUARD_EXEMPT_PATHS', '').split(',') if p.strip()
         )
 
     def __call__(self, request):
-        if self.mode != 'off' and not request.path.startswith(self.exempt or ('\0',)):
+        if self.mode != 'off' and not request.path.startswith(self.exempt):
             hit = self._scan(request)
             if hit:
                 field, rule = hit

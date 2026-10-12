@@ -122,6 +122,9 @@ docker rm skytron-backend-api-container || true
 # (POST /api/mqtt/client-ip/report/); passed at run time, empty = endpoint disabled.
 # BLE_SOS_APP_SECRETS: HMAC secret(s) the mobile app signs POST /api/ble-sos/app-log/
 # with; empty = endpoint disabled.
+# AIRTEL_SMS_API_KEYS: key(s) shared with Airtel's SMS gateway for
+# POST /api/airtel-sms/receive/; empty = endpoint disabled.
+# AIRTEL_SMS_ALLOWED_IPS: optional IPs/CIDRs the gateway calls from; empty = any.
 sudo docker run -d --restart=always \
   --network "$NETWORK_NAME" \
   -p 2000:2000 \
@@ -129,6 +132,8 @@ sudo docker run -d --restart=always \
   -v /home/azureuser/Skytrack_Backend/SKTN:/app/SKTN \
   -e MQTT_IP_REPORT_KEY="${MQTT_IP_REPORT_KEY:-}" \
   -e BLE_SOS_APP_SECRETS="${BLE_SOS_APP_SECRETS:-}" \
+  -e AIRTEL_SMS_API_KEYS="${AIRTEL_SMS_API_KEYS:-}" \
+  -e AIRTEL_SMS_ALLOWED_IPS="${AIRTEL_SMS_ALLOWED_IPS:-}" \
   --name skytron-backend-api-container \
   skytron-backend-api
 

@@ -5733,3 +5733,33 @@ class BleSosAppLog(models.Model):
 
     def __str__(self):
         return f"BleSosAppLog {self.id} {self.ble_mac} {self.registration_no}"
+
+
+class AirtelSmsInLog(models.Model):
+    """
+    One SMS received on our dedicated number, pushed to us by Airtel's SMS
+    gateway. Written by the public, key-protected POST /api/airtel-sms/receive/
+    (airtel_sms_views.py); read by superadmin only.
+    """
+    sender_no = models.CharField(max_length=20)
+    receiver_no = models.CharField(max_length=20)
+    sms_text = models.TextField(blank=True, default='')
+    char_length = models.PositiveIntegerField(null=True, blank=True)
+    sms_timestamp = models.DateTimeField(null=True, blank=True)        # receive time at Airtel
+    sms_timestamp_raw = models.CharField(max_length=64, blank=True, default='')   # exactly as Airtel sent it
+    raw_payload = models.JSONField(default=dict, blank=True)           # the whole request, as received
+    source_ip = models.GenericIPAddressField(null=True, blank=True)
+    forwarded_for = models.CharField(max_length=255, blank=True, default='')      # X-Forwarded-For as received
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'skytron_api'
+        db_table = 'airtel_sms_in_log'
+        indexes = [
+            models.Index(fields=['-received_at'], name='airtelsms_received_idx'),
+            models.Index(fields=['sender_no', '-received_at'], name='airtelsms_sender_idx'),
+            models.Index(fields=['receiver_no', '-received_at'], name='airtelsms_receiver_idx'),
+        ]
+
+    def __str__(self):
+        return f"AirtelSmsInLog {self.id} {self.sender_no} -> {self.receiver_no}"

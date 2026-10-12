@@ -30,6 +30,8 @@ EXEMPT_PATH_PREFIXES = (
     '/api/mqtt/validate-connection/',
     '/api/mqtt/validate-acl/',
     '/api/mqtt/client-ip/report/',
+    # Airtel's SMS gateway: all traffic comes from a few addresses.
+    '/api/airtel-sms/receive/',
 )
 
 
