@@ -7306,7 +7306,7 @@ def create_user(role, req):
 
 
 def send_usercreation_otp(user, new_password, type):
-    tpid = "1007515117119518623"
+    tpid = "1077511260016955945"
     text = ('Dear user, to confirm your registration on SkyTron platform, '
             'please click on the following link and validate the registration request- '
             'https://' + DEPLOY_URL + '/new?q=' + str(new_password) +
@@ -7317,8 +7317,7 @@ def send_usercreation_otp(user, new_password, type):
 
 
 # DLT template for the technical-onboarding-approved SMS.
-# TODO: dummy template ID and text — replace with the DLT-registered ones.
-TECH_ONBOARDING_APPROVED_SMS_TPID = "1007000000000000001"
+TECH_ONBOARDING_APPROVED_SMS_TPID = "1077269720018804115"
 TECH_ONBOARDING_APPROVED_SMS_TEXT = (
     'Dear Manufacturer, the technical onboarding of your device model {model} '
     'has been successfully integrated on the SkyTron platform. -SkyTron'
@@ -19368,7 +19367,7 @@ def send_email_confirmation(request ):
     if email_confirmation_serializer.is_valid():
         email_confirmation_serializer.save()
         url=f"https://{DEPLOY_URL}/new?q={confirmation_token}"
-        tpid ="1007515117119518623"
+        tpid ="1077511260016955945"
         text=f"Dear user, to confirm your registration on SkyTron platform, please click on the following link and validate the registration request- {url}. The link will expire in 24 hours. -SkyTron"
 
         send_SMS(user.mobile,text,tpid) 
@@ -20061,7 +20060,7 @@ def reset_password(request ):
 
         token = _issue_password_reset_token(user)
 
-        tpid ="1007407542374862466" #1007214796274246200"#"1007387007813205696" #1007274756418421381"
+        tpid ="1077044680018694073"
         text='Dear user, to reset your password for SkyTron platform, please click on the following link and validate the password reset request. https://'+DEPLOY_URL+'/reset-password?q='+str(token)+'. The link will expire in 24 hours. -SkyTron'
         ok, msg = send_SMS(user.mobile,text,tpid)
         if not ok:

@@ -18,7 +18,7 @@ Dear user, Your Login OTP for SkyTron portal is {OTP}. DO NOT disclose it to any
 
 
 --------------------------------------------------------------------------------
-TPID: 1007515117119518623
+TPID: 1077511260016955945
 PURPOSE: User Registration / Email Confirmation Link
 USED IN: send_usercreation_otp (line 7018), send_sms_confirmation (line 17152)
 LINES: 7019, 17153
@@ -26,14 +26,14 @@ VARIANTS: 2
 --------------------------------------------------------------------------------
 
 FORMAT 1 (line 7019 - send_usercreation_otp):
-Dear user, to confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://{DEPLOY_URL}/new/{TOKEN}. The link will expire in 24 hours. -SkyTron
+Dear user, to confirm your registration in SkyTron platform, please click at the following link and validate the registration request- https://skytron.in/new?q={TOKEN}. The link will expire in 24 hours. -SkyTron
 
 FORMAT 2 (line 17153 - send_sms_confirmation):
 Dear user, to confirm your registration in SkyTron platform, please click at the following link and validate the registration request-{URL} The link will expire in 24 hours.-SkyTron
 
 DIFFERENCES BETWEEN FORMAT 1 AND FORMAT 2:
   - Format 1 has a space before the URL; Format 2 has no space
-  - Format 1 uses "https://{DEPLOY_URL}/new/{TOKEN}"; Format 2 uses the full constructed {URL}
+  - Format 1 uses "https://skytron.in/new?q={TOKEN}"; Format 2 uses the full constructed {URL}
   - Format 1 has ". The link..." (period + space); Format 2 has " The link..." (space only)
   - Format 1 ends with " -SkyTron"; Format 2 ends with "-SkyTron" (no leading space)
 
@@ -105,7 +105,7 @@ DIFFERENCES:
 
 
 --------------------------------------------------------------------------------
-TPID: 1007407542374862466
+TPID: 1077044680018694073
 PURPOSE: Password Reset Link
 USED IN: Forgot password / password reset flow
 LINES: 17736
@@ -125,12 +125,12 @@ SUMMARY TABLE
 TPID                  | VARIANTS | PURPOSE
 ----------------------|----------|-----------------------------------------
 1007536593942813283   |    1     | Login OTP
-1007515117119518623   |    2     | Registration Confirmation Link
+1077511260016955945   |    2     | Registration Confirmation Link
 1007201930295888818   |    3     | Dealer/Manufacturer Device Tagging OTP
 1007937055979875563   |    1     | Vehicle Owner Tagging OTP
 1007967997984175182   |    1     | COP Creation/Update OTP
 1007338577423920274   |    2     | VLTD Model Creation OTP
-1007407542374862466   |    1     | Password Reset Link
+1077044680018694073   |    1     | Password Reset Link
 
 TOTAL TPIDs: 7
 TOTAL UNIQUE TEXT FORMATS: 12
@@ -143,7 +143,7 @@ INCONSISTENCIES TO REVIEW
    FORMAT 1 (line 10442) appears malformed - missing separators/punctuation between
    Vehicle Reg No, IMEI No, and OTP fields.
 
-2. TPID 1007515117119518623 has 2 slightly different formats - spacing and punctuation
+2. TPID 1077511260016955945 has 2 slightly different formats - spacing and punctuation
    differ between send_usercreation_otp and send_sms_confirmation.
 
 3. TPID 1007338577423920274 has 2 formats differing only in capitalisation of
