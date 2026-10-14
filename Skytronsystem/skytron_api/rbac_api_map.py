@@ -156,6 +156,8 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "superadmin_refresh_test_log": ["tech_onboarding", "tech_onboarding_final"],
     "superadmin_complete_test": ["tech_onboarding", "tech_onboarding_final"],
     "superadmin_demo_device_location_history": ["tech_onboarding", "tech_onboarding_final"],
+    "superadmin_list_test_commands": ["tech_onboarding", "tech_onboarding_final"],
+    "superadmin_send_test_command": ["tech_onboarding", "tech_onboarding_final"],
 
     # ── A.7  Tracking & Playback ──────────────────────────────────────────────
     # gps_track_data_api is called from many routes / many modules
@@ -555,6 +557,7 @@ API_ACTION_OVERRIDE: dict[str, str] = {
     "superadmin_test_heartbeat":                                "update",
     "superadmin_refresh_test_log":                              "update",
     "superadmin_complete_test":                                 "update",
+    "superadmin_send_test_command":                             "update",
     "esimActivateReq-update":     "update",
     "restore_gps_data_log":       "update",
     "send_mqtt_command":          "update",

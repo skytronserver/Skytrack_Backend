@@ -358,7 +358,10 @@ def validate_arai_pvt(raw, imei=None):
         t.custom('checksum', checksum_field, False, error='must be 2 hex digits')
     else:
         if len(parts) > _PVT_CHECKSUM_PART_IDX:
-            prefix = ','.join(parts[1:_PVT_CHECKSUM_PART_IDX]) + ','
+            # XOR of 'PVT,...,<frame>' -- no comma before the checksum.
+            # Verified against the reference test device AS01AA0005
+            # (fw 1.0.8) and fw 1.0.9, live and BLE packets alike.
+            prefix = ','.join(parts[1:_PVT_CHECKSUM_PART_IDX])
             expected = _xor_checksum_hex(prefix)
             checksum_ok = expected.upper() == checksum_field.upper()
             t.custom('checksum', checksum_field, checksum_ok,
@@ -385,9 +388,11 @@ def validate_arai_epb(raw, imei=None):
     Covers emergency start (msg_type=EMR), end (msg_type=SEM), and stored/
     queued-while-offline (packet_status=SP) sub-types.
 
-    Checksum verification is intentionally skipped (checksum_ok stays None)
-    -- the source protocol reference disagrees with itself on whether a
-    comma precedes the checksum for this packet class.
+    Field layout and checksum follow the reference test device AS01AA0005:
+    date+time is 14 digits (DDMMYYYYHHMMSS) and the checksum -- always the
+    last field, after any EMR trailing extras such as the BLE
+    '{SOS_PUB_...}' marker -- is the XOR of everything between '$,' and the
+    comma before it ('EPB,...,*[,extras]').
     """
     raw = raw.strip()
     parts = raw.split(',')
@@ -410,6 +415,8 @@ def validate_arai_epb(raw, imei=None):
         return parts[i] if i < len(parts) else None
 
     raw_fields = {name: _get(i + 1) for i, name in enumerate(_EPB_FIELD_NAMES)}
+    if len(parts) > _EPB_EXPECTED_LEN:
+        raw_fields['checksum'] = parts[-1]
 
     t = FieldTracker()
     t.literal('header', raw_fields['header'], 'EPB')
@@ -422,7 +429,7 @@ def validate_arai_epb(raw, imei=None):
     t.enum('packet_status', raw_fields['packet_status'], {'NM', 'SP'})
     dt = raw_fields['datetime']
     if dt is not None:
-        t.custom('datetime', dt, dt.isdigit() and len(dt) == 12, error='must be 12 digits (DDMMYY+HHMMSS)')
+        t.custom('datetime', dt, dt.isdigit() and len(dt) == 14, error='must be 14 digits (DDMMYYYY+HHMMSS)')
     else:
         t.custom('datetime', None, False)
     t.enum('gnss_valid', raw_fields['gnss_valid'], {'A', 'V'})
@@ -437,13 +444,19 @@ def validate_arai_epb(raw, imei=None):
     t.nonempty('vehicle_reg_no', raw_fields['vehicle_reg_no'])
     t.raw('reply_no', raw_fields['reply_no'])
     t.literal('end_marker', raw_fields['end_marker'], '*')
-    if raw_fields['checksum'] is not None:
-        t.custom('checksum', raw_fields['checksum'], bool(_HEX2_RE.match(raw_fields['checksum'])),
-                  error='must be 2 hex digits' if not _HEX2_RE.match(raw_fields['checksum']) else None)
-    else:
+    checksum_field = raw_fields['checksum']
+    checksum_ok = None
+    if checksum_field is None:
         t.custom('checksum', None, False)
+    elif not _HEX2_RE.match(checksum_field):
+        t.custom('checksum', checksum_field, False, error='must be 2 hex digits')
+    else:
+        expected = _xor_checksum_hex(','.join(parts[1:-1]))
+        checksum_ok = expected.upper() == checksum_field.upper()
+        t.custom('checksum', checksum_field, checksum_ok,
+                  error=None if checksum_ok else f'mismatch: packet says {checksum_field!r}, computed {expected!r}')
 
-    return ValidationResult('emergency', matched=True, fields=t.fields, checksum_ok=None,
+    return ValidationResult('emergency', matched=True, fields=t.fields, checksum_ok=checksum_ok,
                              extra_errors=extra_errors)
 
 

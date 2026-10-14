@@ -1087,6 +1087,13 @@ class TechnicalOnboardingTestCase(models.Model):
         ('vehicle_registration_diff', 'Vehicle Registration Number Changed (GPSDataLog)'),
         ('reboot_restart_gap', 'Reboot Command -- Connectivity Gap Proves Restart (GPSDataLog)'),
         ('pvt_packet_drop', 'PVT + Emergency Packet Drop -- 15 min Fixed Window, 4-6s Average Gap (GPSDataLog + GPSemDataLog)'),
+        ('packet_sequence', 'Trigger Packet + Before/After State Packets (GPSDataLog)'),
+        ('sos_stop_both', 'SOS Stop on Tracking (EA,11) + Emergency (SEM) Servers'),
+        ('protocol_packet', 'Protocol Field Validation of a Packet Type (GPSDataLog / GPSemDataLog)'),
+        ('speed_accuracy', 'Constant-Speed Stretches at Target Speeds (GPSDataLog)'),
+        ('geofence_crossing', 'Geofence Entry/Exit Distance (GPSDataLog)'),
+        ('history_coverage', 'History (H) Packets Covering the No-Network Period (GPSDataLog)'),
+        ('unique_cell_towers', 'Unique Cell Towers Seen (GPSDataLog)'),
         ('manual', 'Manual / Observed'),
     ]
 
@@ -1110,6 +1117,26 @@ class TechnicalOnboardingTestCase(models.Model):
 
     is_optional = models.BooleanField(default=False)
     active = models.BooleanField(default=True)
+
+    # Test-plan metadata shown to the tester; the frontend drives the
+    # manual / map / physical steps from these flags.
+    category = models.CharField(max_length=100, blank=True, default='')
+    test_environment = models.CharField(max_length=50, blank=True, default='')
+    requires_map = models.BooleanField(default=False)
+    requires_command = models.BooleanField(default=False)
+    requires_physical_test = models.BooleanField(default=False)
+    procedure = models.TextField(blank=True, default='')
+    expected_result = models.TextField(blank=True, default='')
+
+    # Commands the tester can send to the device for this test, e.g.
+    # [{"key": "sos_stop", "label": "SOS stop", "command": "SETSOSDIS-1"},
+    #  {"key": "set_reg_no", "label": "Set registration no.", "command": "SETREGNO-{value}",
+    #   "value_hint": "AS01AA0001", "value_regex": "^[A-Z0-9]{4,12}$"}]
+    # '{value}' is filled from the send request; '@...*' framing is added on send.
+    commands = models.JSONField(default=list, blank=True)
+    # Mode-specific thresholds read by the automated check (see
+    # technical_onboarding_testing_views._run_test_check).
+    check_config = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1174,6 +1201,36 @@ class TechnicalOnboardingTestExecution(models.Model):
         indexes = [
             models.Index(fields=['onboarding_request', 'test_case']),
             models.Index(fields=['onboarding_request', 'status']),
+        ]
+
+
+class TechnicalOnboardingCommandDispatch(models.Model):
+    """One command sent to a demo device over MQTT while running a test."""
+    objects = SafeCreateManager()
+
+    SEND_STATUS_CHOICES = [
+        ('queued', 'Queued'),
+        ('failed', 'Failed'),
+    ]
+
+    execution = models.ForeignKey(
+        'TechnicalOnboardingTestExecution', on_delete=models.CASCADE, related_name='command_dispatches'
+    )
+    imei = models.CharField(max_length=20, db_index=True)
+    command_key = models.CharField(max_length=50, blank=True, default='')
+    command_label = models.CharField(max_length=255, blank=True, default='')
+    command_sent = models.CharField(max_length=500)
+    value = models.CharField(max_length=255, blank=True, null=True)
+    source = models.CharField(max_length=10, default='mqtt')
+    send_status = models.CharField(max_length=10, choices=SEND_STATUS_CHOICES, default='queued')
+    error = models.CharField(max_length=255, blank=True, null=True)
+    sent_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    sent_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ['-sent_at']
+        indexes = [
+            models.Index(fields=['execution', 'sent_at'], name='onb_cmd_exec_sent_idx'),
         ]
 
 

@@ -1324,6 +1324,40 @@ class TechnicalOnboardingCompleteTestSerializer(serializers.Serializer):
     manual_notes = serializers.CharField(required=False, allow_blank=True)
 
 
+class TechnicalOnboardingGeofencePointSerializer(serializers.Serializer):
+    """A geofence IN/OUT point: a packet time, or a position on the route."""
+    timestamp = serializers.DateTimeField(required=False)
+    latitude = serializers.FloatField(required=False, min_value=-90, max_value=90)
+    longitude = serializers.FloatField(required=False, min_value=-180, max_value=180)
+
+    def validate(self, attrs):
+        has_position = attrs.get('latitude') is not None and attrs.get('longitude') is not None
+        if not attrs.get('timestamp') and not has_position:
+            raise serializers.ValidationError('Give a timestamp or a latitude + longitude.')
+        if attrs.get('timestamp'):
+            attrs['timestamp'] = attrs['timestamp'].isoformat()
+        return attrs
+
+
+class TechnicalOnboardingRefreshTestLogSerializer(serializers.Serializer):
+    execution_id = serializers.IntegerField()
+    # Geofence test only (optional): the IN / OUT points marked on the map.
+    geofence_in = TechnicalOnboardingGeofencePointSerializer(required=False)
+    geofence_out = TechnicalOnboardingGeofencePointSerializer(required=False)
+
+
+class TechnicalOnboardingSendTestCommandSerializer(serializers.Serializer):
+    execution_id = serializers.IntegerField()
+    command_key = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    value = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    command = serializers.CharField(required=False, allow_blank=True, max_length=400)
+
+    def validate(self, attrs):
+        if not attrs.get('command_key') and not (attrs.get('command') or '').strip():
+            raise serializers.ValidationError('Provide command_key (a configured command) or command (a custom command).')
+        return attrs
+
+
 class TechnicalOnboardingDemoDeviceHistorySerializer(serializers.Serializer):
     """
     Either `timestamp` (the 1 hour ending there, defaults to now) or a
