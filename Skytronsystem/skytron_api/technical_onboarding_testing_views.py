@@ -12,9 +12,11 @@ used by device_tagging_step4_packet_check (views.py) -- or read the
 structured OTACommandHistory/ActivationCommandDispatch ack fields.
 """
 
+import math
 import re
 import statistics
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
+from zoneinfo import ZoneInfo
 
 from django.db import transaction
 from django.db.models import Count, Q
@@ -56,6 +58,7 @@ from .views import (
     validate_inputs,
     get_user_object,
     _packet_fields,
+    _packet_type_in_header,
     _extract_pvt_datetime,
     _extract_pvt_lat_lon,
 )
@@ -80,7 +83,7 @@ SOURCE_TABLE_LABEL = {
     'esim_secondary_to_primary': 'GPSDataLog',
     'vehicle_registration_diff': 'GPSDataLog',
     'reboot_restart_gap': 'GPSDataLog + OTACommandHistory',
-    'pvt_packet_drop': 'GPSDataLog',
+    'pvt_packet_drop': 'GPSDataLog + GPSemDataLog',
 }
 
 # The eSIM switch tests cross-check each other's network order.
@@ -104,9 +107,23 @@ PVT_OFFSET_SPEED = 15
 PVT_OFFSET_HEADING = 16
 PVT_OFFSET_IGNITION = 22
 
-# Default max allowed gap between consecutive PVT packets for the packet
-# drop test, used when the test case doesn't set max_interval_seconds.
-DEFAULT_PVT_DROP_MAX_GAP_SECONDS = 75
+# PVT field offset of the GPS fix flag (1 = fix, 0 = no fix).
+PVT_OFFSET_GPS_FIX = 8
+
+# Packet drop test (#41): a fixed window from the test start in which the
+# device, moving with emergency ON, must send one PVT and one EPB packet
+# every ~5s. Both streams' average gap must fall inside the band below and
+# every packet must carry a valid GPS fix and coordinate. The window length
+# comes from the test case's scan_window_seconds (falls back to the default).
+DEFAULT_PVT_DROP_WINDOW_SECONDS = 15 * 60
+PVT_DROP_AVG_GAP_MIN_SECONDS = 4
+PVT_DROP_AVG_GAP_MAX_SECONDS = 6
+PVT_DROP_MAX_SINGLE_GAP_SECONDS = 180
+PVT_DROP_MOVING_SPEED_KMPH = 10
+PVT_DROP_MIN_MOVING_SHARE = 0.70
+
+# Times in tester-facing failure reasons are shown in IST.
+IST = ZoneInfo('Asia/Kolkata')
 
 # A device timestamp is only trusted inside this band around the server
 # receive time: devices without a GPS fix report junk clocks (e.g. year
@@ -562,62 +579,7 @@ def _run_test_check(execution):
         }
 
     if test_case.source_table == 'pvt_packet_drop':
-        # Gaps are measured on the device's own timestamp (when plausible)
-        # so buffered history (H) packets that arrive late still close the
-        # gap they cover -- only data that never reached the server counts
-        # as dropped.
-        rows = list(
-            GPSDataLog.objects
-            .filter(timestamp__gte=window_start, raw_data__contains=imei)
-            .order_by('-timestamp')
-            .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
-        )
-        packet_times = []
-        for raw_data, packet_time in rows:
-            if _pvt_index(_packet_fields(raw_data)) is None:
-                continue
-            effective_time, _time_source = _packet_time(raw_data, packet_time)
-            if effective_time >= window_start:
-                packet_times.append(effective_time)
-
-        max_gap_allowed = test_case.max_interval_seconds or DEFAULT_PVT_DROP_MAX_GAP_SECONDS
-        stats = _gap_stats(packet_times)
-        matched_count = stats['packet_count']
-
-        # Silence before the first packet or since the last one is a drop
-        # too -- a device that goes quiet mid-test must not pass.
-        gaps = list(stats['gaps'])
-        if packet_times:
-            first, last = min(packet_times), max(packet_times)
-            gaps.append({'seconds': (first - window_start).total_seconds(), 'from': window_start.isoformat(), 'to': first.isoformat()})
-            gaps.append({'seconds': (now - last).total_seconds(), 'from': last.isoformat(), 'to': now.isoformat()})
-        over_limit = sorted((g for g in gaps if g['seconds'] > max_gap_allowed), key=lambda g: g['from'])
-
-        result_pass = matched_count >= test_case.min_match_count and not over_limit
-        if matched_count < test_case.min_match_count:
-            reason = f"Only {matched_count} PVT packet(s) found, need at least {test_case.min_match_count}."
-        elif over_limit:
-            longest = max(over_limit, key=lambda g: g['seconds'])
-            reason = (
-                f"{len(over_limit)} gap(s) above the allowed {max_gap_allowed}s between PVT packets -- "
-                f"longest {longest['seconds']:.0f}s from {longest['from']} to {longest['to']}."
-            )
-        else:
-            reason = None
-
-        return {
-            'mode': test_case.source_table,
-            'matched_count': matched_count,
-            'required': test_case.min_match_count,
-            'pass': result_pass,
-            'reason': reason,
-            'samples': over_limit[:5],
-            'max_gap_allowed_seconds': max_gap_allowed,
-            'drop_count': len(over_limit),
-            'gap_stats': {k: v for k, v in stats.items() if k != 'gaps'},
-            'window_start': window_start.isoformat(),
-            'refreshed_at': now.isoformat(),
-        }
+        return _pvt_packet_drop_check(execution, imei, now)
 
     return {'mode': 'unknown', 'pass': False, 'reason': 'Unrecognised source_table.', 'refreshed_at': now.isoformat()}
 
@@ -639,6 +601,319 @@ def _packet_time(raw_data, server_time):
     if device_time and server_time - DEVICE_CLOCK_MAX_BEHIND <= device_time <= server_time + DEVICE_CLOCK_MAX_AHEAD:
         return device_time, 'device'
     return server_time, 'server'
+
+
+def _epb_packet_info(raw_data, server_time):
+    """
+    Effective time, GPS validity and speed for an emergency (EPB) packet.
+
+    Field positions are anchored on the N/S + E/W direction fields, since
+    older firmware inserts an extra field after 'EPB' (EPB,EM,11,<imei>,...)
+    and the fix flag / datetime always sit just before the latitude:
+      EPB,EMR,<imei>,NM,<ddmmyyyyHHMMSS>,A,<lat>,N,<lon>,E,<alt>,<speed>,...
+    """
+    parts = _packet_fields(raw_data)
+    info = {'time': server_time, 'time_source': 'server', 'valid_gps': False, 'speed': None}
+    lat_idx = next(
+        (i for i in range(2, len(parts) - 3)
+         if parts[i + 1].upper() in ('N', 'S') and parts[i + 3].upper() in ('E', 'W')),
+        None,
+    )
+    if lat_idx is None:
+        return info
+
+    stamp = parts[lat_idx - 2]
+    for fmt in ('%d%m%Y%H%M%S', '%d%m%y%H%M%S'):
+        try:
+            device_time = datetime.strptime(stamp, fmt).replace(tzinfo=dt_timezone.utc)
+        except ValueError:
+            continue
+        if server_time - DEVICE_CLOCK_MAX_BEHIND <= device_time <= server_time + DEVICE_CLOCK_MAX_AHEAD:
+            info['time'], info['time_source'] = device_time, 'device'
+        break
+
+    try:
+        lat, lon = float(parts[lat_idx]), float(parts[lat_idx + 2])
+    except ValueError:
+        lat = lon = 0.0
+    info['valid_gps'] = parts[lat_idx - 1].upper() == 'A' and (lat, lon) != (0.0, 0.0)
+    info['speed'] = _to_float(parts[lat_idx + 5] if len(parts) > lat_idx + 5 else None)
+    return info
+
+
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _cadence_summary(label, packets, window_start, window_end):
+    """
+    Average-gap verdict for one packet stream inside the fixed window.
+
+    The average includes the silence from the window start to the first
+    packet and from the last packet to the window end, so it equals
+    window length / (packets + 1): a device that stops halfway can't pass
+    on the strength of a tidy 5s cadence before it went quiet. The same
+    edge silences count toward the single-gap limit.
+    """
+    times = [p['time'] for p in packets]
+    stats = _gap_stats(times)
+    stats.pop('gaps')
+    edges = [window_start] + sorted(times) + [window_end]
+    gaps = [
+        {'seconds': (later - earlier).total_seconds(), 'from': earlier.isoformat(), 'to': later.isoformat()}
+        for earlier, later in zip(edges, edges[1:])
+    ]
+    over_limit = [g for g in gaps if g['seconds'] > PVT_DROP_MAX_SINGLE_GAP_SECONDS]
+    window_seconds = (window_end - window_start).total_seconds()
+    average_gap = round(window_seconds / (len(times) + 1), 2)
+    invalid = sorted((p for p in packets if not p['valid_gps']), key=lambda p: p['time'])
+    return {
+        'label': label,
+        'packet_count': len(times),
+        'average_gap_seconds': average_gap,
+        'average_gap_ok': PVT_DROP_AVG_GAP_MIN_SECONDS <= average_gap <= PVT_DROP_AVG_GAP_MAX_SECONDS,
+        'longest_gap': max(gaps, key=lambda g: g['seconds']),
+        'over_max_gap_count': len(over_limit),
+        'over_max_gap_samples': over_limit[:5],
+        'invalid_gps_count': len(invalid),
+        'invalid_gps_samples': [{'raw_data': p['raw_data'], 'timestamp': p['time'].isoformat()} for p in invalid[:5]],
+        'gap_stats': stats,
+    }
+
+
+def _ist(value):
+    """'HH:MM:SS IST' for a datetime or ISO string, for tester-facing reasons."""
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    return value.astimezone(IST).strftime('%H:%M:%S IST')
+
+
+def _duration(seconds):
+    """'4m 20s' / '45s'."""
+    seconds = int(round(seconds))
+    minutes, seconds = divmod(seconds, 60)
+    return f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
+
+
+def _pvt_drop_stream_checks(key, summary, window_seconds, window_start, window_end, window_complete, no_packets_hint):
+    """
+    Pass/fail checks for one packet stream, each with a plain-language
+    explanation of what went wrong so the tester knows what to fix.
+    """
+    label = summary['label']
+    count = summary['packet_count']
+    checks = [{
+        'check': f'{key}_received',
+        'label': f'{label} packets received',
+        'passed': count > 0,
+        'detail': None if count else f"No {label} packets were received during the test. {no_packets_hint}",
+    }]
+    if not count:
+        return checks
+
+    # Packet counts that land inside the 4-6s band over this window length.
+    min_expected = int(window_seconds // PVT_DROP_AVG_GAP_MAX_SECONDS)
+    max_expected = int(window_seconds // PVT_DROP_AVG_GAP_MIN_SECONDS)
+    average_gap = summary['average_gap_seconds']
+    detail = None
+    if average_gap > PVT_DROP_AVG_GAP_MAX_SECONDS:
+        detail = (
+            f"{label} packets arrived too slowly: {count} received in {_duration(window_seconds)}, "
+            f"average gap {average_gap}s (allowed {PVT_DROP_AVG_GAP_MIN_SECONDS}-{PVT_DROP_AVG_GAP_MAX_SECONDS}s, "
+            f"i.e. {min_expected}-{max_expected} packets). The device is sending less often than every 5s "
+            f"or packets were lost on the way to the server."
+        )
+    elif average_gap < PVT_DROP_AVG_GAP_MIN_SECONDS:
+        detail = (
+            f"{label} packets arrived too often: {count} received in {_duration(window_seconds)}, "
+            f"average gap {average_gap}s (allowed {PVT_DROP_AVG_GAP_MIN_SECONDS}-{PVT_DROP_AVG_GAP_MAX_SECONDS}s, "
+            f"i.e. {min_expected}-{max_expected} packets). The device's reporting interval is shorter than 5s."
+        )
+    checks.append({
+        'check': f'{key}_average_gap',
+        'label': f'{label} average gap {PVT_DROP_AVG_GAP_MIN_SECONDS}-{PVT_DROP_AVG_GAP_MAX_SECONDS}s',
+        'passed': detail is None,
+        'detail': detail,
+    })
+
+    gap_lines = []
+    start_iso, end_iso = window_start.isoformat(), window_end.isoformat()
+    for gap in summary['over_max_gap_samples'][:3]:
+        if gap['from'] == start_iso:
+            gap_lines.append(
+                f"first packet only at {_ist(gap['to'])}, {_duration(gap['seconds'])} after the test started"
+            )
+        elif gap['to'] == end_iso and window_complete:
+            gap_lines.append(
+                f"stopped sending at {_ist(gap['from'])}, {_duration(gap['seconds'])} before the test ended"
+            )
+        elif gap['to'] == end_iso:
+            gap_lines.append(f"nothing received since {_ist(gap['from'])} ({_duration(gap['seconds'])} ago)")
+        else:
+            gap_lines.append(
+                f"nothing received from {_ist(gap['from'])} to {_ist(gap['to'])} ({_duration(gap['seconds'])})"
+            )
+    over = summary['over_max_gap_count']
+    if over > len(gap_lines):
+        gap_lines.append(f"and {over - len(gap_lines)} more")
+    checks.append({
+        'check': f'{key}_max_single_gap',
+        'label': f'No {label} gap longer than {_duration(PVT_DROP_MAX_SINGLE_GAP_SECONDS)}',
+        'passed': not over,
+        'detail': None if not over else (
+            f"{over} {label} gap(s) longer than the {_duration(PVT_DROP_MAX_SINGLE_GAP_SECONDS)} limit: "
+            + '; '.join(gap_lines) + '.'
+        ),
+    })
+
+    invalid = summary['invalid_gps_count']
+    checks.append({
+        'check': f'{key}_valid_gps',
+        'label': f'All {label} packets have a valid GPS fix and coordinate',
+        'passed': not invalid,
+        'detail': None if not invalid else (
+            f"{invalid} of {count} {label} packets had no valid GPS fix or a 0,0 coordinate "
+            f"(first at {_ist(summary['invalid_gps_samples'][0]['timestamp'])}). The device lost its GPS fix -- "
+            f"run the test under open sky with the antenna connected."
+        ),
+    })
+    return checks
+
+
+def _pvt_packet_drop_check(execution, imei, now):
+    """
+    Test #41: over a fixed window from the test start (15 min by default)
+    the device, moving with emergency ON, must send one PVT packet and one
+    EPB emergency packet every ~5s.
+
+    Pass when, for each stream, the average gap is within 4-6s, no single
+    gap exceeds 3 min and every packet has a valid GPS fix + coordinate,
+    and at least 70% of PVT packets report a speed above 10 km/h. Each
+    failed check carries a plain-language reason in 'checks'. Until the window ends the
+    snapshot is a live progress report and never passes.
+
+    Packets are placed on the device's own timestamp (when plausible), so
+    buffered history packets that arrive late still count for the moment
+    they cover. Duplicate rows of the same raw packet count once.
+    """
+    test_case = execution.test_case
+    window_seconds = test_case.scan_window_seconds or DEFAULT_PVT_DROP_WINDOW_SECONDS
+    window_start = execution.started_at
+    window_end = window_start + timedelta(seconds=window_seconds)
+    window_complete = now >= window_end
+    evaluated_until = window_end if window_complete else now
+    server_until = min(now, window_end + HISTORY_LATE_ARRIVAL_SLACK)
+
+    def scan(model):
+        seen = set()
+        for raw_data, server_time in (
+            model.objects
+            .filter(timestamp__gte=window_start, timestamp__lte=server_until, raw_data__contains=imei)
+            .order_by('timestamp')
+            .values_list('raw_data', 'timestamp')[:GPS_PACKET_SCAN_LIMIT]
+        ):
+            key = raw_data.strip()
+            if key not in seen:
+                seen.add(key)
+                yield raw_data, server_time
+
+    pvt_packets = []
+    for raw_data, server_time in scan(GPSDataLog):
+        parts = _packet_fields(raw_data)
+        idx = _pvt_index(parts)
+        if idx is None:
+            continue
+        effective_time, time_source = _packet_time(raw_data, server_time)
+        if not window_start <= effective_time <= evaluated_until:
+            continue
+        gps_fix = parts[idx + PVT_OFFSET_GPS_FIX] if len(parts) > idx + PVT_OFFSET_GPS_FIX else None
+        pvt_packets.append({
+            'raw_data': raw_data,
+            'time': effective_time,
+            'valid_gps': gps_fix == '1' and _extract_pvt_lat_lon(raw_data) != (None, None),
+            'speed': _to_float(parts[idx + PVT_OFFSET_SPEED] if len(parts) > idx + PVT_OFFSET_SPEED else None),
+        })
+
+    epb_packets = []
+    for raw_data, server_time in scan(GPSemDataLog):
+        if not _packet_type_in_header(raw_data, 'EPB'):
+            continue
+        info = _epb_packet_info(raw_data, server_time)
+        if window_start <= info['time'] <= evaluated_until:
+            epb_packets.append({'raw_data': raw_data, **info})
+
+    pvt = _cadence_summary('PVT', pvt_packets, window_start, evaluated_until)
+    epb = _cadence_summary('Emergency (EPB)', epb_packets, window_start, evaluated_until)
+
+    moving = sum(1 for p in pvt_packets if p['speed'] is not None and p['speed'] > PVT_DROP_MOVING_SPEED_KMPH)
+    moving_share = round(moving / len(pvt_packets), 4) if pvt_packets else 0.0
+    moving_ok = moving_share >= PVT_DROP_MIN_MOVING_SHARE
+
+    elapsed_seconds = (evaluated_until - window_start).total_seconds()
+    checks = _pvt_drop_stream_checks(
+        'pvt', pvt, elapsed_seconds, window_start, evaluated_until, window_complete,
+        'Check that the device is powered on, has mobile network and is reporting to the tracking server.',
+    ) + _pvt_drop_stream_checks(
+        'emergency', epb, elapsed_seconds, window_start, evaluated_until, window_complete,
+        'Emergency mode was not switched ON, or the device is not sending emergency packets to the emergency server.',
+    )
+    if pvt_packets:
+        needed = math.ceil(len(pvt_packets) * PVT_DROP_MIN_MOVING_SHARE)
+        checks.append({
+            'check': 'moving_share',
+            'label': f'At least {PVT_DROP_MIN_MOVING_SHARE:.0%} of PVT packets above {PVT_DROP_MOVING_SPEED_KMPH} km/h',
+            'passed': moving_ok,
+            'detail': None if moving_ok else (
+                f"Only {moving} of {len(pvt_packets)} PVT packets ({moving_share:.0%}) show a speed above "
+                f"{PVT_DROP_MOVING_SPEED_KMPH} km/h; at least {needed} ({PVT_DROP_MIN_MOVING_SHARE:.0%}) are needed. "
+                f"The vehicle was stationary or moving too slowly during the test."
+            ),
+        })
+
+    failed = [c for c in checks if not c['passed']]
+    failure_lines = ' '.join(f"{n}) {c['detail']}" for n, c in enumerate(failed, 1))
+
+    if window_complete:
+        result_pass = not failed
+        reason = None if result_pass else f"Failed {len(failed)} of {len(checks)} checks: {failure_lines}"
+    else:
+        result_pass = False
+        reason = (
+            f"Test still running -- {_duration((window_end - now).total_seconds())} left "
+            f"(ends at {_ist(window_end)}). Keep the browser page open and the vehicle moving above "
+            f"{PVT_DROP_MOVING_SPEED_KMPH} km/h with emergency ON, then refresh after it ends."
+        )
+        if failed:
+            reason += f" Problems so far: {failure_lines}"
+
+    return {
+        'mode': test_case.source_table,
+        'matched_count': min(pvt['packet_count'], epb['packet_count']),
+        'pass': result_pass,
+        'reason': reason,
+        'checks': checks,
+        'failed_checks': [c['check'] for c in failed],
+        'window_complete': window_complete,
+        'window_seconds': window_seconds,
+        'remaining_seconds': 0 if window_complete else int((window_end - now).total_seconds()),
+        'criteria': {
+            'average_gap_seconds_range': [PVT_DROP_AVG_GAP_MIN_SECONDS, PVT_DROP_AVG_GAP_MAX_SECONDS],
+            'max_single_gap_seconds': PVT_DROP_MAX_SINGLE_GAP_SECONDS,
+            'all_packets_valid_gps': True,
+            'moving_speed_kmph': PVT_DROP_MOVING_SPEED_KMPH,
+            'min_moving_share': PVT_DROP_MIN_MOVING_SHARE,
+        },
+        'pvt': pvt,
+        'emergency': epb,
+        'moving_share': moving_share,
+        'moving_ok': moving_ok,
+        'window_start': window_start.isoformat(),
+        'window_end': window_end.isoformat(),
+        'refreshed_at': now.isoformat(),
+    }
 
 
 def _gap_stats(times):

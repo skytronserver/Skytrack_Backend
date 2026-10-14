@@ -1086,7 +1086,7 @@ class TechnicalOnboardingTestCase(models.Model):
         ('esim_secondary_to_primary', 'eSIM Switch Secondary->Primary -- 2 Distinct Networks, Reversed (GPSDataLog)'),
         ('vehicle_registration_diff', 'Vehicle Registration Number Changed (GPSDataLog)'),
         ('reboot_restart_gap', 'Reboot Command -- Connectivity Gap Proves Restart (GPSDataLog)'),
-        ('pvt_packet_drop', 'PVT Packet Drop -- No Gap Above Allowed Interval (GPSDataLog)'),
+        ('pvt_packet_drop', 'PVT + Emergency Packet Drop -- 15 min Fixed Window, 4-6s Average Gap (GPSDataLog + GPSemDataLog)'),
         ('manual', 'Manual / Observed'),
     ]
 
