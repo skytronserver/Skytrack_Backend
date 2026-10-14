@@ -89,6 +89,8 @@ SECURE_REFERRER_POLICY = 'strict-origin'
 DATA_UPLOAD_MAX_NUMBER_FIELD = 71193766
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get('DATA_UPLOAD_MAX_MEMORY_SIZE', str(30 * 1024 * 1024)))
 FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get('FILE_UPLOAD_MAX_MEMORY_SIZE', str(2 * 1024 * 1024)))
+# Largest single uploaded file accepted anywhere (skytron_api.upload_limit).
+MAX_UPLOAD_FILE_SIZE = int(os.environ.get('MAX_UPLOAD_FILE_SIZE', str(2 * 1024 * 1024)))
 # Application definition
 
 INSTALLED_APPS = [
@@ -116,6 +118,9 @@ MIDDLEWARE = [
     # VAPT: global per-client limit on /api/ (API_RATE_LIMIT). After CORS so
     # 429s still carry CORS headers.
     'skytron_api.rate_limit.ApiRateLimitMiddleware',
+    # Blanket per-file upload limit (MAX_UPLOAD_FILE_SIZE). After CORS so 400s
+    # still carry CORS headers.
+    'skytron_api.upload_limit.UploadSizeLimitMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',

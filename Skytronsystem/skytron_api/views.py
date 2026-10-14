@@ -5,7 +5,7 @@ import paho.mqtt.client as mqtt
 from rest_framework.pagination import PageNumberPagination
 from math import radians, sin, cos, sqrt, asin
 # --- API: Get latest EMUserLocation for all unique field executives ---
-from django.db.models import OuterRef, Subquery, Max, Count
+from django.db.models import OuterRef, Subquery, Max, Count, Exists
 from django.db import OperationalError, connection, transaction
 
 from .models import Trip
@@ -26,6 +26,7 @@ from .throttles import TripCreateRateThrottle, TripCreateDailyThrottle, TripWrit
 
 import re
 import requests
+from dateutil.relativedelta import relativedelta
 from requests.exceptions import Timeout, RequestException
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -1808,8 +1809,76 @@ def convert_docx_to_pdf_with_libreoffice(docx_buffer):
  
 template_path = '/app/skytron_api/static/Cetificate_template.docx'
 
+# Indian mobile number: 10 digits starting 6-9.
+MOBILE_NUMBER_RE = re.compile(r'^[6-9]\d{9}$')
+MIN_USER_AGE_YEARS = 18
+
+
+def parse_input_date(value):
+    """Parse a YYYY-MM-DD (or YYYY/MM/DD) request value into a date, else None."""
+    if value in (None, ''):
+        return None
+    try:
+        return datetime.strptime(str(value).strip().replace('/', '-'), '%Y-%m-%d').date()
+    except ValueError:
+        return None
+
+
+def mobile_number_error(value):
+    if not MOBILE_NUMBER_RE.fullmatch(str(value).strip()):
+        return 'Mobile number must be 10 digits starting with 6, 7, 8 or 9.'
+    return None
+
+
+def dob_error(value):
+    dob = parse_input_date(value)
+    if not dob:
+        return 'Date of birth must be a valid date in YYYY-MM-DD format.'
+    today = timezone.localdate()
+    if dob.year < 1900:
+        return 'Date of birth is not valid.'
+    if dob > today - relativedelta(years=MIN_USER_AGE_YEARS):
+        return f'Age must be at least {MIN_USER_AGE_YEARS} years.'
+    return None
+
+
+def future_date_error(value, field):
+    expiry = parse_input_date(value)
+    if not expiry:
+        return f'{field} must be a valid date in YYYY-MM-DD format.'
+    if expiry <= timezone.localdate():
+        return f'{field} must be a future date.'
+    return None
+
+
+def validate_user_fields(data):
+    """Check mobile / dob when present in a create or edit request.
+
+    Used on create and update endpoints only: login and password-reset look up
+    existing accounts, some of which predate these rules.
+    """
+    errors = {}
+    for key in ('mobile', 'new_mobile'):
+        value = data.get(key)
+        if value not in (None, ''):
+            err = mobile_number_error(value)
+            if err:
+                errors[key] = err
+    dob = data.get('dob')
+    if dob not in (None, ''):
+        err = dob_error(dob)
+        if err:
+            errors['dob'] = err
+    return errors
+
+
+# Expiry/validity dates accepted from clients; each must be in the future.
+EXPIRY_DATE_KEYS = ["velid_upto", "expiryDate", "expirydate", "tac_validity", "cop_validity",
+                    "esim_validity", "new_expiry_date"]
+
+
 def validate_inputs(datar):
-    errors = {} 
+    errors = {}
     d=None
     try:
         d=datar.data
@@ -1832,17 +1901,17 @@ def validate_inputs(datar):
             except ValueError:
                 errors[key] = 'Invalid date format for '+key+'.'
    
-    # Validate expiry date (should be more than 6 months from today)
-    Keys=["velid_upto","expiryDate","expirydate","tac_validity","cop_validity","esim_validity"]
-    for key in Keys:
+    # Expiry/validity dates must be in the future, whether sent as query
+    # params or in the body (the rest of this function checks query params only).
+    body = d if hasattr(d, 'get') else {}
+    for key in EXPIRY_DATE_KEYS:
         expiry_date = data.get(key)
-        if expiry_date:
-            try:
-                expiry_date = datetime.strptime(expiry_date, '%Y-%m-%d')
-                if expiry_date <= datetime.now() + timedelta(days=30):
-                    errors[key] = key+' should be more than 1 months from today.'
-            except ValueError:
-                errors[key] = 'Invalid date format for '+key+'.'
+        if expiry_date in (None, ''):
+            expiry_date = body.get(key)
+        if expiry_date not in (None, ''):
+            err = future_date_error(expiry_date, key)
+            if err:
+                errors[key] = err
 
 
 
@@ -2172,11 +2241,9 @@ def save_file(request, tag, path):
         return Response({'error': f"File not found"}, status=400)
     #Response({'error': f"Invalid file type. Allowed types are:"}, status=400)
 
-    # Validate file size (should be less than 1 MB)
-    max_file_size = 1 * 1024 * 1024  # 1 MB in bytes
-    if uploaded_file.size > max_file_size:
-        return None 
-        return Response({'error': f"File size should be less than 1 MB. Current size: {uploaded_file.size / (1024 * 1024):.2f} MB"}, status=400)
+    # Same per-file limit UploadSizeLimitMiddleware enforces on every request.
+    if uploaded_file.size > settings.MAX_UPLOAD_FILE_SIZE:
+        return None
 
     # Validate file type using magic numbers
     valid_mime_types = {
@@ -2274,51 +2341,57 @@ except Exception:
     pass
 
 
-@api_view(['POST'])
+# Content types the download endpoint may label a file with; anything else is
+# served as a generic binary so a browser never renders it as a page.
+_DOWNLOAD_CONTENT_TYPES = {
+    '.pdf': 'application/pdf',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.mp4': 'video/mp4',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+}
+
+
+@api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])  # Apply throttling here
-@require_http_methods(['GET', 'POST'])
-@require_permission('gps_history', 'view')
-def downloadfile(request): 
-    errors = validate_inputs(request)
-    if errors:
-        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+def downloadfile(request):
+    """Return an uploaded file to any logged-in user who has its path.
 
-    
-    if request.method == 'POST': 
-        file_path =   request.data.get('file_path') 
-        #print(request.content_type )
-        #print(request.data)
-        #print(request.user )
+    The path is the value stored on the record (e.g. "fileuploads/man/123.pdf"),
+    sent as file_path in the POST body or GET query. No login, no file.
+    Only uploaded documents (keys under fileuploads/) are served.
+    """
+    file_path = request.data.get('file_path') if request.method == 'POST' else request.query_params.get('file_path')
+    if not file_path or not isinstance(file_path, str):
+        return Response({'error': 'file_path is required'}, status=400)
 
-        if not file_path:
-            return JsonResponse({'error': 'file_path is required'}, status=400) 
-        try:
-            # Extract just the filename for the response header
-            filename = os.path.basename(file_path)
-            
-            # Try to find the file first with the full path
-            full_path = find_file_in_folders(file_path, folders)
-            
-            # If that fails, try with just the filename
-            if not full_path:
-                filename_only = os.path.basename(file_path)
-                full_path = find_file_in_folders(filename_only, folders)
-                
-            if not full_path:
-                return JsonResponse({'error': f'file not found: {file_path}'}, status=400) 
-                
-            try:
-                from . import minio_storage
-                file_bytes = minio_storage.download_bytes(full_path)
-                response = HttpResponse(file_bytes, content_type='application/octet-stream')
-                response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                return response
-            except Exception:
-                return HttpResponse("File not found.", status=404) 
-        except DeviceTag.DoesNotExist:
-            return JsonResponse({'error': 'Error in reading file.'}, status=404)
-    return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
+    file_path = file_path.strip()
+    if '..' in file_path or '\\' in file_path or '\x00' in file_path:
+        return Response({'error': 'Invalid file_path.'}, status=400)
+
+    filename = os.path.basename(file_path)
+    # Try the full path first, then just the file name
+    full_path = find_file_in_folders(file_path, folders) or find_file_in_folders(filename, folders)
+    if not full_path or not full_path.startswith('fileuploads/'):
+        return Response({'error': 'File not found.'}, status=404)
+
+    try:
+        from . import minio_storage
+        file_bytes = minio_storage.download_bytes(full_path)
+    except Exception:
+        return Response({'error': 'File not found.'}, status=404)
+
+    content_type = _DOWNLOAD_CONTENT_TYPES.get(os.path.splitext(filename)[1].lower(), 'application/octet-stream')
+    response = HttpResponse(file_bytes, content_type=content_type)
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['Cache-Control'] = 'private, no-store'
+    return response
 
 
 
@@ -4969,6 +5042,9 @@ def update_VehicleOwner(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    errors = validate_user_fields(request.data)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     
     #"superadmin","devicemanufacture","stateadmin","dtorto","dealer","owner","esimprovider"
@@ -4989,7 +5065,7 @@ def update_VehicleOwner(request ):
         
         date_joined = timezone.now()
         created = timezone.now()
-        expirydate = request.data.get('expiryDate')#date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = request.data.get('expiryDate')#date_joined + relativedelta(years=2)  # 2 years expiry date
         company_name = request.data.get('company_name')
         idProofno = request.data.get('idProofno')
         file_idProof = request.data.get('file_idProof')
@@ -5059,7 +5135,7 @@ def create_VehicleOwner(request ):
         date_joined = timezone.localdate()
         created = timezone.localdate()  
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         file_idProof = request.data.get('file_idProof') 
         user,error,new_password=create_user('owner',request)
         if not company_name:
@@ -5145,11 +5221,9 @@ def create_superuser(request):
                 'error': "Invalid email format."
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Validate mobile number format (basic validation)
-        if not mobile.isdigit() or len(mobile) < 10:
-            return Response({
-                'error': "Invalid mobile number format. Must be at least 10 digits."
-            }, status=status.HTTP_400_BAD_REQUEST)
+        field_errors = validate_user_fields(request.data)
+        if field_errors:
+            return Response({'errors': field_errors}, status=status.HTTP_400_BAD_REQUEST)
         
         # Check if user already exists
         if User.objects.filter(Q(email=email) | Q(mobile=mobile)).exists():
@@ -5199,7 +5273,8 @@ def create_superuser(request):
                     'date_joined': user.date_joined,
                     'created': user.created,
                 },
-                'temporary_password': new_password
+                # The registration token goes to the new admin by SMS only;
+                # returning it here would let the creator activate the account.
             }
             
             return Response(response_data, status=status.HTTP_201_CREATED)
@@ -5455,6 +5530,9 @@ def update_eSimProvider(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    errors = validate_user_fields(request.data)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     
     
@@ -5479,7 +5557,7 @@ def update_eSimProvider(request ):
         
         date_joined = timezone.localdate()
         created = timezone.localdate()
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber')
         gstno = request.data.get('gstno')
@@ -5614,7 +5692,7 @@ def create_eSimProvider_pub(request ):
         created = timezone.localdate()
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         partner_status = _normalize_partner_status(request.data.get('status'))
         if partner_status is None:
             partner_status = 'Created'
@@ -5784,7 +5862,7 @@ def create_eSimProvider(request ):
         created = timezone.localdate()
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         partner_status = _normalize_partner_status(request.data.get('status'))
         if partner_status is None:
             partner_status = 'Created'
@@ -6089,6 +6167,9 @@ def update_dealer(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    errors = validate_user_fields(request.data)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     
     
@@ -6109,7 +6190,7 @@ def update_dealer(request ):
         
         date_joined = timezone.localdate()
         created = timezone.localdate()
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber')        
         gstno = request.data.get('gstno')   
@@ -6217,7 +6298,7 @@ def create_dealer(request ):
          
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         file_authLetter = request.data.get('file_authLetter')
         file_companRegCertificate = request.data.get('file_companRegCertificate')
         file_GSTCertificate = request.data.get('file_GSTCertificate')
@@ -6376,6 +6457,9 @@ def update_manufacturer(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    errors = validate_user_fields(request.data)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     
     try:
@@ -6394,7 +6478,7 @@ def update_manufacturer(request ):
         
         date_joined = timezone.localdate()
         created = timezone.localdate()
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         company_name = request.data.get('company_name')
         gstnnumber = request.data.get('gstnnumber')        
         state = request.data.get('state')
@@ -6520,7 +6604,7 @@ def create_manufacturer_pub(request ):
         state = request.data.get('state')
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         partner_status = _normalize_partner_status(request.data.get('status'))
         if partner_status is None:
             partner_status = 'Created'
@@ -6755,7 +6839,7 @@ def create_manufacturer(request ):
         state = request.data.get('state')
         gstno = request.data.get('gstno', '')  # Placeholder for gstno
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         partner_status = _normalize_partner_status(request.data.get('status'))
         if partner_status is None:
             partner_status = 'Created'
@@ -7198,15 +7282,32 @@ def create_user(role, req):
 
         if not mobile:
             field_errors['mobile'] = 'mobile is required.'
-        else:
-            mobile_digits = ''.join(ch for ch in mobile if ch.isdigit())
-            if mobile_digits != mobile:
-                field_errors['mobile'] = 'mobile must contain digits only.'
-            elif len(mobile) < 10 or len(mobile) > 15:
-                field_errors['mobile'] = 'mobile must be between 10 and 15 digits.'
+        elif mobile_number_error(mobile):
+            field_errors['mobile'] = mobile_number_error(mobile)
 
         if not dob:
             field_errors['dob'] = 'dob is required.'
+        elif dob_error(dob):
+            field_errors['dob'] = dob_error(dob)
+        else:
+            dob = parse_input_date(dob).isoformat()
+
+        # lat/lon are optional, but when sent they must be valid coordinates.
+        coords = {}
+        for key, limit in (('lat', 90), ('lon', 180)):
+            raw = req.data.get(key, None)
+            if raw in (None, ''):
+                coords[key] = None
+                continue
+            try:
+                value = float(str(raw).strip())
+            except (TypeError, ValueError):
+                field_errors[key] = f'{key} must be a number.'
+                continue
+            if not -limit <= value <= limit:
+                field_errors[key] = f'{key} must be between -{limit} and {limit}.'
+                continue
+            coords[key] = value
 
         if field_errors:
             return [None, {'errors': field_errors}, None]
@@ -7269,6 +7370,8 @@ def create_user(role, req):
             dob=dob,
             address=address,
             address_pin=address_pin,
+            lat=coords.get('lat'),
+            lon=coords.get('lon'),
             createdby=createdby_value,
             date_joined=date_joined,
             created=created,
@@ -7511,7 +7614,7 @@ def create_StateAdmin(request ):
         createdby = request.user 
         date_joined = timezone.localdate()
         created = timezone.localdate()  
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         file_idProof = request.data.get('file_idProof')
         file_authorisation_letter = request.data.get('file_authorisation_letter')
         
@@ -7572,6 +7675,9 @@ def update_StateAdmin(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    errors = validate_user_fields(request.data)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     
     
@@ -7592,7 +7698,7 @@ def update_StateAdmin(request ):
         
         date_joined = timezone.localdate()
         created = timezone.localdate()
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         email = request.data.get('email')
         idProofno = request.data.get('idProofno')
         state = request.data.get('state')
@@ -7753,7 +7859,7 @@ def create_DTO_RTO(request ):
         date_joined = timezone.localdate()
         created = timezone.localdate()  
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         state= request.data.get('state', '')
         dto_rto1= request.data.get('dto_rto', '')
         districtC = request.data.get('district_code', '')
@@ -7822,6 +7928,9 @@ def update_DTO_RTO(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    errors = validate_user_fields(request.data)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     
     
@@ -7842,7 +7951,7 @@ def update_DTO_RTO(request ):
         
         date_joined = timezone.localdate()
         created = timezone.localdate()
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         idProofno = request.data.get('idProofno')
         state = request.data.get('state', '1')
         dto_rto1 = request.data.get('dto_rto')
@@ -8042,7 +8151,7 @@ def create_SOS_user(request ):
         date_joined = timezone.localdate()
         created = timezone.localdate()   
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         state= request.data.get('state', '') 
         district = request.data.get('district', '')
         user_type = request.data.get('user_type', '') 
@@ -8222,7 +8331,7 @@ def create_SOS_admin(request ):
         date_joined = timezone.localdate()
         created = timezone.localdate()  
         idProofno = request.data.get('idProofno', '')  # Placeholder for idProofno
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)  # 2 years expiry date
+        expirydate = date_joined + relativedelta(years=2)  # 2 years expiry date
         state= request.data.get('state', '') 
         #district = request.data.get('district', '') 
         file_idProof = request.data.get('file_idProof') 
@@ -8767,13 +8876,38 @@ def _auto_reassign_stale_desk_ex_calls(state=None):
     return reassigned_count
 
 
+# How long a call is left with the desk executives before the team lead is
+# alerted. The team lead assignment is created together with the desk_ex one,
+# so escalation is enforced when listing it.
+TEAMLEAD_ESCALATION_SECONDS = 30
+
+
+def _hide_unescalated_teamlead_assignments(qs):
+    """Drop pending team lead assignments that have not escalated yet.
+
+    A pending team lead assignment is shown only once its call has been open
+    for TEAMLEAD_ESCALATION_SECONDS and no desk executive has accepted it.
+    Assignments the team lead has already acted on are always shown.
+    """
+    cutoff = timezone.now() - timedelta(seconds=TEAMLEAD_ESCALATION_SECONDS)
+    desk_ex_took_call = EMCallAssignment.objects.filter(
+        call=OuterRef('call'),
+        type='desk_ex',
+        status__in=['accepted', 'arriving', 'arrived'],
+    )
+    unescalated = Q(type='teamlead', status='pending') & (
+        Q(call__start_time__gt=cutoff) | Q(Exists(desk_ex_took_call))
+    )
+    return qs.exclude(unescalated)
+
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 @require_permission('emergency_management', 'view')
-def TLEx_getPendingCallList(request ): 
+def TLEx_getPendingCallList(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -8859,6 +8993,8 @@ def DEx_getPendingCallList(request ):
         else:
             qs = qs_base.filter(ex=uo)
             cache_scope = f"ex:{getattr(uo, 'id', None)}"
+            if uo.user_type == 'teamlead':
+                qs = _hide_unescalated_teamlead_assignments(qs)
 
         # Short-lived cache to avoid repeated heavy serialization for the same scope
         cache_key = f"DEx_getPendingCallList:pending:{cache_scope}"
@@ -9225,10 +9361,13 @@ def DEx_broadcast(request ):
         assignment =request.data.get("assignment_id") 
         radius =request.data.get("radius")  
         radius =5
-        typ =request.data.get("type")  
-        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo).last()
+        typ =request.data.get("type")
+        if typ not in dict(EMCallBroadcast.types):
+            return Response({"error": "Invalid broadcast type."}, status=status.HTTP_400_BAD_REQUEST)
+        # Only a call the executive has accepted can be broadcast to field units.
+        assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status="accepted").exclude(call__status__in=["closed", "closed_false_alert"]).last()
         if not assignment:
-            return Response({"error":"Assignment not found  " }, status=status.HTTP_400_BAD_REQUEST) 
+            return Response({"error":"Assignment not found or not accepted." }, status=status.HTTP_400_BAD_REQUEST)
         ee,error=EMCallBroadcast.objects.safe_create( admin  =assignment.admin,
             created_by= uo,
             call = assignment.call,
@@ -15211,11 +15350,19 @@ def vehicle_alert_statistics(request):
     Get vehicle and alert statistics including:
     - Total tagged vehicles and online vehicles
     - SOS calls, broadcasts, and alerts counts (daily, weekly, monthly, yearly)
-    Superadmin only.
+    Superadmin sees all states; SOS admin sees only their own state.
     """
-    # H-6: superadmin only
-    if getattr(request.user, 'role', None) != 'superadmin':
-        return Response({'error': 'Only superadmin can access this.'}, status=status.HTTP_403_FORBIDDEN)
+    # H-6: global figures are superadmin only. SOS admins get the same
+    # figures limited to their state (their dashboard charts use them).
+    role = getattr(request.user, 'role', None)
+    state = None
+    if role == 'sosadmin':
+        em_admin = get_user_object(request.user, 'sosadmin')
+        if not em_admin or not em_admin.state_id:
+            return Response({'error': 'SOS admin state not found.'}, status=status.HTTP_403_FORBIDDEN)
+        state = em_admin.state_id
+    elif role != 'superadmin':
+        return Response({'error': 'Only superadmin or SOS admin can access this.'}, status=status.HTTP_403_FORBIDDEN)
 
     errors = validate_inputs(request)
     if errors:
@@ -15249,14 +15396,27 @@ def vehicle_alert_statistics(request):
             except ValueError:
                 return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Base querysets, narrowed to the SOS admin's state when applicable.
+        # State follows the device -> dealer -> manufacturer chain, the same
+        # chain used to route SOS calls to a state's team.
+        tags_qs = DeviceTag.objects.all()
+        calls_qs = EMCall.objects.all()
+        broadcasts_qs = EMCallBroadcast.objects.all()
+        alerts_qs = AlertsLog.objects.all()
+        if state is not None:
+            tags_qs = tags_qs.filter(device__dealer__manufacturer__state_id=state)
+            calls_qs = calls_qs.filter(device__device__dealer__manufacturer__state_id=state)
+            broadcasts_qs = broadcasts_qs.filter(call__device__device__dealer__manufacturer__state_id=state)
+            alerts_qs = alerts_qs.filter(state_id=state)
+
         # ===== VEHICLE STATISTICS =====
         # Total tagged vehicles (active device tags)
-        total_tagged_vehicles = DeviceTag.objects.filter(
+        total_tagged_vehicles = tags_qs.filter(
             status='Owner_Final_OTP_Verified'
         ).count()
         
         # Get all IMEIs from active device tags
-        active_device_imeis = DeviceTag.objects.filter(
+        active_device_imeis = tags_qs.filter(
             status='Owner_Final_OTP_Verified'
         ).select_related('device').values_list('device__imei', flat=True)
         
@@ -15268,88 +15428,88 @@ def vehicle_alert_statistics(request):
         
         # ===== SOS CALLS STATISTICS =====
         # Total SOS calls
-        total_sos_calls = EMCall.objects.count()
+        total_sos_calls = calls_qs.count()
         
         # SOS calls - Daily
-        sos_calls_daily = EMCall.objects.filter(start_time__gte=day_threshold).count()
+        sos_calls_daily = calls_qs.filter(start_time__gte=day_threshold).count()
         
         # SOS calls - Weekly
-        sos_calls_weekly = EMCall.objects.filter(start_time__gte=week_threshold).count()
+        sos_calls_weekly = calls_qs.filter(start_time__gte=week_threshold).count()
         
         # SOS calls - Monthly
-        sos_calls_monthly = EMCall.objects.filter(start_time__gte=month_threshold).count()
+        sos_calls_monthly = calls_qs.filter(start_time__gte=month_threshold).count()
         
         # SOS calls - Yearly
-        sos_calls_yearly = EMCall.objects.filter(start_time__gte=year_threshold).count()
+        sos_calls_yearly = calls_qs.filter(start_time__gte=year_threshold).count()
         
         # ===== BROADCASTS STATISTICS =====
         # Total broadcasts
-        total_broadcasts = EMCallBroadcast.objects.count()
+        total_broadcasts = broadcasts_qs.count()
         
         # Closed broadcasts (accepted or canceled)
-        total_broadcasts_closed = EMCallBroadcast.objects.filter(
+        total_broadcasts_closed = broadcasts_qs.filter(
             status__in=['accepted', 'canceled']
         ).count()
         
         # Broadcasts closed - Daily
-        broadcasts_closed_daily = EMCallBroadcast.objects.filter(
+        broadcasts_closed_daily = broadcasts_qs.filter(
             status__in=['accepted', 'canceled'],
             created_at__gte=day_threshold
         ).count()
         
         # Broadcasts closed - Weekly
-        broadcasts_closed_weekly = EMCallBroadcast.objects.filter(
+        broadcasts_closed_weekly = broadcasts_qs.filter(
             status__in=['accepted', 'canceled'],
             created_at__gte=week_threshold
         ).count()
         
         # Broadcasts closed - Monthly
-        broadcasts_closed_monthly = EMCallBroadcast.objects.filter(
+        broadcasts_closed_monthly = broadcasts_qs.filter(
             status__in=['accepted', 'canceled'],
             created_at__gte=month_threshold
         ).count()
         
         # Broadcasts closed - Yearly
-        broadcasts_closed_yearly = EMCallBroadcast.objects.filter(
+        broadcasts_closed_yearly = broadcasts_qs.filter(
             status__in=['accepted', 'canceled'],
             created_at__gte=year_threshold
         ).count()
         
         # ===== ALERTS STATISTICS =====
         # Total alerts
-        total_alerts = AlertsLog.objects.count()
+        total_alerts = alerts_qs.count()
         
         # Alerts - Daily
-        alerts_daily = AlertsLog.objects.filter(timestamp__gte=day_threshold).count()
+        alerts_daily = alerts_qs.filter(timestamp__gte=day_threshold).count()
         
         # Alerts - Weekly
-        alerts_weekly = AlertsLog.objects.filter(timestamp__gte=week_threshold).count()
+        alerts_weekly = alerts_qs.filter(timestamp__gte=week_threshold).count()
         
         # Alerts - Monthly
-        alerts_monthly = AlertsLog.objects.filter(timestamp__gte=month_threshold).count()
+        alerts_monthly = alerts_qs.filter(timestamp__gte=month_threshold).count()
         
         # Alerts - Yearly
-        alerts_yearly = AlertsLog.objects.filter(timestamp__gte=year_threshold).count()
+        alerts_yearly = alerts_qs.filter(timestamp__gte=year_threshold).count()
         
         # Alerts by type (all time)
         alerts_by_type = {}
-        alert_types = AlertsLog.objects.values('type').annotate(count=Count('type'))
+        alert_types = alerts_qs.values('type').annotate(count=Count('type'))
         for alert_data in alert_types:
             alerts_by_type[alert_data['type']] = alert_data['count']
 
         # ===== ADDITIONAL STATISTICS =====
         # SOS calls by status
         sos_calls_by_status = {}
-        sos_status = EMCall.objects.values('status').annotate(count=Count('status'))
+        sos_status = calls_qs.values('status').annotate(count=Count('status'))
         for status_data in sos_status:
             sos_calls_by_status[status_data['status']] = status_data['count']
 
         # ===== DATE RANGE STATISTICS =====
         date_range_data = None
         if date_range_start and date_range_end:
-            dr_sos = EMCall.objects.filter(start_time__date__gte=date_range_start, start_time__date__lte=date_range_end)
-            dr_broadcasts = EMCallBroadcast.objects.filter(created_at__date__gte=date_range_start, created_at__date__lte=date_range_end)
-            dr_alerts = AlertsLog.objects.filter(timestamp__date__gte=date_range_start, timestamp__date__lte=date_range_end)
+            dr_sos = calls_qs.filter(start_time__date__gte=date_range_start, start_time__date__lte=date_range_end)
+            dr_broadcasts = broadcasts_qs.filter(created_at__date__gte=date_range_start, created_at__date__lte=date_range_end)
+            dr_alerts = alerts_qs.filter(timestamp__date__gte=date_range_start, timestamp__date__lte=date_range_end)
             dr_alerts_by_type = {}
             for alert_data in dr_alerts.values('type').annotate(count=Count('type')):
                 dr_alerts_by_type[alert_data['type']] = alert_data['count']
@@ -16516,11 +16676,10 @@ def update_vehicle_owner_expiry(request):
         if not owner_id or not new_expiry_date:
             return Response({"error": "Both 'owner_id' and 'new_expiry_date' are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Parse the new expiry date
-        try:
-            new_expiry_date = timezone.datetime.strptime(new_expiry_date, '%Y-%m-%d').date()
-        except ValueError:
-            return Response({"error": "Invalid date format. Use 'YYYY-MM-DD'."}, status=status.HTTP_400_BAD_REQUEST)
+        expiry_err = future_date_error(new_expiry_date, 'new_expiry_date')
+        if expiry_err:
+            return Response({"error": expiry_err}, status=status.HTTP_400_BAD_REQUEST)
+        new_expiry_date = parse_input_date(new_expiry_date)
 
         # Determine permissions based on role
         user = request.user
@@ -29107,7 +29266,7 @@ def create_testAgency(request):
         idProofno = request.data.get('idProofno', '')
         createdby = request.user
         date_joined = timezone.localdate()
-        expirydate = date_joined + timezone.timedelta(days=365 * 2)
+        expirydate = date_joined + relativedelta(years=2)
 
         partner_status = _normalize_partner_status(request.data.get('status'))
         if partner_status is None or partner_status == 'Created':
@@ -29166,6 +29325,9 @@ def create_testAgency(request):
 @require_permission('device_management', 'update')
 def update_testAgency(request):
     errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+    errors = validate_user_fields(request.data)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 

@@ -280,7 +280,23 @@ class eSimProviderSerializer(SanitizingModelSerializer):
     state = Settings_StateSerializer(many=False, read_only=True)
     class Meta:
         model = eSimProvider
-        fields = '__all__'
+        # The M2M API token is a credential: it is written via the config API
+        # and only used server-side, never returned.
+        exclude = ['m2m_api_token']
+
+
+class eSimProviderNestedSerializer(eSimProviderSerializer):
+    """eSimProvider as embedded inside Manufacturer/Dealer responses.
+
+    Callers there only need the provider's identity, so the M2M integration
+    details (API URL, test ICCID, last test result with MSISDNs) are left out.
+    """
+    class Meta(eSimProviderSerializer.Meta):
+        exclude = [
+            'm2m_api_url', 'm2m_api_token', 'm2m_sample_iccid',
+            'm2m_last_test_result', 'm2m_api_last_tested_at',
+            'device_ip_range',
+        ]
 
 
 # C-6: public (no login) versions - only id, company name and company phone number
@@ -312,7 +328,7 @@ class TestAgencyDetailsSerializer(SanitizingModelSerializer):
 class ManufacturerSerializer(SanitizingModelSerializer):
     users = UserSerializer(many=True, read_only=True)
     state = Settings_StateSerializer(many=False, read_only=True)
-    esim_provider = eSimProviderSerializer( many=True, read_only=True)
+    esim_provider = eSimProviderNestedSerializer(many=True, read_only=True)
     #eSimProviders = serializers.PrimaryKeyRelatedField(many=True, queryset=eSimProvider.objects.all())
     class Meta:
         model = Manufacturer
