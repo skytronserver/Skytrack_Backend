@@ -1,0 +1,15 @@
+# MQTT device-IP reporter, for broker VMs where Python may not run on the host.
+# Built and started by run_mqtt_reporter.sh; standard library only, no pip/apt steps,
+# so the build needs nothing but the base image (same one dockerfile.mqtt uses).
+FROM python:3.9-slim-bullseye
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+COPY mqtt_ip_reporter.py /app/mqtt_ip_reporter.py
+
+# run_mqtt_reporter.sh overrides this with the host's mosquitto uid:gid so the
+# container can read /var/log/mosquitto (mode 750) without running as root.
+USER 65534:65534
+
+ENTRYPOINT ["python3", "/app/mqtt_ip_reporter.py"]

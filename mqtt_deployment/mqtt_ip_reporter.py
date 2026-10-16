@@ -127,10 +127,27 @@ def replay(path):
         pass
 
 
+def check():
+    """POST an empty batch (writes nothing); print '<http status> <body>' for run_mqtt_reporter.sh."""
+    req = urllib.request.Request(
+        REPORT_URL, data=b'{"entries": []}', method="POST",
+        headers={"Content-Type": "application/json", "X-MQTT-IP-Key": REPORT_KEY})
+    try:
+        with _opener.open(req, timeout=HTTP_TIMEOUT) as r:
+            print(r.status, r.read()[:200].decode(errors="replace"))
+    except urllib.error.HTTPError as e:
+        print(e.code, e.read()[:200].decode(errors="replace").replace("\n", " "))
+    except Exception as e:
+        print(0, e)
+
+
 def main():
     if not REPORT_URL or not REPORT_KEY:
         log("MQTT_IP_REPORT_URL and MQTT_IP_REPORT_KEY must be set")
         sys.exit(2)
+    if "--check" in sys.argv[1:]:
+        check()
+        return
 
     replay(LOG_PATH + ".1")
     fh, inode = None, None
