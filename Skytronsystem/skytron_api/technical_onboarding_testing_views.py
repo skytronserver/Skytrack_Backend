@@ -901,29 +901,64 @@ def _resolve_geofence_point(point, packets):
     return min(packets, key=lambda p: _haversine_m(lat, lon, p['latitude'], p['longitude']))
 
 
+def _alert_id_is(packet, alert_id):
+    try:
+        return int(packet['alert_id']) == int(alert_id)
+    except (TypeError, ValueError):
+        return False
+
+
+def _geofence_alert_pair(packets, in_alert_id, out_alert_id, low, high):
+    """
+    (entry, exit, alerts_seen) from the device's own geofence alerts: each
+    IN alert paired with the next OUT alert after it. The first pair whose
+    distance is in range wins, else the latest pair. alerts_seen counts
+    the IN / OUT alerts found.
+    """
+    ins = [p for p in packets if _alert_id_is(p, in_alert_id)]
+    outs = [p for p in packets if _alert_id_is(p, out_alert_id)]
+    pairs = []
+    for entry in ins:
+        exit_ = next((p for p in outs if p['time'] > entry['time']), None)
+        if exit_:
+            distance = _haversine_m(entry['latitude'], entry['longitude'], exit_['latitude'], exit_['longitude'])
+            pairs.append((entry, exit_, low <= distance <= high))
+    best = next((pair for pair in pairs if pair[2]), None) or (pairs[-1] if pairs else None)
+    seen = {'in': len(ins), 'out': len(outs)}
+    return (best[0], best[1], seen) if best else (None, None, seen)
+
+
 def _check_geofence_crossing(execution, imei, window_start, now):
     """
     'geofence_crossing': the geofence IN and OUT points must be about
-    expected_distance_m apart (1 km, +/- tolerance_pct). The tester marks
-    the two points on the map (sent as geofence_in / geofence_out with the
-    refresh, see superadmin_refresh_test_log); each is snapped to the
-    recorded packet it refers to. When check_config has a centre_lat /
-    center_lon + radius_m and no points are marked, entry and exit are
-    detected automatically. The route is always returned for the map.
+    expected_distance_m apart (1 km, +/- tolerance_pct). The points come
+    from, in order:
+      1. the device's geofence alerts -- NR packets with alert ID
+         in_alert_id (18, entry) followed by out_alert_id (19, exit);
+      2. points the tester marked on the map (sent as geofence_in /
+         geofence_out with the refresh, see superadmin_refresh_test_log),
+         each snapped to the recorded packet it refers to;
+      3. check_config centre_lat / center_lon + radius_m, if set.
+    The route is always returned for the map.
     """
     cfg = _cfg(execution.test_case)
     expected = cfg.get('expected_distance_m', 1000)
     tolerance_pct = cfg.get('tolerance_pct', 5)
     low, high = expected * (1 - tolerance_pct / 100), expected * (1 + tolerance_pct / 100)
+    in_alert_id, out_alert_id = cfg.get('in_alert_id', 18), cfg.get('out_alert_id', 19)
 
     packets = [p for p in _pvt_packets(imei, window_start) if p['latitude'] is not None and p['gps_fix'] == '1']
     route = [{'latitude': p['latitude'], 'longitude': p['longitude'], 'timestamp': p['time'].isoformat(),
               'speed': p['speed']} for p in packets]
 
+    entry, exit_, alerts_seen = _geofence_alert_pair(packets, in_alert_id, out_alert_id, low, high)
+    detection = 'device_alert'
+
     marked = getattr(execution, 'geofence_points', None) or {}
-    entry = _resolve_geofence_point(marked.get('in'), packets)
-    exit_ = _resolve_geofence_point(marked.get('out'), packets)
-    detection = 'marked'
+    if not (entry and exit_) and (marked.get('in') or marked.get('out')):
+        entry = _resolve_geofence_point(marked.get('in'), packets)
+        exit_ = _resolve_geofence_point(marked.get('out'), packets)
+        detection = 'marked'
 
     center_lat, center_lon = _to_float(cfg.get('center_lat')), _to_float(cfg.get('center_lon'))
     if not (entry or exit_) and center_lat is not None and center_lon is not None:
@@ -941,10 +976,10 @@ def _check_geofence_crossing(execution, imei, window_start, now):
     if not packets:
         reason = "No PVT packets with a valid GPS fix received since the test started."
     elif entry is None or exit_ is None:
-        missing = ' and '.join(name for name, p in (('IN', entry), ('OUT', exit_)) if p is None)
         reason = (
-            f"Geofence {missing} point not marked yet. Mark the IN and OUT points on the map "
-            f"(they must be about {expected / 1000:g} km apart), then refresh."
+            f"No geofence IN alert (NR,{in_alert_id}) followed by an OUT alert (NR,{out_alert_id}) since the "
+            f"test started (seen {alerts_seen['in']} IN, {alerts_seen['out']} OUT). Drive through the geofence, "
+            f"or mark the IN and OUT points on the map (about {expected / 1000:g} km apart), then refresh."
         )
     else:
         if exit_['time'] < entry['time']:
@@ -967,6 +1002,7 @@ def _check_geofence_crossing(execution, imei, window_start, now):
         'reason': reason,
         'samples': samples,
         'detection': detection,
+        'geofence_alerts_seen': alerts_seen,
         'geofence_points': {k: marked[k] for k in ('in', 'out') if marked.get(k)},
         'entry_exit_distance_m': distance,
         'criteria': {'distance_range_m': [round(low), round(high)]},
