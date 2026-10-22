@@ -377,7 +377,7 @@ def list_tickets(request):
     Query params:
       status            – filter by exact status value
       source            – filter by source
-      escalated_to      – filter by escalation target (teamlead/sosadmin/manufacturer)
+      escalated_to      – filter by escalation target (teamlead/sosadmin/manufacturer, "any" or "none")
       search            – full-text search on ref/name/phone/email/title
       page              – page number (default 1)
       page_size         – results per page (default 20, max 100)
@@ -404,6 +404,8 @@ def list_tickets(request):
         if filter_escalated_to:
             if filter_escalated_to == 'none':
                 qs = qs.filter(escalated_to__isnull=True)
+            elif filter_escalated_to == 'any':
+                qs = qs.filter(escalated_to__isnull=False).exclude(escalated_to='')
             else:
                 qs = qs.filter(escalated_to=filter_escalated_to)
 

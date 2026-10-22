@@ -20,8 +20,27 @@ from django.contrib.auth import get_user_model
 from .secure_token import verify_jwt_token, decode_jwt_token
 from .models import TokenBlacklist, Session
 import logging
+from datetime import timedelta
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+# Session.lastactivity / User.last_activity drive the "online" and "currently
+# logged in" statistics (15-minute window). Refresh them at most this often so
+# authenticated requests don't each cost two writes.
+ACTIVITY_TOUCH_INTERVAL = timedelta(minutes=5)
+
+
+def _touch_activity(session, user):
+    """Record that this session is in use. Never raises."""
+    try:
+        now = timezone.now()
+        if session.lastactivity and now - session.lastactivity < ACTIVITY_TOUCH_INTERVAL:
+            return
+        Session.objects.filter(pk=session.pk).update(lastactivity=now)
+        type(user).objects.filter(pk=user.pk).update(last_activity=now)
+    except Exception as e:
+        logger.warning(f"Activity touch failed for user {getattr(user, 'pk', None)}: {e}")
 
 class JWTAuthentication(BaseAuthentication):
     """
@@ -133,6 +152,8 @@ class JWTAuthentication(BaseAuthentication):
             if session.status != 'login':
                 logger.warning(f"Session not fully authenticated (status={session.status}) for user {user_id}")
                 return None
+
+            _touch_activity(session, user)
 
             # Log successful authentication for security audit
             logger.info(f"JWT authentication successful for user {user_id}")

@@ -27,7 +27,6 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
 from . import protocol_formats as pf
 from .dev_views import _dev_only
@@ -867,12 +866,26 @@ def _check_speed_accuracy(execution, imei, window_start, now):
             stretches.append({'target_speed_kmph': target, 'passed': False, 'duration_seconds': 0, 'packet_count': 0})
             problems.append(f"{target} km/h: no packet reported a speed between {target - tolerance} and {target + tolerance} km/h.")
 
-    passed = sum(1 for s in stretches if s['passed'])
+    for s in stretches:
+        s['status'] = 'passed' if s['passed'] else 'failed'
+    passed_speeds = [s['target_speed_kmph'] for s in stretches if s['passed']]
+    failed_speeds = [s['target_speed_kmph'] for s in stretches if not s['passed']]
+    summary = ', '.join(
+        f"{s['target_speed_kmph']} km/h: {'PASSED' if s['passed'] else 'FAILED'}"
+        + (f" ({_duration(s['duration_seconds'])} steady)" if s['duration_seconds'] else '')
+        for s in stretches
+    )
+    reason = _fail_reason(problems)
+    if reason and passed_speeds:
+        reason = f"Passed: {', '.join(f'{t} km/h' for t in passed_speeds)}. " + reason
     return {
-        'matched_count': passed,
+        'matched_count': len(passed_speeds),
         'required': len(targets),
         'pass': not problems,
-        'reason': _fail_reason(problems),
+        'reason': reason,
+        'summary': summary,
+        'passed_speeds_kmph': passed_speeds,
+        'failed_speeds_kmph': failed_speeds,
         'samples': [s['start'] for s in stretches if s.get('start')][:5],
         'stretches': stretches,
         'criteria': {'target_speeds_kmph': targets, 'tolerance_kmph': tolerance, 'min_duration_seconds': min_duration},
@@ -1821,7 +1834,7 @@ def _get_onboarding_request_or_error(onboarding_request_id):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'update')
@@ -1865,7 +1878,7 @@ def manufacturer_update_courier_tracking(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'update')
@@ -1937,7 +1950,7 @@ def superadmin_confirm_demo_device_receipt(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'view')
 def technical_onboarding_test_case_list(request):
@@ -1952,7 +1965,7 @@ def technical_onboarding_test_case_list(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'update')
@@ -2035,7 +2048,7 @@ def _serialize_board(onboarding_request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'view')
@@ -2063,7 +2076,7 @@ def superadmin_get_onboarding_test_board(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'update')
@@ -2136,7 +2149,7 @@ def superadmin_start_test(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'update')
@@ -2166,7 +2179,7 @@ def superadmin_test_heartbeat(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'update')
@@ -2216,7 +2229,7 @@ def superadmin_refresh_test_log(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'update')
@@ -2320,7 +2333,7 @@ def _get_execution_or_error(execution_id):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'view')
 def superadmin_list_test_commands(request):
@@ -2355,7 +2368,7 @@ def superadmin_list_test_commands(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @transaction.atomic
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'update')
@@ -2481,7 +2494,7 @@ def _pvt_history_entry(raw_data, parts, idx, server_time, effective_time, time_s
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
 @require_http_methods(['GET', 'POST'])
 @require_permission('manufacturer_management', 'view')
 def superadmin_demo_device_location_history(request):

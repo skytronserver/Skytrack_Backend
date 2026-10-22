@@ -2356,6 +2356,22 @@ _DOWNLOAD_CONTENT_TYPES = {
 }
 
 
+def _read_local_upload(file_path):
+    """Read an upload from HOST_STORAGE_PATH/fileuploads/, or None if missing or outside it."""
+    key = file_path.replace("%20", " ").lstrip('/')
+    if not key.startswith('fileuploads/'):
+        return None
+    uploads_root = os.path.realpath(os.path.join(HOST_STORAGE_PATH, 'fileuploads'))
+    local_path = os.path.realpath(os.path.join(HOST_STORAGE_PATH, key))
+    if not local_path.startswith(uploads_root + os.sep) or not os.path.isfile(local_path):
+        return None
+    try:
+        with open(local_path, 'rb') as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])  # Apply throttling here
@@ -2377,14 +2393,18 @@ def downloadfile(request):
     filename = os.path.basename(file_path)
     # Try the full path first, then just the file name
     full_path = find_file_in_folders(file_path, folders) or find_file_in_folders(filename, folders)
-    if not full_path or not full_path.startswith('fileuploads/'):
-        return Response({'error': 'File not found.'}, status=404)
-
-    try:
-        from . import minio_storage
-        file_bytes = minio_storage.download_bytes(full_path)
-    except Exception:
-        return Response({'error': 'File not found.'}, status=404)
+    if full_path and full_path.startswith('fileuploads/'):
+        try:
+            from . import minio_storage
+            file_bytes = minio_storage.download_bytes(full_path)
+        except Exception:
+            return Response({'error': 'File not found.'}, status=404)
+    else:
+        # Some uploads (older COP files, tag documents, renewal certificates) were
+        # written to HOST_STORAGE_PATH instead of MinIO
+        file_bytes = _read_local_upload(file_path)
+        if file_bytes is None:
+            return Response({'error': 'File not found.'}, status=404)
 
     content_type = _DOWNLOAD_CONTENT_TYPES.get(os.path.splitext(filename)[1].lower(), 'application/octet-stream')
     response = HttpResponse(file_bytes, content_type=content_type)
@@ -8752,11 +8772,15 @@ def get_EM_team(request ):
     role="sosadmin"
     user=request.user
     uo=get_user_object(user,role)
-    if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    is_superadmin = not uo and get_user_object(user, "superadmin")
+    if not uo and not is_superadmin:
+        return Response({"error":"Request must be from  "+role+" or superadmin."}, status=status.HTTP_400_BAD_REQUEST)
     try:
-        id = request.data.get('team_id') 
-        ob=EMTeams.objects.filter(id = id ,state=uo.state).last()
+        id = request.data.get('team_id')
+        ob=EMTeams.objects.filter(id = id)
+        if uo:
+            ob=ob.filter(state=uo.state)
+        ob=ob.last()
         if ob: 
             return Response({"team":EMTeamsSerializer(ob).data}, status=200)#Response(SOS_userSerializer(dealer).data)
         return Response({'error': str('Team not found')}, status=400)#Response(SOS_userSerializer(dealer).data)
@@ -8779,10 +8803,18 @@ def list_EM_team(request ):
     role="sosadmin"
     user=request.user
     uo=get_user_object(user,role)
-    if not uo:
-        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
-    try: 
-        ob=EMTeams.objects.filter( state=uo.state).all()
+    is_superadmin = not uo and get_user_object(user, "superadmin")
+    if not uo and not is_superadmin:
+        return Response({"error":"Request must be from  "+role+" or superadmin."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        if uo:
+            ob=EMTeams.objects.filter( state=uo.state).all()
+        else:
+            # superadmin sees teams across all states, optionally narrowed by state
+            ob=EMTeams.objects.all().order_by('-id')
+            state_id = request.data.get('state')
+            if state_id:
+                ob=ob.filter(state_id=state_id)
         if ob: 
             return Response({ "teams":EMTeamsSerializer(ob,many=True).data}, status=200)#Response(SOS_userSerializer(dealer).data)
         return Response({'error': str('Team not found')}, status=400)#Response(SOS_userSerializer(dealer).data)
@@ -10743,12 +10775,12 @@ def search_request_logs(request):
     # to read and JSON-serialize; returning them only on demand speeds things up a lot.
     if include_payload:
         logs_qs = logs_qs.values(
-             'request_url', 'request_type',
+            'timestamp', 'ip_address', 'request_url', 'request_type',
             'response_type', 'response_time_ms', 'error_code',  'incoming_data'
         )
     else:
         logs_qs = logs_qs.values(
-             'request_url', 'request_type',
+            'timestamp', 'ip_address', 'request_url', 'request_type',
             'response_type', 'response_time_ms', 'error_code'
         )
 
@@ -14010,12 +14042,14 @@ def COPCreate(request ):
             # Save the file to a specific location
             safe_file_name = os.path.basename(uploaded_file.name)
             relative_file_path = f"fileuploads/cop_files/{device_cop_instance.id}_{safe_file_name}"
-            absolute_file_path = os.path.join(HOST_STORAGE_PATH, relative_file_path)
-            os.makedirs(os.path.dirname(absolute_file_path), exist_ok=True)
-            with open(absolute_file_path, 'wb') as file:
-                for chunk in uploaded_file.chunks():
-                    file.write(chunk)
-            
+            # Stored in MinIO, where download/ looks for it
+            from . import minio_storage
+            minio_storage.upload_bytes(
+                relative_file_path,
+                b''.join(uploaded_file.chunks()),
+                uploaded_file.content_type or 'application/octet-stream',
+            )
+
             # Update the cop_file field in the DeviceCOP instance
             device_cop_instance.cop_file = relative_file_path
             device_cop_instance.save()
@@ -14055,7 +14089,7 @@ def COPAwaitingStateApproval(request ):
         return Response({"error": "Request must be from stateadmin or superadmin."}, status=status.HTTP_400_BAD_REQUEST)
     
     #user_id = request.user.id
-    device_models = DeviceCOP.objects.filter(status='Manufacturer_OTP_Verified')#created_by=user_id, 
+    device_models = DeviceCOP.objects.filter(status='Manufacturer_OTP_Verified').select_related('device_model')
     
     # Serialize the data
     serializer = DeviceCOPSerializer(device_models, many=True)
@@ -14501,7 +14535,7 @@ def DeviceSendStateAdminOtp(request ):
       
     device_model_id = request.data.get('device_model_id')
     # Validate current status and update the status
-    device_model = get_object_or_404(DeviceModel, id=device_model_id,  status__in =['Manufacturer_OTP_Verified',"StateAdminOTPSend"])
+    device_model = DeviceModel.objects.filter(id=device_model_id, status__in=['Manufacturer_OTP_Verified', "StateAdminOTPSend"]).first()
     if not device_model:
         return JsonResponse({'error': "Device model not found or already processed."}, status=400)
     
@@ -14548,7 +14582,9 @@ def DeviceVerifyStateAdminOtp(request ):
       
     device_model_id = request.data.get('device_model_id') 
     user_id = request.user.id 
-    device_model = get_object_or_404(DeviceModel, id=device_model_id, status='StateAdminOTPSend')#created_by=user_id ,
+    device_model = DeviceModel.objects.filter(id=device_model_id, status='StateAdminOTPSend').first()
+    if not device_model:
+        return JsonResponse({'error': "Device model not found or already processed."}, status=400)
 
 
     otp = request.data.get('otp')
@@ -15254,10 +15290,20 @@ def user_statistics(request):
         authenticated_session_statuses = ['login', 'logout', 'timeout']
         total_logins = Session.objects.filter(status__in=authenticated_session_statuses).count()
         
+        # A session stays status='login' until logout, even after its token expires,
+        # so only sessions still inside their role's expiry count as logged in.
+        now = timezone.now()
+        role_expiry = dict(LoginSettings.objects.values_list('user_role', 'session_expiry_minutes'))
+        unexpired = Q()
+        default_expiry = 1440
+        for role_code, minutes in role_expiry.items():
+            unexpired |= Q(user__role=role_code, loginTime__gte=now - timedelta(minutes=minutes or default_expiry))
+        unexpired |= (~Q(user__role__in=list(role_expiry.keys())) & Q(loginTime__gte=now - timedelta(minutes=default_expiry)))
+        logged_in_sessions = Session.objects.filter(unexpired, status='login')
+
         # Additional useful statistics
-        # Currently logged in registered users (session status = login and recent activity)
-        currently_logged_in_registered = Session.objects.filter(
-            status='login',
+        # Currently logged in registered users (live session with activity in the last 15 minutes)
+        currently_logged_in_registered = logged_in_sessions.filter(
             lastactivity__gte=online_threshold
         ).values('user').distinct().count()
         
@@ -15271,9 +15317,7 @@ def user_statistics(request):
         logged_in_users_by_role = {}
         # Logged-in users by role breakdown
         # Prefer session-backed computation (authoritative) but keep the same output shape.
-        logged_in_roles = Session.objects.filter(
-            status='login'
-        ).select_related('user').values('user__role').annotate(count=Count('user__role'))
+        logged_in_roles = logged_in_sessions.values('user__role').annotate(count=Count('user', distinct=True))
         for role_data in logged_in_roles:
             if role_data['user__role']:
                 logged_in_users_by_role[role_data['user__role']] = role_data['count']
@@ -15290,10 +15334,9 @@ def user_statistics(request):
         
         # Currently active sessions by role (session status = login and recent activity)
         active_sessions_by_role = {}
-        active_session_roles = Session.objects.filter(
-            status='login',
+        active_session_roles = logged_in_sessions.filter(
             lastactivity__gte=online_threshold
-        ).select_related('user').values('user__role').annotate(count=Count('user__role'))
+        ).values('user__role').annotate(count=Count('user', distinct=True))
         for role_data in active_session_roles:
             if role_data['user__role']:
                 active_sessions_by_role[role_data['user__role']] = role_data['count']
@@ -28767,7 +28810,7 @@ def sos_analysis_dashboard(request):
     """
     SOS analysis dashboard providing:
     - month_wise_metrics (last 1 year)
-    - hour_of_day_wise_metrics (last 24 hours)
+    - hour_of_day_wise_metrics (last 1 year, grouped by IST hour, all 24 hours)
     - district_wise_metrics (today)
     - policestation_wise_metrics (today)
     - fetchsosByType_wise_metrics
@@ -28794,7 +28837,6 @@ def sos_analysis_dashboard(request):
         now = timezone.now()
         one_year_ago = now - timedelta(days=365)
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        last_24h = now - timedelta(hours=24)
         last_7_days = now - timedelta(days=7)
 
         fake_statuses = ['closed_false_alert', 'closed_false_allert']
@@ -28858,15 +28900,18 @@ def sos_analysis_dashboard(request):
                 'total_fake_call_close': row['total_fake_call_close'],
             })
 
-        # ==================== 2. hour_of_day_wise_metrics (last 24 hours) ====================
-        hour_of_day_wise_metrics = list(
-            call_qs_year.filter(start_time__gte=last_24h)
-            .annotate(hour_of_day=ExtractHour('start_time'))
+        # ==================== 2. hour_of_day_wise_metrics (same window as month_wise, IST hour) ====================
+        from zoneinfo import ZoneInfo
+        hour_counts = dict(
+            call_qs_year
+            .annotate(hour_of_day=ExtractHour('start_time', tzinfo=ZoneInfo(SOS_REPORT_TZ)))
             .values('hour_of_day')
             .annotate(total_calls_count=Count('id'))
-            .order_by('hour_of_day')
-            .values('hour_of_day', 'total_calls_count')
+            .values_list('hour_of_day', 'total_calls_count')
         )
+        hour_of_day_wise_metrics = [
+            {'hour_of_day': h, 'total_calls_count': hour_counts.get(h, 0)} for h in range(24)
+        ]
 
         # ==================== 3. district_wise_metrics (today) ====================
         dist_rows = (
@@ -29089,8 +29134,9 @@ def sos_analysis_dashboard(request):
 @require_http_methods(['GET', 'POST'])
 def sos_monitoring_dashboard(request):
     """
-    SOS monitoring dashboard KPIs for today:
-    - total_emergency_calls_today, total_closed_calls_today, total_live_calls_now, total_unattended_calls_now
+    SOS monitoring dashboard KPIs for today (IST day):
+    - total_emergency_calls_today, total_closed_calls_today
+    - total_live_calls_now, total_unattended_calls_now: calls still open, whatever day they started
     - avgPolice_OnScene, avg_Exec_accept
     - escalation_Rate
     - total_triggered_calls, total_assigned_calls, total_exec_accepted_calls,
@@ -29109,20 +29155,22 @@ def sos_monitoring_dashboard(request):
         state_id = _p('state_id')
         district_id = _p('district_id')
 
+        from zoneinfo import ZoneInfo
         now = timezone.now()
-        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_start = timezone.localtime(now, ZoneInfo(SOS_REPORT_TZ)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-        calls_today = EMCall.objects.filter(start_time__gte=day_start, start_time__lte=now)
+        calls = EMCall.objects.all()
         if state_id:
             try:
-                calls_today = calls_today.filter(team__state_id=int(state_id))
+                calls = calls.filter(team__state_id=int(state_id))
             except (ValueError, TypeError):
                 return Response({'error': 'Invalid state_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
         if district_id:
             try:
-                calls_today = calls_today.filter(device__district_id=int(district_id))
+                calls = calls.filter(device__district_id=int(district_id))
             except (ValueError, TypeError):
                 return Response({'error': 'Invalid district_id parameter'}, status=status.HTTP_400_BAD_REQUEST)
+        calls_today = calls.filter(start_time__gte=day_start, start_time__lte=now)
 
         live_statuses = ['pending', 'desk_ex_assigned', 'broadcast_pending', 'field_ex_aproaching', 'field_ex_arrived']
         closed_statuses = ['closed', 'closed_false_alert', 'closed_false_allert']
@@ -29131,10 +29179,11 @@ def sos_monitoring_dashboard(request):
         accepted_assignment_exists = EMCallAssignment.objects.filter(call_id=OuterRef('pk'), status='accepted')
 
         total_triggered_calls = calls_today.count()
-        total_live_calls_now = calls_today.filter(status__in=live_statuses).count()
+        # Live/unattended are "right now" figures: an open call stays open past midnight
+        total_live_calls_now = calls.filter(status__in=live_statuses).count()
         total_closed_calls = calls_today.filter(status__in=closed_statuses).count()
         total_unattended_calls_now = (
-            calls_today
+            calls
             .filter(status__in=unattended_statuses)
             .annotate(has_accepted=Exists(accepted_assignment_exists))
             .filter(has_accepted=False)
@@ -29456,10 +29505,15 @@ def create_testAgencyDetails(request):
         if not name:
             return Response({'error': 'name is required.'}, status=400)
 
+        state, state_error = _resolve_testagency_state(request.data.get('state'))
+        if state_error:
+            return Response({'error': state_error}, status=400)
+
         detail = TestAgencyDetails.objects.create(
             name=name,
             address=address,
             pincode=pincode,
+            state=state,
         )
         return Response(TestAgencyDetailsSerializer(detail).data, status=201)
     except Exception as e:
@@ -29502,11 +29556,68 @@ def update_testAgencyDetails(request):
             detail.address = address
         if pincode is not None:
             detail.pincode = pincode
+        if 'state' in request.data:
+            state, state_error = _resolve_testagency_state(request.data.get('state'))
+            if state_error:
+                return Response({'error': state_error}, status=400)
+            detail.state = state
 
         detail.save()
         return Response(TestAgencyDetailsSerializer(detail).data)
     except Exception as e:
         return Response({'error': 'Unable to process request.'}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'delete')
+def delete_testAgencyDetails(request):
+    """Delete a TestAgencyDetails entry. Only superadmin."""
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    role = "superadmin"
+    user = request.user
+    uo = get_user_object(user, role)
+    if not uo:
+        return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        detail_id = request.data.get('detail_id')
+        if not detail_id:
+            return Response({'error': 'detail_id is required.'}, status=400)
+
+        detail = TestAgencyDetails.objects.filter(id=detail_id).last()
+        if not detail:
+            return Response({'error': 'Invalid detail_id.'}, status=400)
+
+        # DeviceModel.test_agency stores the agency name as text, so a name in use can't be removed
+        if DeviceModel.objects.filter(test_agency__iexact=detail.name).exists():
+            return Response(
+                {'error': 'This test agency is assigned to one or more device models and cannot be deleted.'},
+                status=400
+            )
+
+        detail.delete()
+        return Response({'message': 'Test agency deleted successfully.'})
+    except Exception as e:
+        return Response({'error': 'Unable to process request.'}, status=400)
+
+
+def _resolve_testagency_state(value):
+    """Map a state id from the request to a Settings_State. Returns (state, error)."""
+    if value in (None, ''):
+        return None, None
+    try:
+        state = Settings_State.objects.filter(id=int(value)).first()
+    except (ValueError, TypeError):
+        return None, 'Invalid state.'
+    if not state:
+        return None, 'Invalid state.'
+    return state, None
 
 
 @api_view(['POST'])
@@ -29545,19 +29656,30 @@ def public_testAgencyDetails_list(request):
 @require_http_methods(['GET', 'POST'])
 @require_permission('device_management', 'view')
 def get_testAgency_device_models(request):
-    """Return device models assigned to the calling test agency user's agency name."""
+    """
+    Return device models assigned to a test agency.
+    - testagency user: models assigned to their own agency name.
+    - superadmin: models assigned to any test agency, optionally narrowed by `test_agency` (name).
+    """
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    role = "testagency"
     user = request.user
-    agency = get_user_object(user, role)
-    if not agency:
-        return Response({"error": "Request must be from a test agency user."}, status=status.HTTP_400_BAD_REQUEST)
+    agency = get_user_object(user, "testagency")
+    is_superadmin = not agency and get_user_object(user, "superadmin")
+    if not agency and not is_superadmin:
+        return Response({"error": "Request must be from a test agency user or superadmin."}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        device_models = DeviceModel.objects.filter(test_agency__iexact=agency.agency_name)
+        if agency:
+            device_models = DeviceModel.objects.filter(test_agency__iexact=agency.agency_name)
+        else:
+            device_models = DeviceModel.objects.exclude(test_agency__isnull=True).exclude(test_agency='')
+            agency_name = str(request.data.get('test_agency') or '').strip()
+            if agency_name:
+                device_models = device_models.filter(test_agency__iexact=agency_name)
+        device_models = device_models.order_by('-id')
         return Response(DeviceModelForTestAgencySerializer(device_models, many=True).data)
     except Exception as e:
         return Response({'error': 'Unable to process request.'}, status=400)

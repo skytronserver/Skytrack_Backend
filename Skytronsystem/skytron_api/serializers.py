@@ -260,10 +260,23 @@ class DeviceModelFilterSerializer(serializers.Serializer):
     created = serializers.DateField(required=False)
     status = serializers.CharField(required=False)
 class DeviceCOPSerializer(SanitizingModelSerializer):
+    device_model_name = serializers.CharField(source='device_model.model_name', read_only=True, default=None)
+    manufacturer_name = serializers.SerializerMethodField()
+
     class Meta:
         model = DeviceCOP
-        #exclude = ['otp','otp_time'] 
-        fields = '__all__' 
+        fields = '__all__'
+        # COP creation writes the OTP through this serializer, but it must never be returned
+        extra_kwargs = {
+            'otp': {'write_only': True},
+            'otp_time': {'write_only': True},
+        }
+
+    def get_manufacturer_name(self, obj):
+        if not obj.created_by_id:
+            return None
+        manufacturer = Manufacturer.objects.filter(users__id=obj.created_by_id).only('company_name').first()
+        return manufacturer.company_name if manufacturer else None
         
 
  
@@ -320,6 +333,8 @@ class TestAgencySerializer(SanitizingModelSerializer):
 
 
 class TestAgencyDetailsSerializer(SanitizingModelSerializer):
+    state_name = serializers.CharField(source='state.state', read_only=True, default=None)
+
     class Meta:
         model = TestAgencyDetails
         fields = '__all__'
@@ -376,6 +391,7 @@ class DeviceModelSerializer(SanitizingModelSerializer):
     class Meta:
         model = DeviceModel
         fields = '__all__'
+        extra_kwargs = {'otp': {'write_only': True}, 'otp_time': {'write_only': True}}
 class DeviceStockSerializer2(SanitizingModelSerializer):
     #created_by_name = serializers.SerializerMethodField()
     model = DeviceModelSerializer(many=False, read_only=True)
@@ -516,6 +532,7 @@ class DeviceModelSerializer(SanitizingModelSerializer):
     class Meta:
         model = DeviceModel
         fields = '__all__'
+        extra_kwargs = {'otp': {'write_only': True}, 'otp_time': {'write_only': True}}
         read_only_fields = ['reject_reason', 'rejected_by', 'rejected_at']
 class DeviceModelSerializer_disp(SanitizingModelSerializer):
     #eSimProviders = serializers.PrimaryKeyRelatedField(many=True, queryset=eSimProvider.objects.all())
@@ -525,6 +542,7 @@ class DeviceModelSerializer_disp(SanitizingModelSerializer):
     class Meta:
         model = DeviceModel
         fields = '__all__'
+        extra_kwargs = {'otp': {'write_only': True}, 'otp_time': {'write_only': True}}
         
     def __init__(self, *args, **kwargs):
         # Only include necessary fields based on context
@@ -584,6 +602,22 @@ class Settings_VehicleCategorySerializer(SanitizingModelSerializer):
         model = Settings_VehicleCategory
         fields = '__all__'
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        max_speed = attrs.get('maxSpeed', getattr(self.instance, 'maxSpeed', None))
+        warn_speed = attrs.get('warnSpeed', getattr(self.instance, 'warnSpeed', None))
+        # Both are stored as text
+        try:
+            max_val = float(str(max_speed).strip())
+            warn_val = float(str(warn_speed).strip())
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({'speed': 'maxSpeed and warnSpeed must be numbers.'})
+        if max_val <= 0 or warn_val <= 0:
+            raise serializers.ValidationError({'speed': 'maxSpeed and warnSpeed must be greater than 0.'})
+        if warn_val >= max_val:
+            raise serializers.ValidationError({'warnSpeed': 'Warning speed must be lower than the maximum speed.'})
+        return attrs
+
 
     
 class Settings_VehicleCategoryCodeSerializer(SanitizingModelSerializer):
@@ -614,6 +648,7 @@ class DeviceModelFileUploadSerializer(SanitizingModelSerializer):
     class Meta:
         model = DeviceModel
         fields = '__all__'
+        extra_kwargs = {'otp': {'write_only': True}, 'otp_time': {'write_only': True}}
         read_only_fields = ['reject_reason', 'rejected_by', 'rejected_at']
 
 
@@ -1409,6 +1444,7 @@ class DeviceModelForTestAgencySerializer(SanitizingModelSerializer):
     class Meta:
         model = DeviceModel
         fields = '__all__'
+        extra_kwargs = {'otp': {'write_only': True}, 'otp_time': {'write_only': True}}
 
     def get_cop_info(self, obj):
         cop = DeviceCOP.objects.filter(device_model=obj, latest=True).first()
@@ -2823,6 +2859,18 @@ class PermitConditionListSerializer(serializers.ModelSerializer):
     vehicle_category_name = serializers.CharField(source='vehicle_category.category', read_only=True)
     created_by_name = serializers.CharField(source='created_by.name', read_only=True)
     violation_type_display = serializers.SerializerMethodField()
+    effective_status = serializers.SerializerMethodField()
+    effective_status_display = serializers.SerializerMethodField()
+
+    # `status` is the admin-set workflow state; enforcement also requires
+    # activation <= now <= deactivation, so effective_status combines both.
+    EFFECTIVE_STATUS_LABELS = {
+        'created': 'Created',
+        'scheduled': 'Scheduled',
+        'active': 'Active',
+        'expired': 'Expired',
+        'deactivated': 'Deactivated',
+    }
 
     class Meta:
         model  = PermitCondition
@@ -2836,6 +2884,8 @@ class PermitConditionListSerializer(serializers.ModelSerializer):
             'rule_details',
             'penalty',
             'status',
+            'effective_status',
+            'effective_status_display',
             'activation_datetime',
             'deactivation_datetime',
             'created_datetime',
@@ -2845,6 +2895,21 @@ class PermitConditionListSerializer(serializers.ModelSerializer):
 
     def get_violation_type_display(self, obj):
         return dict(PermitCondition.PERMIT_VIOLATION_CHOICES).get(obj.violation_type, obj.violation_type)
+
+    def get_effective_status(self, obj):
+        if obj.status == PermitCondition.STATUS_DEACTIVE:
+            return 'deactivated'
+        if obj.status == PermitCondition.STATUS_CREATED:
+            return 'created'
+        now = timezone.now()
+        if obj.deactivation_datetime and obj.deactivation_datetime < now:
+            return 'expired'
+        if obj.activation_datetime and obj.activation_datetime > now:
+            return 'scheduled'
+        return 'active'
+
+    def get_effective_status_display(self, obj):
+        return self.EFFECTIVE_STATUS_LABELS[self.get_effective_status(obj)]
 
 
 class ViolationReportSerializer(serializers.ModelSerializer):

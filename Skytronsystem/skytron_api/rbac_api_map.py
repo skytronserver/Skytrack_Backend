@@ -90,6 +90,7 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "create_testAgencyDetails":          ["ta_create_user"],
     "public_testAgencyDetails_list":     ["ta_user_list"],
     "update_testAgencyDetails":          ["ta_user_list"],
+    "delete_testAgencyDetails":          ["ta_user_list"],
     "get_testAgency_device_models":      ["ta_view_models"],
 
     # ── A.4  User / Account Creation ──────────────────────────────────────────

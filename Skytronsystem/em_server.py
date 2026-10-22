@@ -42,6 +42,11 @@ def handle_gps_data(data_string):
     location.save()
 
 def processEM(str_data, on_imei_seen=None, source_ip=None):
+        # Every protocol packet carries a '$' header; anything else (port scanners,
+        # SSH banners hitting the port) is not device data and is not logged
+        if '$' not in str_data:
+            print("EM non-protocol payload ignored:", str_data[:80], flush=True)
+            return
         try:
             log_imei, log_network = extract_log_meta(str_data)
             GPSemDataLog.objects.create(raw_data=str_data, source_ip=source_ip,

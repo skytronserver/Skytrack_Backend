@@ -1159,13 +1159,14 @@ def process_emergency_data(data_str, source="unknown", publish_callback=None, so
             # Never block EM processing due to log formatting
             data_str_for_log = data_str
 
-        # Log raw data
-        try:
-            log_imei, log_network = extract_log_meta(data_str)
-            GPSemDataLog.objects.create(raw_data=data_str_for_log, source_ip=source_ip,
-                                        imei=log_imei, network_name=log_network)
-        except Exception as e:
-            print(f"EM data logging error ({source}):", e, flush=True)
+        # Log raw data (protocol packets only; '$'-less payloads are scanner noise)
+        if '$' in data_str:
+            try:
+                log_imei, log_network = extract_log_meta(data_str)
+                GPSemDataLog.objects.create(raw_data=data_str_for_log, source_ip=source_ip,
+                                            imei=log_imei, network_name=log_network)
+            except Exception as e:
+                print(f"EM data logging error ({source}):", e, flush=True)
         
         # Split data by $ delimiter
         data_parts = data_str.split('$')
