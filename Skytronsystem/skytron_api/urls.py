@@ -352,6 +352,8 @@ urlpatterns = [
     ## INUSE by SOSAdmin
     path('EM/activate_EMteam/', activate_EM_team, name='activate_EM_team'),
     ## INUSE by SOSAdmin
+    path('EM/deactivate_EMteam/', deactivate_EM_team, name='deactivate_EM_team'),
+    ## INUSE by SOSAdmin
     path('EM/remove_EMteam/', remove_EM_team, name='remove_EM_team'),
     ## INUSE by SOSAdmin
     path('EM/edit_EMteam/', edit_EM_team, name='edit_EM_team'),

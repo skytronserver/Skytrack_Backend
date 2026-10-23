@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "638fdeb3fd3743a6bd0eadf9",
+    "_postman_id": "a75312e8870241029eb031e3",
     "name": "Skytrack Backend API",
-    "description": "Comprehensive API collection for the Skytrack vehicle tracking & SOS emergency response system.\n\n## Quick Start\n1. Set `base_url`, `login_username`, `login_password` in collection variables.\n2. The **collection-level pre-request script** auto-fetches a JWT via `POST /api/dev/token/` (DEBUG mode only) before the first request.\n3. All authenticated requests automatically include `Authorization: Bearer {{auth_token}}`.\n\n## Two-Stage Login (Production Flow)\n```\n1. POST /api/generate-captcha/  \u2192 get captcha_key + base64 image\n2. POST /api/user_login/         \u2192 RSA-encrypt password + submit captcha \u2192 get session_token\n3. POST /api/validate_otp/       \u2192 RSA-encrypt OTP \u2192 get auth_token (JWT)\n```\n\n## Dev / Automated Testing\n```\nPOST /api/dev/token/  { username, password (plain-text) }  \u2192 auth_token\n```\n(Returns 403 in production when DEBUG=False)\n\n## User Roles\nsuperadmin | stateadmin | devicemanufacture | dealer | owner | esimprovider | filment | sosadmin | teamleader | sosexecutive | schooladmin | parentuser",
+    "description": "Comprehensive API collection for the Skytrack vehicle tracking & SOS emergency response system.\n\n## Quick Start\n1. Set `base_url`, `login_username`, `login_password` in collection variables.\n2. The **collection-level pre-request script** auto-fetches a JWT via `POST /api/dev/token/` (DEBUG mode only) before the first request.\n3. All authenticated requests automatically include `Authorization: Bearer {{auth_token}}`.\n\n## Two-Stage Login (Production Flow)\n```\n1. POST /api/generate-captcha/  → get captcha_key + base64 image\n2. POST /api/user_login/         → RSA-encrypt password + submit captcha → get session_token\n3. POST /api/validate_otp/       → RSA-encrypt OTP → get auth_token (JWT)\n```\n\n## Dev / Automated Testing\n```\nPOST /api/dev/token/  { username, password (plain-text) }  → auth_token\n```\n(Returns 403 in production when DEBUG=False)\n\n## User Roles\nsuperadmin | stateadmin | devicemanufacture | dealer | owner | esimprovider | filment | sosadmin | teamleader | sosexecutive | schooladmin | parentuser",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -11,7 +11,7 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "// \u2500\u2500 Auto-login via DEV bypass endpoint \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+          "// ── Auto-login via DEV bypass endpoint ───────────────────────────────────",
           "const token     = pm.collectionVariables.get('auth_token');",
           "const expiresAt = parseInt(pm.collectionVariables.get('token_expires_at') || '0', 10);",
           "const now       = Date.now();",
@@ -59,19 +59,19 @@
       "key": "login_password",
       "value": "YourPlainTextPassword",
       "type": "string",
-      "description": "Plain-text password \u2014 used only by DEV bypass endpoint"
+      "description": "Plain-text password — used only by DEV bypass endpoint"
     },
     {
       "key": "encrypted_password",
       "value": "",
       "type": "string",
-      "description": "RSA-OAEP encrypted password \u2014 required for real login flow"
+      "description": "RSA-OAEP encrypted password — required for real login flow"
     },
     {
       "key": "encrypted_otp",
       "value": "",
       "type": "string",
-      "description": "RSA-OAEP encrypted OTP \u2014 required for validate_otp"
+      "description": "RSA-OAEP encrypted OTP — required for validate_otp"
     },
     {
       "key": "auth_token",
@@ -276,12 +276,12 @@
   ],
   "item": [
     {
-      "name": "01 \u00b7 Authentication",
+      "name": "01 · Authentication",
       "item": [
         {
           "name": "Generate Captcha",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
@@ -299,9 +299,18 @@
                 "generate-captcha"
               ]
             },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "description": "Returns base64 captcha image + captcha_key. Use key + answer in login."
           },
-          "_postman_id": "65c454f21a4647cca4fd71cd",
+          "_postman_id": "b0a1736ca8f04d41931f3d1d",
           "event": [
             {
               "listen": "test",
@@ -350,10 +359,10 @@
             },
             "description": "Stand-alone captcha verification. captcha is the integer answer to the math expression."
           },
-          "_postman_id": "3cbe1cbb005b416a84061b40"
+          "_postman_id": "1207981426f3454ca161a464"
         },
         {
-          "name": "Step 1 \u00b7 User Login (captcha+password)",
+          "name": "Step 1 · User Login (captcha+password)",
           "request": {
             "method": "POST",
             "header": [
@@ -382,9 +391,9 @@
                 }
               }
             },
-            "description": "Stage-1 login. Requires RSA-OAEP encrypted password and a valid captcha.\n\n**For dev / automated tests use POST /api/dev/token/ instead** \u2014 the collection pre-request script does this automatically.\n\nOn success returns `token` (session token) + `status: otpsent`."
+            "description": "Stage-1 login. Requires RSA-OAEP encrypted password and a valid captcha.\n\n**For dev / automated tests use POST /api/dev/token/ instead** — the collection pre-request script does this automatically.\n\nOn success returns `token` (session token) + `status: otpsent`."
           },
-          "_postman_id": "8049469135ed4da4b261bc7b",
+          "_postman_id": "64719c9cfa434f0a9edd3c9a",
           "event": [
             {
               "listen": "test",
@@ -400,7 +409,7 @@
           ]
         },
         {
-          "name": "Step 2 \u00b7 Validate OTP",
+          "name": "Step 2 · Validate OTP",
           "request": {
             "method": "POST",
             "header": [
@@ -431,7 +440,7 @@
             },
             "description": "Stage-2: submit RSA-OAEP encrypted OTP to complete login.\nReturns final `token` (JWT) and `token2` (MQTT token)."
           },
-          "_postman_id": "dd3bf40bfe994b5f8faf9e8b",
+          "_postman_id": "3dffa0047a6f4cd8acb2f91d",
           "event": [
             {
               "listen": "test",
@@ -450,7 +459,7 @@
           ]
         },
         {
-          "name": "DEV \u00b7 Get Token (plain-text, no captcha/OTP)",
+          "name": "DEV · Get Token (plain-text, no captcha/OTP)",
           "request": {
             "method": "POST",
             "header": [
@@ -482,7 +491,7 @@
             },
             "description": "**DEV-ONLY** (returns 403 when DEBUG=False).\n\nBypasses RSA encryption, captcha, and OTP. Ideal for automated tests.\nThe collection pre-request script calls this automatically."
           },
-          "_postman_id": "4c83b02e4a084f6481ff3093",
+          "_postman_id": "30a9ddbe3ffb46189fe2fb49",
           "event": [
             {
               "listen": "test",
@@ -500,7 +509,7 @@
           ]
         },
         {
-          "name": "DEV \u00b7 List Test Users",
+          "name": "DEV · List Test Users",
           "request": {
             "method": "GET",
             "header": [
@@ -523,7 +532,7 @@
             },
             "description": "DEV-ONLY. Lists all active users grouped by role with their mobile numbers."
           },
-          "_postman_id": "5ef3e82e238a488f82066b10"
+          "_postman_id": "ad33d3172d7b4507a936ee81"
         },
         {
           "name": "SOS Executive Direct Login",
@@ -556,7 +565,7 @@
               }
             }
           },
-          "_postman_id": "0530d955855a40bc8e65de43"
+          "_postman_id": "e1493691f01e400bb958726c"
         },
         {
           "name": "App Login",
@@ -589,7 +598,7 @@
               }
             }
           },
-          "_postman_id": "65fa1373ec3149c6ac43a933"
+          "_postman_id": "6969f5bf17f64b248946b2f5"
         },
         {
           "name": "Logout",
@@ -627,7 +636,7 @@
               }
             }
           },
-          "_postman_id": "1b7de5a55f1f454ab6efd24b"
+          "_postman_id": "e351401af48a4aaa890c2fce"
         },
         {
           "name": "Send Email OTP",
@@ -665,7 +674,7 @@
               }
             }
           },
-          "_postman_id": "98936e184c7c44929a0d0fa3"
+          "_postman_id": "75bad6b7bcc5420fa1131518"
         },
         {
           "name": "Send SMS OTP",
@@ -703,7 +712,7 @@
               }
             }
           },
-          "_postman_id": "0b56b038f81c41a883c83c68"
+          "_postman_id": "f18350edb3234ffb99bce60b"
         },
         {
           "name": "Resend OTP (user creation)",
@@ -741,7 +750,7 @@
               }
             }
           },
-          "_postman_id": "af2e67b5d7114721a25d90cb"
+          "_postman_id": "28ae973e928542db8b29889e"
         },
         {
           "name": "Password Reset Request",
@@ -774,7 +783,7 @@
               }
             }
           },
-          "_postman_id": "a3870812e39e49f2aea836bd"
+          "_postman_id": "7ae4b0c289364c728676b26b"
         },
         {
           "name": "Password Reset (set new)",
@@ -807,7 +816,7 @@
               }
             }
           },
-          "_postman_id": "c66a889a12d9401fa8277ac7"
+          "_postman_id": "f1d0d1c7226a4ab69bb42827"
         },
         {
           "name": "Deactivate User",
@@ -845,7 +854,7 @@
               }
             }
           },
-          "_postman_id": "90a1e84039874314ab6bd56c"
+          "_postman_id": "74b18bdb6b89444484e94450"
         },
         {
           "name": "Activate User",
@@ -883,7 +892,7 @@
               }
             }
           },
-          "_postman_id": "76b6e7aa118149f695f8555b"
+          "_postman_id": "b4e1fda2f05e47b3ba213eba"
         },
         {
           "name": "Check User Access Type",
@@ -907,7 +916,7 @@
               ]
             }
           },
-          "_postman_id": "980c8760bc0748d3b45cd1d3"
+          "_postman_id": "ab91eb7f542d4f8185e1c2b9"
         },
         {
           "name": "Check Module Access",
@@ -945,13 +954,13 @@
               }
             }
           },
-          "_postman_id": "827b48185527408e92ed1cf4"
+          "_postman_id": "4ff4336a230640bb95a375c2"
         }
       ],
-      "_postman_id": "6cc8e17af51242f7a65b9dcd"
+      "_postman_id": "f1c30c42263249b78af74f9d"
     },
     {
-      "name": "02 \u00b7 Temp / Emergency User Login",
+      "name": "02 · Temp / Emergency User Login",
       "item": [
         {
           "name": "Temp User Login",
@@ -984,7 +993,7 @@
               }
             }
           },
-          "_postman_id": "dbf0633fdd1a4a10939a46ed"
+          "_postman_id": "281f1c061c3e47a1a9ce2cae"
         },
         {
           "name": "Temp User Resend OTP",
@@ -1022,7 +1031,7 @@
               }
             }
           },
-          "_postman_id": "c41832190eb444148444de88"
+          "_postman_id": "d9c363071c784b4d8cba35e4"
         },
         {
           "name": "Temp User OTP Validate",
@@ -1060,7 +1069,7 @@
               }
             }
           },
-          "_postman_id": "d7f02c375a0e408691f98a3e"
+          "_postman_id": "44a62f04a6b7491aa51bfd78"
         },
         {
           "name": "Temp User BLE Validate",
@@ -1098,7 +1107,7 @@
               }
             }
           },
-          "_postman_id": "18d442f6be4647599a26c3e0"
+          "_postman_id": "75bc0315ba8846eb84ab5dc5"
         },
         {
           "name": "Temp User Emergency Call",
@@ -1136,7 +1145,7 @@
               }
             }
           },
-          "_postman_id": "9cff8ce94013481cb7a91455"
+          "_postman_id": "c5f0650d702f431a8cb2ae74"
         },
         {
           "name": "Temp User Feedback",
@@ -1174,7 +1183,7 @@
               }
             }
           },
-          "_postman_id": "4c55673abf1c435884ff19b5"
+          "_postman_id": "941eeca6e40e451fb2c16c28"
         },
         {
           "name": "Temp User Logout",
@@ -1212,13 +1221,13 @@
               }
             }
           },
-          "_postman_id": "e1ae4526154b4444b792c337"
+          "_postman_id": "d02ad9f765424d4a8936b214"
         }
       ],
-      "_postman_id": "e3593b67ea94457eaf4ac1af"
+      "_postman_id": "55a6e860e25a412a93cff58e"
     },
     {
-      "name": "03 \u00b7 Email / SMS Confirmation",
+      "name": "03 · Email / SMS Confirmation",
       "item": [
         {
           "name": "Send Email Confirmation",
@@ -1256,7 +1265,7 @@
               }
             }
           },
-          "_postman_id": "2b1c73f069f345e2a0489a44"
+          "_postman_id": "5b337943c9b04d5ea4c60702"
         },
         {
           "name": "Validate Email Confirmation",
@@ -1294,7 +1303,7 @@
               }
             }
           },
-          "_postman_id": "3802a035c6b14236bcd58014"
+          "_postman_id": "46e81b72baed4669a825583a"
         },
         {
           "name": "Send SMS Confirmation",
@@ -1332,7 +1341,7 @@
               }
             }
           },
-          "_postman_id": "0bd8538f88504608ac8b3c49"
+          "_postman_id": "6a4d68aabd5241a882cb9498"
         },
         {
           "name": "Validate SMS Confirmation",
@@ -1370,7 +1379,7 @@
               }
             }
           },
-          "_postman_id": "fd8763363a0841b084afe9b8"
+          "_postman_id": "b39afedcc8e74f739c5611d8"
         },
         {
           "name": "Send Password Reset Confirmation",
@@ -1408,7 +1417,7 @@
               }
             }
           },
-          "_postman_id": "9bbffb503ba34c3dba9b22b9"
+          "_postman_id": "df8f1a6789594aada21b73ee"
         },
         {
           "name": "Validate Password Reset Confirmation",
@@ -1446,13 +1455,13 @@
               }
             }
           },
-          "_postman_id": "a9a4532d07754c3c90873fcf"
+          "_postman_id": "426e70b66a774febb688d572"
         }
       ],
-      "_postman_id": "5412367ed04149bebbe39ccc"
+      "_postman_id": "7b0b8a3ac5414c0f96441e7f"
     },
     {
-      "name": "04 \u00b7 Manufacturer",
+      "name": "04 · Manufacturer",
       "item": [
         {
           "name": "Create Manufacturer (authenticated)",
@@ -1491,7 +1500,7 @@
               }
             }
           },
-          "_postman_id": "8b37157b5cc4468c9586c208",
+          "_postman_id": "b705784d6a0845e0b3a190c7",
           "event": [
             {
               "listen": "test",
@@ -1537,7 +1546,7 @@
               }
             }
           },
-          "_postman_id": "da975c3ff3824889bff37575"
+          "_postman_id": "9b8fa3c93ba44028bc5a0443"
         },
         {
           "name": "Update Manufacturer",
@@ -1576,7 +1585,7 @@
               }
             }
           },
-          "_postman_id": "7f09dfe40be942b3b9107c37"
+          "_postman_id": "c667716ab8a944aeb1ae3c1b"
         },
         {
           "name": "Filter Manufacturers",
@@ -1615,7 +1624,7 @@
               }
             }
           },
-          "_postman_id": "19002c1b6589452fa7448951",
+          "_postman_id": "84b1ad6e2f45416994a08402",
           "event": [
             {
               "listen": "test",
@@ -1666,7 +1675,7 @@
               }
             }
           },
-          "_postman_id": "69cb78ea5bf347a3b9261a5b"
+          "_postman_id": "33736d458c804e58b67c6fc0"
         },
         {
           "name": "Approve Tech Onboarding",
@@ -1705,7 +1714,7 @@
               }
             }
           },
-          "_postman_id": "a74f16f22149408d879809ee"
+          "_postman_id": "9f6dbb729a9b4b6585ecc2b9"
         },
         {
           "name": "Delete Manufacturer",
@@ -1731,13 +1740,13 @@
               ]
             }
           },
-          "_postman_id": "a52ae12d1bd74b89950d7bd8"
+          "_postman_id": "aafa08b04ba2410687196816"
         }
       ],
-      "_postman_id": "ba902ee5d55c4316998e3323"
+      "_postman_id": "9cb04acfb8c34cd482b9b236"
     },
     {
-      "name": "05 \u00b7 Device Model",
+      "name": "05 · Device Model",
       "item": [
         {
           "name": "Technical Onboarding",
@@ -1781,7 +1790,7 @@
                 },
                 "description": "Manufacturer submits technical onboarding request with demo devices and PDFs."
               },
-              "_postman_id": "a4441f7adfc94edd832a330b"
+              "_postman_id": "d3db12dba8894130a1de5ab6"
             },
             {
               "name": "Superadmin List Requests",
@@ -1822,7 +1831,7 @@
                   }
                 }
               },
-              "_postman_id": "bbc0ccf5e9d84737b60c9991"
+              "_postman_id": "deec2381e5b64474b6f0f231"
             },
             {
               "name": "Superadmin Mark Ongoing",
@@ -1863,7 +1872,7 @@
                   }
                 }
               },
-              "_postman_id": "ed979a1df48a4970a2179438"
+              "_postman_id": "678dfa5d108c46ddbf9ef612"
             },
             {
               "name": "Superadmin Finalize Request",
@@ -1904,7 +1913,7 @@
                   }
                 }
               },
-              "_postman_id": "5db3e02298bc405182b9fdc2"
+              "_postman_id": "ed87208440a84164843207c9"
             },
             {
               "name": "Manufacturer List Own Requests",
@@ -1945,10 +1954,10 @@
                   }
                 }
               },
-              "_postman_id": "68366b33931d454baad27a6c"
+              "_postman_id": "51dbd057d7164aadba51d7bf"
             }
           ],
-          "_postman_id": "caca6ae278724cd2a72de752"
+          "_postman_id": "f3f1d745284041e0a41de42b"
         },
         {
           "name": "Create Device Model",
@@ -1987,7 +1996,7 @@
               }
             }
           },
-          "_postman_id": "8aed76ffc3fd4763a200b280"
+          "_postman_id": "a2918b242dea44df9a92f35f"
         },
         {
           "name": "List Device Models",
@@ -2026,7 +2035,7 @@
               }
             }
           },
-          "_postman_id": "02c2da7bd0714af6ab900361",
+          "_postman_id": "3d785b0d4f6446e49c99dfa4",
           "event": [
             {
               "listen": "test",
@@ -2077,7 +2086,7 @@
               }
             }
           },
-          "_postman_id": "48a89d7c09374e1cb9bf8678"
+          "_postman_id": "a0699b7a77a14f1c8204e1ad"
         },
         {
           "name": "Device Model Details",
@@ -2116,7 +2125,7 @@
               }
             }
           },
-          "_postman_id": "234cb6d954484ab4944fe64c"
+          "_postman_id": "cb1acbb0a87240d98f26771a"
         },
         {
           "name": "Send State Admin OTP (Device Model)",
@@ -2155,7 +2164,7 @@
               }
             }
           },
-          "_postman_id": "9756a74f08f84f13ad11e4aa"
+          "_postman_id": "d48d8eb61de34ca79a73f971"
         },
         {
           "name": "Verify State Admin OTP (Device Model)",
@@ -2194,7 +2203,7 @@
               }
             }
           },
-          "_postman_id": "640e0816e6f446f1a9136870"
+          "_postman_id": "f533b974843e41fbb1687db8"
         },
         {
           "name": "Awaiting State Approval (Device Model)",
@@ -2233,7 +2242,7 @@
               }
             }
           },
-          "_postman_id": "acb6f8f34f934546a64ddd58"
+          "_postman_id": "a92326ab43924cbeb4afc7f7"
         },
         {
           "name": "Manufacturer OTP Verify (Device Model)",
@@ -2272,7 +2281,7 @@
               }
             }
           },
-          "_postman_id": "d60a51adf3994f68870d4ab1"
+          "_postman_id": "2da34d13a49e44f59753a22b"
         },
         {
           "name": "COP (Certificate of Pharma)",
@@ -2314,7 +2323,7 @@
                   }
                 }
               },
-              "_postman_id": "77fccadc1b434fa2bcdfd711"
+              "_postman_id": "19eefb8b6d6148f6b22057c0"
             },
             {
               "name": "COP Awaiting State Approval",
@@ -2353,7 +2362,7 @@
                   }
                 }
               },
-              "_postman_id": "571408512939449c8d80fcb0"
+              "_postman_id": "87d764ed923947e8be4f9374"
             },
             {
               "name": "COP Send State Admin OTP",
@@ -2392,7 +2401,7 @@
                   }
                 }
               },
-              "_postman_id": "e2ef858fc4db4ceb90937ae0"
+              "_postman_id": "c905a9bdd11d42468a61f0d2"
             },
             {
               "name": "COP Verify State Admin OTP",
@@ -2431,7 +2440,7 @@
                   }
                 }
               },
-              "_postman_id": "3feecfdbeafe4b34851fe400"
+              "_postman_id": "4b5bf0e290b440a49d6db73b"
             },
             {
               "name": "COP Manufacturer OTP Verify",
@@ -2470,16 +2479,16 @@
                   }
                 }
               },
-              "_postman_id": "a496342aabe743b2844158d9"
+              "_postman_id": "3cce150690dc43d6a86f5d6f"
             }
           ],
-          "_postman_id": "601df42a61074734bca09656"
+          "_postman_id": "6baa7ebd602b4b11ae81ebad"
         }
       ],
-      "_postman_id": "e74d80b374a8415d81b495ea"
+      "_postman_id": "44ec2daf80dd440d802ce65b"
     },
     {
-      "name": "06 \u00b7 Dealer",
+      "name": "06 · Dealer",
       "item": [
         {
           "name": "Create Dealer",
@@ -2518,7 +2527,7 @@
               }
             }
           },
-          "_postman_id": "e0697c0110f946a698a060d8",
+          "_postman_id": "1906147376dd4d3fa1d4549c",
           "event": [
             {
               "listen": "test",
@@ -2569,7 +2578,7 @@
               }
             }
           },
-          "_postman_id": "6892e209c1a14c80965dbf20"
+          "_postman_id": "c9fef79ee37c43368dfd4028"
         },
         {
           "name": "Filter Dealers",
@@ -2608,7 +2617,7 @@
               }
             }
           },
-          "_postman_id": "badc9f2589e34e93b90daa7d",
+          "_postman_id": "476474f73aca42778e4b7811",
           "event": [
             {
               "listen": "test",
@@ -2646,7 +2655,7 @@
               ]
             }
           },
-          "_postman_id": "8c1baa7c673b4a02b0980efc"
+          "_postman_id": "fc080e812d234a94bee7c4f4"
         },
         {
           "name": "Check eSIM Status (Dealer)",
@@ -2685,13 +2694,13 @@
               }
             }
           },
-          "_postman_id": "49cc1f217b6e490b93176a89"
+          "_postman_id": "7a0cf7652387461a9e9528e7"
         }
       ],
-      "_postman_id": "e16d937538224e16b127053f"
+      "_postman_id": "19173c031ba049e982fad132"
     },
     {
-      "name": "07 \u00b7 eSIM Provider",
+      "name": "07 · eSIM Provider",
       "item": [
         {
           "name": "Create eSIM Provider (auth)",
@@ -2730,7 +2739,7 @@
               }
             }
           },
-          "_postman_id": "9973aa593be941fcb0111bed"
+          "_postman_id": "6e1019070c754f8bb05c62de"
         },
         {
           "name": "Create eSIM Provider (public)",
@@ -2765,7 +2774,7 @@
               }
             }
           },
-          "_postman_id": "58076e0973394ee9b721db3b"
+          "_postman_id": "118668b7c5a743cb92dc3f5b"
         },
         {
           "name": "Update eSIM Provider",
@@ -2804,7 +2813,7 @@
               }
             }
           },
-          "_postman_id": "51356b3b7f54463fa9610446"
+          "_postman_id": "8819f7c86d2e4898ac13cd0f"
         },
         {
           "name": "Filter eSIM Providers (auth)",
@@ -2843,7 +2852,7 @@
               }
             }
           },
-          "_postman_id": "d2a3fa5d35fd4bc5b6b24131",
+          "_postman_id": "464f7c5121da496793850b1a",
           "event": [
             {
               "listen": "test",
@@ -2890,7 +2899,7 @@
               }
             }
           },
-          "_postman_id": "51de19cdeb714fc281893e50"
+          "_postman_id": "88788e6472be468fbbe10f75"
         },
         {
           "name": "Delete eSIM Provider",
@@ -2916,13 +2925,13 @@
               ]
             }
           },
-          "_postman_id": "f1c99568bfb84c76ad973803"
+          "_postman_id": "7935afda4a5b44aa9c42d502"
         }
       ],
-      "_postman_id": "88e33dbc09ab481894ea4d4e"
+      "_postman_id": "725071edc621405f8b738a5b"
     },
     {
-      "name": "08 \u00b7 Device Stock",
+      "name": "08 · Device Stock",
       "item": [
         {
           "name": "Create Device Stock (single)",
@@ -2961,7 +2970,7 @@
               }
             }
           },
-          "_postman_id": "af9e483149f1430cba4b8f2c",
+          "_postman_id": "76b706399316481ba0acab3f",
           "event": [
             {
               "listen": "test",
@@ -3004,7 +3013,7 @@
             },
             "description": "Upload a CSV/XLSX file using the bulk sample format. Download sample: GET /api/devicestock/deviceStockBulkSample/"
           },
-          "_postman_id": "4267dc601657482596013dbc"
+          "_postman_id": "faac2ad64f0642bda8153c3c"
         },
         {
           "name": "Filter Device Stock",
@@ -3043,7 +3052,7 @@
               }
             }
           },
-          "_postman_id": "57aec76b1d77452589105c51",
+          "_postman_id": "b681ff6e23094876aa47d8e4",
           "event": [
             {
               "listen": "test",
@@ -3094,7 +3103,7 @@
               }
             }
           },
-          "_postman_id": "5720f122079f465789758bc5"
+          "_postman_id": "24219819b2a04c4990f7d89e"
         },
         {
           "name": "Combined Device Stock",
@@ -3133,7 +3142,7 @@
               }
             }
           },
-          "_postman_id": "bd825e467bb04822aa28aaf7"
+          "_postman_id": "5a90108f7f7d45f5b25336dd"
         },
         {
           "name": "eSIM Provider List (for stock)",
@@ -3172,7 +3181,7 @@
               }
             }
           },
-          "_postman_id": "3e1e85e659f240daa9dba5c8"
+          "_postman_id": "2a404551a64d4513baba10d2"
         },
         {
           "name": "Download Bulk Sample File",
@@ -3197,13 +3206,13 @@
               ]
             }
           },
-          "_postman_id": "6b7fcaddb7e1400ab3c4b2e0"
+          "_postman_id": "e0cc5e3e1df44430bcf3a5ca"
         }
       ],
-      "_postman_id": "3c0aefda3c5c41089e4ac1ec"
+      "_postman_id": "fd4bc95448c34073835be740"
     },
     {
-      "name": "09 \u00b7 Device Tagging",
+      "name": "09 · Device Tagging",
       "item": [
         {
           "name": "Tag Device to Vehicle",
@@ -3242,7 +3251,7 @@
               }
             }
           },
-          "_postman_id": "d6c0366dec2e4bddbc66ca02",
+          "_postman_id": "5f60e92a506f4023b93bf7f5",
           "event": [
             {
               "listen": "test",
@@ -3293,7 +3302,7 @@
               }
             }
           },
-          "_postman_id": "b9af614972f449e38e8d3505"
+          "_postman_id": "a081c38df7ca4c2ea39a01b0"
         },
         {
           "name": "Cancel Tagging",
@@ -3332,7 +3341,7 @@
               }
             }
           },
-          "_postman_id": "31ac824d8e7c4c23be37e750"
+          "_postman_id": "c3abf3786316418a8453a8b5"
         },
         {
           "name": "Untag Device",
@@ -3371,7 +3380,7 @@
               }
             }
           },
-          "_postman_id": "58fffbd66d1145aea8518244"
+          "_postman_id": "2ff4a751a94c4d8792c24fa2"
         },
         {
           "name": "Retag Device",
@@ -3410,7 +3419,7 @@
               }
             }
           },
-          "_postman_id": "db8bdab547164bd7af315dda"
+          "_postman_id": "b13a6dc70e7743208298ce50"
         },
         {
           "name": "Tag Awaiting Owner Approval",
@@ -3449,7 +3458,7 @@
               }
             }
           },
-          "_postman_id": "1d3cd881982147f19ebb7f5e"
+          "_postman_id": "24ecd4f46d464a2db7f86c96"
         },
         {
           "name": "Tag Send Owner OTP",
@@ -3488,7 +3497,7 @@
               }
             }
           },
-          "_postman_id": "e509c861d146432db5fc6987"
+          "_postman_id": "6f029cd6f73d49b39353a103"
         },
         {
           "name": "Tag Verify Owner OTP",
@@ -3527,7 +3536,7 @@
               }
             }
           },
-          "_postman_id": "a024b38f6b1249ef922e5bfd"
+          "_postman_id": "afc7630e91e641d1b42ecfb7"
         },
         {
           "name": "Tag Awaiting Activation",
@@ -3566,7 +3575,7 @@
               }
             }
           },
-          "_postman_id": "0e7184d635684f0c8e2a2026"
+          "_postman_id": "57ae558e484f405daf3ac9fb"
         },
         {
           "name": "Tag Get Vehicle Info",
@@ -3605,7 +3614,7 @@
               }
             }
           },
-          "_postman_id": "27c6522fb35b4d54a95feba3"
+          "_postman_id": "9b4cb7b082d146b1928e5f8c"
         },
         {
           "name": "Get Vahan API Info",
@@ -3644,7 +3653,7 @@
               }
             }
           },
-          "_postman_id": "279c0cb6ce4e4a4fa06e227b"
+          "_postman_id": "9f361c65b0074e78b7b29af1"
         },
         {
           "name": "Activate Tag",
@@ -3683,7 +3692,7 @@
               }
             }
           },
-          "_postman_id": "1485d8b910ad442799208355"
+          "_postman_id": "5f505db1e3294cc4a530c42a"
         },
         {
           "name": "Tag Awaiting Owner Approval Final",
@@ -3722,7 +3731,7 @@
               }
             }
           },
-          "_postman_id": "8d03afd5dc8e4d5daec73126"
+          "_postman_id": "8ec8bc16d1624c6f862bc4fc"
         },
         {
           "name": "Tag Send Owner OTP Final",
@@ -3761,7 +3770,7 @@
               }
             }
           },
-          "_postman_id": "6c2cc2b642874b1786191b33"
+          "_postman_id": "129668c1856c4f1daafceee3"
         },
         {
           "name": "Tag Resend Owner OTP Final",
@@ -3800,7 +3809,7 @@
               }
             }
           },
-          "_postman_id": "37b694e5a34c4e309e658a73"
+          "_postman_id": "15cf9cac7b5c4d1b97f6067d"
         },
         {
           "name": "Tag Verify Owner OTP Final",
@@ -3839,7 +3848,7 @@
               }
             }
           },
-          "_postman_id": "4121f8edde904a2997d3659e"
+          "_postman_id": "2fec7d509e1f4481838b882a"
         },
         {
           "name": "Tag Verify Dealer OTP",
@@ -3878,7 +3887,7 @@
               }
             }
           },
-          "_postman_id": "5410d68d145f4be38429c7e0"
+          "_postman_id": "0077a4ca5247473fab55bb6c"
         },
         {
           "name": "Tag Resend Dealer OTP",
@@ -3917,7 +3926,7 @@
               }
             }
           },
-          "_postman_id": "6ce8aef75f4f40e18cdab8aa"
+          "_postman_id": "95c88990ecb541b187cbf40f"
         },
         {
           "name": "Tag Resend Owner OTP",
@@ -3956,7 +3965,7 @@
               }
             }
           },
-          "_postman_id": "ac64d84232e94d34978e136b"
+          "_postman_id": "d576093483d74deca9b09030"
         },
         {
           "name": "Tag Status",
@@ -3995,7 +4004,7 @@
               }
             }
           },
-          "_postman_id": "fcd8f09fe13f4a9a8b09a1cf"
+          "_postman_id": "169af1ad9ed341d685d3661b"
         },
         {
           "name": "Tag Owner List",
@@ -4034,7 +4043,7 @@
               }
             }
           },
-          "_postman_id": "7dc27efa106848428faaeeb2"
+          "_postman_id": "1f01ea6563574c53847851e2"
         },
         {
           "name": "State Admin View All Tagging",
@@ -4073,7 +4082,7 @@
               }
             }
           },
-          "_postman_id": "69e0321e954d45d58b1da382"
+          "_postman_id": "2d9e53823cea41c38507eb58"
         },
         {
           "name": "Download Receipt PDF",
@@ -4112,7 +4121,7 @@
               }
             }
           },
-          "_postman_id": "708eee8a41164337aa7c8940"
+          "_postman_id": "d2e1e9ce5d6f4d21b4e18db0"
         },
         {
           "name": "Upload Receipt PDF",
@@ -4151,7 +4160,7 @@
               }
             }
           },
-          "_postman_id": "6c12477468f44774ba7ec341"
+          "_postman_id": "516558fef0bd46199a7bd694"
         },
         {
           "name": "Validate BLE",
@@ -4189,13 +4198,13 @@
               }
             }
           },
-          "_postman_id": "fd4071942c5f4eaab1cdbd67"
+          "_postman_id": "6f341dca138548d38f01664f"
         }
       ],
-      "_postman_id": "ec90f325b7df4839808f8df4"
+      "_postman_id": "bd6ec3386e3048f8a6a3d83a"
     },
     {
-      "name": "10 \u00b7 Vehicle Owner",
+      "name": "10 · Vehicle Owner",
       "item": [
         {
           "name": "Create Vehicle Owner",
@@ -4234,7 +4243,7 @@
               }
             }
           },
-          "_postman_id": "5a028ab406924fe392fe9414",
+          "_postman_id": "188669f60f73485f9b18f28e",
           "event": [
             {
               "listen": "test",
@@ -4285,7 +4294,7 @@
               }
             }
           },
-          "_postman_id": "62d5fbfb4377487faa5e2279"
+          "_postman_id": "da1db7779e4b4b5289d70509"
         },
         {
           "name": "Filter Vehicle Owners",
@@ -4324,7 +4333,7 @@
               }
             }
           },
-          "_postman_id": "fdf0bb6724ca49f99eb47dbd",
+          "_postman_id": "473a5cb30c414a7ca4775496",
           "event": [
             {
               "listen": "test",
@@ -4362,7 +4371,7 @@
               ]
             }
           },
-          "_postman_id": "e51cfe13f6bc43809f6d1996"
+          "_postman_id": "65a8c03265d247a085f2e451"
         },
         {
           "name": "Update Vehicle Owner Expiry",
@@ -4400,13 +4409,13 @@
               }
             }
           },
-          "_postman_id": "e6bf895e70f34a5993462634"
+          "_postman_id": "e9889208c9ba4fe58544258d"
         }
       ],
-      "_postman_id": "73ccc96b72d942179a4fcaa8"
+      "_postman_id": "6b2d3abd785f4e068c034aa5"
     },
     {
-      "name": "11 \u00b7 State & District Admin",
+      "name": "11 · State & District Admin",
       "item": [
         {
           "name": "Create State Admin",
@@ -4445,7 +4454,7 @@
               }
             }
           },
-          "_postman_id": "84d77a1997e3457fb9d70c5e"
+          "_postman_id": "09daa2cb014641ecb06d22b8"
         },
         {
           "name": "Update State Admin",
@@ -4484,7 +4493,7 @@
               }
             }
           },
-          "_postman_id": "82e8a91a757c4fd4bf69e8f4"
+          "_postman_id": "f436005fd99742d586238adc"
         },
         {
           "name": "Filter State Admins",
@@ -4523,7 +4532,7 @@
               }
             }
           },
-          "_postman_id": "0588294d93c547648ff5eb7e",
+          "_postman_id": "301dd2227ba447edb3121789",
           "event": [
             {
               "listen": "test",
@@ -4574,7 +4583,7 @@
               }
             }
           },
-          "_postman_id": "a5c3b519e3164e0eb83dfbac"
+          "_postman_id": "c1d7841dc1d747e0b5c2483d"
         },
         {
           "name": "Update DTO/RTO",
@@ -4613,7 +4622,7 @@
               }
             }
           },
-          "_postman_id": "0377ba0eb02d4218b86d1258"
+          "_postman_id": "d84eff80a39f467291fe0f72"
         },
         {
           "name": "Filter DTO/RTO",
@@ -4652,7 +4661,7 @@
               }
             }
           },
-          "_postman_id": "89834db2245f49048481f4aa",
+          "_postman_id": "27921154c29a41f08e3d0137",
           "event": [
             {
               "listen": "test",
@@ -4703,7 +4712,7 @@
               }
             }
           },
-          "_postman_id": "79fab43f2289423296c93b0d"
+          "_postman_id": "46f2c70ca958446abf0527f5"
         },
         {
           "name": "Transfer DTO/RTO",
@@ -4742,13 +4751,13 @@
               }
             }
           },
-          "_postman_id": "7f3f1c6956b54c69b5968ce0"
+          "_postman_id": "4ee59ba61e0343e081f8c23e"
         }
       ],
-      "_postman_id": "bf62be9380bf4cde91b907e2"
+      "_postman_id": "7dbb419cf5be4cc5a0201274"
     },
     {
-      "name": "12 \u00b7 SOS / Emergency",
+      "name": "12 · SOS / Emergency",
       "item": [
         {
           "name": "Admin & Users",
@@ -4790,7 +4799,7 @@
                   }
                 }
               },
-              "_postman_id": "8a25233a333c46899c679f09"
+              "_postman_id": "8f4d8579b3594c2d978316ee"
             },
             {
               "name": "Filter SOS Admins",
@@ -4829,7 +4838,7 @@
                   }
                 }
               },
-              "_postman_id": "00540c4030de45ce90c93d7d",
+              "_postman_id": "245d941ae60347b0928fa0df",
               "event": [
                 {
                   "listen": "test",
@@ -4880,7 +4889,7 @@
                   }
                 }
               },
-              "_postman_id": "9dbd24b3eec74545b162b491"
+              "_postman_id": "99f0c7e7f03248309d692161"
             },
             {
               "name": "Filter SOS Users",
@@ -4919,7 +4928,7 @@
                   }
                 }
               },
-              "_postman_id": "52d62e32c28d4af3958c0988",
+              "_postman_id": "cd0b5696d65b48b5876aaef6",
               "event": [
                 {
                   "listen": "test",
@@ -4934,7 +4943,7 @@
               ]
             }
           ],
-          "_postman_id": "0201a488efa44cc1beb8d1c0"
+          "_postman_id": "3a878487c2824e4d83aaf229"
         },
         {
           "name": "Dispatch Executive (DEx)",
@@ -4977,7 +4986,7 @@
                   }
                 }
               },
-              "_postman_id": "83726460864945d9bc41151d",
+              "_postman_id": "8cd43c67608d4001bf032986",
               "event": [
                 {
                   "listen": "test",
@@ -5029,7 +5038,7 @@
                   }
                 }
               },
-              "_postman_id": "969ab9930adc4ddba9012cf9",
+              "_postman_id": "d3d59c76eab84a3899306ea7",
               "event": [
                 {
                   "listen": "test",
@@ -5081,7 +5090,7 @@
                   }
                 }
               },
-              "_postman_id": "4ef239cb923740aaa0cbe356",
+              "_postman_id": "a445cc4c06684c48bbe74091",
               "event": [
                 {
                   "listen": "test",
@@ -5133,7 +5142,7 @@
                   }
                 }
               },
-              "_postman_id": "ee6023c5866a47c6bc91ddf2"
+              "_postman_id": "cac1377d843e4f2cae695fed"
             },
             {
               "name": "DEx Broadcast",
@@ -5173,7 +5182,7 @@
                   }
                 }
               },
-              "_postman_id": "b7dee075e86346fb8abfdde2"
+              "_postman_id": "6b3710f7491f47a89e969c74"
             },
             {
               "name": "DEx List Broadcasts",
@@ -5213,7 +5222,7 @@
                   }
                 }
               },
-              "_postman_id": "05f498882c7e4d1896a3d5ef"
+              "_postman_id": "95147585f17e40f29d163426"
             },
             {
               "name": "DEx Close Case",
@@ -5253,7 +5262,7 @@
                   }
                 }
               },
-              "_postman_id": "9e1ecdf2429d4b0fb8200770"
+              "_postman_id": "4f2343b37be84e53a6703a23"
             },
             {
               "name": "DEx Send Message",
@@ -5293,7 +5302,7 @@
                   }
                 }
               },
-              "_postman_id": "eb8f5a3d26844c63aae2324a"
+              "_postman_id": "b78f61155b764876b2065aee"
             },
             {
               "name": "DEx Receive Messages",
@@ -5333,7 +5342,7 @@
                   }
                 }
               },
-              "_postman_id": "c6e3cb3d4fd8487ca2504be5"
+              "_postman_id": "483519147e854cfd9e073592"
             },
             {
               "name": "DEx Comment FE",
@@ -5373,7 +5382,7 @@
                   }
                 }
               },
-              "_postman_id": "14c629928a4f43c9891a18e4"
+              "_postman_id": "82b1b57093d44cd685cc7f0a"
             },
             {
               "name": "DEx Get All Locations",
@@ -5413,7 +5422,7 @@
                   }
                 }
               },
-              "_postman_id": "8eef16b13b3b43eea9d60ce0"
+              "_postman_id": "babe56e00d51415cb3833550"
             },
             {
               "name": "DEx Get Media",
@@ -5453,7 +5462,7 @@
                   }
                 }
               },
-              "_postman_id": "3954859709204146867aa659"
+              "_postman_id": "33d20ccab2c44389912ba9e5"
             },
             {
               "name": "DEx List Backup",
@@ -5493,7 +5502,7 @@
                   }
                 }
               },
-              "_postman_id": "1cd02aca32014f5d9b69b974"
+              "_postman_id": "6a8a223d673143d792cf058c"
             },
             {
               "name": "DEx Accept Backup",
@@ -5533,7 +5542,7 @@
                   }
                 }
               },
-              "_postman_id": "fd7eccdcb68f4ca289fd9e0a"
+              "_postman_id": "4ca3a83bf1a74f50bf2c00bb"
             },
             {
               "name": "DEx Pending Calls (TL view)",
@@ -5573,10 +5582,10 @@
                   }
                 }
               },
-              "_postman_id": "85f0f08b2c45404eb8556f4f"
+              "_postman_id": "ab37ce7c97f34b31a15efa78"
             }
           ],
-          "_postman_id": "d51222c7552943bfbebe297c"
+          "_postman_id": "dadc9bd205a84e7684d723dd"
         },
         {
           "name": "Field Executive (FEx)",
@@ -5619,7 +5628,7 @@
                   }
                 }
               },
-              "_postman_id": "84f6457044dc49f28b950d47",
+              "_postman_id": "0d858cd0999e446aa17ee638",
               "event": [
                 {
                   "listen": "test",
@@ -5671,7 +5680,7 @@
                   }
                 }
               },
-              "_postman_id": "0156dd16ffce4fc08bc2456c"
+              "_postman_id": "b88d2e571c9a4c1d856bff11"
             },
             {
               "name": "FEx Send Message",
@@ -5711,7 +5720,7 @@
                   }
                 }
               },
-              "_postman_id": "9cad38d3e28d43d683b2a7a0"
+              "_postman_id": "c10818bfa4b74c298836e980"
             },
             {
               "name": "FEx Receive Messages",
@@ -5751,7 +5760,7 @@
                   }
                 }
               },
-              "_postman_id": "b1bf0a0b0e204023ba33707f"
+              "_postman_id": "fe1f171a4fe642ac84e6c58c"
             },
             {
               "name": "FEx Get Call Location",
@@ -5791,7 +5800,7 @@
                   }
                 }
               },
-              "_postman_id": "87060183bf6a4ad0b9ef4544"
+              "_postman_id": "55833e5e8a35445d8e4797ef"
             },
             {
               "name": "FEx Update Location",
@@ -5831,7 +5840,7 @@
                   }
                 }
               },
-              "_postman_id": "ff68ccf836ad4accbb909c8a"
+              "_postman_id": "7e08bf29ddc3411e91f32409"
             },
             {
               "name": "FEx Update Status",
@@ -5871,7 +5880,7 @@
                   }
                 }
               },
-              "_postman_id": "4533cd0ead7549879711126f"
+              "_postman_id": "fb53300412034265aa50e27f"
             },
             {
               "name": "FEx Request Backup",
@@ -5911,10 +5920,10 @@
                   }
                 }
               },
-              "_postman_id": "f3d41d2579214c75bfb2f191"
+              "_postman_id": "4efa29eb27d44f0cbd5d931b"
             }
           ],
-          "_postman_id": "51b5acb890734e02bbcba2b1"
+          "_postman_id": "0f199a0a64d24c1abbd199c4"
         },
         {
           "name": "Team Lead (TLEx)",
@@ -5957,7 +5966,7 @@
                   }
                 }
               },
-              "_postman_id": "643f389bee3643a99b1ffc77",
+              "_postman_id": "27c0581e225d491095404917",
               "event": [
                 {
                   "listen": "test",
@@ -6009,7 +6018,7 @@
                   }
                 }
               },
-              "_postman_id": "048982845ac24e32b0012986"
+              "_postman_id": "2b712343278a4419b3de4ed1"
             },
             {
               "name": "TLEx Reassign Call",
@@ -6049,10 +6058,10 @@
                   }
                 }
               },
-              "_postman_id": "2ba90efca22f446faa4d6063"
+              "_postman_id": "ed856f236bb34f109840c306"
             }
           ],
-          "_postman_id": "142a24075bc74a79ab6efbae"
+          "_postman_id": "8f358953f3a64bbe9f164e63"
         },
         {
           "name": "EM Team Management",
@@ -6094,7 +6103,7 @@
                   }
                 }
               },
-              "_postman_id": "afb88365d298425e8af84d02",
+              "_postman_id": "878a0f58dc604831bc9242df",
               "event": [
                 {
                   "listen": "test",
@@ -6145,7 +6154,46 @@
                   }
                 }
               },
-              "_postman_id": "4d464784fe2f4f4081d0a399"
+              "_postman_id": "b7d504c13b5243d8b831317f"
+            },
+            {
+              "name": "Deactivate EM Team",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/EM/deactivate_EMteam/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "EM",
+                    "deactivate_EMteam"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"team_id\": \"{{team_id}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "_postman_id": "f544ad60bf15486590398c10"
             },
             {
               "name": "Remove EM Team",
@@ -6184,7 +6232,7 @@
                   }
                 }
               },
-              "_postman_id": "2284abc4e38d49559c47fde7"
+              "_postman_id": "baa339715f79449895e73177"
             },
             {
               "name": "Edit EM Team",
@@ -6223,7 +6271,7 @@
                   }
                 }
               },
-              "_postman_id": "d6f7d9f9232a41d989d177ee"
+              "_postman_id": "c7a34f9169544bc6b87c9653"
             },
             {
               "name": "Get EM Team",
@@ -6262,7 +6310,7 @@
                   }
                 }
               },
-              "_postman_id": "c2e01c122e4e4f1394fad7a2"
+              "_postman_id": "c4c6f276b625473d99bebc61"
             },
             {
               "name": "List EM Teams",
@@ -6301,7 +6349,7 @@
                   }
                 }
               },
-              "_postman_id": "baf8b76d11cf4ac7949592df",
+              "_postman_id": "edf404e5b6894ff4b90d6600",
               "event": [
                 {
                   "listen": "test",
@@ -6316,13 +6364,13 @@
               ]
             }
           ],
-          "_postman_id": "462ec14193b140349cabd6d7"
+          "_postman_id": "dfc85a22d6924535a35bd203"
         }
       ],
-      "_postman_id": "e697302f32714aaaaf8c9b57"
+      "_postman_id": "c49d0f0621864310b183408d"
     },
     {
-      "name": "13 \u00b7 GPS & Live Tracking",
+      "name": "13 · GPS & Live Tracking",
       "item": [
         {
           "name": "GPS Track Data (full)",
@@ -6361,7 +6409,7 @@
             },
             "description": "Returns latest GPS packet for each vehicle. Primary live-tracking endpoint."
           },
-          "_postman_id": "7fa6423dc10649f4a5f0ab4b",
+          "_postman_id": "ab2f5d201542458f8f16a948",
           "event": [
             {
               "listen": "test",
@@ -6409,7 +6457,7 @@
               }
             }
           },
-          "_postman_id": "1cd3020cef57401db6943265"
+          "_postman_id": "d8ba175fd05f4c9eb306e160"
         },
         {
           "name": "GPS Track Lite",
@@ -6446,9 +6494,9 @@
                 }
               }
             },
-            "description": "Lightweight tracking \u2014 only requested fields."
+            "description": "Lightweight tracking — only requested fields."
           },
-          "_postman_id": "0a78206cde484fe38cc3210b",
+          "_postman_id": "061bbf4683d348b59f81c35d",
           "event": [
             {
               "listen": "test",
@@ -6498,7 +6546,7 @@
               }
             }
           },
-          "_postman_id": "16e835ca6f184bee91f4ef72",
+          "_postman_id": "27875156e16b4414bcb9ecf4",
           "event": [
             {
               "listen": "test",
@@ -6548,7 +6596,7 @@
               }
             }
           },
-          "_postman_id": "0804c8179fb54464a128b16a"
+          "_postman_id": "81ef340da7da4d6999d972e6"
         },
         {
           "name": "GPS History Map Data",
@@ -6586,7 +6634,7 @@
               }
             }
           },
-          "_postman_id": "14d8346008d64e28a4ebff9a",
+          "_postman_id": "00ddbb35047945958aebc8a5",
           "event": [
             {
               "listen": "test",
@@ -6636,7 +6684,7 @@
               }
             }
           },
-          "_postman_id": "defd361242614585aefb6375"
+          "_postman_id": "b0eabd9d6dcd48f7937ca9fa"
         },
         {
           "name": "GPS EM Data Log Table",
@@ -6674,7 +6722,7 @@
               }
             }
           },
-          "_postman_id": "e8ec9a0fb2ba433ab2befa52"
+          "_postman_id": "f6011c2aae2e4db7a61939f6"
         },
         {
           "name": "GPS Packet Health Summary",
@@ -6712,7 +6760,7 @@
               }
             }
           },
-          "_postman_id": "128588dff1114723988d89c9",
+          "_postman_id": "c66c057aafa54b9d9c794bfc",
           "event": [
             {
               "listen": "test",
@@ -6762,7 +6810,7 @@
               }
             }
           },
-          "_postman_id": "858c89be77ed44828fdb8807",
+          "_postman_id": "a47f7af436284d3c9b147e8f",
           "event": [
             {
               "listen": "test",
@@ -6813,7 +6861,7 @@
               }
             }
           },
-          "_postman_id": "35a0770f6bf149f0820a0a0f"
+          "_postman_id": "44ba4644b3cd43838b266d23"
         },
         {
           "name": "Cell Location Average",
@@ -6851,7 +6899,7 @@
               }
             }
           },
-          "_postman_id": "4a90c94cc28844959c6e1205"
+          "_postman_id": "2ff5139083164182ad837cc3"
         },
         {
           "name": "Get Live Vehicle Numbers",
@@ -6875,7 +6923,7 @@
               ]
             }
           },
-          "_postman_id": "6563b9210ede415ab5bdf327"
+          "_postman_id": "582ba169899e48f49dfda95e"
         },
         {
           "name": "Routes",
@@ -6916,7 +6964,7 @@
                   }
                 }
               },
-              "_postman_id": "5375807e14c24e13a105e0fc"
+              "_postman_id": "1b4152f59a744fe99556ff6e"
             },
             {
               "name": "Delete Route",
@@ -6954,7 +7002,7 @@
                   }
                 }
               },
-              "_postman_id": "2f337d6a1e3045a9bf4a39ad"
+              "_postman_id": "221903d979b04aed890b5be1"
             },
             {
               "name": "Get Routes",
@@ -6992,7 +7040,7 @@
                   }
                 }
               },
-              "_postman_id": "f5ad37dbcaa24814b1576592"
+              "_postman_id": "3c1e9a9f21cd4bda914d59b6"
             },
             {
               "name": "Get Route Path",
@@ -7030,16 +7078,16 @@
                   }
                 }
               },
-              "_postman_id": "0607111a66fd49a7849c8c8a"
+              "_postman_id": "530e5fcdf0624246b9f16f37"
             }
           ],
-          "_postman_id": "55b5f4e05d914d7b9efa509d"
+          "_postman_id": "9fbc89d7017643b58caa7b3e"
         }
       ],
-      "_postman_id": "b61037f112d34d1bb550ae72"
+      "_postman_id": "0d958561f724400d939f39a6"
     },
     {
-      "name": "14 \u00b7 Dashboard & Reports",
+      "name": "14 · Dashboard & Reports",
       "item": [
         {
           "name": "Vehicle Monitoring Dashboard",
@@ -7078,7 +7126,7 @@
               }
             }
           },
-          "_postman_id": "7ed687d49a844388ac4febf8",
+          "_postman_id": "3c1485df35854fb1839873c4",
           "event": [
             {
               "listen": "test",
@@ -7129,7 +7177,7 @@
               }
             }
           },
-          "_postman_id": "4733becd29154454a91f76de",
+          "_postman_id": "0b38641a89d343929c33c51a",
           "event": [
             {
               "listen": "test",
@@ -7180,7 +7228,7 @@
               }
             }
           },
-          "_postman_id": "8f961d805f004a5f81a335af",
+          "_postman_id": "e3c5297986fc4a66a4bd2d40",
           "event": [
             {
               "listen": "test",
@@ -7231,7 +7279,7 @@
               }
             }
           },
-          "_postman_id": "e417f46aa5054071b7228cfa",
+          "_postman_id": "bd83cd74cb674464af9d2926",
           "event": [
             {
               "listen": "test",
@@ -7282,7 +7330,7 @@
               }
             }
           },
-          "_postman_id": "aef0d442554f4bfb9227f165",
+          "_postman_id": "affeee6eb3a940c4b195dec0",
           "event": [
             {
               "listen": "test",
@@ -7333,7 +7381,7 @@
               }
             }
           },
-          "_postman_id": "ebc9ca270a3c4402a36a0d97",
+          "_postman_id": "8ccf4b68b84b454a92304811",
           "event": [
             {
               "listen": "test",
@@ -7384,7 +7432,7 @@
               }
             }
           },
-          "_postman_id": "232802dfa48045c985eecbb9",
+          "_postman_id": "193c698917034d06960ff966",
           "event": [
             {
               "listen": "test",
@@ -7434,7 +7482,7 @@
               }
             }
           },
-          "_postman_id": "ac23fb1557654e2499d69285",
+          "_postman_id": "b50d4862812b47d7b7878e48",
           "event": [
             {
               "listen": "test",
@@ -7488,7 +7536,7 @@
                   }
                 }
               },
-              "_postman_id": "a6c0cfe741e54257b30ed4cd",
+              "_postman_id": "a9201e1f9e9643a18647a126",
               "event": [
                 {
                   "listen": "test",
@@ -7539,7 +7587,7 @@
                   }
                 }
               },
-              "_postman_id": "17b15dfff4554fd9933f7775"
+              "_postman_id": "2c57d03ac5e444828130a288"
             },
             {
               "name": "SOS Admin Report (v2)",
@@ -7578,7 +7626,7 @@
                   }
                 }
               },
-              "_postman_id": "4abed672f2d14f568b11faba"
+              "_postman_id": "bd49501f8d4045b3b2ace74d"
             },
             {
               "name": "SOS TL Report",
@@ -7617,7 +7665,7 @@
                   }
                 }
               },
-              "_postman_id": "78a9f667e76048f8a32fce80"
+              "_postman_id": "1ed44124ed804dc2b1e2b807"
             },
             {
               "name": "SOS Executive Report",
@@ -7656,7 +7704,7 @@
                   }
                 }
               },
-              "_postman_id": "5221bf2a2c2340cdb5d12605"
+              "_postman_id": "4fb50301c32c41f6aa890d06"
             },
             {
               "name": "SOS Detailed Report",
@@ -7695,10 +7743,10 @@
                   }
                 }
               },
-              "_postman_id": "3e309585f27f49f19759c7ea"
+              "_postman_id": "2a9dd93d8cce400aa737b5f2"
             }
           ],
-          "_postman_id": "57c7fd919c0f4831beadb4bd"
+          "_postman_id": "b64f100f3d6340f3bd29a8fb"
         },
         {
           "name": "Fleet Metrics",
@@ -7739,7 +7787,7 @@
                   }
                 }
               },
-              "_postman_id": "9ff795859a234198b056dd4e",
+              "_postman_id": "38820ebd8b7f485482fdb993",
               "event": [
                 {
                   "listen": "test",
@@ -7789,7 +7837,7 @@
                   }
                 }
               },
-              "_postman_id": "4652dd622b2b41f1ae66fd87",
+              "_postman_id": "41a4058f6499497689c19385",
               "event": [
                 {
                   "listen": "test",
@@ -7839,7 +7887,7 @@
                   }
                 }
               },
-              "_postman_id": "d059dd1fed834d2cb00b751d",
+              "_postman_id": "ef7931140cf94498865b2cfc",
               "event": [
                 {
                   "listen": "test",
@@ -7854,7 +7902,7 @@
               ]
             }
           ],
-          "_postman_id": "2e8faeec08fc4d4baab9b92b"
+          "_postman_id": "2e1a360a45d54b298de7afab"
         },
         {
           "name": "State Admin Reports",
@@ -7897,7 +7945,7 @@
                   }
                 }
               },
-              "_postman_id": "ffeba0699cbe43b1a20592f4",
+              "_postman_id": "f93f87d8b9e24095b62b6377",
               "event": [
                 {
                   "listen": "test",
@@ -7949,7 +7997,7 @@
                   }
                 }
               },
-              "_postman_id": "2d04fc240a83404ab3e0a949",
+              "_postman_id": "9618a293d48648c180fa8379",
               "event": [
                 {
                   "listen": "test",
@@ -8001,7 +8049,7 @@
                   }
                 }
               },
-              "_postman_id": "a829ae58f55c43b597eddc0d",
+              "_postman_id": "f5536bc1c65049b98c72274a",
               "event": [
                 {
                   "listen": "test",
@@ -8016,13 +8064,13 @@
               ]
             }
           ],
-          "_postman_id": "c2948a2bb9874e1db5fa8285"
+          "_postman_id": "6c7c71a660634959958259bc"
         }
       ],
-      "_postman_id": "490cdf659f2e4dff824720ae"
+      "_postman_id": "883af522b11a47e685e01e4c"
     },
     {
-      "name": "15 \u00b7 MQTT",
+      "name": "15 · MQTT",
       "item": [
         {
           "name": "Prepare MQTT Auth",
@@ -8061,7 +8109,7 @@
               }
             }
           },
-          "_postman_id": "d8da5334de774563b08f098c"
+          "_postman_id": "b469be0a67ba443cbcadc1e0"
         },
         {
           "name": "Prepare MQTT Auth (token)",
@@ -8100,7 +8148,7 @@
               }
             }
           },
-          "_postman_id": "77cecfb5cbcc4f4c86d61eec"
+          "_postman_id": "f6c23612b27a4931acff141a"
         },
         {
           "name": "MQTT Dual Auth",
@@ -8134,7 +8182,7 @@
               }
             }
           },
-          "_postman_id": "d8306816b384403b8163a45c"
+          "_postman_id": "c3468a74ffe845069ce65e35"
         },
         {
           "name": "MQTT Validate Connection (broker hook)",
@@ -8169,7 +8217,7 @@
             },
             "description": "Called by Mosquitto broker to validate device connections."
           },
-          "_postman_id": "d6c5ca2389074593a3287b0d"
+          "_postman_id": "3c6f36a98e7e4cacabcd600e"
         },
         {
           "name": "MQTT Validate ACL (broker hook)",
@@ -8203,7 +8251,7 @@
               }
             }
           },
-          "_postman_id": "72ef478bcf284489b4daa371"
+          "_postman_id": "74dfc46fce8848d0a4bbb9e0"
         },
         {
           "name": "Send MQTT Command",
@@ -8242,13 +8290,13 @@
               }
             }
           },
-          "_postman_id": "4d8088487142473086833f1d"
+          "_postman_id": "a60dad1128a64de89748b79b"
         }
       ],
-      "_postman_id": "1e47f47d18064199a34efdab"
+      "_postman_id": "6d5ff2b5beac41fea4990936"
     },
     {
-      "name": "16 \u00b7 Settings & Configuration",
+      "name": "16 · Settings & Configuration",
       "item": [
         {
           "name": "Get Login Settings",
@@ -8286,7 +8334,7 @@
               }
             }
           },
-          "_postman_id": "96b088ddadec4e70a477d5f9",
+          "_postman_id": "b4935c56ba594ed4a31a4b34",
           "event": [
             {
               "listen": "test",
@@ -8336,7 +8384,7 @@
               }
             }
           },
-          "_postman_id": "ffcdfa73b5a84f9dbdf9c61d"
+          "_postman_id": "63f12bb9bb9e4004b161b6f3"
         },
         {
           "name": "Get Settings",
@@ -8374,7 +8422,7 @@
               }
             }
           },
-          "_postman_id": "b750bcbf1b1044d2818230ee",
+          "_postman_id": "e13b29b8fd334891b78b9095",
           "event": [
             {
               "listen": "test",
@@ -8428,7 +8476,7 @@
                   }
                 }
               },
-              "_postman_id": "3c209de0478049c0ae840709"
+              "_postman_id": "565f408b922840edabad8db9"
             },
             {
               "name": "Filter State Settings",
@@ -8467,7 +8515,7 @@
                   }
                 }
               },
-              "_postman_id": "f85837df82594e3abeb06a4c",
+              "_postman_id": "f79b29ae040d40c5b50b88a2",
               "event": [
                 {
                   "listen": "test",
@@ -8514,7 +8562,7 @@
                   }
                 }
               },
-              "_postman_id": "a6aa077ecf6048238c3acf2c"
+              "_postman_id": "7a775380793d4ca6a545e3fa"
             },
             {
               "name": "Create District Setting",
@@ -8553,7 +8601,7 @@
                   }
                 }
               },
-              "_postman_id": "0f0fd64bf9914b1fb821fd85"
+              "_postman_id": "9178be8474b84fc8b228696d"
             },
             {
               "name": "Filter District Settings",
@@ -8592,7 +8640,7 @@
                   }
                 }
               },
-              "_postman_id": "9f9007ef066d473681d6a2b7",
+              "_postman_id": "fcebb2fc27654eabbabd36c0",
               "event": [
                 {
                   "listen": "test",
@@ -8607,7 +8655,7 @@
               ]
             }
           ],
-          "_postman_id": "307ce29ed1bb46fea9939777"
+          "_postman_id": "a5aa2a14cbb94f91adb07b53"
         },
         {
           "name": "Vehicle & Firmware",
@@ -8649,7 +8697,7 @@
                   }
                 }
               },
-              "_postman_id": "7f695f92b46c49cda45fc4ea"
+              "_postman_id": "a0e6e38bbd4445d88ce39ea9"
             },
             {
               "name": "Filter Vehicle Categories",
@@ -8688,7 +8736,7 @@
                   }
                 }
               },
-              "_postman_id": "87fa7f18ad84404f83234206",
+              "_postman_id": "b2e6a0e4dff74adf9eac8a8e",
               "event": [
                 {
                   "listen": "test",
@@ -8739,7 +8787,7 @@
                   }
                 }
               },
-              "_postman_id": "f74d194f57ed400ca71d9ced"
+              "_postman_id": "d6d3debe62854ef6aeaf9ff6"
             },
             {
               "name": "Filter Firmware Settings",
@@ -8778,7 +8826,7 @@
                   }
                 }
               },
-              "_postman_id": "08759a4914794c62942330a6",
+              "_postman_id": "7fb6cdb405df46a698943569",
               "event": [
                 {
                   "listen": "test",
@@ -8793,7 +8841,7 @@
               ]
             }
           ],
-          "_postman_id": "b70264881aac40909ecde042"
+          "_postman_id": "41f6a364393345d89b52b8f8"
         },
         {
           "name": "Heartbeat Frequency & IP",
@@ -8835,7 +8883,7 @@
                   }
                 }
               },
-              "_postman_id": "cb22098e2f98413281fd9569"
+              "_postman_id": "a2308e0c2bd944e0b2158f20"
             },
             {
               "name": "Filter HP Frequency",
@@ -8874,7 +8922,7 @@
                   }
                 }
               },
-              "_postman_id": "e0b912f7f00a4be5885cd0f9"
+              "_postman_id": "af96a8cf805c4ed998b93ffd"
             },
             {
               "name": "Create IP Setting",
@@ -8913,7 +8961,7 @@
                   }
                 }
               },
-              "_postman_id": "8ffd811079024c718ed6ab6c"
+              "_postman_id": "17afc72e86cc496c91e378cd"
             },
             {
               "name": "Filter IP Settings",
@@ -8952,16 +9000,16 @@
                   }
                 }
               },
-              "_postman_id": "898004e817e14547959ed403"
+              "_postman_id": "17e4282624604462be81cfe1"
             }
           ],
-          "_postman_id": "10160896ecae4fe08ed9cb54"
+          "_postman_id": "947e06162ec24331af78a12b"
         }
       ],
-      "_postman_id": "b87f93d836284a10b2ecb801"
+      "_postman_id": "1a091164cc3d4825bef72877"
     },
     {
-      "name": "17 \u00b7 Notices & Alerts",
+      "name": "17 · Notices & Alerts",
       "item": [
         {
           "name": "Create Notice",
@@ -9000,7 +9048,7 @@
               }
             }
           },
-          "_postman_id": "8a6a5dbdf56e4d628b1d6f43",
+          "_postman_id": "fe07a4ac0cbe4d2aa1b4c6fb",
           "event": [
             {
               "listen": "test",
@@ -9051,7 +9099,7 @@
               }
             }
           },
-          "_postman_id": "54d157f16ab6435ba97399df"
+          "_postman_id": "370629b4ab694d57babee9be"
         },
         {
           "name": "Filter Notices",
@@ -9090,7 +9138,7 @@
               }
             }
           },
-          "_postman_id": "8d30e6ca9acc49aeb57ca307",
+          "_postman_id": "be4b58aa1b544e7f9b0178ac",
           "event": [
             {
               "listen": "test",
@@ -9141,7 +9189,7 @@
               }
             }
           },
-          "_postman_id": "7bba162d22d74a069239163c",
+          "_postman_id": "55b7fcb91ea14427b7bdd3f9",
           "event": [
             {
               "listen": "test",
@@ -9192,7 +9240,7 @@
               }
             }
           },
-          "_postman_id": "80076209902a46dd9594de9e"
+          "_postman_id": "2cf794dfe5cc49f193f5c56a"
         },
         {
           "name": "List Alert Logs",
@@ -9230,7 +9278,7 @@
               }
             }
           },
-          "_postman_id": "f2af83ae349b42b8af1417b8",
+          "_postman_id": "48265196fed24e2c825b4ce4",
           "event": [
             {
               "listen": "test",
@@ -9281,7 +9329,7 @@
               }
             }
           },
-          "_postman_id": "8943f8cc859f4d0bb41fbf6a"
+          "_postman_id": "e29250ed0ed34301be737b5b"
         },
         {
           "name": "Update Alert Log",
@@ -9320,7 +9368,7 @@
               }
             }
           },
-          "_postman_id": "c7f5be211de54157bb2c7ffe"
+          "_postman_id": "65ce96796457457381166090"
         },
         {
           "name": "Filter Alert Logs",
@@ -9359,7 +9407,7 @@
               }
             }
           },
-          "_postman_id": "7dab92ace57b4141b6b90233",
+          "_postman_id": "497f06b94789457ea210b8f2",
           "event": [
             {
               "listen": "test",
@@ -9409,7 +9457,7 @@
               }
             }
           },
-          "_postman_id": "a1605c835f764b2e922d86cc"
+          "_postman_id": "04d978704566404caefd2458"
         },
         {
           "name": "Alert List",
@@ -9447,7 +9495,7 @@
               }
             }
           },
-          "_postman_id": "47805794bf394001bf63fdc1",
+          "_postman_id": "22ee5b2da6914c15bf24d731",
           "event": [
             {
               "listen": "test",
@@ -9462,10 +9510,10 @@
           ]
         }
       ],
-      "_postman_id": "14c9adcf2bae41f38c66c91f"
+      "_postman_id": "1d0699fc73214356a4d2f9e9"
     },
     {
-      "name": "18 \u00b7 Miscellaneous",
+      "name": "18 · Miscellaneous",
       "item": [
         {
           "name": "POI (Points of Interest)",
@@ -9507,7 +9555,7 @@
                   }
                 }
               },
-              "_postman_id": "551df1f8e4cc4e61ae27dd6e"
+              "_postman_id": "dfe20a5f288b45a288eecb5b"
             },
             {
               "name": "Update POI",
@@ -9546,7 +9594,7 @@
                   }
                 }
               },
-              "_postman_id": "f35e77af59404cd4a3577134"
+              "_postman_id": "23c09bd20e0e4495b30e9d83"
             },
             {
               "name": "Delete POI",
@@ -9585,7 +9633,7 @@
                   }
                 }
               },
-              "_postman_id": "45e81152e25d4b98b0cbe16b"
+              "_postman_id": "a71eeee110b44aa89e29264d"
             },
             {
               "name": "List POIs",
@@ -9624,7 +9672,7 @@
                   }
                 }
               },
-              "_postman_id": "e456731089744c9993087035",
+              "_postman_id": "9c541e11fb254fbbbf885789",
               "event": [
                 {
                   "listen": "test",
@@ -9639,7 +9687,7 @@
               ]
             }
           ],
-          "_postman_id": "3e0f1fd49e844fb18afede20"
+          "_postman_id": "c2d2d79a1f544f65821629ef"
         },
         {
           "name": "Bus Stand",
@@ -9681,7 +9729,7 @@
                   }
                 }
               },
-              "_postman_id": "db7909a7a2ec490eaa85a598"
+              "_postman_id": "0a3c508abda74f55b03b4a7e"
             },
             {
               "name": "Activate/Deactivate Bus Stand",
@@ -9720,7 +9768,7 @@
                   }
                 }
               },
-              "_postman_id": "fe358880479b46988bd795de"
+              "_postman_id": "ba21b7f963ed4889b85e32b6"
             },
             {
               "name": "Filter Bus Stands",
@@ -9759,7 +9807,7 @@
                   }
                 }
               },
-              "_postman_id": "61ccad915fec46819d767624",
+              "_postman_id": "46c4cc2b5c894b1d8d50e82a",
               "event": [
                 {
                   "listen": "test",
@@ -9774,7 +9822,7 @@
               ]
             }
           ],
-          "_postman_id": "b2f6844a04344c85b2a304c5"
+          "_postman_id": "66c6d76a4a58425095657a0c"
         },
         {
           "name": "OTA Settings",
@@ -9816,7 +9864,7 @@
                   }
                 }
               },
-              "_postman_id": "91e03002e49f4fec92dc76b7"
+              "_postman_id": "e24052106ddd4b8794af7aa9"
             },
             {
               "name": "Update OTA Settings",
@@ -9855,7 +9903,7 @@
                   }
                 }
               },
-              "_postman_id": "3eb2946950194bcea283d238"
+              "_postman_id": "83c6574d7bc34e3285a8b775"
             },
             {
               "name": "Filter OTA Settings",
@@ -9894,7 +9942,7 @@
                   }
                 }
               },
-              "_postman_id": "043f892146d34fc1b71d0222",
+              "_postman_id": "140e993b8ad4464fb3aee27d",
               "event": [
                 {
                   "listen": "test",
@@ -9909,7 +9957,7 @@
               ]
             }
           ],
-          "_postman_id": "31264f2478684839becaf638"
+          "_postman_id": "16bf3a2cd38346f88e53f5ad"
         },
         {
           "name": "Incident Register",
@@ -9951,7 +9999,7 @@
                   }
                 }
               },
-              "_postman_id": "c0660579fe2a40d58f98d895"
+              "_postman_id": "ce00e66cb87843a1b027e156"
             },
             {
               "name": "Filter Incidents",
@@ -9990,7 +10038,7 @@
                   }
                 }
               },
-              "_postman_id": "34346b72480d48b58ca1d787",
+              "_postman_id": "63652b14cbcc40669554ca35",
               "event": [
                 {
                   "listen": "test",
@@ -10041,10 +10089,10 @@
                   }
                 }
               },
-              "_postman_id": "4df3bd606191443f8b57b50f"
+              "_postman_id": "cc4c24e094064f80af233903"
             }
           ],
-          "_postman_id": "fa83f3dbbcc84de1af956f13"
+          "_postman_id": "9c39207c84b94bd5a89d8aa8"
         },
         {
           "name": "Holidays",
@@ -10086,7 +10134,7 @@
                   }
                 }
               },
-              "_postman_id": "e112caa1810b44dfa4d5e5b3"
+              "_postman_id": "fca452aa856744f39db19964"
             },
             {
               "name": "Update Holiday",
@@ -10126,7 +10174,7 @@
                   }
                 }
               },
-              "_postman_id": "afe55c954be84d438ce0c2c0"
+              "_postman_id": "cfc975c832254be39b0963f6"
             },
             {
               "name": "Delete Holiday",
@@ -10157,7 +10205,7 @@
                   ]
                 }
               },
-              "_postman_id": "b11ba82b42494e56bd54ae35"
+              "_postman_id": "936eceb89c674628901e96e9"
             },
             {
               "name": "List Holidays",
@@ -10196,7 +10244,7 @@
                   }
                 }
               },
-              "_postman_id": "b10ba5876a744e31b6818bf8",
+              "_postman_id": "87da893969d24b879cc046fb",
               "event": [
                 {
                   "listen": "test",
@@ -10211,7 +10259,7 @@
               ]
             }
           ],
-          "_postman_id": "f568b81e238f40c7ae625ce8"
+          "_postman_id": "f06903c14adb498ab15dcf65"
         },
         {
           "name": "Driver",
@@ -10253,7 +10301,7 @@
                   }
                 }
               },
-              "_postman_id": "a53ce416ef964cbf8db01d05"
+              "_postman_id": "415efec5fb4b4d9d9d902862"
             },
             {
               "name": "Remove Driver",
@@ -10292,16 +10340,16 @@
                   }
                 }
               },
-              "_postman_id": "774e44e2154146549ece4fab"
+              "_postman_id": "2145144d2d2242b4892d7317"
             }
           ],
-          "_postman_id": "83353be37f364f0abb803072"
+          "_postman_id": "85e330b66b884c50b13bf052"
         },
         {
           "name": "Geocoding",
           "item": [
             {
-              "name": "Geocode (Address \u2192 LatLng)",
+              "name": "Geocode (Address → LatLng)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -10336,7 +10384,7 @@
                   }
                 }
               },
-              "_postman_id": "a1aa9dc845584bf3ae9cfcd5",
+              "_postman_id": "ca203022fcad4e22859e7590",
               "event": [
                 {
                   "listen": "test",
@@ -10351,7 +10399,7 @@
               ]
             },
             {
-              "name": "Reverse Geocode (LatLng \u2192 Address)",
+              "name": "Reverse Geocode (LatLng → Address)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -10386,7 +10434,7 @@
                   }
                 }
               },
-              "_postman_id": "29670d8168d64257a3731351",
+              "_postman_id": "db1989b26cb2464a8419b28a",
               "event": [
                 {
                   "listen": "test",
@@ -10401,7 +10449,7 @@
               ]
             }
           ],
-          "_postman_id": "5bbe3f8e8f0940f1af33d211"
+          "_postman_id": "d4ef01e5d4b547f99fae3f60"
         },
         {
           "name": "SMS",
@@ -10438,7 +10486,7 @@
                   }
                 }
               },
-              "_postman_id": "4666ac6aceee4f3cad2b662b"
+              "_postman_id": "3bc3340806c24d87a97a662a"
             },
             {
               "name": "SMS Send",
@@ -10477,7 +10525,7 @@
                   }
                 }
               },
-              "_postman_id": "bc1e2ca1b7cf4d8aa6557212"
+              "_postman_id": "0a10d3e834944627a924d376"
             },
             {
               "name": "SMS Queue",
@@ -10516,7 +10564,7 @@
                   }
                 }
               },
-              "_postman_id": "9f297cc3bb984ee589615c1d"
+              "_postman_id": "18e1508d875444238a5e4a6a"
             },
             {
               "name": "SMS Queue Add",
@@ -10555,10 +10603,10 @@
                   }
                 }
               },
-              "_postman_id": "72e6a8b94f7e4ddfa76ae102"
+              "_postman_id": "2a5bf7eb26634f6b8d693f39"
             }
           ],
-          "_postman_id": "4f124ea59c154434a06a0ff2"
+          "_postman_id": "9602254ad95f421bb1b60cdb"
         },
         {
           "name": "KYC & Files",
@@ -10591,7 +10639,7 @@
                 },
                 "description": "Multipart form upload. field: `file`, optional: `doc_type`"
               },
-              "_postman_id": "dfd02c9df76541558349910a"
+              "_postman_id": "505fe77d14dc41de8c30588c"
             },
             {
               "name": "Download File",
@@ -10615,10 +10663,10 @@
                   ]
                 }
               },
-              "_postman_id": "1b7c5d0d1d2f4f6b8b11a300"
+              "_postman_id": "1fb1077b337b460183452fc1"
             }
           ],
-          "_postman_id": "17526ae7e85c447aa1130718"
+          "_postman_id": "db06105e3a38425990a817cb"
         },
         {
           "name": "Trip (EM/Vehicle)",
@@ -10660,7 +10708,7 @@
                   }
                 }
               },
-              "_postman_id": "fc4ade9f2f774305838413df"
+              "_postman_id": "3f15bd26acb4475996861f8a"
             },
             {
               "name": "Get Trip",
@@ -10685,7 +10733,7 @@
                   ]
                 }
               },
-              "_postman_id": "31c0424b1c20470d93e9e1b7"
+              "_postman_id": "8cf62ec1187b460f9d174290"
             },
             {
               "name": "Update Trip",
@@ -10725,7 +10773,7 @@
                   }
                 }
               },
-              "_postman_id": "63938e3968ed48c28cb9ee01"
+              "_postman_id": "aac8c1724e1d4d168c4b6e4c"
             },
             {
               "name": "End Trip",
@@ -10756,7 +10804,7 @@
                   ]
                 }
               },
-              "_postman_id": "a000fd45264d435982043154"
+              "_postman_id": "a73376c5cd184c989701a145"
             },
             {
               "name": "Cancel Trip",
@@ -10787,10 +10835,10 @@
                   ]
                 }
               },
-              "_postman_id": "3c22b17dbb25457f8f841ac4"
+              "_postman_id": "93a79be19ff3497589fb7de1"
             }
           ],
-          "_postman_id": "c5ea459527c949e29b263cfe"
+          "_postman_id": "f06d318ca82a4b0c8d100f05"
         },
         {
           "name": "IMEI Comparison",
@@ -10829,7 +10877,7 @@
               }
             }
           },
-          "_postman_id": "4b51a162327e494a95dd9be2",
+          "_postman_id": "91c02c559366403db38f2624",
           "event": [
             {
               "listen": "test",
@@ -10879,7 +10927,7 @@
               }
             }
           },
-          "_postman_id": "3647ca8243a44f798c319d3f",
+          "_postman_id": "0a465e4f40f84847a6869bea",
           "event": [
             {
               "listen": "test",
@@ -10930,7 +10978,7 @@
               }
             }
           },
-          "_postman_id": "be3f0e0268474788acb797b7",
+          "_postman_id": "c7f9ba37e05144bf9453c250",
           "event": [
             {
               "listen": "test",
@@ -10976,7 +11024,7 @@
               }
             }
           },
-          "_postman_id": "5dc7357a5377492cb26c74a5"
+          "_postman_id": "3707ecd29a854a9f98afb796"
         },
         {
           "name": "Public Contact / User Registration Form",
@@ -11010,7 +11058,7 @@
               }
             }
           },
-          "_postman_id": "cb9502660636406d8cfeb756"
+          "_postman_id": "7a4a15d09ddb4e85aaea5ff2"
         },
         {
           "name": "Create System Admin",
@@ -11048,7 +11096,7 @@
               }
             }
           },
-          "_postman_id": "de249707ba844c0397a308f1"
+          "_postman_id": "2869411d27ea48ec85c02666"
         },
         {
           "name": "Get EM User Locations",
@@ -11072,7 +11120,7 @@
               ]
             }
           },
-          "_postman_id": "d7a145185c9e414491473e06",
+          "_postman_id": "dad979d7a29d45b0ade2d3e6",
           "event": [
             {
               "listen": "test",
@@ -11087,7 +11135,7 @@
           ]
         }
       ],
-      "_postman_id": "0a4be1a35fd444a5b3c980b8"
+      "_postman_id": "bad43fc0eec9409fba4c9e17"
     }
   ]
 }

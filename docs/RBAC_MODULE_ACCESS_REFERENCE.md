@@ -804,7 +804,7 @@
 | Route | API Endpoints |
 |---|---|
 | `/sos-alert` | `GET /api/emergency-call-listener-admin/` |
-| `/list/em-team` | `POST /api/EM/list_EMteam/`<br>`POST /api/EM/remove_EMteam/`<br>`POST /api/EM/activate_EMteam/` |
+| `/list/em-team` | `POST /api/EM/list_EMteam/`<br>`POST /api/EM/remove_EMteam/`<br>`POST /api/EM/activate_EMteam/`<br>`POST /api/EM/deactivate_EMteam/` |
 | `/new/em-team` | `POST /api/EM/get_EMteam/`<br>`POST /api/EM/create_EMteam/`<br>`POST /api/EM/edit_EMteam/` |
 
 ---

@@ -1718,11 +1718,15 @@ def create_emergency_call(sender, instance, created, **kwargs):
         ).exclude(status__in=["closed_false_alert", "closed"]).last()
 
         if existing_emergency_call:
-            # If the existing call is still pending and has at least one active (non-closed,
-            # non-rejected) assignment, nothing new is needed.
+            # If the existing call still has someone handling it, nothing new is needed.
+            # A teamlead assignment nobody has acted on does not count: it is created
+            # with every call, so counting it would leave a call whose desk_ex rejected
+            # it stuck forever with the original team's lead, swallowing every later SOS.
             active_assignment = EMCallAssignment.objects.filter(
                 call=existing_emergency_call,
-            ).exclude(status__in=["closed", "rejected", "closed_false_alert"]).exists()
+            ).exclude(
+                status__in=["closed", "rejected", "closed_false_alert", "reassigned"]
+            ).exclude(type="teamlead", status="pending").exists()
 
             if active_assignment:
                 print(
@@ -1790,6 +1794,21 @@ def create_emergency_call(sender, instance, created, **kwargs):
 
         teamlead = team.teamlead
 
+        rejected_ex_ids = set()
+        if existing_emergency_call:
+            # Re-route to the team picked now; retire the previous lead's untouched
+            # assignment so the call does not stay parked with an inactive team lead.
+            EMCallAssignment.objects.filter(
+                call=em, type="teamlead", status="pending",
+            ).update(status="reassigned")
+            if em.team_id != team.id:
+                em.team = team
+                em.save(update_fields=["team"])
+            rejected_ex_ids = set(
+                EMCallAssignment.objects.filter(call=em, type="desk_ex", status="rejected")
+                .exclude(ex__isnull=True).values_list("ex_id", flat=True)
+            )
+
         if teamlead:
             EMCallAssignment.objects.create(
                 admin=admin,
@@ -1811,7 +1830,8 @@ def create_emergency_call(sender, instance, created, **kwargs):
         from django.db.models import Count, Q
         online_desk_exs = [
             ex for ex in desk_ex_members
-            if ex.users.filter(login=True, last_activity__gte=online_threshold).exists()
+            if ex.id not in rejected_ex_ids
+            and ex.users.filter(login=True, last_activity__gte=online_threshold).exists()
         ]
 
         if online_desk_exs:

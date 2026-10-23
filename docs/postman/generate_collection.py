@@ -680,6 +680,8 @@ def folder_sos():
                 tests=basic_tests(200)),
             req("Activate EM Team", "POST", "/EM/activate_EMteam/",
                 body=body_raw({"team_id": "{{team_id}}"})),
+            req("Deactivate EM Team", "POST", "/EM/deactivate_EMteam/",
+                body=body_raw({"team_id": "{{team_id}}"})),
             req("Remove EM Team", "POST", "/EM/remove_EMteam/",
                 body=body_raw({"team_id": "{{team_id}}"})),
             req("Edit EM Team", "POST", "/EM/edit_EMteam/",

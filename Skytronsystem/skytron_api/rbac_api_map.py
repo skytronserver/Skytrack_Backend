@@ -408,6 +408,7 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "list_EM_team":               ["emergency_teams", "em_team_list"],
     "remove_EM_team":             ["emergency_teams", "em_team_list"],
     "activate_EM_team":           ["emergency_teams", "em_team_list"],
+    "deactivate_EM_team":         ["emergency_teams", "em_team_list"],
     "get_EM_team":                ["em_team_create"],
     "create_EM_team":             ["em_team_create"],
     "edit_EM_team":               ["em_team_create"],

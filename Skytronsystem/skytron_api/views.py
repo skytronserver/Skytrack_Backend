@@ -8575,9 +8575,11 @@ def create_EM_team(request ):
     if active_team_members.exists():
         return Response({"error": "One or more selected members are already part of an active team."}, status=400)
 
-    created_by = uo  
-    status = "NotActive"
-    name = request.data.get('name') 
+    created_by = uo
+    # SOS calls are only routed to Active teams, so the first team of a state
+    # (or any team created while none is active) starts Active.
+    status = "NotActive" if EMTeams.objects.filter(state_id=state, status="Active").exists() else "Active"
+    name = request.data.get('name')
     detail = request.data.get('detail') 
     try:  
         if state and teamlead  and  members  and  created_by  and  status  and name and   detail:
@@ -8588,6 +8590,7 @@ def create_EM_team(request ):
                      
                     created_by = created_by,
                     status = status,
+                    activated_at = timezone.now() if status == "Active" else None,
                     name = name,
                     detail = detail)
                 
@@ -8641,6 +8644,38 @@ def activate_EM_team(request ):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('emergency_teams', 'update')
+def deactivate_EM_team(request ):
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    role="sosadmin"
+    user=request.user
+    uo=get_user_object(user,role)
+    if not uo:
+        return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        id = request.data.get('team_id')
+        ob=EMTeams.objects.filter(id = id,status = "Active" ,state=uo.state).last()
+        if ob:
+            # Unlike remove, a deactivated team can be activated again. New SOS
+            # calls are only routed to Active teams, so it stops receiving calls.
+            if not EMTeams.objects.filter(status="Active", state=uo.state).exclude(id=ob.id).exists():
+                return Response({'error': 'This is the only active team in the state. Activate another team before deactivating it, otherwise new SOS calls will not be assigned.'}, status=400)
+            ob.status="NotActive"
+            ob.save(update_fields=['status'])
+            return Response({'status': str('Team Deactivated Successfully'),"team":EMTeamsSerializer(ob).data}, status=200)
+        return Response({'error': str('Unable to deactivate team. Team not found.')}, status=400)
+
+    except Exception as e:
+        return Response({'error': "Unable to process request."}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 @throttle_classes([AnonRateThrottle, UserRateThrottle]) 
 @require_http_methods(['GET', 'POST'])
 @require_permission('emergency_teams', 'delete')
@@ -8660,6 +8695,8 @@ def remove_EM_team(request ):
         id = request.data.get('team_id') 
         ob=EMTeams.objects.filter(id = id,status = "Active",state=uo.state).last()
         if ob:
+            if not EMTeams.objects.filter(status="Active", state=uo.state).exclude(id=ob.id).exists():
+                return Response({'error': 'This is the only active team in the state. Activate another team before removing it, otherwise new SOS calls will not be assigned.'}, status=400)
             ob.status="Removed"
             ob.activated_at= timezone.now()
             ob.save()
@@ -9012,7 +9049,7 @@ def DEx_getPendingCallList(request ):
         qs_base = (
             EMCallAssignment.objects
             .filter(call__status="pending")
-            .exclude(status="closed")
+            .exclude(status__in=["closed", "reassigned"])
         )
 
         # Scope selection based on role
