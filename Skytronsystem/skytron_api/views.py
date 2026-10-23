@@ -8952,11 +8952,13 @@ TEAMLEAD_ESCALATION_SECONDS = 30
 
 
 def _hide_unescalated_teamlead_assignments(qs):
-    """Drop pending team lead assignments that have not escalated yet.
+    """Hold back new team lead assignments and mark which ones escalated.
 
-    A pending team lead assignment is shown only once its call has been open
-    for TEAMLEAD_ESCALATION_SECONDS and no desk executive has accepted it.
-    Assignments the team lead has already acted on are always shown.
+    A pending team lead assignment is listed once its call has been open for
+    TEAMLEAD_ESCALATION_SECONDS, so the team lead can monitor every open call
+    of the team. Each row is annotated with desk_ex_took_call; the list marks
+    a row escalated only when no desk executive has accepted the call, and the
+    frontend rings only for escalated rows.
     """
     cutoff = timezone.now() - timedelta(seconds=TEAMLEAD_ESCALATION_SECONDS)
     desk_ex_took_call = EMCallAssignment.objects.filter(
@@ -8964,10 +8966,8 @@ def _hide_unescalated_teamlead_assignments(qs):
         type='desk_ex',
         status__in=['accepted', 'arriving', 'arrived'],
     )
-    unescalated = Q(type='teamlead', status='pending') & (
-        Q(call__start_time__gt=cutoff) | Q(Exists(desk_ex_took_call))
-    )
-    return qs.exclude(unescalated)
+    too_new = Q(type='teamlead', status='pending', call__start_time__gt=cutoff)
+    return qs.exclude(too_new).annotate(desk_ex_took_call=Exists(desk_ex_took_call))
 
 
 
@@ -9140,6 +9140,12 @@ def DEx_getPendingCallList(request ):
                     a.call.device._prefetched_gps_vals = gps_by_device.get(a.call.device_id, [])
 
         data = EMCallAssignmentSerializer(assignments, many=True).data
+        if not (uo2 or uo3) and uo.user_type == 'teamlead':
+            for item, a in zip(data, assignments):
+                item['escalated'] = (
+                    a.type == 'teamlead' and a.status == 'pending'
+                    and not a.desk_ex_took_call
+                )
         cache.set(cache_key, data, timeout=5)
 
         if data:
