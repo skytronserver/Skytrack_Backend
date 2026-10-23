@@ -596,7 +596,7 @@
 | Route | API Endpoints |
 |---|---|
 | `/new/test-agency` | `POST /api/testAgency/name_list/`<br>`POST /api/testAgency/create_testAgency/` *(multipart)* |
-| `/test-agency/list` | `POST /api/testAgency/list/`<br>`POST /api/testAgency/update_testAgency/` *(multipart)* |
+| `/test-agency/list` | `POST /api/testAgency/list/`<br>`POST /api/testAgency/update_testAgency/` *(multipart)*<br>`POST /api/testAgency/delete_testAgency/` |
 | `/new/test-agency-details` | `POST /api/testAgency/details/create/` |
 | `/test-agency/details-list` | `GET /api/testAgency/details/list/` |
 | `/test-agency/assigned-models` | `POST /api/testAgency/device_models/` |

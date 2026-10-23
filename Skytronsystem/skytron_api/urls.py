@@ -226,6 +226,7 @@ urlpatterns = [
     path('testAgency/create_testAgency/', create_testAgency, name='create_testAgency'),
     path('testAgency/update_testAgency/', update_testAgency, name='update_testAgency'),
     path('testAgency/list/', get_testAgency_list, name='get_testAgency_list'),
+    path('testAgency/delete_testAgency/', delete_testAgency, name='delete_testAgency'),
     ## INUSE by Manufacturer
     path('testAgency/name_list/', get_testAgency_name_list, name='get_testAgency_name_list'),
     path('testAgency/details/list/', public_testAgencyDetails_list, name='public_testAgencyDetails_list'),

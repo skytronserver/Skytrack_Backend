@@ -29428,7 +29428,7 @@ def update_testAgency(request):
         if not agency_id:
             return Response({'error': 'testagency_id is required.'}, status=400)
 
-        agency = TestAgency.objects.filter(id=agency_id).last()
+        agency = TestAgency.objects.filter(id=agency_id).exclude(status='Discontinued').last()
         if not agency:
             return Response({'error': 'Invalid testagency_id.'}, status=400)
 
@@ -29512,7 +29512,52 @@ def get_testAgency_list(request):
 
     try:
         agencies = TestAgency.objects.all()
+        if str(request.data.get('include_deleted', '')).strip().lower() not in ('1', 'true', 'yes'):
+            agencies = agencies.exclude(status='Discontinued')
         return Response(TestAgencySerializer(agencies, many=True).data)
+    except Exception as e:
+        return Response({'error': 'Unable to process request.'}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
+@require_http_methods(['GET', 'POST'])
+@require_permission('device_management', 'delete')
+def delete_testAgency(request):
+    """Soft delete a Test Agency. Only superadmin.
+
+    The row, its files and its user stay in the database: the agency is marked
+    Discontinued (hidden from the list) and its login users are deactivated,
+    which blocks their existing tokens too.
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    role = "superadmin"
+    user = request.user
+    uo = get_user_object(user, role)
+    if not uo:
+        return Response({"error": "Request must be from " + role + "."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        agency_id = request.data.get('testagency_id')
+        if not agency_id:
+            return Response({'error': 'testagency_id is required.'}, status=400)
+
+        agency = TestAgency.objects.filter(id=agency_id).last()
+        if not agency:
+            return Response({'error': 'Invalid testagency_id.'}, status=400)
+        if agency.status == 'Discontinued':
+            return Response({'error': 'Test Agency is already deleted.'}, status=400)
+
+        with transaction.atomic():
+            agency.status = 'Discontinued'
+            agency.save(update_fields=['status'])
+            agency.users.update(is_active=False, login=False)
+        return Response({'status': 'Test Agency deleted successfully.', 'testagency': TestAgencySerializer(agency).data})
+
     except Exception as e:
         return Response({'error': 'Unable to process request.'}, status=400)
 
