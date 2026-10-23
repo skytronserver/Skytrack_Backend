@@ -252,7 +252,7 @@ API_MODULE_MAP: dict[str, list[str]] = {
         "device_stock", "dealer_untagged", "dealer_tag_device", "report_fitment",
     ],
     "SellFitDevice":              ["device_stock", "dealer_tag_device", "vehicle_tagging"],
-    "deviceStockFilter":          ["ds_individual", "dealer_download_cert"],
+    "deviceStockFilter":          ["ds_individual", "dealer_download_cert", "report_device_health"],
     "deviceStockUntaggedFilter":  ["ds_individual", "ds_assign"],
     "deviceStockSoftDelete":      ["device_stock", "ds_individual"],
     "unTagDevice2Vehicle":        ["dealer_download_cert"],

@@ -20,7 +20,7 @@ from django.shortcuts import render
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
-from .rbac import require_permission, check_permission, get_all_module_permissions, get_data_scope
+from .rbac import require_permission, check_permission, check_any_module_permission, get_all_module_permissions, get_data_scope
 from .auth_security import is_master_otp, remember_login_txn, consume_login_txn
 from .throttles import TripCreateRateThrottle, TripCreateDailyThrottle, TripWriteRateThrottle
 
@@ -13365,7 +13365,8 @@ def deviceStockFilter(request ):
 
     
     if not man:
-        if not check_permission(user, 'device_stock', 'view'):
+        # Device Health Report also uses this list, so report_device_health grants it too
+        if not check_any_module_permission(user, ['device_stock', 'report_device_health'], 'view'):
             return Response({"error":"Request must be from device manufacture or dealer"}, status=status.HTTP_400_BAD_REQUEST)
         # RBAC-permitted role (e.g. helpdesk) — no manufacturer/dealer filter; sees all stock
 
