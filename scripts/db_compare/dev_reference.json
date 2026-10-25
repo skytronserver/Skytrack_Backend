@@ -1,5 +1,9 @@
 {
  "constraints": {
+  "airtel_sms_in_log": [
+   "CHECK CHECK ((char_length >= 0))",
+   "PK PRIMARY KEY (id)"
+  ],
   "auth_group": [
    "PK PRIMARY KEY (id)",
    "UNIQUE UNIQUE (name)"
@@ -19,6 +23,10 @@
    "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (key)",
    "UNIQUE UNIQUE (user_id)"
+  ],
+  "ble_sos_app_log": [
+   "CHECK CHECK ((phone_battery >= 0))",
+   "PK PRIMARY KEY (id)"
   ],
   "bus_stand": [
    "FK FOREIGN KEY (created_by_id) REFERENCES skytron_api_user(id) ON DELETE CASCADE",
@@ -86,6 +94,7 @@
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_activewhitelist": [
+   "FK FOREIGN KEY (device_model_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
    "FK FOREIGN KEY (device_stock_id) REFERENCES skytron_api_devicestock(id) DEFERRABLE INITIALLY DEFERRED",
    "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
    "FK FOREIGN KEY (source_request_id) REFERENCES skytron_api_whitelistrequest(id) DEFERRABLE INITIALLY DEFERRED",
@@ -341,6 +350,16 @@
   "skytron_api_emcallmessages": [
    "FK FOREIGN KEY (assignment_id) REFERENCES skytron_api_emcallassignment(id) DEFERRABLE INITIALLY DEFERRED",
    "FK FOREIGN KEY (call_id) REFERENCES skytron_api_emcall(id) DEFERRABLE INITIALLY DEFERRED",
+   "PK PRIMARY KEY (id)"
+  ],
+  "skytron_api_emexonlinesession": [
+   "FK FOREIGN KEY (ex_id) REFERENCES skytron_api_em_ex(id) DEFERRABLE INITIALLY DEFERRED",
+   "PK PRIMARY KEY (id)"
+  ],
+  "skytron_api_emexunattendedtime": [
+   "CHECK CHECK ((duration_seconds >= 0))",
+   "FK FOREIGN KEY (ex_id) REFERENCES skytron_api_em_ex(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (user_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_emgpslocation": [
@@ -692,6 +711,11 @@
    "FK FOREIGN KEY (student_id) REFERENCES skytron_api_student(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
+  "skytron_api_technicalonboardingcommanddispatch": [
+   "FK FOREIGN KEY (execution_id) REFERENCES skytron_api_technicalonboardingtestexecution(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (sent_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
+   "PK PRIMARY KEY (id)"
+  ],
   "skytron_api_technicalonboardingtestcase": [
    "CHECK CHECK ((max_interval_seconds >= 0))",
    "CHECK CHECK ((min_match_count >= 0))",
@@ -725,6 +749,7 @@
    "UNIQUE UNIQUE (testagency_id, user_id)"
   ],
   "skytron_api_testagencydetails": [
+   "FK FOREIGN KEY (state_id) REFERENCES skytron_api_settings_state(id) DEFERRABLE INITIALLY DEFERRED",
    "PK PRIMARY KEY (id)"
   ],
   "skytron_api_ticketactivity": [
@@ -791,6 +816,7 @@
   ],
   "skytron_api_whitelistrequest": [
    "FK FOREIGN KEY (dealer_id) REFERENCES skytron_api_retailer(id) DEFERRABLE INITIALLY DEFERRED",
+   "FK FOREIGN KEY (device_model_id) REFERENCES skytron_api_devicemodel(id) DEFERRABLE INITIALLY DEFERRED",
    "FK FOREIGN KEY (esim_provider_id) REFERENCES skytron_api_esimprovider(id) DEFERRABLE INITIALLY DEFERRED",
    "FK FOREIGN KEY (manufacturer_id) REFERENCES skytron_api_manufacturer(id) DEFERRABLE INITIALLY DEFERRED",
    "FK FOREIGN KEY (requested_by_id) REFERENCES skytron_api_user(id) DEFERRABLE INITIALLY DEFERRED",
@@ -819,6 +845,12 @@
   "plpgsql"
  ],
  "indexes": {
+  "airtel_sms_in_log": [
+   "CREATE INDEX ON airtel_sms_in_log USING btree (received_at DESC)",
+   "CREATE INDEX ON airtel_sms_in_log USING btree (receiver_no, received_at DESC)",
+   "CREATE INDEX ON airtel_sms_in_log USING btree (sender_no, received_at DESC)",
+   "CREATE UNIQUE INDEX ON airtel_sms_in_log USING btree (id)"
+  ],
   "auth_group": [
    "CREATE INDEX ON auth_group USING btree (name varchar_pattern_ops)",
    "CREATE UNIQUE INDEX ON auth_group USING btree (id)",
@@ -839,6 +871,13 @@
    "CREATE INDEX ON authtoken_token USING btree (key varchar_pattern_ops)",
    "CREATE UNIQUE INDEX ON authtoken_token USING btree (key)",
    "CREATE UNIQUE INDEX ON authtoken_token USING btree (user_id)"
+  ],
+  "ble_sos_app_log": [
+   "CREATE INDEX ON ble_sos_app_log USING btree (ble_mac, received_at DESC)",
+   "CREATE INDEX ON ble_sos_app_log USING btree (phone_device_id, received_at DESC)",
+   "CREATE INDEX ON ble_sos_app_log USING btree (received_at DESC)",
+   "CREATE INDEX ON ble_sos_app_log USING btree (registration_no, received_at DESC)",
+   "CREATE UNIQUE INDEX ON ble_sos_app_log USING btree (id)"
   ],
   "bus_stand": [
    "CREATE INDEX ON bus_stand USING btree (created_by_id)",
@@ -922,6 +961,7 @@
    "CREATE UNIQUE INDEX ON skytron_api_activationcommandreply USING btree (id)"
   ],
   "skytron_api_activewhitelist": [
+   "CREATE INDEX ON skytron_api_activewhitelist USING btree (device_model_id)",
    "CREATE INDEX ON skytron_api_activewhitelist USING btree (device_stock_id)",
    "CREATE INDEX ON skytron_api_activewhitelist USING btree (esim_provider_id)",
    "CREATE INDEX ON skytron_api_activewhitelist USING btree (source_request_id)",
@@ -930,11 +970,13 @@
   "skytron_api_alertslog": [
    "CREATE INDEX ON skytron_api_alertslog USING btree (\"deviceTag_id\")",
    "CREATE INDEX ON skytron_api_alertslog USING btree (\"deviceTag_id\", type, \"timestamp\" DESC)",
+   "CREATE INDEX ON skytron_api_alertslog USING btree (\"timestamp\" DESC)",
    "CREATE INDEX ON skytron_api_alertslog USING btree (em_ref_id)",
    "CREATE INDEX ON skytron_api_alertslog USING btree (gps_ref_id)",
    "CREATE INDEX ON skytron_api_alertslog USING btree (poi_ref_id)",
    "CREATE INDEX ON skytron_api_alertslog USING btree (route_ref_id)",
    "CREATE INDEX ON skytron_api_alertslog USING btree (state_id)",
+   "CREATE INDEX ON skytron_api_alertslog USING btree (status, type, \"timestamp\")",
    "CREATE UNIQUE INDEX ON skytron_api_alertslog USING btree (id)"
   ],
   "skytron_api_blekey": [
@@ -1248,6 +1290,17 @@
    "CREATE INDEX ON skytron_api_emcallmessages USING btree (call_id)",
    "CREATE UNIQUE INDEX ON skytron_api_emcallmessages USING btree (id)"
   ],
+  "skytron_api_emexonlinesession": [
+   "CREATE INDEX ON skytron_api_emexonlinesession USING btree (ex_id)",
+   "CREATE INDEX ON skytron_api_emexonlinesession USING btree (ex_id, last_seen)",
+   "CREATE UNIQUE INDEX ON skytron_api_emexonlinesession USING btree (id)"
+  ],
+  "skytron_api_emexunattendedtime": [
+   "CREATE INDEX ON skytron_api_emexunattendedtime USING btree (ex_id)",
+   "CREATE INDEX ON skytron_api_emexunattendedtime USING btree (ex_id, start_time)",
+   "CREATE INDEX ON skytron_api_emexunattendedtime USING btree (user_id)",
+   "CREATE UNIQUE INDEX ON skytron_api_emexunattendedtime USING btree (id)"
+  ],
   "skytron_api_emgpslocation": [
    "CREATE INDEX ON skytron_api_emgpslocation USING btree (device_tag_id)",
    "CREATE INDEX ON skytron_api_emgpslocation USING btree (source_ip)",
@@ -1300,6 +1353,7 @@
    "CREATE INDEX ON skytron_api_gpsdata USING btree (device_tag_id, entry_time DESC) WHERE (device_tag_id IS NOT NULL)",
    "CREATE INDEX ON skytron_api_gpsdata USING btree (device_tag_id, entry_time DESC, id DESC)",
    "CREATE INDEX ON skytron_api_gpsdata USING btree (device_tag_id, entry_time DESC, id DESC)",
+   "CREATE INDEX ON skytron_api_gpsdata USING btree (device_tag_id, id DESC) WHERE ((gps_status)::text = '1'::text)",
    "CREATE INDEX ON skytron_api_gpsdata USING btree (device_tag_id, id)",
    "CREATE INDEX ON skytron_api_gpsdata USING btree (device_tag_id, packet_datetime DESC, id DESC)",
    "CREATE INDEX ON skytron_api_gpsdata USING btree (district varchar_pattern_ops)",
@@ -1312,13 +1366,19 @@
   ],
   "skytron_api_gpsdatalog": [
    "CREATE INDEX ON skytron_api_gpsdatalog USING btree (\"timestamp\" DESC)",
-   "CREATE INDEX ON skytron_api_gpsdatalog USING btree (source_ip)",
+   "CREATE INDEX ON skytron_api_gpsdatalog USING btree (\"timestamp\" DESC) WHERE (imei IS NULL)",
+   "CREATE INDEX ON skytron_api_gpsdatalog USING btree (imei, \"timestamp\" DESC) WHERE (imei IS NOT NULL)",
+   "CREATE INDEX ON skytron_api_gpsdatalog USING btree (source_ip, \"timestamp\" DESC) WHERE (source_ip IS NOT NULL)",
+   "CREATE INDEX ON skytron_api_gpsdatalog USING btree (source_ip, imei, \"timestamp\") WHERE (source_ip IS NOT NULL)",
    "CREATE INDEX ON skytron_api_gpsdatalog USING gin (raw_data gin_trgm_ops)",
    "CREATE UNIQUE INDEX ON skytron_api_gpsdatalog USING btree (id)"
   ],
   "skytron_api_gpsemdatalog": [
    "CREATE INDEX ON skytron_api_gpsemdatalog USING btree (\"timestamp\" DESC)",
-   "CREATE INDEX ON skytron_api_gpsemdatalog USING btree (source_ip)",
+   "CREATE INDEX ON skytron_api_gpsemdatalog USING btree (\"timestamp\" DESC) WHERE (imei IS NULL)",
+   "CREATE INDEX ON skytron_api_gpsemdatalog USING btree (imei, \"timestamp\" DESC) WHERE (imei IS NOT NULL)",
+   "CREATE INDEX ON skytron_api_gpsemdatalog USING btree (source_ip, \"timestamp\" DESC) WHERE (source_ip IS NOT NULL)",
+   "CREATE INDEX ON skytron_api_gpsemdatalog USING btree (source_ip, imei, \"timestamp\") WHERE (source_ip IS NOT NULL)",
    "CREATE INDEX ON skytron_api_gpsemdatalog USING gin (raw_data gin_trgm_ops)",
    "CREATE UNIQUE INDEX ON skytron_api_gpsemdatalog USING btree (id)"
   ],
@@ -1435,7 +1495,6 @@
    "CREATE UNIQUE INDEX ON skytron_api_regnolookuplog USING btree (id)"
   ],
   "skytron_api_requestlog": [
-   "CREATE INDEX ON skytron_api_requestlog USING btree (\"timestamp\")",
    "CREATE INDEX ON skytron_api_requestlog USING btree (\"timestamp\")",
    "CREATE UNIQUE INDEX ON skytron_api_requestlog USING btree (id)"
   ],
@@ -1660,6 +1719,14 @@
    "CREATE INDEX ON skytron_api_studentbusallocation USING btree (student_id, is_active)",
    "CREATE UNIQUE INDEX ON skytron_api_studentbusallocation USING btree (id)"
   ],
+  "skytron_api_technicalonboardingcommanddispatch": [
+   "CREATE INDEX ON skytron_api_technicalonboardingcommanddispatch USING btree (execution_id)",
+   "CREATE INDEX ON skytron_api_technicalonboardingcommanddispatch USING btree (execution_id, sent_at)",
+   "CREATE INDEX ON skytron_api_technicalonboardingcommanddispatch USING btree (imei varchar_pattern_ops)",
+   "CREATE INDEX ON skytron_api_technicalonboardingcommanddispatch USING btree (imei)",
+   "CREATE INDEX ON skytron_api_technicalonboardingcommanddispatch USING btree (sent_by_id)",
+   "CREATE UNIQUE INDEX ON skytron_api_technicalonboardingcommanddispatch USING btree (id)"
+  ],
   "skytron_api_technicalonboardingtestcase": [
    "CREATE UNIQUE INDEX ON skytron_api_technicalonboardingtestcase USING btree (id)",
    "CREATE UNIQUE INDEX ON skytron_api_technicalonboardingtestcase USING btree (serial_no)"
@@ -1693,6 +1760,7 @@
    "CREATE UNIQUE INDEX ON skytron_api_testagency_users USING btree (testagency_id, user_id)"
   ],
   "skytron_api_testagencydetails": [
+   "CREATE INDEX ON skytron_api_testagencydetails USING btree (state_id)",
    "CREATE UNIQUE INDEX ON skytron_api_testagencydetails USING btree (id)"
   ],
   "skytron_api_ticketactivity": [
@@ -1768,6 +1836,7 @@
   ],
   "skytron_api_whitelistrequest": [
    "CREATE INDEX ON skytron_api_whitelistrequest USING btree (dealer_id)",
+   "CREATE INDEX ON skytron_api_whitelistrequest USING btree (device_model_id)",
    "CREATE INDEX ON skytron_api_whitelistrequest USING btree (esim_provider_id)",
    "CREATE INDEX ON skytron_api_whitelistrequest USING btree (manufacturer_id)",
    "CREATE INDEX ON skytron_api_whitelistrequest USING btree (requested_by_id)",
@@ -1921,7 +1990,19 @@
   "skytron_api.0098_device_model_reject",
   "skytron_api.0099_onboarding_catalog_ignition_split_pvt_drop",
   "skytron_api.0100_em_admin_file_authletter",
-  "skytron_api.0101_company_pan_card_file"
+  "skytron_api.0101_company_pan_card_file",
+  "skytron_api.0102_whitelist_device_model",
+  "skytron_api.0103_em_ex_file_authorization_letter",
+  "skytron_api.0104_gpsdata_tag_fix_id_index",
+  "skytron_api.0105_em_unattended_and_online_sessions",
+  "skytron_api.0106_datalog_imei_network_name",
+  "skytron_api.0107_ble_sos_app_log",
+  "skytron_api.0108_log_table_query_indexes",
+  "skytron_api.0109_owner_no_pis_bus_schedules",
+  "skytron_api.0110_airtel_sms_in_log",
+  "skytron_api.0111_onboarding_pvt_drop_fixed_window",
+  "skytron_api.0112_onboarding_test_plan_sheet",
+  "skytron_api.0113_testagencydetails_state"
  ],
  "rbac_permissions": {
   "assamdto|alerts": {
@@ -3810,7 +3891,7 @@
    "can_delete": false,
    "can_filter": true,
    "can_update": false,
-   "can_view": false,
+   "can_view": true,
    "data_scope": "manufacturer",
    "show_in_menu": false
   },
@@ -9226,11 +9307,11 @@
   "owner|pis_bus_schedules": {
    "can_create": false,
    "can_delete": false,
-   "can_filter": true,
+   "can_filter": false,
    "can_update": false,
-   "can_view": true,
-   "data_scope": "owner",
-   "show_in_menu": true
+   "can_view": false,
+   "data_scope": "none",
+   "show_in_menu": false
   },
   "owner|pis_bus_stops": {
    "can_create": false,
@@ -12951,7 +13032,7 @@
   },
   "sosadmin|emergency_teams": {
    "can_create": true,
-   "can_delete": false,
+   "can_delete": true,
    "can_filter": true,
    "can_update": true,
    "can_view": true,
@@ -15752,7 +15833,7 @@
    "can_create": false,
    "can_delete": false,
    "can_filter": false,
-   "can_update": false,
+   "can_update": true,
    "can_view": false,
    "data_scope": "state",
    "show_in_menu": false
@@ -16856,22 +16937,22 @@
    "show_in_menu": false
   },
   "superadmin|em_team_create": {
-   "can_create": true,
-   "can_delete": true,
-   "can_filter": true,
-   "can_update": true,
-   "can_view": true,
+   "can_create": false,
+   "can_delete": false,
+   "can_filter": false,
+   "can_update": false,
+   "can_view": false,
    "data_scope": "national",
-   "show_in_menu": true
+   "show_in_menu": false
   },
   "superadmin|em_team_list": {
-   "can_create": true,
-   "can_delete": true,
-   "can_filter": true,
-   "can_update": true,
-   "can_view": true,
+   "can_create": false,
+   "can_delete": false,
+   "can_filter": false,
+   "can_update": false,
+   "can_view": false,
    "data_scope": "national",
-   "show_in_menu": true
+   "show_in_menu": false
   },
   "superadmin|emergency_management": {
    "can_create": false,
@@ -19149,6 +19230,12 @@
    "is_active": true,
    "is_builtin": true
   },
+  "driver": {
+   "description": "Driver test",
+   "display_name": "Test Driver",
+   "is_active": true,
+   "is_builtin": false
+  },
   "dtorto": {
    "description": "",
    "display_name": "DTO / RTO",
@@ -19235,6 +19322,19 @@
   }
  },
  "tables": {
+  "airtel_sms_in_log": {
+   "char_length": "integer NULL",
+   "forwarded_for": "character varying(255) NOT NULL",
+   "id": "bigint NOT NULL",
+   "raw_payload": "jsonb NOT NULL",
+   "received_at": "timestamp with time zone NOT NULL",
+   "receiver_no": "character varying(20) NOT NULL",
+   "sender_no": "character varying(20) NOT NULL",
+   "sms_text": "text NOT NULL",
+   "sms_timestamp": "timestamp with time zone NULL",
+   "sms_timestamp_raw": "character varying(64) NOT NULL",
+   "source_ip": "inet NULL"
+  },
   "auth_group": {
    "id": "integer NOT NULL",
    "name": "character varying(150) NOT NULL"
@@ -19254,6 +19354,24 @@
    "created": "timestamp with time zone NOT NULL",
    "key": "character varying(40) NOT NULL",
    "user_id": "bigint NOT NULL"
+  },
+  "ble_sos_app_log": {
+   "app_version": "character varying(30) NOT NULL",
+   "ble_device_name": "character varying(100) NOT NULL",
+   "ble_mac": "character varying(17) NOT NULL",
+   "cell_ids": "jsonb NOT NULL",
+   "event_time": "timestamp with time zone NULL",
+   "id": "bigint NOT NULL",
+   "latitude": "double precision NULL",
+   "longitude": "double precision NULL",
+   "phone_battery": "smallint NULL",
+   "phone_device_id": "character varying(128) NOT NULL",
+   "received_at": "timestamp with time zone NOT NULL",
+   "registration_no": "character varying(20) NOT NULL",
+   "signal_strength_dbm": "smallint NULL",
+   "sos_type": "character varying(20) NOT NULL",
+   "source_ip": "inet NULL",
+   "user_mobile": "character varying(15) NOT NULL"
   },
   "bus_stand": {
    "active": "boolean NOT NULL DEFAULT true",
@@ -19391,7 +19509,8 @@
   "skytron_api_activewhitelist": {
    "activated_at": "timestamp with time zone NOT NULL",
    "deactivated_at": "timestamp with time zone NULL",
-   "device_stock_id": "bigint NOT NULL",
+   "device_model_id": "bigint NULL",
+   "device_stock_id": "bigint NULL",
    "esim_provider_id": "bigint NOT NULL",
    "id": "bigint NOT NULL",
    "is_active": "boolean NOT NULL",
@@ -19867,6 +19986,7 @@
    "createdby_id": "bigint NOT NULL",
    "district": "character varying(255) NULL",
    "expirydate": "date NOT NULL",
+   "file_authorization_letter": "character varying(255) NULL",
    "file_idProof": "character varying(255) NULL",
    "id": "bigint NOT NULL",
    "idProofno": "character varying(255) NULL",
@@ -19934,6 +20054,22 @@
    "id": "bigint NOT NULL",
    "message": "text NOT NULL",
    "time": "timestamp with time zone NOT NULL"
+  },
+  "skytron_api_emexonlinesession": {
+   "ex_id": "bigint NOT NULL",
+   "id": "bigint NOT NULL",
+   "last_seen": "timestamp with time zone NOT NULL",
+   "start_time": "timestamp with time zone NOT NULL"
+  },
+  "skytron_api_emexunattendedtime": {
+   "created_at": "timestamp with time zone NOT NULL",
+   "duration_seconds": "integer NOT NULL",
+   "end_time": "timestamp with time zone NOT NULL",
+   "ex_id": "bigint NOT NULL",
+   "id": "bigint NOT NULL",
+   "reason": "text NULL",
+   "start_time": "timestamp with time zone NOT NULL",
+   "user_id": "bigint NOT NULL"
   },
   "skytron_api_emgpslocation": {
    "altitude": "double precision NOT NULL",
@@ -20123,12 +20259,16 @@
   },
   "skytron_api_gpsdatalog": {
    "id": "bigint NOT NULL",
+   "imei": "character varying(20) NULL",
+   "network_name": "character varying(30) NULL",
    "raw_data": "text NOT NULL",
    "source_ip": "inet NULL",
    "timestamp": "timestamp with time zone NOT NULL"
   },
   "skytron_api_gpsemdatalog": {
    "id": "bigint NOT NULL",
+   "imei": "character varying(20) NULL",
+   "network_name": "character varying(30) NULL",
    "raw_data": "text NOT NULL",
    "source_ip": "inet NULL",
    "timestamp": "timestamp with time zone NOT NULL"
@@ -20752,20 +20892,43 @@
    "start_date": "date NOT NULL",
    "student_id": "bigint NOT NULL"
   },
+  "skytron_api_technicalonboardingcommanddispatch": {
+   "command_key": "character varying(50) NOT NULL",
+   "command_label": "character varying(255) NOT NULL",
+   "command_sent": "character varying(500) NOT NULL",
+   "error": "character varying(255) NULL",
+   "execution_id": "bigint NOT NULL",
+   "id": "bigint NOT NULL",
+   "imei": "character varying(20) NOT NULL",
+   "send_status": "character varying(10) NOT NULL",
+   "sent_at": "timestamp with time zone NOT NULL",
+   "sent_by_id": "bigint NULL",
+   "source": "character varying(10) NOT NULL",
+   "value": "character varying(255) NULL"
+  },
   "skytron_api_technicalonboardingtestcase": {
    "active": "boolean NOT NULL",
+   "category": "character varying(100) NOT NULL",
+   "check_config": "jsonb NOT NULL",
+   "commands": "jsonb NOT NULL",
    "created_at": "timestamp with time zone NOT NULL",
    "description": "text NOT NULL",
+   "expected_result": "text NOT NULL",
    "id": "bigint NOT NULL",
    "is_optional": "boolean NOT NULL",
    "max_interval_seconds": "integer NULL",
    "min_match_count": "integer NOT NULL",
    "name": "character varying(255) NOT NULL",
+   "procedure": "text NOT NULL",
    "regex_pattern": "character varying(500) NULL",
+   "requires_command": "boolean NOT NULL",
    "requires_manual_confirmation": "boolean NOT NULL",
+   "requires_map": "boolean NOT NULL",
+   "requires_physical_test": "boolean NOT NULL",
    "scan_window_seconds": "integer NOT NULL",
    "serial_no": "smallint NOT NULL",
    "source_table": "character varying(30) NOT NULL",
+   "test_environment": "character varying(50) NOT NULL",
    "updated_at": "timestamp with time zone NOT NULL"
   },
   "skytron_api_technicalonboardingtestexecution": {
@@ -20828,7 +20991,8 @@
    "created": "timestamp with time zone NOT NULL",
    "id": "bigint NOT NULL",
    "name": "character varying(255) NOT NULL",
-   "pincode": "character varying(20) NULL"
+   "pincode": "character varying(20) NULL",
+   "state_id": "bigint NULL"
   },
   "skytron_api_ticketactivity": {
    "action_type": "character varying(20) NOT NULL",
@@ -20975,6 +21139,7 @@
   "skytron_api_whitelistrequest": {
    "created_at": "timestamp with time zone NOT NULL",
    "dealer_id": "bigint NULL",
+   "device_model_id": "bigint NULL",
    "esim_provider_id": "bigint NOT NULL",
    "id": "bigint NOT NULL",
    "manufacturer_id": "bigint NULL",
