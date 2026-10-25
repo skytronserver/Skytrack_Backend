@@ -6,8 +6,10 @@
 #                                   2. API + migrations    on this VM
 #                                   3. API                 on NIC_API2_HOST
 #                                   4. MQTT processor      on NIC_MQTT_HOST
-#                                 The other VMs get this VM's code and .env (minus the
-#                                 NIC_*_PASS lines) over SSH, so they need no git access.
+#                                 Images are built only here and copied to the other VMs
+#                                 (with this VM's code and .env minus the NIC_*_PASS lines)
+#                                 over SSH, so every VM runs the identical image and needs
+#                                 neither git nor package downloads.
 #                                 Settings: the "NIC multi-VM" block in .env.
 #                                 Without NIC_API2_HOST / NIC_MQTT_HOST in .env (dev, one VM)
 #                                 it does the same as `backend`.
@@ -96,7 +98,7 @@ run_reporter_if_broker() {
 
 role_api() {
     cleanup_host
-    sudo ./run_with_host_storage.sh
+    sudo SKIP_BUILD="${SKIP_BUILD:-}" ./run_with_host_storage.sh
     if [ "$1" = "--migrate" ]; then
         sudo docker exec skytron-backend-api-container python manage.py migrate
     fi
@@ -107,7 +109,7 @@ role_api() {
 REMOTE_DIR="${NIC_REMOTE_DIR:-/opt/skytron_deploy/Skytrack_Backend}"
 SSH_USER="${NIC_SSH_USER:-Admin}"
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=30
-          -o NumberOfPasswordPrompts=1)
+          -o NumberOfPasswordPrompts=1 -o LogLevel=ERROR)
 
 vm_pass() {
     case "$1" in
@@ -158,7 +160,7 @@ to_vm() {
 # Base images the builds need; copied over if a VM cannot pull them itself.
 ensure_images() {
     local host=$1 img
-    for img in redis:7-alpine python:3.9-slim-bullseye; do
+    for img in redis:7-alpine; do
         if on_vm "$host" "docker image inspect $img >/dev/null 2>&1"; then
             continue
         fi
@@ -168,6 +170,35 @@ ensure_images() {
         to_vm "$host" "$WORK/image.tgz" /tmp/skytron_image.tgz
         on_vm "$host" "gunzip -c /tmp/skytron_image.tgz | docker load && rm -f /tmp/skytron_image.tgz"
     done
+}
+
+# Image id out of remote output, ignoring any login banner text
+sha_only() {
+    grep -o 'sha256:[0-9a-f]\{64\}' | tail -1 || true
+}
+
+# remote_role HOST IMAGE CONTAINER ROLE: copy this VM's IMAGE to HOST (unless HOST already
+# has that exact image), run ROLE there without rebuilding, then check CONTAINER really
+# runs it. Images are only built here: the other VMs' builds cannot reach Debian
+# security updates through the proxy, and this way every VM runs the identical image.
+remote_role() {
+    local host=$1 img=$2 ctr=$3 role=$4 want have
+    want=$(sudo docker image inspect -f '{{.Id}}' "$img")
+    have=$(on_vm "$host" "docker image inspect -f '{{.Id}}' $img 2>/dev/null || true" | sha_only)
+    if [ "$have" != "$want" ]; then
+        echo "  copying image $img to $host"
+        sudo docker save "$img" | gzip -1 > "$WORK/image.tgz"
+        to_vm "$host" "$WORK/image.tgz" /tmp/skytron_image.tgz
+        rm -f "$WORK/image.tgz"
+        on_vm "$host" "gunzip -c /tmp/skytron_image.tgz | docker load && rm -f /tmp/skytron_image.tgz"
+    fi
+    on_vm "$host" "cd '$REMOTE_DIR' && SKIP_BUILD=1 ./NIC_deploy.sh $role"
+    have=$(on_vm "$host" "docker inspect -f '{{.Image}}' $ctr 2>/dev/null || true" | sha_only)
+    if [ "$have" != "$want" ]; then
+        echo "$ctr on $host is not running the $img image built here" >&2
+        return 1
+    fi
+    echo "  $ctr on $host runs the same image as this VM (${want:7:12})"
 }
 
 # Replace REMOTE_DIR on HOST with this VM's tracked files + .env
@@ -232,6 +263,13 @@ deploy_all() {
     grep -Ev '^[[:space:]]*(export[[:space:]]+)?NIC_[A-Z0-9_]*PASS=' "$ENV_FILE" > "$WORK/env"
     echo "Deploying commit $(cat "$WORK/DEPLOYED_COMMIT") to: this VM ${remotes[*]}"
 
+    # Build the MQTT image before touching any VM, so a failed build changes nothing
+    if [ -n "$NIC_MQTT_HOST" ] && ! is_this_vm "$NIC_MQTT_HOST"; then
+        STEP="building the MQTT processor image here"
+        echo "== $STEP"
+        sudo BUILD_ONLY=1 ./run_mqtt.sh
+    fi
+
     for h in "${remotes[@]}"; do
         ship "$h"
     done
@@ -253,7 +291,7 @@ deploy_all() {
     if [ -n "$NIC_API2_HOST" ] && ! is_this_vm "$NIC_API2_HOST"; then
         STEP="API on $NIC_API2_HOST"
         echo "== $STEP"
-        on_vm "$NIC_API2_HOST" "cd '$REMOTE_DIR' && ./NIC_deploy.sh api"
+        remote_role "$NIC_API2_HOST" skytron-backend-api skytron-backend-api-container api
     fi
 
     if [ -n "$NIC_MQTT_HOST" ]; then
@@ -262,7 +300,7 @@ deploy_all() {
         if is_this_vm "$NIC_MQTT_HOST"; then
             sudo ./run_mqtt.sh
         else
-            on_vm "$NIC_MQTT_HOST" "cd '$REMOTE_DIR' && ./NIC_deploy.sh mqtt-processor"
+            remote_role "$NIC_MQTT_HOST" skytrack-mqtt-client skytrack-mqtt-client-container mqtt-processor
         fi
 
         # Only now (the new processor is running) drop MQTT clients left on the API VMs
@@ -295,7 +333,7 @@ case "$ROLE" in
     ;;
   mqtt-processor)
     cleanup_host
-    sudo ./run_mqtt.sh
+    sudo SKIP_BUILD="${SKIP_BUILD:-}" ./run_mqtt.sh
     run_reporter_if_broker
     ;;
   redis)

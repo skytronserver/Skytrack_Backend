@@ -46,7 +46,14 @@ else
   echo "Detected non-production DB_HOST ($DB_HOST): building without proxy"
 fi
 
-# Build the Docker image with build arguments
+# Build the Docker image with build arguments.
+# SKIP_BUILD=1: use the image already on this VM (NIC_deploy.sh copies it over from
+# the control VM, so every VM runs the identical image).
+IMAGE=skytrack-mqtt-client
+if [ "$SKIP_BUILD" = "1" ]; then
+  docker image inspect "$IMAGE" >/dev/null || { echo "SKIP_BUILD=1 but image $IMAGE is missing" >&2; exit 1; }
+  echo "SKIP_BUILD=1: using the $IMAGE image already on this VM"
+else
 docker build -t skytrack-mqtt-client -f Skytronsystem/dockerfile.mqtt \
   $PROXY_ARGS \
   --build-arg MAIL_ID="$MAIL_ID" \
@@ -81,7 +88,14 @@ docker build -t skytrack-mqtt-client -f Skytronsystem/dockerfile.mqtt \
   --build-arg GPS_REVERSE_GEOCODE_TIMEOUT="$GPS_REVERSE_GEOCODE_TIMEOUT" \
   --build-arg GPS_REVERSE_GEOCODE_COOLDOWN="$GPS_REVERSE_GEOCODE_COOLDOWN" \
   --build-arg GPS_REVERSE_GEOCODE_ROOT="$GPS_REVERSE_GEOCODE_ROOT" \
-  Skytronsystem/
+  Skytronsystem/ \
+  || { echo "Docker build of $IMAGE failed - running container left untouched" >&2; exit 1; }
+fi
+
+if [ "$BUILD_ONLY" = "1" ]; then
+  echo "BUILD_ONLY=1: image $IMAGE built, container not touched"
+  exit 0
+fi
  
 # Stop any running container with the same name
 docker stop skytrack-mqtt-client-container || true

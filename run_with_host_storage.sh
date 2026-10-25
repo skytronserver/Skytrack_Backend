@@ -72,7 +72,14 @@ else
   echo "Detected non-production DB_HOST ($DB_HOST): building without proxy"
 fi
 
-# Build the Docker image with build arguments
+# Build the Docker image with build arguments.
+# SKIP_BUILD=1: use the image already on this VM (NIC_deploy.sh copies it over from
+# the control VM, so every VM runs the identical image).
+IMAGE=skytron-backend-api
+if [ "$SKIP_BUILD" = "1" ]; then
+  docker image inspect "$IMAGE" >/dev/null || { echo "SKIP_BUILD=1 but image $IMAGE is missing" >&2; exit 1; }
+  echo "SKIP_BUILD=1: using the $IMAGE image already on this VM"
+else
 docker build -t skytron-backend-api -f Skytronsystem/dockerfile.api \
   $PROXY_ARGS \
   --build-arg MAIL_ID="$MAIL_ID" \
@@ -122,7 +129,9 @@ docker build -t skytron-backend-api -f Skytronsystem/dockerfile.api \
   --build-arg TRIP_MAX_ACTIVE="$TRIP_MAX_ACTIVE" \
   --build-arg ENABLE_DUMMY_APIS="$ENABLE_DUMMY_APIS" \
   --build-arg ENABLE_TEMPORARY_APIS="$ENABLE_TEMPORARY_APIS" \
-  Skytronsystem/
+  Skytronsystem/ \
+  || { echo "Docker build of $IMAGE failed - running container left untouched" >&2; exit 1; }
+fi
  
 # Stop any running container with the same name
 docker stop skytron-backend-api-container || true
