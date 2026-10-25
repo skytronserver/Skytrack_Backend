@@ -112,3 +112,4 @@ Skytronsystem/skytron_api/skytronemudra stl/06_RootCA_emSign Root CA - G1.cer
 Skytronsystem/skytron_api/skytronemudra stl/3866599448R001_fullchain.pem
 skytrack_*.tar
 .env.bak.20261015030637
+docs/Skytron_Device_Protocol_Specification_v1.0.docx

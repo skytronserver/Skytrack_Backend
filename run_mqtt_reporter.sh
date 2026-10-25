@@ -147,6 +147,9 @@ fi
 ctx="$(mktemp -d)"
 trap 'rm -rf "$ctx"' EXIT
 cp "$SRC_SCRIPT" "$SRC_DOCKERFILE" "$ctx/"
+# COPY keeps host modes; a strict umask (hardened VMs) leaves the script
+# unreadable to the container's non-root user.
+chmod 644 "$ctx"/*
 docker build -q -t "$IMAGE" -f "$ctx/$(basename "$SRC_DOCKERFILE")" "$ctx" >/dev/null \
   || die "image build failed. If this VM cannot pull python:3.9-slim-bullseye, run on a VM that can:
     docker save python:3.9-slim-bullseye -o base.tar
