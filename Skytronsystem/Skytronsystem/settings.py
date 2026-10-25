@@ -375,7 +375,9 @@ REST_FRAMEWORK = {
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-         "LOCATION": "redis://skytron-redis:6379/1",  # Redis DB index 1
+        # Set by the run scripts: this VM's skytron-redis container (single VM),
+        # or the shared Redis VM (NIC multi-VM, see run_redis.sh). Redis DB index 1.
+        "LOCATION": os.environ.get("REDIS_URL", "redis://skytron-redis:6379/1"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         }

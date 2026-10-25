@@ -31,20 +31,31 @@ STORAGE_DIR="/var/skytrack_storage"
 NETWORK_NAME="skytron-net"
 docker network create "$NETWORK_NAME" >/dev/null 2>&1 || true
 
-# Refresh Redis container to match Django CACHES LOCATION: redis://skytron-redis:6379/1
-echo "Stopping and removing any existing Redis container (skytron-redis) ..."
-docker stop skytron-redis >/dev/null 2>&1 || true
-docker rm skytron-redis >/dev/null 2>&1 || true
+if [ -n "$REDIS_HOST" ]; then
+  # Multi-VM (NIC): every VM shares the Redis started by run_redis.sh on REDIS_HOST.
+  REDIS_URL="redis://${REDIS_PASSWORD:+:$REDIS_PASSWORD@}$REDIS_HOST:${REDIS_PORT:-6379}/1"
+  echo "Using shared Redis at $REDIS_HOST:${REDIS_PORT:-6379}"
+  # Drop the old per-VM Redis left from the single-VM setup (unless this VM is the Redis VM)
+  if ! hostname -I | tr ' ' '\n' | grep -qxF "$REDIS_HOST"; then
+    docker rm -f skytron-redis >/dev/null 2>&1 || true
+  fi
+else
+  REDIS_URL="redis://skytron-redis:6379/1"
+  # Refresh Redis container to match Django CACHES LOCATION: redis://skytron-redis:6379/1
+  echo "Stopping and removing any existing Redis container (skytron-redis) ..."
+  docker stop skytron-redis >/dev/null 2>&1 || true
+  docker rm skytron-redis >/dev/null 2>&1 || true
 
-echo "Starting Redis container (skytron-redis) on network $NETWORK_NAME ..."
-docker run -d \
-  --name skytron-redis \
-  --restart unless-stopped \
-  --network "$NETWORK_NAME" \
-  -p 6379:6379 \
-  redis:7-alpine \
-  redis-server --appendonly yes
-echo "Redis is running and reachable at redis://skytron-redis:6379"
+  echo "Starting Redis container (skytron-redis) on network $NETWORK_NAME ..."
+  docker run -d \
+    --name skytron-redis \
+    --restart unless-stopped \
+    --network "$NETWORK_NAME" \
+    -p 6379:6379 \
+    redis:7-alpine \
+    redis-server --appendonly yes
+  echo "Redis is running and reachable at redis://skytron-redis:6379"
+fi
 
 # Decide whether to use proxy for docker build based on DB_HOST
 PROXY_ARGS=""
@@ -125,11 +136,13 @@ docker rm skytron-backend-api-container || true
 # AIRTEL_SMS_API_KEYS: key(s) shared with Airtel's SMS gateway for
 # POST /api/airtel-sms/receive/; empty = endpoint disabled.
 # AIRTEL_SMS_ALLOWED_IPS: optional IPs/CIDRs the gateway calls from; empty = any.
+# REDIS_URL: Django cache (sessions, OTP state, rate limits, RBAC cache, device IPs).
 sudo docker run -d --restart=always \
   --network "$NETWORK_NAME" \
   -p 2000:2000 \
   -v $STORAGE_DIR:/host_storage \
   -v /home/azureuser/Skytrack_Backend/SKTN:/app/SKTN \
+  -e REDIS_URL="$REDIS_URL" \
   -e MQTT_IP_REPORT_KEY="${MQTT_IP_REPORT_KEY:-}" \
   -e BLE_SOS_APP_SECRETS="${BLE_SOS_APP_SECRETS:-}" \
   -e AIRTEL_SMS_API_KEYS="${AIRTEL_SMS_API_KEYS:-}" \

@@ -96,10 +96,17 @@ echo "Running database migrations..."
 # MQTT_TRACKING_WORKERS: tracking process-pool size (see mqttClienttrack.py).
 # Passed at run time (not baked into the image) so it can be tuned without a rebuild --
 # just edit .env and re-run this script.
+# REDIS_URL: same Redis as the API (device IPs it stores are read per packet here).
+if [ -n "$REDIS_HOST" ]; then
+  REDIS_URL="redis://${REDIS_PASSWORD:+:$REDIS_PASSWORD@}$REDIS_HOST:${REDIS_PORT:-6379}/1"
+else
+  REDIS_URL="redis://skytron-redis:6379/1"
+fi
 sudo docker run -d --restart=always \
   --network "$NETWORK_NAME" \
   -v $STORAGE_DIR:/host_storage \
   -e MQTT_TRACKING_WORKERS="${MQTT_TRACKING_WORKERS:-8}" \
+  -e REDIS_URL="$REDIS_URL" \
   --name skytrack-mqtt-client-container \
   skytrack-mqtt-client
 
