@@ -58,8 +58,8 @@ warn() { echo "WARN:  $*" >&2; }
 command -v docker >/dev/null || die "docker not found"
 docker info >/dev/null 2>&1 || die "docker daemon not reachable"
 
-# Value of KEY=... from an env file, without sourcing it.
-env_val() { [ -f "$2" ] && grep -E "^$1=" "$2" | tail -n1 | cut -d= -f2- | tr -d '"'"'"'\r' || true; }
+# Value of KEY=... (or export KEY=...) from an env file, without sourcing it.
+env_val() { [ -f "$2" ] && grep -E "^(export[[:space:]]+)?$1=" "$2" | tail -n1 | cut -d= -f2- | tr -d '"'"'"'\r' || true; }
 
 # Last value of a mosquitto/go-auth option across all config files.
 mosq_opt() {

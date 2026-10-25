@@ -14,6 +14,9 @@
 #                                 Without NIC_API2_HOST / NIC_MQTT_HOST in .env (dev, one VM)
 #                                 it does the same as `backend`.
 #
+#   ./NIC_deploy.sh check         read-only health check of all VMs (containers, images,
+#                                 API, shared Redis, MQTT data flow, device IPs)
+#
 # Single roles (what the control VM runs on each VM; also usable by hand):
 #   ./NIC_deploy.sh backend          one VM: API, migrations, MQTT client
 #                                    (+ IP reporter if Mosquitto runs on this VM too)
@@ -220,18 +223,7 @@ ship() {
         mv \"\$D.new\" \"\$D\"; rm -rf \"\$D.old\""
 }
 
-deploy_all() {
-    if [ -z "$REDIS_HOST" ]; then
-        echo "Set REDIS_HOST/REDIS_PASSWORD in $ENV_FILE first: without a shared Redis each VM" >&2
-        echo "keeps its own sessions, OTP state and rate limits (see the NIC multi-VM block)." >&2
-        exit 1
-    fi
-    local remotes=() h
-    for h in $NIC_MQTT_HOST $NIC_API2_HOST; do
-        if ! is_this_vm "$h" && [[ ! " ${remotes[*]} " =~ " $h " ]]; then
-            remotes+=("$h")
-        fi
-    done
+prepare_ssh() {
     WORK=$(mktemp -d)
     trap 'rm -rf "$WORK"' EXIT
     # SSH_ASKPASS helper for with_auth: prints the password ssh is given in NIC_SSH_PASS
@@ -246,6 +238,193 @@ deploy_all() {
             exit 1
         fi
     fi
+}
+
+# ---------------------------------------------------------------- health check (read-only)
+# ./NIC_deploy.sh check - from the control VM: containers, images, API, shared Redis,
+# MQTT processing and device IPs on all VMs. Changes nothing (one 5-minute cache key).
+
+# run_on HOST CMD: CMD as root on HOST ("local" = this VM)
+run_on() {
+    if [ "$1" = local ] || is_this_vm "$1"; then
+        sudo bash -c "$2"
+    else
+        on_vm "$1" "$2"
+    fi
+}
+
+# "<running> <image id> <restart count>" of CONTAINER on HOST, or "missing"
+ctr_state() {
+    run_on "$1" "docker inspect -f '{{.State.Running}} {{.Image}} {{.RestartCount}}' $2 2>/dev/null || echo missing" \
+        | grep -E '^(true|false|missing)' | tail -1
+}
+
+# django_py HOST CONTAINER CODE: run Python in the container's Django; prints the
+# lines CODE prints with a leading NICCHK
+django_py() {
+    run_on "$1" "docker exec $2 python manage.py shell -c $(printf '%q' "$3") 2>&1" \
+        | sed -n 's/^NICCHK //p'
+}
+
+CHECK_FAILS=0
+ok()   { echo "  OK    $*"; }
+bad()  { echo "  FAIL  $*"; CHECK_FAILS=$((CHECK_FAILS + 1)); }
+warn() { echo "  WARN  $*"; }
+
+check_all() {
+    prepare_ssh
+    local apis=(local) h run img rc ref="" code out tok mqtt="${NIC_MQTT_HOST:-local}"
+    if [ -n "$NIC_API2_HOST" ] && ! is_this_vm "$NIC_API2_HOST"; then
+        apis+=("$NIC_API2_HOST")
+    fi
+
+    echo "== API VMs"
+    for h in "${apis[@]}"; do
+        read -r run img rc <<< "$(ctr_state "$h" skytron-backend-api-container)"
+        if [ "$run" != true ]; then
+            bad "$h: API container ${run:-missing}"
+        else
+            [ -n "$ref" ] || ref=$img
+            if [ "$img" = "$ref" ]; then
+                ok "$h: API running, image ${img:7:12}, restarts $rc"
+            else
+                bad "$h: API runs image ${img:7:12}, this VM runs ${ref:7:12}"
+            fi
+            if [ "${rc:-0}" -gt 3 ]; then warn "$h: API container restarted $rc times (crash loop?)"; fi
+        fi
+        code=$(run_on "$h" "curl -s --noproxy '*' -o /dev/null -w '%{http_code}' -m 10 http://127.0.0.1:2000/api/session/verify/ || true" | tail -1)
+        if [ "$code" = 403 ]; then
+            ok "$h: API answers (HTTP 403 without login, as expected)"
+        else
+            bad "$h: API answered HTTP ${code:-nothing} (expected 403)"
+        fi
+        if [ "$h" != local ]; then
+            code=$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' -m 10 "http://$h:2000/api/session/verify/" || true)
+            if [ "${code:-000}" != 000 ]; then
+                ok "$h: reachable on :2000 from this VM"
+            else
+                bad "$h: port 2000 not reachable from this VM"
+            fi
+        fi
+        if [ "$h" != "$mqtt" ]; then
+            read -r run _ <<< "$(ctr_state "$h" skytrack-mqtt-client-container)"
+            if [ "$run" = missing ]; then
+                ok "$h: no MQTT client (it runs on $mqtt only)"
+            else
+                bad "$h: MQTT client container present - packets would be processed twice"
+            fi
+        fi
+    done
+
+    echo "== MQTT VM ($mqtt)"
+    read -r run img rc <<< "$(ctr_state "$mqtt" skytrack-mqtt-client-container)"
+    if [ "$run" = true ]; then
+        ok "MQTT processor running, image ${img:7:12}, restarts $rc"
+        if [ "${rc:-0}" -gt 3 ]; then warn "MQTT processor restarted $rc times (crash loop?)"; fi
+    else
+        bad "MQTT processor container ${run:-missing}"
+    fi
+    out=$(run_on "$mqtt" "docker logs --since 10m skytrack-mqtt-client-container 2>&1 | grep -iE 'error|exception|traceback|failed open' | tail -5")
+    if [ -z "$out" ]; then
+        ok "no errors in the MQTT processor log (last 10 min)"
+    else
+        warn "MQTT processor log, last error lines (10 min):"
+        printf '%s\n' "$out" | sed 's/^/          /'
+    fi
+    if run_on "$mqtt" "pgrep -x mosquitto >/dev/null"; then
+        read -r run _ <<< "$(ctr_state "$mqtt" skytrack-mqtt-ip-reporter-container)"
+        if [ "$run" = true ]; then
+            ok "device-IP reporter running next to Mosquitto"
+        else
+            bad "device-IP reporter ${run:-missing} (Mosquitto runs here) - see run_mqtt_reporter.sh"
+        fi
+    fi
+
+    echo "== Shared Redis ($REDIS_HOST)"
+    out=$(run_on "${REDIS_HOST:-local}" "cd '$REMOTE_DIR' 2>/dev/null || cd '$PWD'; . ./.env
+        docker exec skytron-redis redis-cli -a \"\$REDIS_PASSWORD\" --no-auth-warning ping
+        docker exec skytron-redis redis-cli -a \"\$REDIS_PASSWORD\" --no-auth-warning -n 1 --scan --pattern 'sk:mqttip:*' | wc -l" 2>&1)
+    if grep -qx PONG <<< "$out"; then
+        ok "Redis answers PING; $(tail -1 <<< "$out") device IPs stored"
+    else
+        bad "Redis did not answer: $(tail -2 <<< "$out" | tr '\n' ' ')"
+    fi
+    # Same cache key written on this VM must be visible from every other container
+    tok="nic-check-$(date +%s)-$RANDOM"
+    out=$(django_py local skytron-backend-api-container \
+        "from django.core.cache import cache; cache.set('nic_check', '$tok', 300); print('NICCHK', cache.get('nic_check'))")
+    if [ "$out" != "$tok" ]; then bad "this VM's API cannot write to Redis (got: ${out:-nothing})"; fi
+    for h in "${apis[@]:1}"; do
+        out=$(django_py "$h" skytron-backend-api-container \
+            "from django.core.cache import cache; print('NICCHK', cache.get('nic_check'))")
+        if [ "$out" = "$tok" ]; then
+            ok "$h API sees the same Redis as this VM"
+        else
+            bad "$h API does NOT share this VM's Redis (got: ${out:-nothing})"
+        fi
+    done
+    out=$(django_py "$mqtt" skytrack-mqtt-client-container \
+        "from django.core.cache import cache; print('NICCHK', cache.get('nic_check'))")
+    if [ "$out" = "$tok" ]; then
+        ok "MQTT processor sees the same Redis as the API"
+    else
+        bad "MQTT processor does NOT share the API's Redis (got: ${out:-nothing})"
+    fi
+
+    echo "== Data flow (database)"
+    out=$(django_py local skytron-backend-api-container "
+from django.utils import timezone
+from skytron_api.models import GPSData, GPSDataLog
+now = timezone.now()
+rows = list(GPSDataLog.objects.order_by('-id').values_list('timestamp', 'source_ip')[:1000])
+recent = [ip for ts, ip in rows if ts and (now - ts).total_seconds() < 300]
+last = GPSData.objects.order_by('-id').values_list('entry_time', flat=True).first()
+age = lambda t: int((now - t).total_seconds()) if t else -1
+print('NICCHK', age(rows[0][0] if rows else None), len(recent), sum(1 for ip in recent if ip), age(last))")
+    local log_age n5 nip gps_age
+    read -r log_age n5 nip gps_age <<< "$out"
+    if [ -z "$log_age" ]; then
+        bad "could not query the database through the API container"
+    else
+        if [ "$log_age" -ge 0 ] && [ "$log_age" -lt 120 ]; then
+            ok "newest raw packet ${log_age}s ago; $n5 packets in the last 5 min (of the newest 1000)"
+        else
+            bad "newest raw packet ${log_age}s ago - MQTT packets are not arriving"
+        fi
+        if [ "$gps_age" -ge 0 ] && [ "$gps_age" -lt 300 ]; then
+            ok "newest parsed GPS row ${gps_age}s ago"
+        else
+            warn "newest parsed GPS row ${gps_age}s ago"
+        fi
+        if [ "${n5:-0}" -gt 0 ] && [ "${nip:-0}" -eq 0 ]; then
+            warn "none of the last-5-min packets has a device IP (reporter / Redis keys)"
+        elif [ "${n5:-0}" -gt 0 ]; then
+            ok "$nip of $n5 recent packets have a device IP"
+        fi
+    fi
+
+    echo
+    if [ "$CHECK_FAILS" -eq 0 ]; then
+        echo "NIC_deploy check: ALL OK"
+    else
+        echo "NIC_deploy check: $CHECK_FAILS problem(s) - see FAIL lines above"
+        exit 1
+    fi
+}
+
+deploy_all() {
+    if [ -z "$REDIS_HOST" ]; then
+        echo "Set REDIS_HOST/REDIS_PASSWORD in $ENV_FILE first: without a shared Redis each VM" >&2
+        echo "keeps its own sessions, OTP state and rate limits (see the NIC multi-VM block)." >&2
+        exit 1
+    fi
+    local remotes=() h
+    for h in $NIC_MQTT_HOST $NIC_API2_HOST; do
+        if ! is_this_vm "$h" && [[ ! " ${remotes[*]} " =~ " $h " ]]; then
+            remotes+=("$h")
+        fi
+    done
+    prepare_ssh
 
     # Fail fast on a wrong password / unreachable VM, before anything is redeployed
     for h in "${remotes[@]}"; do
@@ -320,6 +499,9 @@ deploy_all() {
 case "$ROLE" in
   all)
     deploy_all
+    ;;
+  check)
+    check_all
     ;;
   backend)
     cleanup_host
