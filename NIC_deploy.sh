@@ -106,7 +106,8 @@ role_api() {
 # ---------------------------------------------------------------- multi-VM (control VM)
 REMOTE_DIR="${NIC_REMOTE_DIR:-/opt/skytron_deploy/Skytrack_Backend}"
 SSH_USER="${NIC_SSH_USER:-Admin}"
-SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=30)
+SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=30
+          -o NumberOfPasswordPrompts=1)
 
 vm_pass() {
     case "$1" in
@@ -119,30 +120,39 @@ is_this_vm() {
     hostname -I | tr ' ' '\n' | grep -qxF "$1"
 }
 
-# on_vm HOST CMD: run CMD with bash as root on HOST. The password reaches ssh through
-# SSHPASS and sudo through stdin, so it never appears in a process list.
-# No password configured for HOST = SSH key + passwordless sudo.
+# with_auth HOST ssh|scp ARGS...: run ssh/scp with HOST's password from .env, through
+# sshpass if installed, else OpenSSH's own SSH_ASKPASS (OpenSSH >= 8.4) - nothing to
+# install. Either way the password never appears in a process list.
+# No password configured for HOST = SSH key only.
+with_auth() {
+    local pass
+    pass=$(vm_pass "$1")
+    shift
+    if [ -z "$pass" ]; then
+        "$1" -o BatchMode=yes "${@:2}"
+    elif command -v sshpass >/dev/null; then
+        SSHPASS="$pass" sshpass -e "$@"
+    else
+        NIC_SSH_PASS="$pass" SSH_ASKPASS="$WORK/askpass" SSH_ASKPASS_REQUIRE=force "$@"
+    fi
+}
+
+# on_vm HOST CMD: run CMD with bash as root on HOST. sudo gets the password on stdin.
 on_vm() {
     local host=$1 pass
     shift
     pass=$(vm_pass "$host")
     if [ -n "$pass" ]; then
-        printf '%s\n' "$pass" | SSHPASS="$pass" sshpass -e \
-            ssh "${SSH_OPTS[@]}" "$SSH_USER@$host" "sudo -S -p '' bash -c $(printf '%q' "$*")"
+        printf '%s\n' "$pass" | with_auth "$host" ssh "${SSH_OPTS[@]}" "$SSH_USER@$host" \
+            "sudo -S -p '' bash -c $(printf '%q' "$*")"
     else
-        ssh -o BatchMode=yes "${SSH_OPTS[@]}" "$SSH_USER@$host" "sudo -n bash -c $(printf '%q' "$*")"
+        with_auth "$host" ssh "${SSH_OPTS[@]}" "$SSH_USER@$host" "sudo -n bash -c $(printf '%q' "$*")"
     fi
 }
 
 # to_vm HOST LOCAL_FILE REMOTE_PATH
 to_vm() {
-    local pass
-    pass=$(vm_pass "$1")
-    if [ -n "$pass" ]; then
-        SSHPASS="$pass" sshpass -e scp -q "${SSH_OPTS[@]}" "$2" "$SSH_USER@$1:$3"
-    else
-        scp -q -o BatchMode=yes "${SSH_OPTS[@]}" "$2" "$SSH_USER@$1:$3"
-    fi
+    with_auth "$1" scp -q "${SSH_OPTS[@]}" "$2" "$SSH_USER@$1:$3"
 }
 
 # Base images the builds need; copied over if a VM cannot pull them itself.
@@ -191,15 +201,30 @@ deploy_all() {
             remotes+=("$h")
         fi
     done
-    if [ -n "$NIC_API2_PASS$NIC_MQTT_PASS" ] && ! command -v sshpass >/dev/null; then
-        STEP="installing sshpass"
-        sudo -E apt-get update -qq || true
-        sudo -E apt-get install -y sshpass
-    fi
-
     WORK=$(mktemp -d)
     trap 'rm -rf "$WORK"' EXIT
+    # SSH_ASKPASS helper for with_auth: prints the password ssh is given in NIC_SSH_PASS
+    printf '#!/bin/sh\nprintf "%%s\\n" "$NIC_SSH_PASS"\n' > "$WORK/askpass"
+    chmod 700 "$WORK/askpass"
+    if [ -n "$NIC_API2_PASS$NIC_MQTT_PASS" ] && ! command -v sshpass >/dev/null; then
+        local v
+        v=$(ssh -V 2>&1 | sed -n 's/^OpenSSH_\([0-9]*\.[0-9]*\).*/\1/p')
+        if ! awk -v v="$v" 'BEGIN { exit !(v + 0 >= 8.4) }'; then
+            echo "OpenSSH $v here is too old for password logins without sshpass." >&2
+            echo "Install sshpass (sudo apt-get install sshpass) or set up SSH keys." >&2
+            exit 1
+        fi
+    fi
+
+    # Fail fast on a wrong password / unreachable VM, before anything is redeployed
+    for h in "${remotes[@]}"; do
+        STEP="checking SSH + sudo on $h"
+        echo "== $STEP"
+        on_vm "$h" "true" </dev/null
+    done
+
     STEP="packing code"
+    echo "== $STEP"
     git rev-parse --short HEAD > "$WORK/DEPLOYED_COMMIT"
     git ls-files -z | tar --null --ignore-failed-read -czf "$WORK/code.tgz" \
         -T - -C "$WORK" DEPLOYED_COMMIT
