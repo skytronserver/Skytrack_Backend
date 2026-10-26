@@ -4411,6 +4411,12 @@ def validate_bhuvan_response(response_json):
 # One HTTPS session for the routing service (connection reuse), and
 # how long a validated route for a given list of points is reused.
 _ROUTING_SESSION = requests.Session()
+# A kept-alive connection can be dropped silently while idle; the next request
+# then hangs until the read timeout. Retry once on a fresh connection.
+_ROUTING_SESSION.mount('http://', requests.adapters.HTTPAdapter(
+    max_retries=requests.adapters.Retry(total=1, connect=1, read=1, status=0, backoff_factor=0)))
+_ROUTING_SESSION.mount('https://', requests.adapters.HTTPAdapter(
+    max_retries=requests.adapters.Retry(total=1, connect=1, read=1, status=0, backoff_factor=0)))
 ROUTE_CACHE_SECONDS = 6 * 60 * 60
 
 
@@ -4570,16 +4576,16 @@ def get_routePath(request):
         return Response({"data": cached_route}, status=200)
 
     try:
-        # Shared session: keeps the HTTPS connection open between calls
-        # instead of a new TLS handshake each time. Fail fast (5s) when the
-        # service cannot be reached at all; still allow 30s for the answer.
+        # Shared session: keeps the connection open between calls. OSRM
+        # answers in milliseconds, so 3s to connect and 10s to answer (each
+        # tried twice, see _ROUTING_SESSION) is plenty.
         import time as _time
         coords_param = ';'.join(f"{float(lon)},{float(lat)}" for lon, lat in points_data)
         started = _time.monotonic()
         response = _ROUTING_SESSION.get(
             url + coords_param,
             params={"overview": "false", "geometries": "geojson", "steps": "true"},
-            timeout=(5, 30),
+            timeout=(3, 10),
         )
         took_ms = (_time.monotonic() - started) * 1000
 

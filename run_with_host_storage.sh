@@ -146,6 +146,8 @@ docker rm skytron-backend-api-container || true
 # POST /api/airtel-sms/receive/; empty = endpoint disabled.
 # AIRTEL_SMS_ALLOWED_IPS: optional IPs/CIDRs the gateway calls from; empty = any.
 # REDIS_URL: Django cache (sessions, OTP state, rate limits, RBAC cache, device IPs).
+# OSRM_ROUTING_URL: in-house OSRM for get_routePath (dev http://10.0.0.4:8084,
+# NIC http://10.192.136.166:8084); empty = https://map2.gromed.in/osrm.
 sudo docker run -d --restart=always \
   --network "$NETWORK_NAME" \
   -p 2000:2000 \
@@ -156,6 +158,7 @@ sudo docker run -d --restart=always \
   -e BLE_SOS_APP_SECRETS="${BLE_SOS_APP_SECRETS:-}" \
   -e AIRTEL_SMS_API_KEYS="${AIRTEL_SMS_API_KEYS:-}" \
   -e AIRTEL_SMS_ALLOWED_IPS="${AIRTEL_SMS_ALLOWED_IPS:-}" \
+  -e OSRM_ROUTING_URL="${OSRM_ROUTING_URL:-}" \
   --name skytron-backend-api-container \
   skytron-backend-api
 
