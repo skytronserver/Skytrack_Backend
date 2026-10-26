@@ -4408,10 +4408,118 @@ def validate_bhuvan_response(response_json):
         return False, f"Invalid response: {e.message}"
 
 
-# One HTTPS session for the external routing service (connection reuse), and
+# One HTTPS session for the routing service (connection reuse), and
 # how long a validated route for a given list of points is reused.
-_BHUVAN_SESSION = requests.Session()
-BHUVAN_ROUTE_CACHE_SECONDS = 6 * 60 * 60
+_ROUTING_SESSION = requests.Session()
+ROUTE_CACHE_SECONDS = 6 * 60 * 60
+
+
+# OSRM maneuver modifier -> GraphHopper instruction sign (the format Bhuvan
+# returned and the frontend reads: 0 continue, -2/2 left/right, 4 finish ...).
+_OSRM_MODIFIER_SIGN = {
+    'sharp left': -3, 'left': -2, 'slight left': -1, 'straight': 0,
+    'slight right': 1, 'right': 2, 'sharp right': 3, 'uturn': -98,
+}
+_GH_SIGN_TEXT = {
+    -98: 'Make a U-turn', -7: 'Keep left', -3: 'Turn sharp left', -2: 'Turn left',
+    -1: 'Turn slight left', 0: 'Continue', 1: 'Turn slight right', 2: 'Turn right',
+    3: 'Turn sharp right', 7: 'Keep right',
+}
+
+
+def _osrm_step_sign_text(step, is_last_leg):
+    maneuver = step.get('maneuver', {})
+    mtype = maneuver.get('type', '')
+    modifier = maneuver.get('modifier', 'straight')
+    name = step.get('name') or ''
+
+    if mtype == 'arrive':
+        if is_last_leg:
+            return 4, 'Arrive at destination'
+        return 5, 'Waypoint reached'
+    if mtype in ('roundabout', 'rotary', 'roundabout turn'):
+        exit_no = maneuver.get('exit', 1)
+        text = f'At roundabout, take exit {exit_no}'
+        return 6, text + (f' onto {name}' if name else '')
+    if mtype == 'exit roundabout' or mtype == 'exit rotary':
+        return 0, 'Continue' + (f' onto {name}' if name else '')
+    if mtype == 'depart':
+        sign = 0
+    elif mtype == 'fork' or (mtype in ('on ramp', 'off ramp') and 'slight' in modifier):
+        sign = -7 if 'left' in modifier else 7 if 'right' in modifier else 0
+    else:
+        sign = _OSRM_MODIFIER_SIGN.get(modifier, 0)
+    return sign, _GH_SIGN_TEXT[sign] + (f' onto {name}' if name else '')
+
+
+def osrm_to_graphhopper(osrm_json, took_ms=0):
+    """Convert an OSRM /route answer (geometries=geojson, steps=true) into the
+    GraphHopper-style structure Bhuvan returned, so callers and the frontend
+    see the same fields: distance in m, time in ms, [lon, lat, ele] points,
+    instructions with interval indexes into those points."""
+    paths = []
+    for route in osrm_json.get('routes') or []:
+        coords = []
+        instructions = []
+        legs = route.get('legs') or []
+        for leg_no, leg in enumerate(legs):
+            is_last_leg = leg_no == len(legs) - 1
+            for step in leg.get('steps') or []:
+                step_coords = (step.get('geometry') or {}).get('coordinates') or []
+                if not step_coords:
+                    continue
+                first = [step_coords[0][0], step_coords[0][1], 0.0]
+                start = len(coords) - 1 if coords and coords[-1] == first else len(coords)
+                for lon, lat in (c[:2] for c in step_coords):
+                    point = [lon, lat, 0.0]
+                    if not coords or coords[-1] != point:
+                        coords.append(point)
+                end = len(coords) - 1
+                sign, text = _osrm_step_sign_text(step, is_last_leg)
+                # An intermediate leg's "depart" repeats the waypoint just
+                # reached; fold its stretch into that waypoint instruction.
+                if step.get('maneuver', {}).get('type') == 'depart' and leg_no > 0 and instructions:
+                    prev = instructions[-1]
+                    prev['interval'][1] = end
+                    prev['distance'] = round(prev['distance'] + float(step.get('distance', 0)), 3)
+                    prev['time'] += int(round(float(step.get('duration', 0)) * 1000))
+                    continue
+                instructions.append({
+                    'distance': round(float(step.get('distance', 0)), 3),
+                    'sign': sign,
+                    'interval': [start, end],
+                    'text': text,
+                    'time': int(round(float(step.get('duration', 0)) * 1000)),
+                    'street_name': step.get('name') or '',
+                })
+
+        if len(coords) < 2:
+            continue
+        lons = [c[0] for c in coords]
+        lats = [c[1] for c in coords]
+        waypoints = [[w['location'][0], w['location'][1], 0.0]
+                     for w in osrm_json.get('waypoints') or [] if w.get('location')]
+        paths.append({
+            'distance': round(float(route.get('distance', 0)), 3),
+            'weight': round(float(route.get('weight', route.get('duration', 0))), 6),
+            'time': int(round(float(route.get('duration', 0)) * 1000)),
+            'transfers': 0,
+            'points_encoded': False,
+            'bbox': [min(lons), min(lats), max(lons), max(lats)],
+            'points': {'type': 'LineString', 'coordinates': coords},
+            'instructions': instructions,
+            'legs': [],
+            'details': {},
+            'ascend': 0.0,
+            'descend': 0.0,
+            'snapped_waypoints': {'type': 'LineString', 'coordinates': waypoints},
+        })
+
+    return {
+        'hints': {},
+        'info': {'copyrights': ['OSRM', 'OpenStreetMap contributors'], 'took': int(took_ms)},
+        'paths': paths,
+    }
 
 
 @csrf_exempt
@@ -4420,13 +4528,9 @@ BHUVAN_ROUTE_CACHE_SECONDS = 6 * 60 * 60
 @permission_classes([AllowAny])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])   
-def get_routePath(request): 
-    # The target external API URL
-    token = getattr(settings, 'BHUVAN_ROUTING_TOKEN', '')
-    if not token:
-        logger.error("get_routePath: BHUVAN_ROUTING_TOKEN is not configured")
-        return Response({"error": "Routing service is temporarily unavailable. Please try again later."}, status=503)
-    url = 'https://bhuvan-app1.nrsc.gov.in/api/routing/curl_routing_new_v2.php'
+def get_routePath(request):
+    # In-house OSRM server (map2); its answer is converted to the Bhuvan format.
+    url = getattr(settings, 'OSRM_ROUTING_URL', 'https://map2.gromed.in/osrm') + '/route/v1/driving/'
     points_data = request.data.get("points", [])
     
     if not points_data:
@@ -4457,7 +4561,7 @@ def get_routePath(request):
     # the next, so a validated answer is reused instead of asking the external
     # routing service again (each call there takes 0.4s to 30s).
     from django.core.cache import cache as route_cache
-    route_cache_key = 'bhuvan_route:' + hashlib.sha256(json.dumps(points_data).encode()).hexdigest()
+    route_cache_key = 'osrm_route:' + hashlib.sha256(json.dumps(points_data).encode()).hexdigest()
     try:
         cached_route = route_cache.get(route_cache_key)
     except Exception:
@@ -4469,21 +4573,28 @@ def get_routePath(request):
         # Shared session: keeps the HTTPS connection open between calls
         # instead of a new TLS handshake each time. Fail fast (5s) when the
         # service cannot be reached at all; still allow 30s for the answer.
-        response = _BHUVAN_SESSION.post(
-            url,
-            params={"token": token},
-            json={"points": points_data},  # Send points data in the correct format
-            headers={"Content-Type": "application/json"},
+        import time as _time
+        coords_param = ';'.join(f"{float(lon)},{float(lat)}" for lon, lat in points_data)
+        started = _time.monotonic()
+        response = _ROUTING_SESSION.get(
+            url + coords_param,
+            params={"overview": "false", "geometries": "geojson", "steps": "true"},
             timeout=(5, 30),
         )
+        took_ms = (_time.monotonic() - started) * 1000
 
-        response.raise_for_status()
-        json_output = response.json()
+        osrm_output = response.json()
+        osrm_code = osrm_output.get("code") if isinstance(osrm_output, dict) else None
 
-        # Catch upstream API errors (e.g. expired token) before schema validation
-        if isinstance(json_output, dict) and "error" in json_output:
-            logger.error(f"get_routePath: Bhuvan error {json_output.get('error')}: {json_output.get('error_description')}")
+        # OSRM answers 400 with NoRoute/NoSegment when a point is not near
+        # any road; anything else not "Ok" is a fault on the routing server.
+        if osrm_code in ("NoRoute", "NoSegment"):
+            return Response({"error": "No road route found between the selected points. Place each point on or close to a road and try again."}, status=400)
+        if osrm_code != "Ok":
+            logger.error(f"get_routePath: OSRM HTTP {response.status_code} code {osrm_code}: {str(osrm_output)[:200]}")
             return Response({"error": "Routing service is temporarily unavailable. Please try again later."}, status=503)
+
+        json_output = osrm_to_graphhopper(osrm_output, took_ms)
 
         # Convert JSON output to string and sanitize it
         json_output_str = json.dumps(json_output)
@@ -4502,15 +4613,17 @@ def get_routePath(request):
             return Response({"error": "No road route found between the selected points. Place each point on or close to a road and try again."}, status=400)
 
         try:
-            route_cache.set(route_cache_key, sanitized_json_output, BHUVAN_ROUTE_CACHE_SECONDS)
+            route_cache.set(route_cache_key, sanitized_json_output, ROUTE_CACHE_SECONDS)
         except Exception:
             pass
 
         return Response({"data": sanitized_json_output}, status=200)
-    
-    except requests.exceptions.RequestException:
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"get_routePath: OSRM request failed: {e}")
         return Response({"error": "Unable to extract path for the provided coordinates. Please try again later."}, status=400)
     except ValueError:
+        logger.error("get_routePath: OSRM returned a non-JSON response")
         return Response({"error": "Invalid response received from the external API."}, status=400)
     except Exception as e:
         return Response({"error": "An unexpected error occurred."}, status=400)

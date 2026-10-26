@@ -38,7 +38,14 @@ LOAD_TEST_SECRET = os.environ.get('LOAD_TEST_SECRET', '')
 
 # Bhuvan (NRSC) routing API token used by get_routePath. Tokens expire;
 # renew in .env and rebuild - no code change needed.
+# No longer called by get_routePath (Bhuvan stopped returning routes 2026-10);
+# kept so the .env value still loads.
 BHUVAN_ROUTING_TOKEN = os.environ.get('BHUVAN_ROUTING_TOKEN', '')
+
+# In-house OSRM routing server (map2) used by get_routePath; the view appends
+# /route/v1/driving/... Either the nginx path (https://map2.gromed.in/osrm)
+# or the osrm-car container directly (NIC: http://10.192.136.166:8084).
+OSRM_ROUTING_URL = os.environ.get('OSRM_ROUTING_URL', 'https://map2.gromed.in/osrm').rstrip('/')
 
 # Set DISABLE_THROTTLE=true to turn off ALL throttling (use only during load tests).
 DISABLE_THROTTLE = os.environ.get('DISABLE_THROTTLE', 'false').lower() == 'true'
