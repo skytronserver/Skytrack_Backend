@@ -4542,8 +4542,10 @@ def osrm_to_graphhopper(osrm_json, took_ms=0):
             'instructions': instructions,
             'legs': [],
             'details': {},
-            'ascend': 0.0,
-            'descend': 0.0,
+            # Integers, as Bhuvan sent them: the mobile app's model declares
+            # these as int, and 0.0 there throws a type error.
+            'ascend': 0,
+            'descend': 0,
             'snapped_waypoints': {'type': 'LineString', 'coordinates': waypoints},
         })
 
