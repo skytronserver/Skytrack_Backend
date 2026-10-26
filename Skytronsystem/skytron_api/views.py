@@ -4453,6 +4453,19 @@ def _osrm_step_sign_text(step, is_last_leg):
         sign = 0
     elif mtype == 'fork' or (mtype in ('on ramp', 'off ramp') and 'slight' in modifier):
         sign = -7 if 'left' in modifier else 7 if 'right' in modifier else 0
+    elif modifier == 'uturn' and 'bearing_before' in maneuver and 'bearing_after' in maneuver:
+        # The map data can say "uturn" for what is a plain 90 degree turn;
+        # in that case take the sign from the turn angle, as GraphHopper does.
+        delta = (maneuver['bearing_after'] - maneuver['bearing_before'] + 540) % 360 - 180
+        turn = abs(delta)
+        if turn > 150:
+            sign = -98
+        elif turn < 12:
+            sign = 0
+        else:
+            sign = 1 if turn < 45 else 2 if turn < 120 else 3
+            if delta < 0:
+                sign = -sign
     else:
         sign = _OSRM_MODIFIER_SIGN.get(modifier, 0)
     return sign, _GH_SIGN_TEXT[sign] + (f' onto {name}' if name else '')
