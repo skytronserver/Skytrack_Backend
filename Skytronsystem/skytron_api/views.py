@@ -4503,14 +4503,27 @@ def osrm_to_graphhopper(osrm_json, took_ms=0):
                     prev['distance'] = round(prev['distance'] + float(step.get('distance', 0)), 3)
                     prev['time'] += int(round(float(step.get('duration', 0)) * 1000))
                     continue
-                instructions.append({
+                maneuver = step.get('maneuver', {})
+                instruction = {
                     'distance': round(float(step.get('distance', 0)), 3),
                     'sign': sign,
                     'interval': [start, end],
                     'text': text,
                     'time': int(round(float(step.get('duration', 0)) * 1000)),
                     'street_name': step.get('name') or '',
-                })
+                }
+                # GraphHopper puts heading on the first instruction,
+                # last_heading on the finish, and exit details on roundabouts.
+                if not instructions:
+                    instruction['heading'] = round(float(maneuver.get('bearing_after', 0)), 2)
+                if sign == 4:
+                    instruction['last_heading'] = round(float(maneuver.get('bearing_before', 0)), 2)
+                if sign == 6:
+                    turn = (maneuver.get('bearing_after', 0) - maneuver.get('bearing_before', 0) + 540) % 360 - 180
+                    instruction['exit_number'] = int(maneuver.get('exit', 1))
+                    instruction['exited'] = True
+                    instruction['turn_angle'] = round(math.radians(turn), 2)
+                instructions.append(instruction)
 
         if len(coords) < 2:
             continue
@@ -4535,8 +4548,12 @@ def osrm_to_graphhopper(osrm_json, took_ms=0):
         })
 
     return {
-        'hints': {},
-        'info': {'copyrights': ['OSRM', 'OpenStreetMap contributors'], 'took': int(took_ms)},
+        'hints': {'visited_nodes.sum': 0, 'visited_nodes.average': 0.0},
+        'info': {
+            'copyrights': ['OSRM', 'OpenStreetMap contributors'],
+            'took': int(took_ms),
+            'road_data_timestamp': '',
+        },
         'paths': paths,
     }
 
@@ -4580,7 +4597,7 @@ def get_routePath(request):
     # the next, so a validated answer is reused instead of asking the external
     # routing service again (each call there takes 0.4s to 30s).
     from django.core.cache import cache as route_cache
-    route_cache_key = 'osrm_route:' + hashlib.sha256(json.dumps(points_data).encode()).hexdigest()
+    route_cache_key = 'osrm_route:v2:' +hashlib.sha256(json.dumps(points_data).encode()).hexdigest()
     try:
         cached_route = route_cache.get(route_cache_key)
     except Exception:
