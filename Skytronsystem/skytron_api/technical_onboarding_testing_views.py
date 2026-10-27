@@ -29,7 +29,6 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
 from . import protocol_formats as pf
-from .dev_views import _dev_only
 from .models import (
     DeviceModelTechnicalOnboardingRequest,
     DeviceModelTechnicalOnboardingDemoDevice,
@@ -2614,7 +2613,6 @@ def technical_onboarding_test_requirements_page(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@_dev_only
 @transaction.atomic
 def dev_force_pass_test(request):
     """
@@ -2623,8 +2621,8 @@ def dev_force_pass_test(request):
 
     Exists so the rest of the pipeline (sequential gating, certificate
     issuance, dashboards) can be exercised end-to-end without physically
-    operating a device through every checkpoint. Blocked automatically
-    outside DEBUG by @_dev_only, same as dev_get_token/dev_list_users.
+    operating a device through every checkpoint. Not DEBUG-gated; the route
+    is registered only when ENABLE_TEMPORARY_APIS=True (see urls.py).
 
     Request body: {"imei": "<imei>", "test_no": 1}
     """
