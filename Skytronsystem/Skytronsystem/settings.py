@@ -232,6 +232,10 @@ DATABASES = {
         'HOST': os.environ.get('DB_HOST', ''),
         'PORT': os.environ.get('DB_PORT', '5432'),
         'CONN_MAX_AGE': int(os.environ.get('DB_CONN_MAX_AGE', '60')),
+        # Test a reused persistent connection before the request uses it, so a
+        # connection the DB/firewall has silently dropped is reopened instead of
+        # failing the request's first query (seen on NIC as random auth failures).
+        'CONN_HEALTH_CHECKS': True,
     }
 }
 

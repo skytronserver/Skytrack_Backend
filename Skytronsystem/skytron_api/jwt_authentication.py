@@ -15,6 +15,8 @@ Usage:
 """
 
 from rest_framework.authentication import BaseAuthentication
+from rest_framework.exceptions import APIException
+from django.db import DatabaseError
 from django.contrib.auth.models import User
 from django.contrib.auth import get_user_model
 from .secure_token import verify_jwt_token, decode_jwt_token
@@ -41,6 +43,12 @@ def _touch_activity(session, user):
         type(user).objects.filter(pk=user.pk).update(last_activity=now)
     except Exception as e:
         logger.warning(f"Activity touch failed for user {getattr(user, 'pk', None)}: {e}")
+
+class AuthServiceUnavailable(APIException):
+    status_code = 503
+    default_detail = 'Service temporarily unavailable. Please retry.'
+    default_code = 'service_unavailable'
+
 
 class JWTAuthentication(BaseAuthentication):
     """
@@ -160,10 +168,16 @@ class JWTAuthentication(BaseAuthentication):
 
             return (user, token)
 
+        except DatabaseError as e:
+            # The token could not be checked, which is not the same as the
+            # token being invalid. Returning None here would answer "not
+            # authenticated" and the frontend would log the user out.
+            logger.error(f"JWT authentication DB error: {e}")
+            raise AuthServiceUnavailable()
         except Exception as e:
             logger.error(f"JWT authentication error: {e}")
             return None
-    
+
     def authenticate_header(self, request):
         """
         Return a string to be used as the value of the `WWW-Authenticate`
