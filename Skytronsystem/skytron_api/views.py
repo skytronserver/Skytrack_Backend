@@ -10898,7 +10898,18 @@ def search_request_logs(request):
         return Response({"error":"Request must be from  "+role+'.'}, status=status.HTTP_400_BAD_REQUEST) 
     
     # Support both POST body and query params for flexibility
-    query = (request.data.get('q') if hasattr(request, 'data') else None) or request.GET.get('q', '')
+    def _param(name):
+        val = request.data.get(name) if hasattr(request, 'data') and hasattr(request.data, 'get') else None
+        if val in (None, ''):
+            val = request.GET.get(name, '')
+        return str(val).strip() if val is not None else ''
+
+    # Partial URL ('q' kept for backward compatibility, 'url' as alias)
+    query = _param('q') or _param('url')
+    ip_query = _param('ip')                 # partial IP match
+    method_query = _param('method')         # GET / POST / ... (comma separated allowed)
+    status_query = _param('status').lower() # success | failed | 4xx | 5xx | <exact code>
+    data_query = _param('data')             # partial match in request body
     # Get the page number from the request
     try:
         page = int(request.GET.get('page', 1))
@@ -10913,12 +10924,12 @@ def search_request_logs(request):
     per_page = max(1, min(per_page, 100))
 
     # Time window: default to last 1 day; allow override via from/to (ISO string)
-    from_str = request.GET.get('from')
-    to_str = request.GET.get('to')
+    from_str = _param('from')
+    to_str = _param('to')
 
     # By default, do NOT return/serialize huge payload fields.
     # They dramatically slow down the endpoint even for a few rows.
-    include_payload = str(request.GET.get('include_payload', '0')).lower() in {'1', 'true', 'yes'}
+    include_payload = (_param('include_payload') or '0').lower() in {'1', 'true', 'yes'}
 
     now = timezone.now()
     start_dt = now - timedelta(days=1)
@@ -10943,10 +10954,30 @@ def search_request_logs(request):
     if start_dt and end_dt:
         logs_qs = logs_qs.filter(timestamp__range=(start_dt, end_dt))
   
-    # Apply text filters
-    # Apply text filter only when query is provided and meaningful
-    query = (query or '').strip()
-    if query:
+    # Exact-match filters (cheap)
+    if method_query:
+        methods = [m.strip().upper() for m in method_query.split(',') if m.strip()]
+        if methods:
+            logs_qs = logs_qs.filter(request_type__in=methods)
+
+    if status_query:
+        if status_query == 'success':
+            logs_qs = logs_qs.filter(error_code__isnull=True)
+        elif status_query == 'failed':
+            logs_qs = logs_qs.filter(error_code__isnull=False)
+        elif status_query in ('4xx', '5xx'):
+            base = 400 if status_query == '4xx' else 500
+            logs_qs = logs_qs.filter(error_code__gte=base, error_code__lt=base + 100)
+        elif status_query.isdigit():
+            code = int(status_query)
+            # Successful responses (<400) are stored with error_code NULL
+            logs_qs = logs_qs.filter(error_code__isnull=True) if code < 400 else logs_qs.filter(error_code=code)
+        else:
+            return Response({"error": "Invalid status. Use success, failed, 4xx, 5xx or an HTTP code."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+    # Apply text filters only when provided and meaningful
+    if query or ip_query or data_query:
         # icontains can be expensive on large tables. Restrict to recent records first
         # Strategy: limit to a window of recent IDs to avoid scanning the entire table
         try:
@@ -10961,8 +10992,13 @@ def search_request_logs(request):
             threshold_id = max(0, latest_id - recent_window)
             logs_qs = logs_qs.filter(id__gt=threshold_id)
 
-        # Now apply the text filter
-        logs_qs = logs_qs.filter(Q(request_url__icontains=query))
+        # Now apply the text filters
+        if query:
+            logs_qs = logs_qs.filter(request_url__icontains=query)
+        if ip_query:
+            logs_qs = logs_qs.filter(ip_address__icontains=ip_query)
+        if data_query:
+            logs_qs = logs_qs.filter(incoming_data__icontains=data_query)
 
     # Select only the fields needed for the listing.
     # NOTE: RequestLog contains large TextFields (system_info/headers/incoming_data) that are expensive
@@ -10991,7 +11027,11 @@ def search_request_logs(request):
         'window': {
             'from': start_dt.isoformat(),
             'to': end_dt.isoformat(),
-        }
+        },
+        'filters': {
+            'q': query, 'ip': ip_query, 'method': method_query,
+            'status': status_query, 'data': data_query,
+        },
     }
 
     return JsonResponse(data)
