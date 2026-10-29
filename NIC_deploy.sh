@@ -93,8 +93,10 @@ wait_api() {
 }
 
 run_reporter_if_broker() {
-    # Co-located broker (dev): keep the reporter on the current code too.
-    if pgrep -x mosquitto >/dev/null; then
+    # Co-located broker (dev): keep the reporter on the current code too. A stray
+    # mosquitto without our go-auth config (e.g. stock package on a non-broker VM) is skipped.
+    if pgrep -x mosquitto >/dev/null \
+       && sudo grep -rqE '^[[:space:]]*auth_opt_http_host[[:space:]]' /etc/mosquitto --include='*.conf' 2>/dev/null; then
         sudo ./run_mqtt_reporter.sh "$@" || echo "WARN: MQTT IP reporter not deployed (see above)"
     fi
 }
