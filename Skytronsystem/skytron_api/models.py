@@ -959,6 +959,12 @@ class DeviceModel(models.Model):
     created = models.DateTimeField(db_index=True)
     status = models.CharField(max_length=255, choices=STATUS_CHOICES, db_index=True)
     tac_doc_path = models.FileField(upload_to='tac_docs/', null=True, blank=True)
+    # Hardware photos uploaded by the manufacturer at model creation (MinIO
+    # keys under fileuploads/device_model_images/). Required for new models;
+    # models created before this was added have none.
+    closed_box_image = models.FileField(upload_to='device_model_images/', null=True, blank=True)
+    pcb_top_image = models.FileField(upload_to='device_model_images/', null=True, blank=True)
+    pcb_bottom_image = models.FileField(upload_to='device_model_images/', null=True, blank=True)
     otp = models.CharField(max_length=6 )
     mqtt_pw = models.CharField(max_length=255, blank=True, null=True)
     api_url = models.URLField(max_length=500, null=True, blank=True)

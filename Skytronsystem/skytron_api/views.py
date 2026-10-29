@@ -19494,14 +19494,40 @@ def esim_provider_device_model_ip_config_list(request):
         "count": len(data),
         "data": data,
     }, status=status.HTTP_200_OK)
-    
+
+
+# Hardware photos a manufacturer must upload when creating a device model.
+DEVICE_MODEL_IMAGE_FIELDS = {
+    'closed_box_image': 'Closed box device with harness',
+    'pcb_top_image': 'PCB top with antenna and battery position',
+    'pcb_bottom_image': 'PCB bottom',
+}
+DEVICE_MODEL_IMAGE_MIME_TYPES = ('image/png', 'image/jpeg')
+
+
+def _validate_device_model_image(uploaded_file, label):
+    """Return an error message for a missing or non PNG/JPEG image, else None."""
+    if not uploaded_file:
+        return f"{label} image is required."
+    if uploaded_file.size > settings.MAX_UPLOAD_FILE_SIZE:
+        return f"{label} image must not exceed {settings.MAX_UPLOAD_FILE_SIZE // (1024 * 1024)} MB."
+    try:
+        mime_type = magic.Magic(mime=True).from_buffer(uploaded_file.read(2048) or b'')
+    except Exception:
+        mime_type = None
+    finally:
+        uploaded_file.seek(0)
+    if mime_type not in DEVICE_MODEL_IMAGE_MIME_TYPES:
+        return f"{label} image must be a PNG or JPEG file."
+    return None
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@throttle_classes([AnonRateThrottle, UserRateThrottle]) 
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @require_http_methods(['GET', 'POST'])
 @require_permission('device_management', 'create')
-def create_device_model(request ): 
+def create_device_model(request ):
     errors = validate_inputs(request)
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -19570,9 +19596,25 @@ def create_device_model(request ):
                 + (". Available: " + ', '.join(sorted(available)) if available else ". No TSP is available yet.")
             )
 
+    for field, label in DEVICE_MODEL_IMAGE_FIELDS.items():
+        image_error = _validate_device_model_image(request.FILES.get(field), label)
+        if image_error:
+            field_errors[field] = image_error
+
     if field_errors:
         return Response({"errors": field_errors}, status=status.HTTP_400_BAD_REQUEST)
-     
+
+    # Upload the images to MinIO before creating the model, so a storage
+    # failure doesn't leave a model without its photos.
+    image_paths = {}
+    for field, label in DEVICE_MODEL_IMAGE_FIELDS.items():
+        image_paths[field] = save_file(request, field, 'fileuploads/device_model_images')
+        if not image_paths[field]:
+            return Response(
+                {"errors": {field: f"Could not store the {label} image. Please try again."}},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
 
 
      
@@ -19605,13 +19647,19 @@ def create_device_model(request ):
     # Attach the file to the request data
     request_data = request.data.copy()
     request_data.update(data)
-    #print("requestdata",request_data) 
+    # Already in MinIO; keep the serializer from writing them to local disk.
+    for field in DEVICE_MODEL_IMAGE_FIELDS:
+        request_data.pop(field, None)
+    #print("requestdata",request_data)
     serializer = DeviceModelSerializer(data=request_data)
 
     # Validate and save the data along with the file
     if serializer.is_valid():
         # Save the DeviceModel instance
         device_model_instance = serializer.save()
+        for field, path in image_paths.items():
+            setattr(device_model_instance, field, path)
+        device_model_instance.save(update_fields=list(image_paths))
         # Handle the uploaded file
         uploaded_file = request.FILES.get('tac_doc_path')
         if uploaded_file:
