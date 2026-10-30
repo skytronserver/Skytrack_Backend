@@ -1057,6 +1057,9 @@ def create_trip(request):
         data['created_by'] = user.id
         data['mobile_no'] = None
         active_trips = Trip.objects.filter(created_by=user, status='created')
+    # Trips left open longer than TRIP_ACTIVE_HOURS no longer count toward the cap.
+    active_hours = getattr(settings, 'TRIP_ACTIVE_HOURS', 48)
+    active_trips = active_trips.filter(created_at__gte=timezone.now() - timedelta(hours=active_hours))
     max_active = getattr(settings, 'TRIP_MAX_ACTIVE', 20)
     if active_trips.count() >= max_active:
         return Response(

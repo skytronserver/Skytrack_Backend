@@ -26,6 +26,8 @@
 #   ./NIC_deploy.sh mqtt-reporter    broker VM: only the MQTT IP reporter container.
 #                                    First time: ./NIC_deploy.sh mqtt-reporter --key <MQTT_IP_REPORT_KEY>
 #                                    (extra args go to run_mqtt_reporter.sh)
+#   ./NIC_deploy.sh smpp [--stop]    Airtel SMPP worker from the API image (dev VM only;
+#                                    `backend` also runs it when .env has SMPP_SYSTEM_ID)
 set -eE
 cd "$(dirname "$0")"
 
@@ -511,6 +513,13 @@ case "$ROLE" in
     sudo docker exec skytron-backend-api-container python manage.py migrate
     sudo ./run_mqtt.sh
     run_reporter_if_broker "$@"
+    # Airtel SMPP worker: dev VM only, which is the only .env with SMPP_SYSTEM_ID.
+    if [ -n "${SMPP_SYSTEM_ID:-}" ]; then
+        sudo ./run_smpp.sh || echo "WARN: SMPP worker not deployed (see above)"
+    fi
+    ;;
+  smpp)
+    sudo ./run_smpp.sh "$@"
     ;;
   api)
     role_api "$@"
@@ -528,7 +537,7 @@ case "$ROLE" in
     sudo ./run_mqtt_reporter.sh "$@"
     ;;
   *)
-    echo "Unknown role: $ROLE (use: all | backend | api | mqtt-processor | redis | mqtt-reporter)" >&2
+    echo "Unknown role: $ROLE (use: all | backend | api | mqtt-processor | redis | mqtt-reporter | smpp)" >&2
     exit 1
     ;;
 esac

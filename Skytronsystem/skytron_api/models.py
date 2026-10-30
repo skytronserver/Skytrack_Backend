@@ -5789,7 +5789,7 @@ class BleSosAppLog(models.Model):
         ('BLE_TM_Route', 'BLE Trip Monitor Route Violation'),
     ]
 
-    ble_mac = models.CharField(max_length=17)
+    ble_mac = models.CharField(max_length=36)   # MAC, or the peripheral UUID on iOS
     ble_device_name = models.CharField(max_length=100, blank=True, default='')
     registration_no = models.CharField(max_length=20)
     phone_device_id = models.CharField(max_length=128)
@@ -5847,3 +5847,89 @@ class AirtelSmsInLog(models.Model):
 
     def __str__(self):
         return f"AirtelSmsInLog {self.id} {self.sender_no} -> {self.receiver_no}"
+
+
+class SmppSmsOut(models.Model):
+    """
+    One SMS (usually a protocol command for a device) sent through Airtel's
+    SMPP link from our VMN. Not the OTP gateway (sms_send) and not the sms_out
+    phone queue. Queued by smpp_views.queue_smpp_sms; sent by the smpp_worker
+    container, which also records Airtel's submit result and delivery receipt.
+    """
+    STATUS_CHOICES = [
+        ('queued', 'Queued'),            # waiting for the worker
+        ('sending', 'Sending'),          # handed to the SMSC, no reply yet
+        ('submitted', 'Submitted'),      # SMSC accepted every part
+        ('delivered', 'Delivered'),      # receipt DELIVRD for every part
+        ('undelivered', 'Undelivered'),  # receipt said not delivered (see error)
+        ('failed', 'Failed'),            # SMSC rejected it, or retries ran out
+    ]
+
+    dest_no = models.CharField(max_length=20)
+    text = models.TextField()
+    imei = models.CharField(max_length=20, blank=True, default='')
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='queued')
+    parts_total = models.PositiveSmallIntegerField(default=1)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(null=True, blank=True)     # retry after a throttle / SMSC error
+    error = models.CharField(max_length=255, blank=True, default='')
+    sent_by = models.ForeignKey('User', null=True, blank=True, on_delete=models.SET_NULL, related_name='smpp_sms_sent')
+    created_at = models.DateTimeField(auto_now_add=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    final_at = models.DateTimeField(null=True, blank=True)            # last delivery receipt
+
+    class Meta:
+        app_label = 'skytron_api'
+        db_table = 'smpp_sms_out'
+        indexes = [
+            models.Index(fields=['status', 'id'], name='smppout_status_idx'),
+            models.Index(fields=['-created_at'], name='smppout_created_idx'),
+            models.Index(fields=['dest_no', '-created_at'], name='smppout_dest_idx'),
+            models.Index(fields=['imei', '-created_at'], name='smppout_imei_idx'),
+        ]
+
+    def __str__(self):
+        return f"SmppSmsOut {self.id} -> {self.dest_no} [{self.status}]"
+
+
+class SmppSmsPart(models.Model):
+    """One submit_sm of an SmppSmsOut (one per SMS part) and its receipt."""
+    sms = models.ForeignKey(SmppSmsOut, on_delete=models.CASCADE, related_name='parts')
+    part_no = models.PositiveSmallIntegerField()
+    message_id = models.CharField(max_length=64)                     # SMSC id from submit_sm_resp
+    dlr_stat = models.CharField(max_length=16, blank=True, default='')   # DELIVRD, UNDELIV, EXPIRED, ...
+    dlr_err = models.CharField(max_length=16, blank=True, default='')
+    dlr_text = models.CharField(max_length=255, blank=True, default='')  # receipt as Airtel sent it
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    dlr_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        app_label = 'skytron_api'
+        db_table = 'smpp_sms_part'
+        unique_together = [('sms', 'part_no')]
+        indexes = [models.Index(fields=['message_id'], name='smpppart_msgid_idx')]
+
+    def __str__(self):
+        return f"SmppSmsPart {self.message_id} (sms {self.sms_id} part {self.part_no})"
+
+
+class SmppSmsIn(models.Model):
+    """An SMS sent to our VMN (e.g. a device's reply), received over the SMPP bind."""
+    source_no = models.CharField(max_length=21)
+    dest_no = models.CharField(max_length=21)
+    text = models.TextField(blank=True, default='')
+    data_coding = models.PositiveSmallIntegerField(default=0)
+    esm_class = models.PositiveSmallIntegerField(default=0)
+    raw_hex = models.TextField(blank=True, default='')               # short_message bytes, for odd encodings
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'skytron_api'
+        db_table = 'smpp_sms_in'
+        indexes = [
+            models.Index(fields=['-received_at'], name='smppin_received_idx'),
+            models.Index(fields=['source_no', '-received_at'], name='smppin_source_idx'),
+        ]
+
+    def __str__(self):
+        return f"SmppSmsIn {self.id} {self.source_no} -> {self.dest_no}"

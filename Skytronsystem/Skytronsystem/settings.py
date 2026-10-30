@@ -56,6 +56,8 @@ API_RATE_LIMIT = int(os.environ.get('API_RATE_LIMIT') or '300')
 
 # Most trips one user may have in 'created' state at once.
 TRIP_MAX_ACTIVE = int(os.environ.get('TRIP_MAX_ACTIVE') or '20')
+# A 'created' trip older than this many hours is treated as over.
+TRIP_ACTIVE_HOURS = int(os.environ.get('TRIP_ACTIVE_HOURS') or '48')
 
 MQTT_HOST = os.environ.get('MQTT_HOST', '127.0.0.1')
 MQTT_PORT = os.environ.get('MQTT_PORT', '8883')

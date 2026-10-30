@@ -56,6 +56,7 @@ from .vltd_summary_views import superadmin_vltd_summary
 from .device_ip_views import device_ip_unique, device_ip_imeis, device_ip_by_imei, mqtt_client_ip_report
 from .ble_sos_app_log_views import ble_sos_app_log_create, ble_sos_app_log_list
 from .airtel_sms_views import airtel_sms_receive, airtel_sms_list
+from .smpp_views import smpp_send, smpp_sms_list, smpp_incoming_list, smpp_status
 from .m2m_dummy_views import m2m_dummy_sim_details
 from .alert_stats_views import (
     alert_stats_type_options,
@@ -1429,6 +1430,12 @@ urlpatterns += [
     # Incoming SMS pushed by Airtel's SMS gateway (airtel_sms_views.py).
     path('airtel-sms/receive/', airtel_sms_receive, name='airtel_sms_receive'),  # Airtel only (shared key, no login)
     path('airtel-sms/list/', airtel_sms_list, name='airtel_sms_list'),  # Superadmin
+
+    # SMS to devices over Airtel SMPP from our VMN (smpp_views.py; sent by the smpp_worker container).
+    path('smpp/send/', smpp_send, name='smpp_send'),  # Superadmin
+    path('smpp/sms/list/', smpp_sms_list, name='smpp_sms_list'),  # Superadmin
+    path('smpp/incoming/list/', smpp_incoming_list, name='smpp_incoming_list'),  # Superadmin
+    path('smpp/status/', smpp_status, name='smpp_status'),  # Superadmin
 
     # Dummy M2M provider API for testing without a whitelisted URL (m2m_dummy_views.py).
     path('m2m-dummy/sim-details/', m2m_dummy_sim_details, name='m2m_dummy_sim_details'),  # Localhost only (backend calls itself)

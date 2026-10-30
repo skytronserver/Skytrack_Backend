@@ -88,7 +88,7 @@ JSON object, at most 16 KB.
 
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
-| `ble_mac` | string | Yes | MAC address with `:`, `-` or no separator, any case. Saved as `AA:BB:CC:DD:EE:FF`. |
+| `ble_mac` | string | Yes | MAC address with `:`, `-` or no separator, any case. Saved as `AA:BB:CC:DD:EE:FF`. iOS does not expose the MAC, so on iPhone send the peripheral UUID (e.g. `6F40DE50-BB99-694C-DAEE-F47C69AF6F08`), saved uppercase with dashes. The UUID differs per phone for the same device. |
 | `ble_device_name` | string | No | Up to 100 characters. |
 | `registration_no` | string | Yes | Vehicle number. Spaces and `-` are removed and letters are uppercased. What remains must be 4-15 letters/digits. `as 01 ab-1234` is saved as `AS01AB1234`. |
 | `phone_device_id` | string | Yes | Stable ID of the phone (e.g. Android ID). 4-128 characters from `A-Z a-z 0-9 . _ : -`. The rate limit is counted per phone ID. |
@@ -195,7 +195,7 @@ All parameters are optional.
 
 | Parameter | Match | Notes |
 | --- | --- | --- |
-| `ble_mac` | Exact | Any case, with or without separators. |
+| `ble_mac` | Exact | MAC or iOS UUID, any case, with or without separators. |
 | `registration_no` | Contains | Spaces and `-` are ignored, any case. `as01` finds `AS01AB1234`. |
 | `phone_device_id` | Exact | |
 | `user_mobile` | Exact | Spaces, `+` and `-` are ignored. |

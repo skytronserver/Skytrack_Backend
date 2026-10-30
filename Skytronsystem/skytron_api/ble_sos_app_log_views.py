@@ -60,6 +60,8 @@ MAX_CELLS = 10
 MAX_CELL_KEYS = 15
 
 _RE_MAC = re.compile(r'^[0-9A-F]{2}([:-]?)[0-9A-F]{2}(?:\1[0-9A-F]{2}){4}$')
+# iOS hides the BLE MAC and gives apps a per-phone peripheral UUID instead.
+_RE_UUID = re.compile(r'^[0-9A-F]{8}-?[0-9A-F]{4}-?[0-9A-F]{4}-?[0-9A-F]{4}-?[0-9A-F]{12}$')
 _RE_REG_NO = re.compile(r'^[A-Z0-9]{4,15}$')
 _RE_PHONE_ID = re.compile(r'^[A-Za-z0-9._:-]{4,128}$')
 _RE_MOBILE = re.compile(r'^\d{10,15}$')
@@ -80,6 +82,17 @@ class _Invalid(Exception):
 
 def _err(message, code, **extra):
     return Response({'status': 'error', 'message': message, **extra}, status=code)
+
+
+def _norm_ble_id(value):
+    """MAC -> AA:BB:CC:DD:EE:FF, iOS UUID -> 8-4-4-4-12 uppercase; None if neither."""
+    value = str(value or '').strip().upper()
+    if _RE_MAC.match(value):
+        return ':'.join(re.findall(r'[0-9A-F]{2}', value))
+    if _RE_UUID.match(value):
+        h = value.replace('-', '')
+        return f'{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}'
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -196,10 +209,10 @@ def _clean_payload(data):
     if not isinstance(data, dict):
         raise _Invalid('Body must be a JSON object.')
 
-    mac = str(data.get('ble_mac') or '').strip().upper()
-    if not _RE_MAC.match(mac):
-        raise _Invalid('ble_mac is required and must be a MAC address, e.g. AA:BB:CC:DD:EE:FF.')
-    mac = ':'.join(re.findall(r'[0-9A-F]{2}', mac))
+    mac = _norm_ble_id(data.get('ble_mac'))
+    if not mac:
+        raise _Invalid('ble_mac is required and must be a MAC address (AA:BB:CC:DD:EE:FF) '
+                       'or, on iOS, the peripheral UUID.')
 
     reg_no = re.sub(r'[\s-]', '', str(data.get('registration_no') or '')).upper()
     if not _RE_REG_NO.match(reg_no):
@@ -376,7 +389,7 @@ def ble_sos_app_log_list(request):
     qs = BleSosAppLog.objects.all()
     mac = (p.get('ble_mac') or '').strip().upper()
     if mac:
-        qs = qs.filter(ble_mac=':'.join(re.findall(r'[0-9A-F]{2}', mac)) if _RE_MAC.match(mac) else mac)
+        qs = qs.filter(ble_mac=_norm_ble_id(mac) or mac)
     reg_no = re.sub(r'[\s-]', '', p.get('registration_no') or '').upper()
     if reg_no:
         qs = qs.filter(registration_no__icontains=reg_no)
