@@ -77,7 +77,9 @@ GPS_PACKET_SCAN_LIMIT = 5000
 
 # An in_progress execution with no heartbeat inside this window is
 # considered abandoned (browser/tab closed) and auto-marked incomplete.
-STALE_HEARTBEAT_SECONDS = 45
+# The board heartbeats / scans every 5s; the slack covers slow scans and
+# brief network drops. The test's own time limit is enforced separately.
+STALE_HEARTBEAT_SECONDS = 120
 
 SOURCE_TABLE_LABEL = {
     'gps': 'GPSDataLog',
@@ -2810,6 +2812,11 @@ def superadmin_refresh_test_log(request):
     if not execution:
         return Response({'error': 'Invalid execution_id.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # The board's scan loop polls this every few seconds, so a poll is itself
+    # proof the tab is open: count it as a heartbeat before sweeping.
+    TechnicalOnboardingTestExecution.objects.filter(id=execution.id, status='in_progress').update(
+        last_heartbeat_at=timezone.now()
+    )
     _sweep_stale_executions(execution.onboarding_request)
     execution.refresh_from_db()
 

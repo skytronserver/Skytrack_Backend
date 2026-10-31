@@ -69,7 +69,7 @@ test-board ──► test-start ──► (test-send-command)* ──► test-re
 
 1. **Board** – load all tests × demo devices with their current status.
 2. **Start** – starts the attempt; the test window begins at `started_at`.
-3. **Heartbeat** – send every ≤ 30 s while the test page is open. An `in_progress` test with **no heartbeat for 45 s is auto-marked `incomplete`** (sending a command also counts as a heartbeat).
+3. **Heartbeat** – send every ≤ 30 s while the test page is open. An `in_progress` test with **no heartbeat for 120 s is auto-marked `incomplete`** (sending a command or polling refresh-log also counts as a heartbeat).
 4. **Commands** (tests with `requires_command: true`) – send the command(s) to the device.
 5. **Refresh** – re-runs the automated check and returns the snapshot; call as often as needed.
 6. **Complete** – needs at least one refresh after start; the result is the last snapshot's `pass` (plus the tester's `manual_result` when `requires_manual_confirmation` is true).
