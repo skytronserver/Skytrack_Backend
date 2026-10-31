@@ -299,8 +299,22 @@ Runs the automated check for the execution's test and stores/returns the snapsho
 | `execution_id` | yes | Execution to check. |
 | `geofence_in` | no | **Test #16 only.** The geofence IN point marked on the map: `{"timestamp": "<ISO>"}` (nearest packet in time) **or** `{"latitude": .., "longitude": ..}` (nearest packet on the route). |
 | `geofence_out` | no | **Test #16 only.** The geofence OUT point, same format. |
+| `stop` | no | `true` = the tester pressed Stop. Scans once more, then ends the attempt: `incomplete` unless the event was already detected. |
+| `target_speed` + `speed_action` | no | **Test #15 only.** `speed_action` `"start"` / `"stop"` for one target speed (`20`, `40`, `70`). Segments run one at a time and in order; a segment can only start once the previous one has passed. |
 
 Marked geofence points are remembered for the rest of the attempt — later refreshes don't need to resend them; sending a new one replaces it.
+
+**Time-bound scanning.** A started test scans (the frontend polls this endpoint) until the event is detected, the tester presses Stop, or the test's time limit runs out. The limit is `test_case.time_limit_seconds` (also on the board): 5 min by default, 10 min for FOTA (#6), and for tests where the tester does something for a set time, that time + 5 min (#20 history: 8 min → 13 min; #40 packet drop: 15 min → 20 min). `check_config.time_limit_seconds` / `check_config.task_seconds` override it. The speed test (#15) has no test-level limit; each speed segment is limited to `min_duration_seconds` (30 s) + 5 min. A refresh after the limit without a pass marks the execution `incomplete` (Retry with test-start).
+
+Every snapshot carries:
+
+| Key | Meaning |
+|---|---|
+| `scan_state` | `scanning` / `detected` (passed — press Complete) / `stopped` / `timed_out` |
+| `test_started_at`, `scan_ended_at` | When the attempt started and when scanning ended (null while scanning). |
+| `scan_time_limit_seconds`, `scan_deadline`, `scan_remaining_seconds` | The limit, when it runs out, seconds left (null once ended). |
+
+The response also has `execution_status` (`in_progress` / `incomplete`). Test #15 snapshots add `speed_segments` (per-speed `state`, `started_at`, `ended_at`, `deadline`) and `stretches[]` (each with `segment_started_at` / `segment_ended_at`, the steady stretch's `stretch_started_at` / `stretch_ended_at`, and `scan_remaining_seconds`). Test #20 adds `emergency_history_count` / `emergency_history_coverage_seconds`: stored (EPB `SP`) packets on the emergency server must cover the same 2 min as the tracking server's H packets (`check_config.require_emergency_history`, default on).
 
 **Example — normal refresh**
 

@@ -1334,6 +1334,11 @@ class TechnicalOnboardingConfirmReceiptSerializer(serializers.Serializer):
 
 
 class TechnicalOnboardingTestCaseSerializer(serializers.ModelSerializer):
+    # How long a started test scans for its event (None for the speed test,
+    # which times each speed segment instead -- speed_segment_time_limit_seconds).
+    time_limit_seconds = serializers.IntegerField(read_only=True)
+    speed_segment_time_limit_seconds = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = TechnicalOnboardingTestCase
         fields = '__all__'
@@ -1379,6 +1384,17 @@ class TechnicalOnboardingRefreshTestLogSerializer(serializers.Serializer):
     # Geofence test only (optional): the IN / OUT points marked on the map.
     geofence_in = TechnicalOnboardingGeofencePointSerializer(required=False)
     geofence_out = TechnicalOnboardingGeofencePointSerializer(required=False)
+    # Tester pressed Stop: scan once more, then end the attempt (incomplete
+    # unless the event was already found).
+    stop = serializers.BooleanField(required=False, default=False)
+    # Speed test only: start / stop scanning for one target speed.
+    target_speed = serializers.IntegerField(required=False, min_value=1, max_value=300)
+    speed_action = serializers.ChoiceField(choices=['start', 'stop'], required=False)
+
+    def validate(self, attrs):
+        if attrs.get('speed_action') and not attrs.get('target_speed'):
+            raise serializers.ValidationError('target_speed is required with speed_action.')
+        return attrs
 
 
 class TechnicalOnboardingSendTestCommandSerializer(serializers.Serializer):
@@ -1429,6 +1445,7 @@ class TechnicalOnboardingDemoDeviceHistorySerializer(serializers.Serializer):
 class TechnicalOnboardingTestExecutionSerializer(serializers.ModelSerializer):
     test_case = TechnicalOnboardingTestCaseSerializer(read_only=True)
     demo_device = DeviceModelTechnicalOnboardingDemoDeviceSerializer(read_only=True)
+    scan_deadline = serializers.DateTimeField(read_only=True)
 
     class Meta:
         model = TechnicalOnboardingTestExecution

@@ -203,11 +203,110 @@ def _all_tests_complete(onboarding_request):
 
 
 def _window_start(execution):
+    """
+    Scans cover the whole attempt, from the moment Start was pressed. The
+    attempt itself is bounded by the test's time limit, so the floor only
+    matters for attempts started before time limits existed.
+    """
     test_case = execution.test_case
     now = timezone.now()
-    window_floor = now - timedelta(seconds=test_case.scan_window_seconds)
+    window = max(test_case.scan_window_seconds, test_case.time_limit_seconds or 0)
+    window_floor = now - timedelta(seconds=window)
     started_at = execution.started_at or window_floor
     return max(window_floor, started_at)
+
+
+def _parse_iso(value):
+    return datetime.fromisoformat(value) if isinstance(value, str) else value
+
+
+def _apply_scan_state(execution, snapshot, previous, now, stop=False, user=None):
+    """
+    Time-bound scanning: a started test keeps scanning until the event is
+    detected (snapshot passes), the tester presses Stop, or the test's
+    time limit runs out. Stopped / timed-out attempts become 'incomplete'
+    (retry with Start). Adds the scan_* keys and the attempt's start / end
+    times to the snapshot; mutates execution.status but doesn't save.
+    """
+    limit = execution.test_case.time_limit_seconds
+    deadline = execution.scan_deadline
+    snapshot['test_started_at'] = execution.started_at.isoformat() if execution.started_at else None
+    snapshot['scan_time_limit_seconds'] = limit
+    snapshot['scan_deadline'] = deadline.isoformat() if deadline else None
+
+    if snapshot.get('pass'):
+        state = 'detected'
+        already = previous.get('scan_state') == 'detected' and previous.get('scan_ended_at')
+        snapshot['scan_ended_at'] = already or now.isoformat()
+    elif stop:
+        state = 'stopped'
+        snapshot['scan_ended_at'] = now.isoformat()
+    elif deadline and now >= deadline:
+        state = 'timed_out'
+        snapshot['scan_ended_at'] = deadline.isoformat()
+    else:
+        state = 'scanning'
+        snapshot['scan_ended_at'] = None
+
+    if state in ('stopped', 'timed_out'):
+        why = 'Stopped by the tester' if state == 'stopped' else f'Time limit of {_duration(limit)} reached'
+        detail = snapshot.get('reason') or ''
+        snapshot['reason'] = f"{why} before the event was detected. {detail}".strip()
+        execution.status = 'incomplete'
+        execution.completed_at = now
+        execution.completed_by = user
+
+    snapshot['scan_state'] = state
+    snapshot['scan_remaining_seconds'] = (
+        max(0, int((deadline - now).total_seconds())) if deadline and state == 'scanning' else None
+    )
+    return snapshot
+
+
+def _update_speed_segments(execution, segments, data, now):
+    """
+    Speed test: apply the tester's Start / Stop for one target speed.
+    Segments run one at a time, in target order, and each is timed on its
+    own (min_duration_seconds + 5 min). Returns (segments, error).
+    """
+    segments = {key: dict(value) for key, value in (segments or {}).items()}
+    action, target = data.get('speed_action'), data.get('target_speed')
+    if not action:
+        return segments, None
+
+    test_case = execution.test_case
+    targets = _cfg(test_case).get('target_speeds_kmph', [20, 40, 70])
+    if target not in targets:
+        return segments, f"{target} km/h is not a target speed for this test ({', '.join(f'{t} km/h' for t in targets)})."
+    key = str(target)
+    current = segments.get(key) or {}
+
+    if action == 'stop':
+        if current.get('state') == 'scanning':
+            current['stop_requested'] = True
+            segments[key] = current
+        return segments, None
+
+    busy = next((k for k, v in segments.items() if v.get('state') == 'scanning' and k != key), None)
+    if busy:
+        return segments, f"{busy} km/h is still being scanned. Stop it before starting {target} km/h."
+    pending = next((t for t in targets[:targets.index(target)] if (segments.get(str(t)) or {}).get('state') != 'passed'), None)
+    if pending is not None:
+        return segments, f"Pass the {pending} km/h segment before starting {target} km/h."
+    if current.get('state') in ('passed', 'scanning'):
+        return segments, None
+
+    limit = test_case.speed_segment_time_limit_seconds
+    segments[key] = {
+        'target_speed_kmph': target,
+        'state': 'scanning',
+        'attempt': current.get('attempt', 0) + 1,
+        'started_at': now.isoformat(),
+        'ended_at': None,
+        'time_limit_seconds': limit,
+        'deadline': (now + timedelta(seconds=limit)).isoformat(),
+    }
+    return segments, None
 
 
 def _run_test_check(execution):
@@ -815,68 +914,137 @@ def _check_protocol_packet(execution, imei, window_start, now):
     }
 
 
+def _speed_stretch(packets, target, tolerance, max_gap, min_duration):
+    """The longest run of consecutive in-band packets (no gap above max_gap) for one target speed."""
+    runs = []
+    previous_in_band = False
+    for packet in packets:
+        in_band = abs(packet['speed'] - target) <= tolerance
+        if in_band and previous_in_band and (packet['time'] - runs[-1][-1]['time']).total_seconds() <= max_gap:
+            runs[-1].append(packet)
+        elif in_band:
+            runs.append([packet])
+        previous_in_band = in_band
+    if not runs:
+        return {'target_speed_kmph': target, 'passed': False, 'duration_seconds': 0, 'packet_count': 0,
+                'in_band_packets': 0, 'packets_seen': len(packets)}
+    run = max(runs, key=lambda r: (r[-1]['time'] - r[0]['time']).total_seconds())
+    duration = (run[-1]['time'] - run[0]['time']).total_seconds()
+    speeds = [p['speed'] for p in run]
+    return {
+        'target_speed_kmph': target,
+        'passed': duration >= min_duration,
+        'duration_seconds': round(duration, 1),
+        'packet_count': len(run),
+        'in_band_packets': sum(len(r) for r in runs),
+        'packets_seen': len(packets),
+        'average_speed_kmph': round(sum(speeds) / len(speeds), 2),
+        'min_speed_kmph': min(speeds),
+        'max_speed_kmph': max(speeds),
+        'stretch_started_at': run[0]['time'].isoformat(),
+        'stretch_ended_at': run[-1]['time'].isoformat(),
+        'start': _sample(run[0], role='stretch_start'),
+        'end': _sample(run[-1], role='stretch_end'),
+    }
+
+
 def _check_speed_accuracy(execution, imei, window_start, now):
     """
-    'speed_accuracy': for each target speed, a stretch of at least
-    min_duration_seconds where every PVT packet reports target +/-
-    tolerance_kmph. The stretch's start/end points are returned for the map.
+    'speed_accuracy': each target speed is its own timed segment, started
+    by the tester (see _update_speed_segments). A segment passes on a
+    stretch of at least min_duration_seconds where every PVT packet reports
+    target +/- tolerance_kmph, measured only on packets inside the segment
+    (start pressed -> passed / stopped / timed out). A scanning segment that
+    passes ends there; one that runs past its time limit times out and can
+    be started again. The stretch's start/end points are returned for the map.
     """
-    cfg = _cfg(execution.test_case)
+    test_case = execution.test_case
+    cfg = _cfg(test_case)
     targets = cfg.get('target_speeds_kmph', [20, 40, 70])
     tolerance = cfg.get('tolerance_kmph', 5)
-    min_duration = cfg.get('min_duration_seconds', 60)
+    min_duration = cfg.get('min_duration_seconds', 30)
     max_gap = cfg.get('max_packet_gap_seconds', 15)
-    packets = [p for p in _pvt_packets(imei, window_start) if p['speed'] is not None and p['latitude'] is not None]
+    segments = getattr(execution, 'speed_segments', None) or {}
+
+    scanning = [s for s in segments.values() if s.get('state') == 'scanning']
+    packets = []
+    if scanning:
+        since = min(_parse_iso(s['started_at']) for s in scanning)
+        packets = [p for p in _pvt_packets(imei, since) if p['speed'] is not None and p['latitude'] is not None]
 
     stretches, problems = [], []
     for target in targets:
-        # Runs of consecutive in-band packets with no packet gap above max_gap.
-        runs = []
-        previous_in_band = False
-        for packet in packets:
-            in_band = abs(packet['speed'] - target) <= tolerance
-            if in_band and previous_in_band and (packet['time'] - runs[-1][-1]['time']).total_seconds() <= max_gap:
-                runs[-1].append(packet)
-            elif in_band:
-                runs.append([packet])
-            previous_in_band = in_band
-        longest = max(runs, key=lambda r: (r[-1]['time'] - r[0]['time']).total_seconds()) if runs else None
-        best = ((longest[-1]['time'] - longest[0]['time']).total_seconds(), longest) if longest else None
-        if best:
-            duration, run = best
-            speeds = [p['speed'] for p in run]
-            stretches.append({
-                'target_speed_kmph': target,
-                'passed': duration >= min_duration,
-                'duration_seconds': round(duration, 1),
-                'packet_count': len(run),
-                'average_speed_kmph': round(sum(speeds) / len(speeds), 2),
-                'min_speed_kmph': min(speeds),
-                'max_speed_kmph': max(speeds),
-                'start': _sample(run[0]),
-                'end': _sample(run[-1]),
-            })
-            if duration < min_duration:
-                problems.append(
-                    f"{target} km/h: the longest steady stretch at {target - tolerance}-{target + tolerance} km/h "
-                    f"was {_duration(duration)} ({_ist(run[0]['time'])}-{_ist(run[-1]['time'])}); needs {_duration(min_duration)}."
-                )
+        seg = segments.get(str(target))
+        if not seg:
+            stretches.append({'target_speed_kmph': target, 'passed': False, 'state': 'not_started',
+                              'duration_seconds': 0, 'packet_count': 0})
+            problems.append(f"{target} km/h: not started yet.")
+            continue
+
+        if seg.get('state') == 'scanning':
+            seg_start = _parse_iso(seg['started_at'])
+            deadline = _parse_iso(seg['deadline'])
+            in_segment = [p for p in packets if seg_start <= p['time'] <= min(now, deadline)]
+            stretch = _speed_stretch(in_segment, target, tolerance, max_gap, min_duration)
+            if stretch['passed']:
+                seg.update(state='passed', ended_at=now.isoformat())
+            elif seg.get('stop_requested'):
+                seg.update(state='stopped', ended_at=now.isoformat())
+            elif now >= deadline:
+                seg.update(state='timed_out', ended_at=deadline.isoformat())
+            seg.pop('stop_requested', None)
+            seg['stretch'] = stretch
+        segments[str(target)] = seg
+
+        stretch = dict(seg.get('stretch') or {'target_speed_kmph': target, 'passed': False,
+                                              'duration_seconds': 0, 'packet_count': 0})
+        state = seg['state']
+        remaining = None
+        if state == 'scanning':
+            remaining = max(0, int((_parse_iso(seg['deadline']) - now).total_seconds()))
+        stretch.update({
+            'state': state,
+            'passed': state == 'passed',
+            'segment_started_at': seg.get('started_at'),
+            'segment_ended_at': seg.get('ended_at'),
+            'segment_deadline': seg.get('deadline'),
+            'time_limit_seconds': seg.get('time_limit_seconds'),
+            'scan_remaining_seconds': remaining,
+            'attempt': seg.get('attempt'),
+        })
+        stretches.append(stretch)
+
+        if state == 'passed':
+            continue
+        band = f"{target - tolerance}-{target + tolerance} km/h"
+        if stretch.get('stretch_started_at'):
+            detail = (f"the longest steady stretch at {band} was {_duration(stretch['duration_seconds'])} "
+                      f"({_ist(stretch['stretch_started_at'])}-{_ist(stretch['stretch_ended_at'])}); needs {_duration(min_duration)}")
         else:
-            stretches.append({'target_speed_kmph': target, 'passed': False, 'duration_seconds': 0, 'packet_count': 0})
-            problems.append(f"{target} km/h: no packet reported a speed between {target - tolerance} and {target + tolerance} km/h.")
+            detail = f"no packet reported a speed between {target - tolerance} and {target + tolerance} km/h"
+        prefix = {
+            'scanning': 'scanning, so far',
+            'stopped': 'stopped by the tester;',
+            'timed_out': f"time limit of {_duration(seg.get('time_limit_seconds') or 0)} reached;",
+        }.get(state, '')
+        suffix = '' if state == 'scanning' else ' Start it again to retry.'
+        problems.append(f"{target} km/h: {prefix} {detail}.{suffix}")
 
     for s in stretches:
         s['status'] = 'passed' if s['passed'] else 'failed'
     passed_speeds = [s['target_speed_kmph'] for s in stretches if s['passed']]
     failed_speeds = [s['target_speed_kmph'] for s in stretches if not s['passed']]
     summary = ', '.join(
-        f"{s['target_speed_kmph']} km/h: {'PASSED' if s['passed'] else 'FAILED'}"
-        + (f" ({_duration(s['duration_seconds'])} steady)" if s['duration_seconds'] else '')
+        f"{s['target_speed_kmph']} km/h: {s['state'].replace('_', ' ').upper()}"
+        + (f" ({_duration(s['duration_seconds'])} steady)" if s.get('duration_seconds') else '')
         for s in stretches
     )
     reason = _fail_reason(problems)
     if reason and passed_speeds:
         reason = f"Passed: {', '.join(f'{t} km/h' for t in passed_speeds)}. " + reason
+    samples = []
+    for s in stretches:
+        samples.extend(x for x in (s.get('start'), s.get('end')) if x)
     return {
         'matched_count': len(passed_speeds),
         'required': len(targets),
@@ -885,9 +1053,12 @@ def _check_speed_accuracy(execution, imei, window_start, now):
         'summary': summary,
         'passed_speeds_kmph': passed_speeds,
         'failed_speeds_kmph': failed_speeds,
-        'samples': [s['start'] for s in stretches if s.get('start')][:5],
+        'active_speed_kmph': next((s['target_speed_kmph'] for s in stretches if s['state'] == 'scanning'), None),
+        'samples': samples,
         'stretches': stretches,
-        'criteria': {'target_speeds_kmph': targets, 'tolerance_kmph': tolerance, 'min_duration_seconds': min_duration},
+        'speed_segments': segments,
+        'criteria': {'target_speeds_kmph': targets, 'tolerance_kmph': tolerance, 'min_duration_seconds': min_duration,
+                     'segment_time_limit_seconds': test_case.speed_segment_time_limit_seconds},
     }
 
 
@@ -1022,19 +1193,10 @@ def _check_geofence_crossing(execution, imei, window_start, now):
     }
 
 
-def _check_history_coverage(execution, imei, window_start, now):
-    """
-    'history_coverage': history (H) packets sent after the network came
-    back must cover at least min_coverage_seconds of the no-network
-    period, measured on device time across one continuous stretch.
-    """
-    cfg = _cfg(execution.test_case)
-    min_coverage = cfg.get('min_coverage_seconds', 120)
-    max_gap = cfg.get('max_gap_seconds', 60)
-    history = [p for p in _pvt_packets(imei, window_start) if p['packet_status'] == 'H' and p['time_source'] == 'device']
-
+def _longest_run(packets, max_gap):
+    """(span_seconds, run) of the longest stretch of packets with no gap above max_gap, or None."""
     best, run = None, []
-    for packet in history + [None]:
+    for packet in packets + [None]:
         if packet is not None and (not run or (packet['time'] - run[-1]['time']).total_seconds() <= max_gap):
             run.append(packet)
             continue
@@ -1043,26 +1205,84 @@ def _check_history_coverage(execution, imei, window_start, now):
             if best is None or span > best[0]:
                 best = (span, run)
         run = [packet] if packet is not None else []
+    return best
 
+
+# EPB packet status for a stored (buffered) emergency packet; NM = live.
+EPB_STORED_STATUSES = ('SP', 'H')
+
+
+def _emergency_history_packets(imei, window_start):
+    """Stored (SP) EPB packets in GPSemDataLog since window_start, oldest first by device time."""
+    packets, seen = [], set()
+    for raw_data, server_time in _scan_rows(GPSemDataLog, imei, window_start):
+        for frag in _packets_in_row(raw_data):
+            if frag in seen or not _packet_type_in_header(frag, 'EPB'):
+                continue
+            seen.add(frag)
+            info = _epb_packet_info(frag, server_time)
+            if (info.get('packet_status') or '').upper() in EPB_STORED_STATUSES and info['time_source'] == 'device':
+                packets.append({'raw_data': frag, 'time': info['time']})
+    packets.sort(key=lambda p: p['time'])
+    return packets
+
+
+def _check_history_coverage(execution, imei, window_start, now):
+    """
+    'history_coverage': stored packets sent after the network came back
+    must cover at least min_coverage_seconds of the no-network period,
+    measured on device time across one continuous stretch -- on both
+    servers: history (H) PVT packets in the tracking log and, with
+    check_config.require_emergency_history (default on), stored (SP) EPB
+    packets in the emergency log over the same window.
+    """
+    cfg = _cfg(execution.test_case)
+    min_coverage = cfg.get('min_coverage_seconds', 120)
+    max_gap = cfg.get('max_gap_seconds', 60)
+    require_emergency = cfg.get('require_emergency_history', True)
+    history = [p for p in _pvt_packets(imei, window_start) if p['packet_status'] == 'H' and p['time_source'] == 'device']
+    em_history = _emergency_history_packets(imei, window_start)
+
+    problems, samples = [], []
+    coverage = em_coverage = 0
     if not history:
-        reason = ("No history (H) packets received since the test started. Keep the device in the Faraday box for "
-                  "3 minutes, then bring it to open sky so it uploads the stored packets.")
-        coverage, samples = 0, []
+        problems.append("No history (H) packets received on the tracking server since the test started. Keep the "
+                        "device in the Faraday box for 3 minutes, then bring it to open sky so it uploads the stored packets.")
     else:
-        coverage, run = best
-        samples = [_sample(run[0], role='first_history'), _sample(run[-1], role='last_history')]
-        reason = None if coverage >= min_coverage else (
-            f"History packets cover only {_duration(coverage)} ({_ist(run[0]['time'])}-{_ist(run[-1]['time'])}, "
-            f"{len(run)} packets); need at least {_duration(min_coverage)} of the no-network period."
-        )
+        coverage, run = _longest_run(history, max_gap)
+        samples += [_sample(run[0], role='first_history'), _sample(run[-1], role='last_history')]
+        if coverage < min_coverage:
+            problems.append(
+                f"History packets cover only {_duration(coverage)} ({_ist(run[0]['time'])}-{_ist(run[-1]['time'])}, "
+                f"{len(run)} packets); need at least {_duration(min_coverage)} of the no-network period."
+            )
+
+    if em_history:
+        em_coverage, em_run = _longest_run(em_history, max_gap)
+        samples += [
+            {'raw_data': em_run[0]['raw_data'], 'timestamp': em_run[0]['time'].isoformat(), 'role': 'first_emergency_history'},
+            {'raw_data': em_run[-1]['raw_data'], 'timestamp': em_run[-1]['time'].isoformat(), 'role': 'last_emergency_history'},
+        ]
+        if require_emergency and em_coverage < min_coverage:
+            problems.append(
+                f"Stored emergency (EPB SP) packets cover only {_duration(em_coverage)} "
+                f"({_ist(em_run[0]['time'])}-{_ist(em_run[-1]['time'])}, {len(em_run)} packets); need at least "
+                f"{_duration(min_coverage)} of the no-network period."
+            )
+    elif require_emergency:
+        problems.append("No stored emergency (EPB SP) packets received on the emergency server since the test "
+                        "started. Keep SOS active while the device is in the Faraday box so it stores emergency packets too.")
+
     return {
         'matched_count': len(history),
+        'emergency_history_count': len(em_history),
         'required': 1,
-        'pass': reason is None,
-        'reason': reason,
+        'pass': not problems,
+        'reason': _fail_reason(problems),
         'samples': samples,
         'history_coverage_seconds': round(coverage, 1),
-        'criteria': {'min_coverage_seconds': min_coverage},
+        'emergency_history_coverage_seconds': round(em_coverage, 1),
+        'criteria': {'min_coverage_seconds': min_coverage, 'require_emergency_history': require_emergency},
     }
 
 
@@ -1483,7 +1703,7 @@ def _epb_packet_info(raw_data, server_time):
       EPB,EMR,<imei>,NM,<ddmmyyyyHHMMSS>,A,<lat>,N,<lon>,E,<alt>,<speed>,...
     """
     parts = _packet_fields(raw_data)
-    info = {'time': server_time, 'time_source': 'server', 'valid_gps': False, 'speed': None}
+    info = {'time': server_time, 'time_source': 'server', 'valid_gps': False, 'speed': None, 'packet_status': None}
     lat_idx = next(
         (i for i in range(2, len(parts) - 3)
          if parts[i + 1].upper() in ('N', 'S') and parts[i + 3].upper() in ('E', 'W')),
@@ -1493,6 +1713,7 @@ def _epb_packet_info(raw_data, server_time):
         return info
 
     stamp = parts[lat_idx - 2]
+    info['packet_status'] = parts[lat_idx - 3] if lat_idx >= 3 else None
     for fmt in ('%d%m%Y%H%M%S', '%d%m%y%H%M%S'):
         try:
             device_time = datetime.strptime(stamp, fmt).replace(tzinfo=dt_timezone.utc)
@@ -2218,12 +2439,24 @@ def superadmin_refresh_test_log(request):
             points[key] = data[field]
     execution.geofence_points = points
 
-    snapshot = _run_test_check(execution)
-    execution.test_log_snapshot = snapshot
-    execution.last_refreshed_at = timezone.now()
-    execution.save(update_fields=['test_log_snapshot', 'last_refreshed_at'])
+    previous = execution.test_log_snapshot or {}
+    now = timezone.now()
+    if execution.test_case.source_table == 'speed_accuracy':
+        segments, error = _update_speed_segments(execution, previous.get('speed_segments'), data, now)
+        if error:
+            return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
+        execution.speed_segments = segments
 
-    return Response(snapshot, status=status.HTTP_200_OK)
+    snapshot = _run_test_check(execution)
+    _apply_scan_state(execution, snapshot, previous, now, stop=data.get('stop'), user=request.user)
+    execution.test_log_snapshot = snapshot
+    execution.last_refreshed_at = now
+    update_fields = ['test_log_snapshot', 'last_refreshed_at']
+    if execution.status != 'in_progress':
+        update_fields += ['status', 'completed_at', 'completed_by']
+    execution.save(update_fields=update_fields)
+
+    return Response(dict(snapshot, execution_status=execution.status), status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])

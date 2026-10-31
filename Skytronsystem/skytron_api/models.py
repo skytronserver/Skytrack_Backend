@@ -1153,6 +1153,42 @@ class TechnicalOnboardingTestCase(models.Model):
     def __str__(self):
         return f"#{self.serial_no} {self.name}"
 
+    # How long a started test keeps scanning for its event before it times
+    # out: 5 min by default, 10 min for FOTA, and for tests where the tester
+    # has to do something for a set time (check_config.task_seconds, e.g.
+    # 3 min in the Faraday box + 5 min under open sky) that time + 5 min. check_config.time_limit_seconds
+    # overrides all of these. None = no test-level limit (the speed test
+    # times each speed segment instead, see speed_segment_time_limit_seconds).
+    DEFAULT_TIME_LIMIT_SECONDS = 5 * 60
+    FOTA_TIME_LIMIT_SECONDS = 10 * 60
+    TASK_EXTRA_SECONDS = 5 * 60
+
+    @property
+    def time_limit_seconds(self):
+        cfg = self.check_config or {}
+        if cfg.get('time_limit_seconds'):
+            return int(cfg['time_limit_seconds'])
+        if self.source_table == 'speed_accuracy':
+            return None
+        if self.source_table == 'firmware_diff':
+            return self.FOTA_TIME_LIMIT_SECONDS
+        task = cfg.get('task_seconds')
+        if task is None and self.source_table == 'pvt_packet_drop':
+            task = self.scan_window_seconds or 15 * 60
+        if task is None and self.source_table == 'history_coverage':
+            task = 8 * 60  # 3 min in the Faraday box + 5 min under open sky
+        if task:
+            return int(task) + self.TASK_EXTRA_SECONDS
+        return self.DEFAULT_TIME_LIMIT_SECONDS
+
+    @property
+    def speed_segment_time_limit_seconds(self):
+        """Speed test: each target speed is held for min_duration_seconds, + 5 min."""
+        if self.source_table != 'speed_accuracy':
+            return None
+        min_duration = (self.check_config or {}).get('min_duration_seconds', 30)
+        return int(min_duration) + self.TASK_EXTRA_SECONDS
+
 
 class TechnicalOnboardingTestExecution(models.Model):
     """
@@ -1208,6 +1244,14 @@ class TechnicalOnboardingTestExecution(models.Model):
             models.Index(fields=['onboarding_request', 'test_case']),
             models.Index(fields=['onboarding_request', 'status']),
         ]
+
+    @property
+    def scan_deadline(self):
+        """When the current attempt stops scanning for its event, or None."""
+        limit = self.test_case.time_limit_seconds
+        if not self.started_at or not limit:
+            return None
+        return self.started_at + timedelta(seconds=limit)
 
 
 class TechnicalOnboardingCommandDispatch(models.Model):
