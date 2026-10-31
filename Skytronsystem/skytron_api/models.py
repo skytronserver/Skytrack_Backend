@@ -1101,10 +1101,17 @@ class TechnicalOnboardingTestCase(models.Model):
         ('history_coverage', 'History (H) Packets Covering the No-Network Period (GPSDataLog)'),
         ('unique_cell_towers', 'Unique Cell Towers Seen (GPSDataLog)'),
         ('command_reply', 'Command Echo + Expected Reply in an OT,12 Packet (GPSDataLog)'),
+        ('activation_sms', 'Activation Reply (ACTVR) Received by SMS (AirtelSmsInLog / SmppSmsIn)'),
+        ('sms_fallback', 'Fallback SMS from the Device Received by SMS (AirtelSmsInLog / SmppSmsIn)'),
         ('manual', 'Manual / Observed'),
     ]
 
+    # serial_no is the test's fixed identity (code and old executions refer
+    # to it); sequence is the order tests run in and the number testers see:
+    # 1..N over the active tests, indoor tests first, then outdoor ones.
+    # Inactive tests have no sequence.
     serial_no = models.PositiveSmallIntegerField(unique=True, db_index=True)
+    sequence = models.PositiveSmallIntegerField(blank=True, null=True, db_index=True)
     name = models.CharField(max_length=255)
     description = models.TextField()
 
@@ -1149,13 +1156,13 @@ class TechnicalOnboardingTestCase(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['serial_no']
+        ordering = ['sequence', 'serial_no']
 
     def __str__(self):
-        return f"#{self.serial_no} {self.name}"
+        return f"#{self.sequence or '-'} (serial {self.serial_no}) {self.name}"
 
     # How long a started test keeps scanning for its event before it times
-    # out: 5 min by default, 10 min for FOTA, and for tests where the tester
+    # out: 5 min by default, 10 min for FOTA and the SMS tests, and for tests where the tester
     # has to do something for a set time (check_config.task_seconds, e.g.
     # 3 min in the Faraday box + 5 min under open sky) that time + 5 min. check_config.time_limit_seconds
     # overrides all of these. None = no test-level limit (the speed test
@@ -1171,8 +1178,8 @@ class TechnicalOnboardingTestCase(models.Model):
             return int(cfg['time_limit_seconds'])
         if self.source_table == 'speed_accuracy':
             return None
-        if self.source_table == 'firmware_diff':
-            return self.FOTA_TIME_LIMIT_SECONDS
+        if self.source_table in ('firmware_diff', 'activation_sms', 'sms_fallback'):
+            return self.FOTA_TIME_LIMIT_SECONDS  # FOTA download / SMS delivery delays
         task = cfg.get('task_seconds')
         if task is None and self.source_table == 'pvt_packet_drop':
             task = self.scan_window_seconds or 15 * 60

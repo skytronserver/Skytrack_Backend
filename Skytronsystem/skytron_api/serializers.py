@@ -1205,32 +1205,39 @@ class PointOfInterestSerializer(serializers.ModelSerializer):
 def build_checkpoint_status_map(demo_device_ids):
     """
     checkpoint_status dict for each demo device id, using one query for all
-    of them instead of one query per device.
+    of them instead of one query per device. *_test_no are serial numbers
+    (kept for old clients); *_sequence are the numbers testers see.
     """
     demo_device_ids = list(demo_device_ids)
-    progress = {device_id: [None, None] for device_id in demo_device_ids}  # [last_completed, next_test]
+    progress = {device_id: [None, None, 0] for device_id in demo_device_ids}  # [last_completed, next_test, completed]
+    total_tests = TechnicalOnboardingTestCase.objects.filter(active=True).count() if demo_device_ids else 0
     if demo_device_ids:
         executions = TechnicalOnboardingTestExecution.objects.filter(
             demo_device_id__in=demo_device_ids, test_case__active=True
-        ).order_by('test_case__serial_no').values_list(
-            'demo_device_id', 'status', 'test_case__serial_no', 'test_case__name'
+        ).order_by('test_case__sequence', 'test_case__serial_no').values_list(
+            'demo_device_id', 'status', 'test_case__serial_no', 'test_case__sequence', 'test_case__name'
         )
-        for device_id, execution_status, serial_no, name in executions:
+        for device_id, execution_status, serial_no, sequence, name in executions:
             entry = progress[device_id]
             if execution_status == 'complete':
-                entry[0] = (serial_no, name)
+                entry[0] = (serial_no, name, sequence)
+                entry[2] += 1
             elif entry[1] is None:
-                entry[1] = (serial_no, name, execution_status)
+                entry[1] = (serial_no, name, execution_status, sequence)
 
     return {
         device_id: {
             'last_completed_test_no': last_completed[0] if last_completed else None,
             'last_completed_test_name': last_completed[1] if last_completed else None,
+            'last_completed_sequence': last_completed[2] if last_completed else None,
             'next_test_no': next_test[0] if next_test else None,
             'next_test_name': next_test[1] if next_test else None,
             'next_test_status': next_test[2] if next_test else None,
+            'next_sequence': next_test[3] if next_test else None,
+            'completed_count': completed,
+            'total_tests': total_tests,
         }
-        for device_id, (last_completed, next_test) in progress.items()
+        for device_id, (last_completed, next_test, completed) in progress.items()
     }
 
 
@@ -1402,6 +1409,7 @@ class TechnicalOnboardingSendTestCommandSerializer(serializers.Serializer):
     command_key = serializers.CharField(required=False, allow_blank=True, max_length=50)
     value = serializers.CharField(required=False, allow_blank=True, max_length=255)
     command = serializers.CharField(required=False, allow_blank=True, max_length=400)
+    channel = serializers.ChoiceField(choices=['mqtt', 'sms'], required=False)
 
     def validate(self, attrs):
         if not attrs.get('command_key') and not (attrs.get('command') or '').strip():

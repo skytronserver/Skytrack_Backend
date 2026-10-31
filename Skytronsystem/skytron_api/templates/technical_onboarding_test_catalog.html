@@ -375,496 +375,62 @@
 
   <header>
     <p class="eyebrow">Skytrack &middot; Technical Onboarding</p>
-    <h1>39-checkpoint device certification catalog</h1>
+    <h1>{{ total }}-checkpoint device certification catalog</h1>
     <p class="lede">
-      What each checkpoint needs to see, where the evidence lives, and how it's confirmed &mdash;
-      pulled from the live <code>TechnicalOnboardingTestCase</code> catalog. Checkpoints unlock
-      in order: a device can't reach checkpoint <em>N</em> until checkpoint <em>N&minus;1</em> is
-      complete on all 5 demo units.
+      What each checkpoint needs to see and how it's confirmed &mdash; read from the live
+      <code>TechnicalOnboardingTestCase</code> catalog. Checkpoints unlock in order: a device can't
+      reach checkpoint <em>N</em> until checkpoint <em>N&minus;1</em> is complete on all demo units.
+      Indoor checkpoints come first, then the outdoor (road) ones.
     </p>
     <div class="stats">
       <div class="stat">
-        <div class="stat-num">39</div>
+        <div class="stat-num">{{ total }}</div>
         <div class="stat-label">total checkpoints</div>
       </div>
       <div class="stat">
-        <div class="stat-num">9</div>
-        <div class="stat-label">fully automatic &mdash; DB evidence alone decides</div>
+        <div class="stat-num">{{ automatic }}</div>
+        <div class="stat-label">fully automatic &mdash; device data alone decides</div>
       </div>
       <div class="stat">
-        <div class="stat-num">30</div>
-        <div class="stat-label">hybrid &mdash; DB evidence <em>and</em> tester sign-off both required</div>
+        <div class="stat-num">{{ hybrid }}</div>
+        <div class="stat-label">hybrid &mdash; device data <em>and</em> tester sign-off both required</div>
       </div>
       <div class="stat">
-        <div class="stat-num">0</div>
-        <div class="stat-label">fully manual &mdash; none left</div>
+        <div class="stat-num">{{ manual }}</div>
+        <div class="stat-label">fully manual</div>
       </div>
     </div>
     <div class="legend">
-      <span class="legend-item"><span class="legend-swatch" style="background:var(--accent)"></span>DB table checked</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:var(--accent)"></span>data source checked</span>
       <span class="legend-item"><span class="legend-swatch" style="background:var(--hybrid)"></span>+ tester sign-off also required to pass</span>
       <span class="legend-item"><span class="legend-swatch" style="background:var(--optional)"></span>optional checkpoint</span>
     </div>
   </header>
 
+  {% for group in groups %}
   <section class="group">
     <div class="group-head">
-      <span class="group-letter">A</span>
-      <h2 class="group-title">SOS &amp; emergency response</h2>
-      <span class="group-range">#1&ndash;5</span>
+      <span class="group-letter">{{ group.letter }}</span>
+      <h2 class="group-title">{{ group.title }}</h2>
+      <span class="group-range">{% if group.tests %}#{{ group.first }}&ndash;{{ group.last }}{% endif %}</span>
     </div>
+    {% for t in group.tests %}
     <div class="row">
-      <div class="row-id"><span class="row-num">01</span><span class="chip chip-auto">GPSemDataLog</span></div>
+      <div class="row-id"><span class="row-num">{{ t.sequence|stringformat:"02d" }}</span>{% if t.source_table == 'manual' %}<span class="chip chip-manual">Manual</span>{% else %}<span class="chip chip-auto">{{ t.source_label }}</span>{% endif %}{% if t.requires_manual_confirmation %}<span class="chip chip-hybrid">+ Confirm</span>{% endif %}{% if t.is_optional %}<span class="chip chip-optional">Optional</span>{% endif %}</div>
       <div class="row-body">
-        <h3>SOS button -&gt; Emergency Server (5s cadence)</h3>
-        <p>Press the physical SOS button and confirm the emergency packet reaches the Emergency Server once every 5 seconds.</p>
-        <div class="criteria">Scans <strong>GPSemDataLog</strong> for <code>EMR</code> &middot; needs <strong>&ge;2</strong> matches within a <strong>5&nbsp;min</strong> window &middot; consecutive packets must land <strong>&le;7s</strong> apart.</div>
+        <h3>{{ t.name }}</h3>
+        {% if t.category %}<p>{{ t.category }}{% if t.test_environment %} &middot; {{ t.test_environment }}{% endif %}</p>{% endif %}
+        <div class="criteria">{{ t.expected_result|default:t.description }}</div>
+        {% if t.requires_manual_confirmation %}<div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the result after the automated check has passed.</div>{% endif %}
       </div>
     </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">02</span><span class="chip chip-auto">GPSemDataLog</span></div>
-      <div class="row-body">
-        <h3>BLE SOS -&gt; Emergency Server (5s cadence)</h3>
-        <p>Trigger SOS from the BLE mobile app and confirm the BLE-tagged emergency packet reaches the Emergency Server once every 5 seconds.</p>
-        <div class="criteria">Scans <strong>GPSemDataLog</strong> for <code>EMR.*\{SOS_PUB_</code> &middot; needs <strong>&ge;2</strong> matches within a <strong>5&nbsp;min</strong> window &middot; consecutive packets must land <strong>&le;7s</strong> apart.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">03</span><span class="chip chip-auto">GPSDataLog</span></div>
-      <div class="row-body">
-        <h3>SOS button -&gt; Tracking Server (Start + NR SOS=1)</h3>
-        <p>After the physical SOS button, confirm an Emergency Start packet reaches the Tracking Server, followed by NR packets carrying SOS&nbsp;=&nbsp;1 every 5 seconds.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>^(?!.*\{SOS_PUB_).*,EA,10,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">04</span><span class="chip chip-auto">GPSDataLog</span></div>
-      <div class="row-body">
-        <h3>BLE SOS -&gt; Tracking Server (Start + NR SOS=1)</h3>
-        <p>Same as #3, triggered from the BLE app: a BLE Emergency Start packet, then NR packets with SOS&nbsp;=&nbsp;1 every 5 seconds.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,EA,10,.*\{SOS_PUB_</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">05</span><span class="chip chip-auto">GPSemDataLog</span></div>
-      <div class="row-body">
-        <h3>SOS Stop on both servers</h3>
-        <p>Send the SOS Stop command from the server and confirm the alert clears on both the Emergency Server and the Tracking Server.</p>
-        <div class="criteria">Scans <strong>GPSemDataLog</strong> for <code>SEM</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-      </div>
-    </div>
+    {% endfor %}
   </section>
-
-  <section class="group">
-    <div class="group-head">
-      <span class="group-letter">B</span>
-      <h2 class="group-title">Firmware, power &amp; driving-behavior bench tests</h2>
-      <span class="group-range">#6&ndash;13</span>
-    </div>
-    <div class="row">
-      <div class="row-id"><span class="row-num">06</span><span class="chip chip-auto">GPSDataLog</span></div>
-      <div class="row-body">
-        <h3>FOTA upgrade A -&gt; B</h3>
-        <p>Push a firmware-over-the-air upgrade and confirm the device moves from Version A to Version B.</p>
-        <div class="criteria">Reads the firmware-version field (3rd field) out of every PVT/HLM packet in <strong>GPSDataLog</strong> for this device &middot; needs <strong>&ge;2</strong> distinct version strings within a <strong>5&nbsp;min</strong> window &mdash; direct proof the firmware actually changed, not just that an upgrade command was sent.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">07</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Internal battery voltage (3 levels)</h3>
-        <p>Confirm the internal battery voltage reading at three distinct voltage levels.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the reported voltage matches a reference meter, at all 3 levels.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">08</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>External battery/supply voltage (3 levels)</h3>
-        <p>Confirm the external battery/supply voltage reading at three distinct voltage levels.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the reported voltage matches a reference meter, at all 3 levels.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">09</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Ignition ON/OFF status</h3>
-        <p>Confirm the device correctly reports ignition switch ON and OFF states.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the reported ignition state matches the physical switch, both ways.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">10</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Harsh-braking event trigger</h3>
-        <p>Confirm the harsh-braking event fires at the configured speed threshold, including a false-positive and a false-negative pass.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the event fired at the right threshold, and stayed silent just below it.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">11</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Harsh-acceleration event trigger</h3>
-        <p>Confirm the harsh-acceleration event fires at the configured speed threshold, including a false-positive and a false-negative pass.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the event fired at the right threshold, and stayed silent just below it.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">12</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Rough-turning event trigger</h3>
-        <p>Confirm the rough-turning event fires at the configured threshold, including a false-positive and a false-negative pass.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the event fired at the right threshold, and stayed silent just below it.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">13</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Tilt-event trigger</h3>
-        <p>Confirm the tilt-event alert fires correctly when the device/vehicle is tilted past its threshold.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the tilt event fired at the correct angle.</div>
-      </div>
-    </div>
-  </section>
-
-  <section class="group">
-    <div class="group-head">
-      <span class="group-letter">C</span>
-      <h2 class="group-title">Location, signal &amp; connectivity</h2>
-      <span class="group-range">#14&ndash;15, 20&ndash;24</span>
-    </div>
-    <div class="row">
-      <div class="row-id"><span class="row-num">14</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>GPS speed accuracy</h3>
-        <p>Confirm reported GPS speed against a reference device, within the agreed tolerance.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> reported speed matches a reference GPS within tolerance.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">15</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Geofence entry/exit accuracy</h3>
-        <p>Confirm geofence entry/exit events fire within 50 metres of the actual boundary.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the entry/exit point is within 50m of the real boundary.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">20</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>A-GPS via primary SIM/profile</h3>
-        <p>Confirm the device obtains and reports cell-tower-assisted location via the primary SIM/profile, matching reference location data.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the A-GPS fix is close to the known reference location.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">21</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>A-GPS via secondary SIM/profile</h3>
-        <p>Same as #20, on the secondary SIM/profile.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the A-GPS fix is close to the known reference location.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">22</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Satellite/GPS signal loss and recovery</h3>
-        <p>Confirm the device recovers automatically once GPS signal is restored, with no manual intervention needed.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> recovery happened without any manual nudge.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">23</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>eSIM switch: primary -&gt; secondary</h3>
-        <p>Confirm the eSIM profile switches cleanly from primary to secondary.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the active profile actually switched, not just packets continuing.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">24</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>eSIM switch: secondary -&gt; primary</h3>
-        <p>Confirm the eSIM profile switches cleanly back from secondary to primary.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the active profile actually switched, not just packets continuing.</div>
-      </div>
-    </div>
-  </section>
-
-  <section class="group">
-    <div class="group-head">
-      <span class="group-letter">D</span>
-      <h2 class="group-title">Protocol field validation</h2>
-      <span class="group-range">#25&ndash;30</span>
-    </div>
-    <div class="row">
-      <div class="row-id"><span class="row-num">25</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Login packet protocol validation</h3>
-        <p>Validate the Login packet structure, field by field.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>^\$[A-Z0-9]+,\$\d{15},</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> every individual field in the sampled login packet is correct.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">26</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Health packet protocol validation</h3>
-        <p>Validate the Health packet structure, field by field.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,HLM,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> every individual field in the sampled health packet is correct.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">27</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Emergency Start packet protocol validation</h3>
-        <p>Validate the Emergency Start packet on both the Emergency Server and Tracking Server, field by field.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>^(?!.*\{SOS_PUB_).*,EA,10,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> every field is correct, and the Emergency-Server side also received it.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">28</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>BLE Emergency packet protocol validation</h3>
-        <p>Validate the BLE Emergency packet on both servers, field by field.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,EA,10,.*\{SOS_PUB_</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> every field is correct, and the Emergency-Server side also received it.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">29</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Tracking/NR packet protocol validation</h3>
-        <p>Validate the Tracking/NR (PVT) packet structure, field by field.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> every individual field in the sampled PVT packet is correct.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">30</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>Emergency Stop packet protocol validation</h3>
-        <p>Validate the Emergency Stop packet on both servers, field by field.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,EA,11,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> every field is correct, and the Emergency-Server side also cleared.</div>
-      </div>
-    </div>
-  </section>
-
-  <section class="group">
-    <div class="group-head">
-      <span class="group-letter">E</span>
-      <h2 class="group-title">Battery, ignition &amp; tamper alerts</h2>
-      <span class="group-range">#16&ndash;19, 31&ndash;36</span>
-    </div>
-    <div class="row">
-      <div class="row-id"><span class="row-num">16</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>External power disconnection detection</h3>
-        <p>Confirm the device detects and reports external power being disconnected.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the disconnect alert matches the moment power was actually pulled.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">17</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>SOS harness disconnection trigger</h3>
-        <p>Confirm disconnecting the SOS harness fires the corresponding alert.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the alert matches the moment the harness was actually disconnected.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">18</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span><span class="chip chip-optional">Optional</span></div>
-      <div class="row-body">
-        <h3>Device-box tamper alert (optional)</h3>
-        <p>Confirm the device-box tamper alert, where the hardware supports it. Not required to pass certification.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the tamper alert fired, on hardware that supports it.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">19</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>History-data storage &amp; transmission (Faraday box)</h3>
-        <p>Place the device in a Faraday box to simulate signal loss, then confirm stored history data transmits correctly once signal returns.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the history data recovered after the Faraday box is complete and in order.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">31</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>“Main Battery Disconnected” alert</h3>
-        <p>Confirm this alert fires when the main battery is disconnected.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the alert matches the moment the main battery was actually disconnected.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">32</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>“Low Battery” alert</h3>
-        <p>Confirm this alert fires when battery level drops below threshold.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the alert matches the moment battery actually crossed the low threshold.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">33</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>“Low Battery Removed/Cleared” alert</h3>
-        <p>Confirm this alert clears once the battery is charged back above threshold.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the clear matches the moment battery was actually recharged.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">34</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>“Main Battery Reconnected” alert</h3>
-        <p>Confirm this alert fires when the main battery is reconnected.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the alert matches the moment the main battery was actually reconnected.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">35</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>“Ignition ON” alert</h3>
-        <p>Confirm this alert fires the moment ignition is switched on.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the alert matches the moment ignition was actually switched on.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">36</span><span class="chip chip-auto">GPSDataLog</span><span class="chip chip-hybrid">+ Confirm</span></div>
-      <div class="row-body">
-        <h3>“Ignition OFF” alert</h3>
-        <p>Confirm this alert fires the moment ignition is switched off.</p>
-        <div class="criteria">Scans <strong>GPSDataLog</strong> for <code>,PVT,|\$PVT,</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-        <div class="confirm-note"><span class="confirm-label">Tester still confirms</span> the alert matches the moment ignition was actually switched off.</div>
-      </div>
-    </div>
-  </section>
-
-  <section class="group">
-    <div class="group-head">
-      <span class="group-letter">F</span>
-      <h2 class="group-title">OTA commands &amp; activation</h2>
-      <span class="group-range">#37&ndash;39</span>
-    </div>
-    <div class="row">
-      <div class="row-id"><span class="row-num">37</span><span class="chip chip-auto">OTACommandHistory</span></div>
-      <div class="row-body">
-        <h3>OT Reboot command + ack</h3>
-        <p>Send an OTA reboot command and confirm the device acknowledges it.</p>
-        <div class="criteria">Scans <strong>OTACommandHistory</strong> for <code>(?i)reboot</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">38</span><span class="chip chip-auto">OTACommandHistory</span></div>
-      <div class="row-body">
-        <h3>OT set vehicle registration number + ack</h3>
-        <p>Send an OTA command setting the vehicle registration number and confirm the device acknowledges it.</p>
-        <div class="criteria">Scans <strong>OTACommandHistory</strong> for <code>(?i)(vehicle|reg[_ ]?no|regno)</code> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="row-id"><span class="row-num">39</span><span class="chip chip-auto">ActivationCommandDispatch</span></div>
-      <div class="row-body">
-        <h3>Activation command + reply</h3>
-        <p>Send the activation command and confirm the device replies.</p>
-        <div class="criteria">Scans <strong>ActivationCommandDispatch</strong> &middot; needs <strong>&ge;1</strong> match within a <strong>5&nbsp;min</strong> window.</div>
-      </div>
-    </div>
-  </section>
-
-  <div class="callout fixed">
-    <h2>What changed, and why nothing is "just manual" anymore</h2>
-    <p>
-      Every checkpoint that used to be pure tester-attestation now also runs an automated read of
-      <code>GPSDataLog</code> / <code>GPSemDataLog</code> / <code>OTACommandHistory</code> for this
-      device inside the 5&#8209;minute test window. For SOS/emergency flows (#1&ndash;5, 27, 28, 30)
-      and the FOTA check (#6) that automated read <em>is</em> the full pass condition &mdash; #6 in
-      particular now reads the firmware-version field straight out of every PVT/HLM packet and
-      requires 2 distinct version strings inside the window, which is direct proof the upgrade took
-      effect rather than just that a command was sent. For the 30 checkpoints that hinge on comparing
-      a measured value to a reference instrument, reading every field of a packet, or a threshold
-      true/false-positive pass (#7&ndash;26 except 6, #29, #31&ndash;36), the automated read only
-      proves the device was actually transmitting during the test &mdash; a real failure mode we hit
-      twice while building this (a demo unit that had sent zero packets, ever). Completion for those
-      requires <strong>both</strong> the automated snapshot and the tester's own pass/fail to agree.
-    </p>
-    <p>
-      That confirmation step is also gated now: the API rejects a tester's pass/fail on a hybrid
-      checkpoint outright if the automated check hasn't already found the packet in
-      <code>GPSDataLog</code>/<code>GPSemDataLog</code>. There's no path to confirming a checkpoint
-      the platform hasn't actually seen data for.
-    </p>
-    <p>
-      Checkpoint <strong>#25</strong>'s regex is also fixed: it used to require a login packet
-      starting with <code>AS</code> (Assam), so any device tested under another state's plate would
-      fail this checkpoint on a perfectly valid packet. It now matches the real structural pattern
-      &mdash; <code>^\$[A-Z0-9]+,\$\d{15},</code> &mdash; regardless of registration prefix.
-    </p>
-  </div>
+  {% endfor %}
 
   <footer>
-    Source: <code>TechnicalOnboardingTestCase</code> catalog, 39 active rows, updated
-    2026&#8209;08&#8209;28. Ordering matches <code>serial_no</code>, the same order the onboarding
-    gate unlocks checkpoints in. Regex patterns shown are matched against raw, unnormalised packet
-    text via Python <code>re.search</code>.
+    Source: <code>TechnicalOnboardingTestCase</code> catalog, {{ total }} active rows, read live.
+    Numbers are the run order (<code>sequence</code>) the onboarding gate unlocks checkpoints in.
   </footer>
 
 </div>

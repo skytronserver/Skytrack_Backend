@@ -13,7 +13,9 @@ structured OTACommandHistory/ActivationCommandDispatch ack fields.
 """
 
 import math
+import os
 import re
+import secrets
 import statistics
 from datetime import datetime, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo
@@ -39,6 +41,8 @@ from .models import (
     GPSemDataLog,
     OTACommandHistory,
     ActivationCommandDispatch,
+    AirtelSmsInLog,
+    SmppSmsIn,
 )
 from .rbac import require_permission
 from .serializers import (
@@ -57,6 +61,7 @@ from .serializers import (
     build_checkpoint_status_map,
 )
 from .views import (
+    add_sms_queue,
     send_general_mqtt_message,
     validate_inputs,
     get_user_object,
@@ -88,7 +93,14 @@ SOURCE_TABLE_LABEL = {
     'reboot_restart_gap': 'GPSDataLog + OTACommandHistory',
     'pvt_packet_drop': 'GPSDataLog + GPSemDataLog',
     'command_reply': 'GPSDataLog (OT,12 command replies)',
+    'activation_sms': 'SMS received (AirtelSmsInLog / SmppSmsIn)',
+    'sms_fallback': 'SMS received (AirtelSmsInLog / SmppSmsIn)',
 }
+
+# Our number that receives device SMS (Airtel SMS gateway -> /api/airtel-sms/receive/).
+# Filled into command templates as {sms_number}: the activation reply-to
+# number and the emergency SMS centre number (ESCN) for the fallback test.
+ONBOARDING_SMS_RECEIVE_NUMBER = (os.environ.get('ONBOARDING_SMS_RECEIVE_NUMBER') or '').strip() or '9181016497'
 
 # The eSIM switch tests cross-check each other's network order.
 ESIM_SIBLING_SOURCE = {
@@ -176,20 +188,45 @@ def _complete_counts_by_test_case(onboarding_request):
     )
 
 
-def _current_unlocked_serial_no(onboarding_request):
+def _current_unlocked_test_case(onboarding_request):
     """
-    Lowest serial_no among active, non-optional test cases where not all
+    First active, non-optional test case (in run order) where not all
     5 demo devices are complete. None means everything gate-worthy is done.
     """
     device_count = onboarding_request.demo_devices.count()
     complete_counts = _complete_counts_by_test_case(onboarding_request)
     test_cases = TechnicalOnboardingTestCase.objects.filter(
         active=True, is_optional=False
-    ).order_by('serial_no').values_list('id', 'serial_no')
-    for test_case_id, serial_no in test_cases:
-        if complete_counts.get(test_case_id, 0) < device_count:
-            return serial_no
+    ).order_by('sequence', 'serial_no')
+    for test_case in test_cases:
+        if complete_counts.get(test_case.id, 0) < device_count:
+            return test_case
     return None
+
+
+def _current_unlocked_serial_no(onboarding_request):
+    test_case = _current_unlocked_test_case(onboarding_request)
+    return test_case.serial_no if test_case else None
+
+
+def _renumber_sequences(moved=None):
+    """
+    Keep sequence = 1..N over the active tests, in their current order (a
+    new or re-activated test goes last; `moved` takes the place it was
+    given), and clear it on inactive tests.
+    """
+    TechnicalOnboardingTestCase.objects.filter(active=False).exclude(sequence=None).update(sequence=None)
+    active = list(TechnicalOnboardingTestCase.objects.filter(active=True))
+    big = 10 ** 6
+
+    def key(test_case):
+        position = test_case.sequence if test_case.sequence is not None else big
+        # The moved test wins a tie with the one already at its place.
+        return (position, 0 if moved and test_case.id == moved.id else 1, test_case.serial_no)
+
+    for number, test_case in enumerate(sorted(active, key=key), 1):
+        if test_case.sequence != number:
+            TechnicalOnboardingTestCase.objects.filter(id=test_case.id).update(sequence=number)
 
 
 def _all_tests_complete(onboarding_request):
@@ -1441,7 +1478,7 @@ def _check_esim_switch(execution, imei, window_start, now):
     if not problems and sibling_source:
         sibling_case = TechnicalOnboardingTestCase.objects.filter(
             source_table=sibling_source, active=True
-        ).order_by('serial_no').first()
+        ).order_by('sequence', 'serial_no').first()
         sibling_execution = TechnicalOnboardingTestExecution.objects.filter(
             onboarding_request=execution.onboarding_request,
             demo_device=execution.demo_device,
@@ -1765,6 +1802,152 @@ def _check_command_reply(execution, imei, window_start, now):
     }
 
 
+# ---------------------------------------------------------------------------
+# SMS from the device (activation reply, fallback SMS)
+# ---------------------------------------------------------------------------
+# The device's SMS reach us through the SMS receive mechanism: Airtel's
+# gateway pushes each SMS sent to our number to /api/airtel-sms/receive/
+# (AirtelSmsInLog); SMS to our SMPP VMN land in SmppSmsIn.
+
+SMS_SCAN_LIMIT = 500
+ACTVR_LINE = re.compile(r'ACTVR,[^\r\n]*', re.IGNORECASE)
+
+
+def _digits(value):
+    return re.sub(r'\D', '', value or '')
+
+
+def _number_matches(incoming, stored):
+    """Same phone number, ignoring +91 / leading digits (needs 10+ digits on both sides)."""
+    a, b = _digits(incoming), _digits(stored)
+    if len(a) < 10 or len(b) < 10:
+        return False
+    return a == b or a.endswith(b[-10:]) or b.endswith(a[-10:])
+
+
+def _sms_received(start, end=None):
+    """Every SMS received since `start`, oldest first: {channel, sender, receiver, text, time}."""
+    airtel = AirtelSmsInLog.objects.filter(received_at__gte=start)
+    smpp = SmppSmsIn.objects.filter(received_at__gte=start)
+    if end is not None:
+        airtel, smpp = airtel.filter(received_at__lte=end), smpp.filter(received_at__lte=end)
+    messages = [
+        {'channel': 'airtel', 'sender': sender, 'receiver': receiver, 'text': text or '', 'time': received_at}
+        for sender, receiver, text, received_at in
+        airtel.order_by('-received_at').values_list('sender_no', 'receiver_no', 'sms_text', 'received_at')[:SMS_SCAN_LIMIT]
+    ] + [
+        {'channel': 'smpp', 'sender': sender, 'receiver': receiver, 'text': text or '', 'time': received_at}
+        for sender, receiver, text, received_at in
+        smpp.order_by('-received_at').values_list('source_no', 'dest_no', 'text', 'received_at')[:SMS_SCAN_LIMIT]
+    ]
+    messages.sort(key=lambda m: m['time'])
+    return messages
+
+
+def _device_sms(demo_device, start, end=None):
+    """SMS sent by the demo device: from its msisdn1/msisdn2, or carrying its IMEI."""
+    numbers = [n for n in (demo_device.msisdn1, demo_device.msisdn2) if n]
+    return [
+        m for m in _sms_received(start, end)
+        if demo_device.imei in m['text'] or any(_number_matches(m['sender'], n) for n in numbers)
+    ]
+
+
+def _sms_sample(message, **extra):
+    sample = {
+        'raw_data': message['text'],
+        'timestamp': message['time'].isoformat(),
+        'channel': message['channel'],
+        'sender': message['sender'],
+        'receiver': message['receiver'],
+    }
+    sample.update(extra)
+    return sample
+
+
+def _parse_actvr(line):
+    """ACTVR,<code>,<vendor>,<firmware>,<imei>,... -> dict (None when too short)."""
+    fields = [f.strip() for f in line.split(',')]
+    if len(fields) < 5:
+        return None
+    return {'code': fields[1], 'vendor': fields[2], 'firmware': fields[3], 'imei': fields[4]}
+
+
+def _check_activation_sms(execution, imei, window_start, now):
+    """
+    'activation_sms': after the activation command (ACTV,<key>,<our number>)
+    the device must reply by SMS with ACTVR,<same key>,...,<its IMEI>,...;
+    the reply has to come in through the SMS receive mechanism.
+    """
+    keys = [
+        d.value for d in execution.command_dispatches.filter(sent_at__gte=window_start, send_status='queued').order_by('sent_at')
+        if d.value and d.command_key == (_cfg(execution.test_case).get('command_key') or 'activation')
+    ]
+    replies = []
+    for message in _sms_received(window_start):
+        for line in ACTVR_LINE.findall(message['text']):
+            parsed = _parse_actvr(line)
+            if parsed and parsed['imei'] == imei:
+                replies.append((message, line, parsed))
+
+    good = next(((m, line, p) for m, line, p in replies if p['code'] in keys), None)
+    samples = [_sms_sample(m, role='activation_reply', activation_code=p['code'], key_ok=p['code'] in keys)
+               for m, _line, p in replies][-5:]
+    if good:
+        reason = None
+    elif not keys:
+        reason = "No activation command sent from the test commands since the test started, so there is no key to match."
+    elif replies:
+        latest = replies[-1][2]
+        reason = (f"Activation reply received with key {latest['code']}, but the key sent was "
+                  f"{', '.join(keys)}. Send the command again and wait for its reply.")
+    else:
+        reason = (f"No activation reply (ACTVR) from this IMEI received by SMS yet "
+                  f"(key {keys[-1]} sent; replies arrive at {ONBOARDING_SMS_RECEIVE_NUMBER}).")
+    return {
+        'matched_count': int(bool(good)),
+        'required': 1,
+        'pass': bool(good),
+        'reason': reason,
+        'samples': samples,
+        'keys_sent': keys,
+        'sms_received': [_sms_sample(m) for m, _l, _p in replies][-10:],
+    }
+
+
+def _check_sms_fallback(execution, imei, window_start, now):
+    """
+    'sms_fallback': with no data connection the device must send its alert
+    by SMS (to the emergency SMS centre number = our receive number); the
+    SMS has to come in through the SMS receive mechanism, from the device's
+    number or carrying its IMEI. check_config.text_regex narrows the match.
+    """
+    test_case = execution.test_case
+    cfg = _cfg(test_case)
+    pattern = re.compile(cfg['text_regex'], re.IGNORECASE) if cfg.get('text_regex') else None
+    messages = [
+        m for m in _device_sms(execution.demo_device, window_start)
+        if not ACTVR_LINE.search(m['text']) and (not pattern or pattern.search(m['text']))
+    ]
+    required = test_case.min_match_count or 1
+    if len(messages) >= required:
+        reason = None
+    else:
+        numbers = ', '.join(n for n in (execution.demo_device.msisdn1, execution.demo_device.msisdn2) if n) or 'none on record'
+        reason = (f"{len(messages)} fallback SMS received from this device since the test started, need {required}. "
+                  f"Looked for SMS to {ONBOARDING_SMS_RECEIVE_NUMBER} from the device's numbers ({numbers}) "
+                  f"or carrying IMEI {imei}"
+                  + (f", matching '{cfg['text_regex']}'" if pattern else '') + '.')
+    return {
+        'matched_count': len(messages),
+        'required': required,
+        'pass': len(messages) >= required,
+        'reason': reason,
+        'samples': [_sms_sample(m, role='fallback_sms') for m in messages][-10:],
+        'sms_received': [_sms_sample(m) for m in messages][-10:],
+    }
+
+
 _MODE_HANDLERS = {
     'gps': _check_raw_match,
     'gpsem': _check_raw_match,
@@ -1783,6 +1966,8 @@ _MODE_HANDLERS = {
     'vehicle_registration_diff': _check_vehicle_registration,
     'reboot_restart_gap': _check_reboot,
     'command_reply': _check_command_reply,
+    'activation_sms': _check_activation_sms,
+    'sms_fallback': _check_sms_fallback,
 }
 
 
@@ -1791,6 +1976,8 @@ _MODE_HANDLERS = {
 # ===========================================================================
 
 COMMAND_REPLY_WINDOW = timedelta(minutes=2)
+# SMS replies can take minutes to come through the SMS gateway.
+SMS_REPLY_WINDOW = timedelta(minutes=10)
 
 
 def _frame_command(command):
@@ -1840,6 +2027,16 @@ def _commands_sent(execution):
     if not dispatches:
         return []
     source_ip = _device_source_ip(execution.demo_device.imei)
+    # SMS replies (activation, fallback) come in through the SMS receive mechanism.
+    device_sms = _device_sms(execution.demo_device, dispatches[0].sent_at)
+
+    def sms_replies(sent_at):
+        until = sent_at + SMS_REPLY_WINDOW
+        return [
+            {'raw_data': f"SMS from {m['sender']}: {m['text']}", 'timestamp': m['time'].isoformat(), 'channel': 'sms'}
+            for m in device_sms if sent_at <= m['time'] <= until
+        ]
+
     return [
         {
             'id': d.id,
@@ -1850,7 +2047,9 @@ def _commands_sent(execution):
             'send_status': d.send_status,
             'error': d.error,
             'sent_at': d.sent_at.isoformat(),
-            'replies': _command_replies(d.imei, source_ip, d.sent_at) if d.send_status == 'queued' else [],
+            'channel': d.source,
+            'replies': (_command_replies(d.imei, source_ip, d.sent_at) + sms_replies(d.sent_at))
+            if d.send_status == 'queued' else [],
         }
         for d in dispatches
     ]
@@ -2360,7 +2559,7 @@ def technical_onboarding_test_case_list(request):
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    test_cases = TechnicalOnboardingTestCase.objects.filter(active=True).order_by('serial_no')
+    test_cases = TechnicalOnboardingTestCase.objects.filter(active=True).order_by('sequence', 'serial_no')
     serializer = TechnicalOnboardingTestCaseSerializer(test_cases, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -2386,6 +2585,8 @@ def technical_onboarding_test_case_upsert(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     test_case = serializer.save()
+    _renumber_sequences(moved=test_case if 'sequence' in request.data else None)
+    test_case.refresh_from_db()
 
     return Response(
         TechnicalOnboardingTestCaseSerializer(test_case).data,
@@ -2398,7 +2599,7 @@ def technical_onboarding_test_case_upsert(request):
 # ===========================================================================
 
 def _serialize_board(onboarding_request):
-    test_cases = list(TechnicalOnboardingTestCase.objects.filter(active=True).order_by('serial_no'))
+    test_cases = list(TechnicalOnboardingTestCase.objects.filter(active=True).order_by('sequence', 'serial_no'))
     demo_devices = list(onboarding_request.demo_devices.all().order_by('id'))
 
     def load_existing():
@@ -2432,6 +2633,7 @@ def _serialize_board(onboarding_request):
             execution.demo_device = demo_device_by_id[execution.demo_device_id]
     context = {'_checkpoint_status_cache': build_checkpoint_status_map(demo_device_by_id)}
 
+    unlocked = _current_unlocked_test_case(onboarding_request)
     rows = []
     for test_case in test_cases:
         executions = [existing[(d.id, test_case.id)] for d in demo_devices if (d.id, test_case.id) in existing]
@@ -2443,7 +2645,11 @@ def _serialize_board(onboarding_request):
     return {
         'onboarding_request_id': onboarding_request.id,
         'status': onboarding_request.status,
-        'current_unlocked_serial_no': _current_unlocked_serial_no(onboarding_request),
+        'current_unlocked_serial_no': unlocked.serial_no if unlocked else None,
+        # The number testers see (run order); use this for display and for
+        # "before / after the unlocked test".
+        'current_unlocked_sequence': unlocked.sequence if unlocked else None,
+        'total_tests': len(test_cases),
         'rows': rows,
     }
 
@@ -2511,10 +2717,10 @@ def superadmin_start_test(request):
         return Response({'error': 'Invalid demo_device_id or test_case_id.'}, status=status.HTTP_400_BAD_REQUEST)
 
     if not test_case.is_optional:
-        unlocked = _current_unlocked_serial_no(onboarding_request)
-        if unlocked is not None and test_case.serial_no != unlocked:
+        unlocked = _current_unlocked_test_case(onboarding_request)
+        if unlocked is not None and test_case.id != unlocked.id:
             return Response(
-                {'error': f'Test #{test_case.serial_no} is locked. Complete test #{unlocked} for all IMEIs first.'},
+                {'error': f'Test #{test_case.sequence} is locked. Complete test #{unlocked.sequence} for all IMEIs first.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -2788,12 +2994,18 @@ def superadmin_list_test_commands(request):
 @require_permission('manufacturer_management', 'update')
 def superadmin_send_test_command(request):
     """
-    Send a command to the demo device of an in-progress test over MQTT
-    (published to deviceResponse/{imei} as {"keys": "@...*"}).
+    Send a command to the demo device of an in-progress test, over MQTT
+    (published to deviceResponse/{imei} as {"keys": "@...*"}) or by SMS to
+    the device's msisdn1 (sms_out queue, the same path activation SMS use).
 
     Body: {"execution_id": 1, "command_key": "sos_stop"}
           {"execution_id": 1, "command_key": "set_reg_no", "value": "AS01AA0009"}
+          {"execution_id": 1, "command_key": "activation", "channel": "sms"}  -- key auto-generated
           {"execution_id": 1, "command": "SETSOSDIS-1"}   -- custom command
+
+    channel: "mqtt" | "sms" (default: the command's own `channel`, else mqtt).
+    Command templates may use {value} and {sms_number} (our SMS receive
+    number); a definition with "frame": false is sent without '@...*'.
     """
     errors = validate_inputs(request)
     if errors:
@@ -2821,6 +3033,7 @@ def superadmin_send_test_command(request):
 
     value = (data.get('value') or '').strip() or None
     command_key = data.get('command_key') or ''
+    definition = None
     if command_key:
         definition = next((c for c in (execution.test_case.commands or []) if c.get('key') == command_key), None)
         if not definition or not definition.get('command'):
@@ -2828,9 +3041,11 @@ def superadmin_send_test_command(request):
                 {'error': f"Command '{command_key}' is not configured for this test."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        template = definition['command']
+        template = definition['command'].replace('{sms_number}', ONBOARDING_SMS_RECEIVE_NUMBER)
         label = definition.get('label') or command_key
         if '{value}' in template:
+            if not value and definition.get('auto_value') == 'random6':
+                value = str(secrets.randbelow(1000000)).zfill(6)
             if not value:
                 return Response({'error': f"A value is required for '{label}'."}, status=status.HTTP_400_BAD_REQUEST)
             if definition.get('value_regex') and not re.fullmatch(definition['value_regex'], value):
@@ -2843,8 +3058,12 @@ def superadmin_send_test_command(request):
         template = data['command']
         label = 'Custom command'
 
-    imei = execution.demo_device.imei
-    wire_command = _frame_command(template)
+    demo_device = execution.demo_device
+    imei = demo_device.imei
+    channel = data.get('channel') or (definition or {}).get('channel') or 'mqtt'
+    wire_command = _frame_command(template) if (definition or {}).get('frame', True) else template.strip()
+    if channel == 'sms' and not demo_device.msisdn1:
+        return Response({'error': 'This demo device has no SMS number (msisdn1).'}, status=status.HTTP_400_BAD_REQUEST)
     dispatch = TechnicalOnboardingCommandDispatch(
         execution=execution,
         imei=imei,
@@ -2852,14 +3071,20 @@ def superadmin_send_test_command(request):
         command_label=label,
         command_sent=wire_command,
         value=value,
+        source=channel,
         sent_by=request.user,
         sent_at=timezone.now(),
     )
-    try:
-        send_general_mqtt_message(imei, {'keys': wire_command})
-    except Exception:
-        dispatch.send_status = 'failed'
-        dispatch.error = 'Could not publish the command to the MQTT broker.'
+    if channel == 'sms':
+        if add_sms_queue(wire_command, demo_device.msisdn1) is not None:
+            dispatch.send_status = 'failed'
+            dispatch.error = 'Could not queue the SMS.'
+    else:
+        try:
+            send_general_mqtt_message(imei, {'keys': wire_command})
+        except Exception:
+            dispatch.send_status = 'failed'
+            dispatch.error = 'Could not publish the command to the MQTT broker.'
     dispatch.save()
 
     # Heartbeat on send, so a tester busy sending commands isn't timed out.
@@ -2874,11 +3099,164 @@ def superadmin_send_test_command(request):
         'command_label': label,
         'command_sent': wire_command,
         'value': value,
+        'channel': channel,
+        'sms_to': demo_device.msisdn1 if channel == 'sms' else None,
         'send_status': dispatch.send_status,
         'error': dispatch.error,
         'sent_at': dispatch.sent_at.isoformat(),
     }
     return Response(body, status=status.HTTP_200_OK if dispatch.send_status == 'queued' else status.HTTP_502_BAD_GATEWAY)
+
+
+# ===========================================================================
+# Demo-device live status (top of the test board)
+# ===========================================================================
+
+LIVE_ONLINE_SECONDS = 60          # a packet within this long = online
+LIVE_STALE_SECONDS = 10 * 60      # within this long = stale, older = offline
+LIVE_ROW_SCAN = 40                # newest rows read per device to find its latest PVT
+PVT_OFFSET_SATELLITES = 17
+PVT_OFFSET_ALTITUDE = 18
+PVT_OFFSET_GSM_SIGNAL = 28
+PROFILE_LOOKBACK = timedelta(days=3)
+PROFILE_ECHO = re.compile(r',SETPROF\s*-\s*(\d)\b', re.IGNORECASE)
+
+
+def _connection_state(last_at, now):
+    if not last_at:
+        return 'no_data'
+    age = (now - last_at).total_seconds()
+    return 'online' if age <= LIVE_ONLINE_SECONDS else 'stale' if age <= LIVE_STALE_SECONDS else 'offline'
+
+
+def _demo_device_live_status(demo_device, running, now):
+    imei = demo_device.imei
+    rows = list(GPSDataLog.objects.filter(imei=imei).order_by('-timestamp')
+                .values_list('raw_data', 'timestamp', 'source_ip')[:LIVE_ROW_SCAN])
+    last_at = rows[0][1] if rows else None
+
+    latest, latest_parts, source_ip = None, None, None
+    for raw_data, server_time, ip in rows:
+        for frag in _packets_in_row(raw_data):
+            info = _pvt_info(frag, server_time)
+            if info:
+                latest, latest_parts, source_ip = info, _packet_fields(frag), ip
+                latest['server_time'] = server_time
+                break
+        if latest:
+            break
+
+    health_at = (GPSDataLog.objects.filter(imei=imei, timestamp__gte=now - timedelta(days=1))
+                 .filter(Q(raw_data__contains='HLM') | Q(raw_data__contains='HEL'))
+                 .order_by('-timestamp').values_list('timestamp', flat=True).first())
+    emergency = (GPSemDataLog.objects.filter(imei=imei).order_by('-timestamp')
+                 .values_list('raw_data', 'timestamp').first())
+
+    # The PVT packet carries the operator, not the SIM profile number; the
+    # profile is the last SETPROF-n the device acknowledged (OT,12).
+    profile = None
+    for raw_data, server_time in (GPSDataLog.objects.filter(imei=imei, timestamp__gte=now - PROFILE_LOOKBACK)
+                                  .filter(raw_data__contains='SETPROF').order_by('-timestamp')
+                                  .values_list('raw_data', 'timestamp')[:5]):
+        match = PROFILE_ECHO.search(raw_data)
+        if match and ',OT,' in raw_data:
+            profile = {'profile': match.group(1), 'acknowledged_at': server_time.isoformat()}
+            break
+
+    status_row = {
+        'demo_device_id': demo_device.id,
+        'imei': imei,
+        'device_serial_no': demo_device.device_serial_no,
+        'msisdn1': demo_device.msisdn1,
+        'msisdn2': demo_device.msisdn2,
+        'connection': _connection_state(last_at, now),
+        'last_data_at': last_at.isoformat() if last_at else None,
+        'last_data_age_seconds': max(0, int((now - last_at).total_seconds())) if last_at else None,
+        'last_health_at': health_at.isoformat() if health_at else None,
+        'last_emergency_at': emergency[1].isoformat() if emergency else None,
+        'source_ip': source_ip,
+        'sim_profile': profile,
+        'running_test': running,
+        'pvt': None,
+    }
+    if latest:
+        idx = _pvt_index(latest_parts)
+        status_row['pvt'] = {
+            'server_time': latest['server_time'].isoformat(),
+            'device_time': latest['time'].isoformat() if latest['time_source'] == 'device' else None,
+            'packet_type': latest['packet_type'],
+            'alert_id': latest['alert_id'],
+            'packet_status': latest['packet_status'],
+            'firmware': latest['firmware'],
+            'vehicle_reg_no': latest['vehicle_reg_no'],
+            'gps_fix': latest['gps_fix'],
+            'latitude': latest['latitude'],
+            'longitude': latest['longitude'],
+            'speed': latest['speed'],
+            'heading': latest['heading'],
+            'satellites': _field(latest_parts, idx, PVT_OFFSET_SATELLITES),
+            'altitude': _field(latest_parts, idx, PVT_OFFSET_ALTITUDE),
+            'network_operator': latest['network_operator'],
+            'mcc': latest['mcc'],
+            'mnc': latest['mnc'],
+            'gsm_signal': _field(latest_parts, idx, PVT_OFFSET_GSM_SIGNAL),
+            'ignition': latest['ignition'],
+            'main_power': latest['main_power'],
+            'external_voltage': latest['external_voltage'],
+            'internal_voltage': latest['internal_voltage'],
+            'emergency_status': latest['emergency_status'],
+            'box_tamper': latest['box_tamper'],
+            'raw_data': latest['raw_data'],
+        }
+    return status_row
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([])  # polled by the test board; global ApiRateLimitMiddleware still applies
+@require_http_methods(['GET', 'POST'])
+@require_permission('manufacturer_management', 'view')
+def superadmin_demo_device_live_status(request):
+    """
+    Live status of each demo device of an onboarding request, from its
+    latest packets: connection state, last data time, registration number,
+    SIM profile / network, location, ignition, power, SOS, and the test
+    currently running on it.
+
+    Body: {"onboarding_request_id": 1}
+    """
+    errors = validate_inputs(request)
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not get_user_object(request.user, 'superadmin'):
+        return Response({'error': 'Request must be from superadmin.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = TechnicalOnboardingTestBoardRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    onboarding_request, error = _get_onboarding_request_or_error(serializer.validated_data['onboarding_request_id'])
+    if error:
+        return error
+
+    now = timezone.now()
+    running = {
+        demo_device_id: {'execution_id': execution_id, 'serial_no': serial_no, 'sequence': sequence, 'name': name}
+        for execution_id, demo_device_id, serial_no, sequence, name in
+        TechnicalOnboardingTestExecution.objects.filter(onboarding_request=onboarding_request, status='in_progress')
+        .values_list('id', 'demo_device_id', 'test_case__serial_no', 'test_case__sequence', 'test_case__name')
+    }
+    devices = [
+        _demo_device_live_status(demo_device, running.get(demo_device.id), now)
+        for demo_device in onboarding_request.demo_devices.all().order_by('id')
+    ]
+    return Response({
+        'onboarding_request_id': onboarding_request.id,
+        'refreshed_at': now.isoformat(),
+        'online_seconds': LIVE_ONLINE_SECONDS,
+        'devices': devices,
+    }, status=status.HTTP_200_OK)
 
 
 # ===========================================================================
@@ -3014,12 +3392,37 @@ def technical_onboarding_demo_page(request):
     return render(request, 'technical_onboarding_demo.html')
 
 
+def _catalog_page_context():
+    """Active tests in run order, grouped indoor / outdoor, for the two catalog pages."""
+    labels = dict(TechnicalOnboardingTestCase.SOURCE_CHOICES)
+    tests = list(TechnicalOnboardingTestCase.objects.filter(active=True).order_by('sequence', 'serial_no'))
+    for t in tests:
+        t.source_label = SOURCE_TABLE_LABEL.get(t.source_table) or labels.get(t.source_table, t.source_table)
+        t.needs = [n for n in (
+            t.test_environment,
+            'Physical action on the device' if t.requires_physical_test else None,
+            'Map' if t.requires_map else None,
+            'Send commands to the device' if t.requires_command else None,
+        ) if n]
+    outdoor = [t for t in tests if (t.test_environment or '').lower().startswith('outdoor')]
+    indoor = [t for t in tests if t not in outdoor]
+    groups = [
+        {'letter': letter, 'title': title, 'tests': group,
+         'first': group[0].sequence if group else None, 'last': group[-1].sequence if group else None}
+        for letter, title, group in (('A', 'Indoor tests', indoor), ('B', 'Outdoor (road) tests', outdoor))
+    ]
+    manual = sum(t.source_table == 'manual' for t in tests)
+    hybrid = sum(t.source_table != 'manual' and t.requires_manual_confirmation for t in tests)
+    return {'groups': groups, 'total': len(tests), 'manual': manual, 'hybrid': hybrid,
+            'automatic': len(tests) - manual - hybrid}
+
+
 def technical_onboarding_test_catalog_page(request):
-    return render(request, 'technical_onboarding_test_catalog.html')
+    return render(request, 'technical_onboarding_test_catalog.html', _catalog_page_context())
 
 
 def technical_onboarding_test_requirements_page(request):
-    return render(request, 'technical_onboarding_test_requirements.html')
+    return render(request, 'technical_onboarding_test_requirements.html', _catalog_page_context())
 
 
 # ===========================================================================
@@ -3039,21 +3442,27 @@ def dev_force_pass_test(request):
     operating a device through every checkpoint. Not DEBUG-gated; the route
     is registered only when ENABLE_TEMPORARY_APIS=True (see urls.py).
 
-    Request body: {"imei": "<imei>", "test_no": 1}
+    Request body: {"imei": "<imei>", "test_no": 1}   -- the test number testers see (sequence)
+                  {"imei": "<imei>", "serial_no": 41}  -- or the test's fixed serial_no
+    Only active tests can be force-passed (removed tests such as old #23 are rejected).
     """
     imei = (request.data.get('imei') or '').strip()
-    test_no = request.data.get('test_no')
+    by_serial = request.data.get('serial_no') not in (None, '')
+    number = request.data.get('serial_no') if by_serial else request.data.get('test_no')
 
     if not imei:
         return Response({'error': 'imei is required.'}, status=status.HTTP_400_BAD_REQUEST)
     try:
-        test_no = int(test_no)
+        number = int(number)
     except (TypeError, ValueError):
-        return Response({'error': 'test_no must be an integer serial_no from the test catalog.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'test_no (or serial_no) must be an integer from the test catalog.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    test_case = TechnicalOnboardingTestCase.objects.filter(serial_no=test_no).last()
+    lookup = {'serial_no': number} if by_serial else {'sequence': number}
+    test_case = TechnicalOnboardingTestCase.objects.filter(active=True, **lookup).last()
     if not test_case:
-        return Response({'error': f'No test case with serial_no={test_no}.'}, status=status.HTTP_400_BAD_REQUEST)
+        field = 'serial_no' if by_serial else 'test_no'
+        return Response({'error': f'No active test case with {field}={number}.'}, status=status.HTTP_400_BAD_REQUEST)
+    test_no = test_case.sequence
 
     demo_device = (
         DeviceModelTechnicalOnboardingDemoDevice.objects

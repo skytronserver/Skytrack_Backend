@@ -21,7 +21,8 @@
    - 5.3 [Heartbeat](#53-heartbeat)
    - 5.4 [Refresh the test log](#54-refresh-the-test-log)
    - 5.5 [Complete a test](#55-complete-a-test)
-6. [Device commands (MQTT)](#6-device-commands-mqtt)
+   - 5.6 [Live status of the demo devices](#56-live-status-of-the-demo-devices)
+6. [Device commands (MQTT / SMS)](#6-device-commands-mqtt--sms)
    - 6.1 [List commands for a test](#61-list-commands-for-a-test)
    - 6.2 [Send a command](#62-send-a-command)
 7. [Test log snapshot reference](#7-test-log-snapshot-reference)
@@ -49,6 +50,12 @@ All changes are **additive** — no existing field or endpoint was removed or re
 | Protocol | Packets are validated against the format of reference test device **AS01AA0005**; checksum mismatch is a hard failure — see [section 9](#9-reference-packet-format). |
 | Catalog (2026-10-31) | **#42–#59** added: the test plan's "OTA para (through SMS)" block, one test per device parameter, new mode `command_reply`. Testers see them as #41–#58. #6, #24 and #25 get the plan's `FOTA-{value}`, `SETPROF-2` and `SETPROF-1` commands. |
 | Test log | `command_reply` snapshots carry `command_replies` (every OT,12 reply seen in the attempt, parsed). |
+| **Run order (2026-10-31)** | New test case field **`sequence`**: the order tests run and unlock in, and the number testers see. Indoor tests come first (OT / SMS command tests included), then the outdoor road tests (#52–#59). `serial_no` stays each test's fixed identity. Inactive tests have `sequence: null`. |
+| Catalog (2026-10-31) | **#41 Activation** now passes on the device's ACTVR SMS received through the SMS receive mechanism (mode `activation_sms`). **Serial 60, SMS fallback**, is new (mode `sms_fallback`). |
+| Test board | New keys `current_unlocked_sequence` and `total_tests`. Demo devices' `checkpoint_status` gains `last_completed_sequence`, `next_sequence`, `completed_count` and `total_tests`. |
+| **New API** | `superadmin/demo-device-live-status/` — live status of each demo device (see 5.6). |
+| Send command | `channel`: `mqtt` (default) or `sms` (to the device's `msisdn1`). Templates may use `{sms_number}`. `auto_value: "random6"` generates the activation key. `frame: false` sends the command without `@…*`. |
+| DEV force-pass | `test_no` is now the number testers see (`sequence`); `serial_no` can be given instead. Removed tests (#23) are rejected. |
 
 ---
 
@@ -147,11 +154,12 @@ curl -X POST 'https://api.gromed.in/api/devicemodel/technical-onboarding/test-ca
 
 | Field | Type | Meaning |
 |---|---|---|
+| `sequence` | int \| null | Run order and the number testers see (1..N over active tests; indoor first, then outdoor). `null` for inactive tests. `serial_no` is the fixed identity. |
 | `category` | string | Test plan category, e.g. `SOS`, `Power`, `Protocol Validation`. |
 | `test_environment` | string | `Indoor` or `Outdoor (Road Test)`. |
 | `requires_manual_confirmation` | bool | Tester must confirm the result (`manual_result` on complete). *(existing field, now set from the test plan)* |
 | `requires_map` | bool | Show the map — samples carry `latitude`/`longitude`; some tests also return a `route`. |
-| `requires_command` | bool | A command must be sent from the server during the test (see [section 6](#6-device-commands-mqtt)). |
+| `requires_command` | bool | A command must be sent from the server during the test (see [section 6](#6-device-commands-mqtt--sms)). |
 | `requires_physical_test` | bool | The tester performs a physical action on the device. |
 | `procedure` | string | Step-by-step procedure (newline-separated). |
 | `expected_result` | string | Pass criteria in plain words. |
@@ -216,9 +224,11 @@ curl -X POST 'https://api.gromed.in/api/devicemodel/technical-onboarding/superad
   "onboarding_request_id": 12,
   "status": "ongoing_evaluation",
   "current_unlocked_serial_no": 4,
+  "current_unlocked_sequence": 4,
+  "total_tests": 59,
   "rows": [
     {
-      "test_case": { "id": 4, "serial_no": 4, "name": "App SOS -> Tracking Server (Start + NR SOS=1)", "...": "..." },
+      "test_case": { "id": 4, "serial_no": 4, "sequence": 4, "name": "App SOS -> Tracking Server (Start + NR SOS=1)", "...": "..." },
       "executions": [
         {
           "id": 7752,
@@ -241,6 +251,8 @@ curl -X POST 'https://api.gromed.in/api/devicemodel/technical-onboarding/superad
 ```
 
 `status` per execution: `not_started` | `in_progress` | `complete` | `incomplete`.
+
+Rows come in run order (`sequence`). Show testers `test_case.sequence` and compare unlock state on it: a row is done when its `sequence` is lower than `current_unlocked_sequence`. `serial_no` is only the test's identity.
 
 ### 5.2 Start a test
 
@@ -471,15 +483,75 @@ curl -X POST 'https://api.gromed.in/api/devicemodel/technical-onboarding/superad
 {"error": "Test is already incomplete (likely due to an inactive session). Start the test again to retry.", "status": "incomplete"}
 ```
 
+### 5.6 Live status of the demo devices
+
+```
+POST /api/devicemodel/technical-onboarding/superadmin/demo-device-live-status/
+```
+
+Superadmin. Shown at the top of the test board and polled every 10 s. For each demo device it reads the latest packets, using the indexed `imei` columns of `GPSDataLog` / `GPSemDataLog`.
+
+```bash
+curl -X POST 'https://api.gromed.in/api/devicemodel/technical-onboarding/superadmin/demo-device-live-status/' \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"onboarding_request_id": 91}'
+```
+
+**Response `200`** (one device shown)
+
+```json
+{
+  "onboarding_request_id": 91,
+  "refreshed_at": "2026-10-31T10:30:05+00:00",
+  "online_seconds": 60,
+  "devices": [
+    {
+      "demo_device_id": 412,
+      "imei": "866192070567340",
+      "device_serial_no": "...",
+      "msisdn1": "5754206414395",
+      "msisdn2": "915752181729215",
+      "connection": "online",
+      "last_data_at": "2026-10-31T10:30:03+00:00",
+      "last_data_age_seconds": 2,
+      "last_health_at": "2026-10-31T10:21:43+00:00",
+      "last_emergency_at": "2026-10-27T09:21:46+00:00",
+      "source_ip": "117.231.194.49",
+      "sim_profile": {"profile": "1", "acknowledged_at": "2026-10-30T10:30:22+00:00"},
+      "running_test": {"execution_id": 9001, "serial_no": 41, "sequence": 32, "name": "Activation command + reply"},
+      "pvt": {
+        "server_time": "2026-10-31T10:30:03+00:00", "device_time": "2026-10-31T10:30:01+00:00",
+        "packet_type": "NR", "alert_id": "01", "packet_status": "L", "firmware": "6.0.2",
+        "vehicle_reg_no": "AS01AA0002", "gps_fix": "1", "latitude": 26.192984, "longitude": 91.752876,
+        "speed": 0.0, "heading": 140.94, "satellites": "24", "altitude": "60.0",
+        "network_operator": "CELLONE", "mcc": "404", "mnc": "38", "gsm_signal": "18",
+        "ignition": "0", "main_power": "0", "external_voltage": "0.0", "internal_voltage": "3.8",
+        "emergency_status": "0", "box_tamper": "C", "raw_data": "$,PVT,MAPW,..."
+      }
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `connection` | `online` (packet within 60 s), `stale` (within 10 min), `offline`, `no_data`. |
+| `pvt` | The latest PVT packet, parsed; `null` when the device has sent none. |
+| `sim_profile` | The PVT packet carries the operator but not the SIM profile number, so this is the last `SETPROF-n` the device acknowledged (OT,12) in the past 3 days; `null` if none. |
+| `running_test` | The test in progress on this device in this request, or `null`. |
+
 ---
 
-## 6. Device commands (MQTT)
+## 6. Device commands (MQTT / SMS)
 
-Commands are published to the demo device on MQTT topic `deviceResponse/<IMEI>` as:
+By default, commands are published to the demo device on MQTT topic `deviceResponse/<IMEI>` as:
 
 ```json
 {"keys": "@<command>*"}
 ```
+
+With `"channel": "sms"` they go by SMS to the device's `msisdn1` instead, through the `sms_out` queue that activation SMS also use. Device SMS replies (activation, fallback) arrive through the SMS receive mechanism (`AirtelSmsInLog` / `SmppSmsIn`). They show up in `replies` for 10 minutes after the send, prefixed `SMS from <number>:`.
 
 Every send is logged per execution and shown in `commands_sent` (on the refresh snapshot and the list endpoint) together with the device's replies.
 
@@ -556,8 +628,32 @@ The execution must be `in_progress` (start the test first). Sending also refresh
 | `command_key` | one of | Key of a command configured on the test case (`commands[].key`). |
 | `value` | with `{value}` | Value substituted into a configured command containing `{value}`; checked against `value_regex`. |
 | `command` | one of | **Custom command** body, e.g. `SETSOSDIS-1`. Use this for commands not configured on the test case. |
+| `channel` | no | `mqtt` or `sms`. Default: the command's own `channel`, else `mqtt`. |
 
-`@` and `*` are added if missing — `SETSOSDIS-1` and `@SETSOSDIS-1*` send the same thing.
+`@` and `*` are added if missing — `SETSOSDIS-1` and `@SETSOSDIS-1*` send the same thing. A configured command with `"frame": false` (the activation command `ACTV,<key>,<number>`) is sent as is.
+
+Command definition keys beyond `key` / `label` / `command` / `value_hint` / `value_regex`:
+
+| Key | Meaning |
+|---|---|
+| `channel` | Default channel for this command (`sms` for the activation command). |
+| `frame` | `false` = send without `@…*`. |
+| `auto_value` | `random6`: with no `value` given, a random 6-digit value is generated (the activation key). |
+| `{sms_number}` in `command` | Replaced with our SMS receive number, env `ONBOARDING_SMS_RECEIVE_NUMBER` (default `9181016497`). |
+
+**Example — activation command by SMS (#41)**
+
+```bash
+curl -X POST 'https://api.gromed.in/api/devicemodel/technical-onboarding/superadmin/test-send-command/' \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"execution_id": 9001, "command_key": "activation"}'
+```
+
+```json
+{"command_key": "activation", "command_sent": "ACTV,341749,9181016497", "value": "341749",
+ "channel": "sms", "sms_to": "5754206414395", "send_status": "queued", "...": "..."}
+```
 
 **Example A — configured command (SOS stop, tests #2, #4, #5, #31)**
 
@@ -703,6 +799,8 @@ Returned by `test-refresh-log` and stored on the execution as `test_log_snapshot
 | `esim_*` | `networks_seen` (`[old, new]`) |
 | `vehicle_registration_diff` | `baseline_value`, `expected_value` |
 | `reboot_restart_gap` | `command_sent_at` |
+| `activation_sms` | `keys_sent`; `sms_received` (`raw_data`, `timestamp`, `channel` airtel/smpp, `sender`, `receiver`); samples carry `activation_code`, `key_ok` |
+| `sms_fallback` | `sms_received` (as above) |
 | `command_reply` | `command_replies` — see below; samples = the matching OT,12 packet (`role: command_reply`) and the follow-up packet (`role: after_command`) |
 | `pvt_packet_drop` | see below |
 
@@ -843,7 +941,7 @@ Flags: **M** = manual confirmation, **Map** = map needed, **Cmd** = command need
 | 38 | OT reboot command | `reboot_restart_gap` | After the reboot command: login → health → NR packet, in that order | M, Cmd | — (custom; key `reboot` or text with reboot/reset) |
 | 39 | OT set vehicle registration no. | `vehicle_registration_diff` | OT,12 acknowledgement + NR packet carrying the number sent | Cmd | `set_reg_no` |
 | 40 | PVT packet drop test (15 min) | `pvt_packet_drop` | Over 15 min: PVT and EPB average gap 4–6 s each, no gap > 3 min, every packet valid GPS, ≥ 70 % of PVT packets above 10 km/h | M, Map, Phy | — |
-| 41 | Activation command + reply | `activation_command` | Activation SMS reply received matching the key sent | Cmd | — (SMS activation flow) |
+| 41 | Activation command + reply | `activation_sms` | SMS `ACTVR,<key sent>,…,<IMEI>,…` received through the SMS receive mechanism after the activation command | Cmd | `activation` (`ACTV,{value},{sms_number}`, SMS, key auto-generated) |
 | 42 | Vehicle Number (SMS) | `command_reply` | OT reply to `SETREGNO-<v>` contains `SET SUCCESSFULLY REGNO-<v>` | Cmd | `set_reg_no`, `get_reg_no` (`GETREGNO`) |
 | 43 | Emergency State OFF (SMS) | `command_reply` | OT reply to `SET SOSDIS-1` contains `SOS DISABLED`, then an EA,11 packet | Cmd | `sos_stop` |
 | 44 | Harsh Brake Threshold (SMS) | `command_reply` | `SETHBT-<v>` → `SET SUCCESSFULLY HBT-<v>` | Cmd | `set_hbt`, `get_hbt` |
@@ -862,6 +960,10 @@ Flags: **M** = manual confirmation, **Map** = map needed, **Cmd** = command need
 | 57 | Get device location (SMS) | `command_reply` | Reply to `GETLOC` contains `GPS:`, `Lt-`, `Ln-` | Cmd | `get_loc` |
 | 58 | Reset device (SMS) | `command_reply` | A login packet after `DEVRESET` (reply not required; `DEV RESET SEQUENCE BUSY` means no reset) | Cmd | `dev_reset` |
 | 59 | Health packet log on SMS request | `command_reply` | Reply to `SET SENDHCHK-1` contains `HCHK` | Cmd | `send_health` |
+
+| 60 | SMS fallback (no data connection) | `sms_fallback` | An SMS from the device (from its `msisdn1`/`msisdn2`, or carrying its IMEI) received through the SMS receive mechanism; `ACTVR` replies don't count | Phy, Cmd | `set_escn` (`SETESCN-{sms_number}`), `sos_stop` |
+
+This table is in `serial_no` order. Testers see the run order (`sequence`): serials 1–10, 14, 17–20, 24–39, 41–60 are #1–#51 (indoor), and serials 11, 12, 13, 15, 16, 21, 22, 40 are #52–#59 (outdoor). The two SMS tests have a 10-minute time limit.
 
 In #42–#59 the `get_*` commands are read-backs: they are shown and never required. In #52, #53 and #55 a wrong value disconnects the device, so read the current value first.
 
@@ -937,6 +1039,8 @@ Editable per test via the upsert API (4.2). Unlisted keys are ignored.
 | | `max_gap_seconds` | 60 | Longer gap between H packets splits the stretch. |
 | `esim_*` | `packets_each_side` | 2 | |
 | `vehicle_registration_diff` | `require_ot_ack` | true | |
+| `activation_sms` | `command_key` | `activation` | The command whose sent `value` is the activation key to match. |
+| `sms_fallback` | `text_regex` | — | Optional: the fallback SMS text must match (case-insensitive). |
 | `command_reply` | `command_key` | first command | The test's main command, a `key` in `commands`. |
 | | `expected_reply` | `[]` | Texts the OT reply must all contain; `{value}` = value sent, `{imei}` = device IMEI. `[]` = the echo alone passes. |
 | | `reply_required` | true | `false` when only `after_packet` proves the command worked (e.g. reset). |
@@ -958,5 +1062,10 @@ python manage.py migrate skytron_api
 | `0112_onboarding_test_plan_sheet` | New test case fields; `TechnicalOnboardingCommandDispatch` table; deactivates #23; swaps #40/#41; applies the test plan to every test. |
 | `0117_onboarding_time_bound_tests` | #15 / #20 criteria and texts for time-bound scanning. |
 | `0118_onboarding_ota_parameter_tests` | `command_reply` mode; adds #42–#59; commands for #6, #24, #25. Reversing it deactivates #42–#59 and keeps their executions. |
+| `0119_onboarding_sequence_sms_tests` | `sequence` field (indoor first, then outdoor); #41 → `activation_sms`; adds serial 60 SMS fallback; deletes dummy executions of removed tests (never started, or DEV force-passed). |
+
+Optional env: `ONBOARDING_SMS_RECEIVE_NUMBER`, our number that receives device SMS (default `9181016497`). It is passed through by `run_with_host_storage.sh`.
+
+The upsert API (4.2) keeps `sequence` at 1..N over active tests. A new or re-activated test goes last, and sending `sequence` moves a test to that place.
 
 Executions already started keep their history; tests whose criteria changed should be re-run. Reversing `0112` restores #23 and the #40/#41 order but not the earlier per-test criteria.

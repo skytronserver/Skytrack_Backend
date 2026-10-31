@@ -158,6 +158,7 @@ API_MODULE_MAP: dict[str, list[str]] = {
     "superadmin_refresh_test_log": ["tech_onboarding", "tech_onboarding_final"],
     "superadmin_complete_test": ["tech_onboarding", "tech_onboarding_final"],
     "superadmin_demo_device_location_history": ["tech_onboarding", "tech_onboarding_final"],
+    "superadmin_demo_device_live_status": ["tech_onboarding", "tech_onboarding_final"],
     "superadmin_list_test_commands": ["tech_onboarding", "tech_onboarding_final"],
     "superadmin_send_test_command": ["tech_onboarding", "tech_onboarding_final"],
 

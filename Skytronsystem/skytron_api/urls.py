@@ -45,6 +45,7 @@ from .technical_onboarding_testing_views import (
     superadmin_refresh_test_log,
     superadmin_complete_test,
     superadmin_demo_device_location_history,
+    superadmin_demo_device_live_status,
     superadmin_list_test_commands,
     superadmin_send_test_command,
     technical_onboarding_demo_page,
@@ -627,6 +628,11 @@ urlpatterns = [
         'devicemodel/technical-onboarding/superadmin/demo-device-history/',
         superadmin_demo_device_location_history,
         name='superadmin_demo_device_location_history'
+    ),
+    path(
+        'devicemodel/technical-onboarding/superadmin/demo-device-live-status/',
+        superadmin_demo_device_live_status,
+        name='superadmin_demo_device_live_status'
     ),
     path(
         'devicemodel/technical-onboarding/demo/',
