@@ -30,6 +30,7 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
+from . import agps
 from . import protocol_formats as pf
 from .models import (
     DeviceModelTechnicalOnboardingRequest,
@@ -1326,34 +1327,90 @@ def _check_history_coverage(execution, imei, window_start, now):
     }
 
 
+def _agps_tower_check(packet, max_distance_m):
+    """
+    The A-GPS databank's predicted location for the packet's cells (serving +
+    neighbours) against the device's own GPS fix. 'mismatch' is True when a
+    known cell puts the device farther away than max_distance_m (or 3x the
+    prediction's accuracy, whichever is larger). None when the databank is missing.
+    """
+    parts = _packet_fields(packet['raw_data'])
+    idx = _pvt_index(parts)
+    operator, cells = agps.cells_from_pvt(parts, idx)
+    try:
+        found = agps.locate(cells, network=operator) if cells else None
+    except agps.DatabankUnavailable:
+        return None
+    info = {'known': False, 'method': None, 'predicted': None, 'distance_m': None, 'mismatch': False}
+    if not found or not found['found']:
+        return info
+    info.update(known=found['method'] != 'tac_area', method=found['method'], confidence=found['confidence'],
+                predicted=found['location'],
+                matched_cells=[f"{m['query']['role']}: {m['cell']['tac_hex']}/{m['cell']['cid16_hex']} ({m['match']})"
+                               for m in found['matched_cells']])
+    if packet['gps_fix'] == '1' and packet['latitude'] and packet['longitude']:
+        loc = found['location']
+        distance = _haversine_m(packet['latitude'], packet['longitude'], loc['lat'], loc['lon'])
+        info['distance_m'] = int(distance)
+        info['mismatch'] = bool(info['known'] and max_distance_m
+                                and distance > max(max_distance_m, 3 * loc['accuracy_m']))
+    return info
+
+
 def _check_unique_cell_towers(execution, imei, window_start, now):
     """
     'unique_cell_towers': every distinct serving cell (operator, MCC, MNC,
     LAC, cell ID) the device reported, first packet for each, for the
     tester to compare against a phone. Needs min_match_count towers.
+
+    Each tower is also looked up in the A-GPS cell databank (agps.py): the
+    predicted location must lie within check_config 'agps_max_distance_m'
+    (default 5000 m; 0 turns the check off) of the device's GPS fix, else the
+    reported cell information is wrong. Towers not in the databank only
+    show as unknown.
     """
     test_case = execution.test_case
+    max_distance = _cfg(test_case).get('agps_max_distance_m', 5000)
     towers = {}
     for p in _pvt_packets(imei, window_start):
         if p['packet_status'] != 'L' or not p['cell_id'] or p['cell_id'].strip('0') == '' or p['mcc'] in (None, '', '0'):
             continue
         key = (p['network_operator'], p['mcc'], p['mnc'], p['lac'], p['cell_id'])
-        if key not in towers:
+        # Prefer the first packet with a GPS fix so the A-GPS comparison has a position.
+        if key not in towers or (towers[key]['gps_fix'] != '1' and p['gps_fix'] == '1'):
             towers[key] = p
 
     required = test_case.min_match_count
     unique = list(towers.values())
     operators = sorted({p['network_operator'] for p in unique if p['network_operator']})
+    checks = [_agps_tower_check(p, max_distance) for p in unique]
+    problems = []
+    if len(unique) < required:
+        problems.append(f"Only {len(unique)} unique cell tower(s) reported since the test started, need {required}. "
+                        f"Move to the next location (about 1 km away) and wait for a few packets.")
+    for p, c in zip(unique, checks):
+        if c and c['mismatch']:
+            problems.append(
+                f"Cell {p['network_operator']} {p['mcc']}-{p['mnc']} LAC {p['lac']} cell {p['cell_id']} is "
+                f"{c['distance_m'] / 1000:.1f} km from the device's GPS position by the A-GPS databank "
+                f"(expected within {max(max_distance, 3 * c['predicted']['accuracy_m']) / 1000:.1f} km): "
+                f"the reported cell information looks wrong.")
+    known = [c for c in checks if c and c['known']]
     return {
         'matched_count': len(unique),
         'required': required,
-        'pass': len(unique) >= required,
-        'reason': None if len(unique) >= required else (
-            f"Only {len(unique)} unique cell tower(s) reported since the test started, need {required}. "
-            f"Move to the next location (about 1 km away) and wait for a few packets."
-        ),
-        'samples': [_sample(p) for p in unique],
+        'pass': not problems,
+        'reason': _fail_reason(problems),
+        'samples': [_sample(p, agps=c) for p, c in zip(unique, checks)],
         'operators_seen': operators,
+        'agps': None if checks and all(c is None for c in checks) else {
+            'towers_in_databank': len(known),
+            'towers_unknown': len(unique) - len(known),
+            'mismatches': sum(1 for c in checks if c and c['mismatch']),
+            'max_distance_m': max_distance,
+            'median_distance_m': (int(statistics.median(c['distance_m'] for c in known if c['distance_m'] is not None))
+                                  if any(c['distance_m'] is not None for c in known) else None),
+        },
     }
 
 

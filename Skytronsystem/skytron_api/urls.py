@@ -56,6 +56,7 @@ from .technical_onboarding_testing_views import (
 from .vltd_summary_views import superadmin_vltd_summary
 from .device_ip_views import device_ip_unique, device_ip_imeis, device_ip_by_imei, mqtt_client_ip_report
 from .ble_sos_app_log_views import ble_sos_app_log_create, ble_sos_app_log_list
+from .agps_views import agps_locate
 from .airtel_sms_views import airtel_sms_receive, airtel_sms_list
 from .smpp_views import smpp_send, smpp_sms_list, smpp_incoming_list, smpp_status
 from .m2m_dummy_views import m2m_dummy_sim_details
@@ -1432,6 +1433,9 @@ urlpatterns += [
     # SOS feedback from the BLE mobile app (ble_sos_app_log_views.py).
     path('ble-sos/app-log/', ble_sos_app_log_create, name='ble_sos_app_log_create'),  # Mobile app only (HMAC-signed, no login)
     path('ble-sos/app-log/list/', ble_sos_app_log_list, name='ble_sos_app_log_list'),  # Superadmin
+
+    # A-GPS: predicted location from network + cell tower(s) (agps_views.py, data/agps_cell_databank.json).
+    path('agps/locate/', agps_locate, name='agps_locate'),  # Any logged-in user
 
     # Incoming SMS pushed by Airtel's SMS gateway (airtel_sms_views.py).
     path('airtel-sms/receive/', airtel_sms_receive, name='airtel_sms_receive'),  # Airtel only (shared key, no login)

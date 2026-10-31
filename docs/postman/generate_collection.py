@@ -762,6 +762,12 @@ def folder_gps():
             tests=basic_tests(200)),
         req("Get Cell Tower Info (AGPS)", "POST", "/gpsdata/agps-info/",
             body=body_raw({"imei": "{{imei}}"})),
+        req("A-GPS Locate (network + tower)", "POST", "/agps/locate/",
+            body=body_raw({"network": "airtel", "tac": 7130, "cell_id": 248579851, "dbm": -95}),
+            description="Predicted location from the A-GPS cell databank (skytron_api/data/agps_cell_databank.json). "
+                        "Also accepts GET query params, {\"cells\": [...]} for several cells, "
+                        "id_format=hex for device-style IDs (tac=1BDA, cell_id=0711), or {\"raw_packet\": \"$,PVT,...\"}.",
+            tests=basic_tests(200)),
         req("Cell Location Average", "POST", "/cell_location/",
             body=body_raw({"cells": [{"mcc": 404, "mnc": 20, "lac": 12345, "cid": 67890}]})),
         req("Get Live Vehicle Numbers", "GET", "/get_live_vehicle_no/",
