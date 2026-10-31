@@ -87,6 +87,7 @@ SOURCE_TABLE_LABEL = {
     'vehicle_registration_diff': 'GPSDataLog',
     'reboot_restart_gap': 'GPSDataLog + OTACommandHistory',
     'pvt_packet_drop': 'GPSDataLog + GPSemDataLog',
+    'command_reply': 'GPSDataLog (OT,12 command replies)',
 }
 
 # The eSIM switch tests cross-check each other's network order.
@@ -1584,6 +1585,186 @@ def _check_reboot(execution, imei, window_start, now):
     }
 
 
+# OT,12 reply packets end with
+#   ...,<frame no>,<source>,<sender>,<command echo>,<reply text>,<checksum>,*
+# e.g. ...,633805,SMS,+917635975659,SETHBT-0.75,SET SUCCESSFULLY HBT-0.75,33,*
+#      ...,623839,SERVER,20.244.106.211:6000,SET SOSDIS-1,SOS DISABLED,1E,*
+# The echo and the reply can themselves contain commas (SET IP1-...,PORT1-...).
+OT_REPLY_TAIL = re.compile(
+    r',(SMS|SERVER|UART|MQTT|TCP|BLE|APP),([^,]*),(.*?),([0-9A-Fa-f]{2}),?\s*\*?\s*$'
+)
+
+
+def _compact(text):
+    """Upper-case with all whitespace removed: 'SET SOSDIS-1' == 'SETSOSDIS-1'."""
+    return re.sub(r'\s+', '', text or '').upper()
+
+
+def _ot_replies(imei, window_start):
+    """Every OT,12 command reply packet for the IMEI since window_start, oldest first."""
+    replies, seen = [], set()
+    for raw_data, server_time in _scan_rows(GPSDataLog, imei, window_start):
+        for frag in _packets_in_row(raw_data):
+            if ',OT,' not in frag or frag in seen:
+                continue
+            match = OT_REPLY_TAIL.search(frag)
+            info = _pvt_info(frag, server_time)
+            if not match or not info or info['packet_type'] != 'OT':
+                continue
+            seen.add(frag)
+            replies.append({
+                'packet': info,
+                'time': server_time,
+                'source': match.group(1),
+                'sender': match.group(2).strip(),
+                'text': match.group(3).strip(),
+            })
+    return replies
+
+
+def _echo_pattern(template, value=None):
+    """
+    Regex for a command's echo + reply in an OT reply's compacted text.
+    '{value}' becomes the sent value when known, else any text.
+    """
+    pieces = _compact(template).strip('@*').split('{VALUE}')
+    value_re = f"(?P<value>{re.escape(_compact(value)) if value else '.+?'})"
+    echo = value_re.join(re.escape(p) for p in pieces)
+    return re.compile('^' + echo + r'(?:,(?P<reply>.*))?$')
+
+
+def _match_command_reply(reply, definition, sent_values):
+    """(value, reply_text) when the OT reply echoes this command, else None."""
+    text = _compact(reply['text'])
+    for value in (sent_values or [None]):
+        match = _echo_pattern(definition['command'], value).match(text)
+        if match:
+            groups = match.groupdict()
+            return (value or groups.get('value') or ''), (groups.get('reply') or '')
+    return None
+
+
+def _check_command_reply(execution, imei, window_start, now):
+    """
+    'command_reply': a SET/GET command (from the test board over MQTT, or
+    by SMS from the tester's phone) must come back as an OT,12 packet that
+    echoes the command and carries the expected reply text, e.g.
+    SETHBT-0.75 -> 'SET SUCCESSFULLY HBT-0.75'.
+
+    check_config:
+      command_key      the test's main command (a key in test_case.commands)
+      expected_reply   texts the reply must contain; '{value}' = the value
+                       sent, '{imei}' = the device IMEI. [] = the echo alone
+                       is enough (the device sends an empty reply).
+      reply_required   default true; false when the proof is the packet
+                       below (e.g. the device restarts before replying)
+      after_packet     {"kind": "login"|"health"} or {"regex": ",EA,11,"}
+                       plus "label": a packet that must follow the command
+    Replies to the test's other commands (GET read-back) are shown too.
+    """
+    test_case = execution.test_case
+    cfg = _cfg(test_case)
+    definitions = [c for c in (test_case.commands or []) if c.get('command')]
+    main = next((c for c in definitions if c.get('key') == cfg.get('command_key')), definitions[0] if definitions else None)
+    if not main:
+        return {'matched_count': 0, 'required': 1, 'pass': False,
+                'reason': 'No command is configured for this test.', 'samples': []}
+
+    dispatches = list(execution.command_dispatches.filter(sent_at__gte=window_start, send_status='queued').order_by('sent_at'))
+    sent_values = {}
+    for d in dispatches:
+        if d.value:
+            sent_values.setdefault(d.command_key, []).append(d.value)
+
+    command_replies, main_hits = [], []
+    for reply in _ot_replies(imei, window_start):
+        entry = {
+            'timestamp': reply['time'].isoformat(),
+            'source': reply['source'],
+            'sender': reply['sender'],
+            'text': reply['text'],
+            'command_key': None,
+            'command_label': None,
+            'value': None,
+            'reply': None,
+            'expected_reply': None,
+            'reply_ok': None,
+        }
+        for definition in definitions:
+            hit = _match_command_reply(reply, definition, sent_values.get(definition.get('key')))
+            if hit is None:
+                continue
+            value, reply_text = hit
+            entry.update({'command_key': definition.get('key'), 'command_label': definition.get('label'),
+                          'value': value, 'reply': reply_text})
+            if definition is main:
+                expected = [
+                    t.replace('{value}', value).replace('{imei}', imei)
+                    for t in cfg.get('expected_reply', [])
+                ]
+                entry['expected_reply'] = expected
+                entry['reply_ok'] = all(_compact(t) in reply_text for t in expected)
+                main_hits.append((reply, entry))
+            break
+        command_replies.append(entry)
+
+    label = main.get('label') or main['command']
+    framed = _frame_command(main['command'])
+    problems, samples = [], []
+    reply_required = cfg.get('reply_required', True)
+    good = next(((r, e) for r, e in main_hits if e['reply_ok']), None)
+    if good:
+        samples.append(_sample(good[0]['packet'], role='command_reply'))
+    elif reply_required:
+        if main_hits:
+            latest = main_hits[-1][1]
+            problems.append(
+                f"The device replied to {framed} at {_ist(latest['timestamp'])} with "
+                f"'{latest['reply'] or '(empty)'}', expected it to contain "
+                + ' and '.join(f"'{t}'" for t in latest['expected_reply']) + '.'
+            )
+        else:
+            sent = [d for d in dispatches if d.command_key == main.get('key')]
+            problems.append(
+                f"No OT reply echoing {framed} since the test started"
+                + (f" (sent from the board at {_ist(sent[-1].sent_at)})." if sent
+                   else " -- send it from the test commands, or by SMS to the device.")
+            )
+
+    after = cfg.get('after_packet')
+    after_hit = None
+    if after:
+        anchors = [d.sent_at for d in dispatches if d.command_key == main.get('key')]
+        anchors += [r['time'] for r, _e in main_hits]
+        if not anchors:
+            if not problems:
+                problems.append(f"{framed} has not been sent since the test started.")
+        else:
+            anchor = min(anchors)
+            pattern = re.compile(after['regex']) if after.get('regex') else None
+            for raw_data, server_time in _scan_rows(GPSDataLog, imei, anchor):
+                for frag in _packets_in_row(raw_data):
+                    if (pattern and pattern.search(frag)) or (after.get('kind') and _packet_kind(frag) == after['kind']):
+                        after_hit = {'raw_data': frag, 'timestamp': server_time.isoformat(), 'role': 'after_command'}
+                        break
+                if after_hit:
+                    break
+            if after_hit:
+                samples.append(after_hit)
+            else:
+                problems.append(f"No {after.get('label', 'follow-up packet')} received after {framed} ({_ist(anchor)}).")
+
+    required = int(bool(reply_required)) + int(bool(after))
+    return {
+        'matched_count': int(bool(good and reply_required)) + int(bool(after_hit)),
+        'required': required,
+        'pass': not problems,
+        'reason': _fail_reason(problems),
+        'samples': samples,
+        'command_replies': command_replies[-20:],
+    }
+
+
 _MODE_HANDLERS = {
     'gps': _check_raw_match,
     'gpsem': _check_raw_match,
@@ -1601,6 +1782,7 @@ _MODE_HANDLERS = {
     'esim_secondary_to_primary': _check_esim_switch,
     'vehicle_registration_diff': _check_vehicle_registration,
     'reboot_restart_gap': _check_reboot,
+    'command_reply': _check_command_reply,
 }
 
 

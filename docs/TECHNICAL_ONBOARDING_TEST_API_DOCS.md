@@ -47,6 +47,8 @@ All changes are **additive** — no existing field or endpoint was removed or re
 | **New API** | `superadmin/test-commands/` — commands configured for a test + commands sent + device replies. |
 | **New API** | `superadmin/test-send-command/` — send a command to the demo device over MQTT. |
 | Protocol | Packets are validated against the format of reference test device **AS01AA0005**; checksum mismatch is a hard failure — see [section 9](#9-reference-packet-format). |
+| Catalog (2026-10-31) | **#42–#59** added: the test plan's "OTA para (through SMS)" block, one test per device parameter, new mode `command_reply`. Testers see them as #41–#58. #6, #24 and #25 get the plan's `FOTA-{value}`, `SETPROF-2` and `SETPROF-1` commands. |
+| Test log | `command_reply` snapshots carry `command_replies` (every OT,12 reply seen in the attempt, parsed). |
 
 ---
 
@@ -701,7 +703,45 @@ Returned by `test-refresh-log` and stored on the execution as `test_log_snapshot
 | `esim_*` | `networks_seen` (`[old, new]`) |
 | `vehicle_registration_diff` | `baseline_value`, `expected_value` |
 | `reboot_restart_gap` | `command_sent_at` |
+| `command_reply` | `command_replies` — see below; samples = the matching OT,12 packet (`role: command_reply`) and the follow-up packet (`role: after_command`) |
 | `pvt_packet_drop` | see below |
+
+### Command reply tests (#42–#59) snapshot
+
+The device answers every command with an OT,12 packet that ends
+`...,<frame no>,<source>,<sender>,<command echo>,<reply>,<checksum>,*`, e.g.
+
+```
+...,637555,SMS,+917635975659,SETHBT-0.75,SET SUCCESSFULLY HBT-0.75,33,*
+...,623839,SERVER,20.244.106.211:6000,SET SOSDIS-1,SOS DISABLED,1E,*
+```
+
+The check reads that packet, so the command can come from the test board (MQTT, source `SERVER`) or by SMS from the tester's phone (source `SMS`). Echo and reply are compared without spaces and case (`SET SOSDIS-1` = `SETSOSDIS-1`). The value comes from the board's dispatch when there is one; otherwise it is read from the echo.
+
+```json
+"command_replies": [
+  {
+    "timestamp": "2026-10-07T07:41:52+00:00",
+    "source": "SMS",
+    "sender": "+917635975659",
+    "text": "SETHBT-0.75,SET SUCCESSFULLY HBT-0.75",
+    "command_key": "set_hbt",
+    "command_label": "Set harsh-brake threshold",
+    "value": "0.75",
+    "reply": "SETSUCCESSFULLYHBT-0.75",
+    "expected_reply": ["SET SUCCESSFULLY HBT-0.75"],
+    "reply_ok": true
+  },
+  {
+    "timestamp": "2026-10-07T07:43:10+00:00",
+    "source": "UART", "sender": "", "text": "GETHBT,HBT-0.75",
+    "command_key": "get_hbt", "command_label": "Read harsh-brake threshold",
+    "value": "", "reply": "HBT-0.75", "expected_reply": null, "reply_ok": null
+  }
+]
+```
+
+`reply_ok` is set only for the test's main command (`check_config.command_key`). Replies to its other commands, such as the GET read-back, have `reply_ok: null` and are shown but not checked. OT packets that match no configured command still appear, with `command_key: null`. The list holds at most the last 20 replies.
 
 ### PVT packet drop test (#40) snapshot
 
@@ -768,7 +808,7 @@ Flags: **M** = manual confirmation, **Map** = map needed, **Cmd** = command need
 | 3 | Physical SOS → Tracking Server | `packet_sequence` | EA,10 start packet + 9 NR packets with SOS flag = 1 within 60 s (10 total) | Phy | — |
 | 4 | App SOS → Tracking Server | `packet_sequence` | EA,10 + BLE flag, then 10 NR packets with SOS flag = 1 within 60 s | Cmd | `sos_stop` |
 | 5 | SOS stop on both servers | `sos_stop_both` | EA,11 on tracking **and** EPB SEM on emergency server; next NR has SOS flag = 0 | Cmd | `sos_stop` |
-| 6 | FOTA upgrade A → B | `firmware_diff` | Firmware version changes during the window (A before, B after) | Cmd | — (custom) |
+| 6 | FOTA upgrade A → B | `firmware_diff` | Firmware version changes during the window (A before, B after) | Cmd | `fota` (`FOTA-{value}`, value = firmware URL) |
 | 7 | Internal battery voltage | `voltage_internal` | 3 distinct internal voltage levels; every unique-level packet listed | M, Phy | — |
 | 8 | External supply voltage | `voltage_external` | 3 distinct external voltage levels; every unique-level packet listed | M, Phy | — |
 | 9 | Ignition ON status | `packet_sequence` | Last packet ignition = 0 → IN,07 alert → 8 packets ignition = 1 within 60 s | Phy | — |
@@ -786,8 +826,8 @@ Flags: **M** = manual confirmation, **Map** = map needed, **Cmd** = command need
 | 21 | A-GPS primary profile | `unique_cell_towers` | 3 unique cell towers; every unique-tower packet listed | M, Map, Cmd | — (custom) |
 | 22 | A-GPS secondary profile | `unique_cell_towers` | 3 unique cell towers; every unique-tower packet listed | M, Map, Cmd | — (custom) |
 | ~~23~~ | *removed* | | | | |
-| 24 | eSIM primary → secondary | `esim_primary_to_secondary` | Last 2 packets on the old network, next 2 on the new one; order mirrors #25 | Cmd | — (custom) |
-| 25 | eSIM secondary → primary | `esim_secondary_to_primary` | Same, reverse direction | Cmd | — (custom) |
+| 24 | eSIM primary → secondary | `esim_primary_to_secondary` | Last 2 packets on the old network, next 2 on the new one; order mirrors #25 | Cmd | `set_profile_2` (`SETPROF-2`) |
+| 25 | eSIM secondary → primary | `esim_secondary_to_primary` | Same, reverse direction | Cmd | `set_profile_1` (`SETPROF-1`) |
 | 26 | Login packet protocol | `protocol_packet` | 1 login packet, all fields valid, non-zero location | Cmd | — (custom) |
 | 27 | Health packet protocol | `protocol_packet` | 1 health packet, all fields valid | Cmd | — (custom) |
 | 28 | Emergency start packet protocol | `protocol_packet` | 1 EA,10 (non-BLE) packet, all fields + checksum valid | Phy | — |
@@ -804,6 +844,28 @@ Flags: **M** = manual confirmation, **Map** = map needed, **Cmd** = command need
 | 39 | OT set vehicle registration no. | `vehicle_registration_diff` | OT,12 acknowledgement + NR packet carrying the number sent | Cmd | `set_reg_no` |
 | 40 | PVT packet drop test (15 min) | `pvt_packet_drop` | Over 15 min: PVT and EPB average gap 4–6 s each, no gap > 3 min, every packet valid GPS, ≥ 70 % of PVT packets above 10 km/h | M, Map, Phy | — |
 | 41 | Activation command + reply | `activation_command` | Activation SMS reply received matching the key sent | Cmd | — (SMS activation flow) |
+| 42 | Vehicle Number (SMS) | `command_reply` | OT reply to `SETREGNO-<v>` contains `SET SUCCESSFULLY REGNO-<v>` | Cmd | `set_reg_no`, `get_reg_no` (`GETREGNO`) |
+| 43 | Emergency State OFF (SMS) | `command_reply` | OT reply to `SET SOSDIS-1` contains `SOS DISABLED`, then an EA,11 packet | Cmd | `sos_stop` |
+| 44 | Harsh Brake Threshold (SMS) | `command_reply` | `SETHBT-<v>` → `SET SUCCESSFULLY HBT-<v>` | Cmd | `set_hbt`, `get_hbt` |
+| 45 | Harsh Acceleration Threshold (SMS) | `command_reply` | `SETHAT-<v>` → `SET SUCCESSFULLY HAT-<v>` | Cmd | `set_hat`, `get_hat` |
+| 46 | Rash Turning Threshold (SMS) | `command_reply` | `SETRTT-<v>` → `SET SUCCESSFULLY RTT-<v>` (`ERR:RTT_RANGE` fails) | Cmd | `set_rtt`, `get_rtt` |
+| 47 | Over Speed Threshold (SMS) | `command_reply` | `SETOTT-<v>` → `SET SUCCESSFULLY OTT-<v>` | Cmd | `set_ott`, `get_ott` |
+| 48 | Update rate, ignition ON (SMS) | `command_reply` | `SETURION-<v>` → `SET SUCCESSFULLY URION-<v>` | Cmd | `set_urion`, `get_urion` |
+| 49 | Update rate, ignition OFF (SMS) | `command_reply` | `SETURIOFF-<v>` → `SET SUCCESSFULLY URIOFF-<v>` | Cmd | `set_urioff`, `get_urioff` |
+| 50 | Automatic emergency cutoff rate (SMS) | `command_reply` | OT packet echoing `SETEMCR-<v>` (the device sends an empty reply) | Cmd | `set_emcr`, `get_emcr` |
+| 51 | Health packet rate (SMS) | `command_reply` | `SETURHP-<v>` → `SET SUCCESSFULLY URHP-<v>` | Cmd | `set_urhp`, `get_urhp` |
+| 52 | Primary IP and port (SMS) | `command_reply` | `SET IP1-<v>` → `SET SUCCESSFULLY IP1-<v>`; value = `<ip>,PORT1-<port>,MODE1-<m>,PROTO1-<p>` | Cmd | `set_ip1`, `get_ip1` |
+| 53 | Emergency IP (SMS) | `command_reply` | `SETEIP-<v>` → `SET SUCCESSFULLY EIP-<v>` | Cmd | `set_eip`, `get_eip` |
+| 54 | Emergency SMS centre number (SMS) | `command_reply` | `SETESCN-<v>` → `SET SUCCESSFULLY ESCN-<v>` | Cmd | `set_escn`, `get_escn` |
+| 55 | Primary APN (SMS) | `command_reply` | `SETAPN-<v>` → `SET SUCCESSFULLY APN-<v>` | Cmd | `set_apn`, `get_apn` |
+| 56 | Get device info (SMS) | `command_reply` | Reply to `GET INFO` contains `IMEI-<imei>`, `VID-`, `VRN-`, `NETWORK-`, `VERSION-` | Cmd | `get_info` |
+| 57 | Get device location (SMS) | `command_reply` | Reply to `GETLOC` contains `GPS:`, `Lt-`, `Ln-` | Cmd | `get_loc` |
+| 58 | Reset device (SMS) | `command_reply` | A login packet after `DEVRESET` (reply not required; `DEV RESET SEQUENCE BUSY` means no reset) | Cmd | `dev_reset` |
+| 59 | Health packet log on SMS request | `command_reply` | Reply to `SET SENDHCHK-1` contains `HCHK` | Cmd | `send_health` |
+
+In #42–#59 the `get_*` commands are read-backs: they are shown and never required. In #52, #53 and #55 a wrong value disconnects the device, so read the current value first.
+
+Not added from the test plan: **OTA Update** and **SMS FALL BACK** (the plan gives no command or expected result for them). **Emergency NM / SP / SEM** and **Network switch** are marked as already live; they are covered by #1–#2, #20, #5 and #24–#25.
 
 The test window is `max(started_at, now − scan_window_seconds)` — 300 s by default; 600 s for #15, 900 s for #16/#20/#40, 3600 s for #21/#22.
 
@@ -875,6 +937,10 @@ Editable per test via the upsert API (4.2). Unlisted keys are ignored.
 | | `max_gap_seconds` | 60 | Longer gap between H packets splits the stretch. |
 | `esim_*` | `packets_each_side` | 2 | |
 | `vehicle_registration_diff` | `require_ot_ack` | true | |
+| `command_reply` | `command_key` | first command | The test's main command, a `key` in `commands`. |
+| | `expected_reply` | `[]` | Texts the OT reply must all contain; `{value}` = value sent, `{imei}` = device IMEI. `[]` = the echo alone passes. |
+| | `reply_required` | true | `false` when only `after_packet` proves the command worked (e.g. reset). |
+| | `after_packet` | — | `{"kind": "login"\|"health"\|"tracking"}` or `{"regex": ",EA,11,"}`, plus `label`: a packet that must arrive after the command was sent. |
 
 Fields `packet` names usable in `before`/`after.field`: any key of the sample `packet` object (e.g. `ignition`, `main_power`, `emergency_status`, `box_tamper`).
 
@@ -890,5 +956,7 @@ python manage.py migrate skytron_api
 |---|---|
 | `0111_onboarding_pvt_drop_fixed_window` | PVT packet drop test → 15-minute fixed window. |
 | `0112_onboarding_test_plan_sheet` | New test case fields; `TechnicalOnboardingCommandDispatch` table; deactivates #23; swaps #40/#41; applies the test plan to every test. |
+| `0117_onboarding_time_bound_tests` | #15 / #20 criteria and texts for time-bound scanning. |
+| `0118_onboarding_ota_parameter_tests` | `command_reply` mode; adds #42–#59; commands for #6, #24, #25. Reversing it deactivates #42–#59 and keeps their executions. |
 
 Executions already started keep their history; tests whose criteria changed should be re-run. Reversing `0112` restores #23 and the #40/#41 order but not the earlier per-test criteria.

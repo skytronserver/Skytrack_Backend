@@ -1100,6 +1100,7 @@ class TechnicalOnboardingTestCase(models.Model):
         ('geofence_crossing', 'Geofence Entry/Exit Distance (GPSDataLog)'),
         ('history_coverage', 'History (H) Packets Covering the No-Network Period (GPSDataLog)'),
         ('unique_cell_towers', 'Unique Cell Towers Seen (GPSDataLog)'),
+        ('command_reply', 'Command Echo + Expected Reply in an OT,12 Packet (GPSDataLog)'),
         ('manual', 'Manual / Observed'),
     ]
 
