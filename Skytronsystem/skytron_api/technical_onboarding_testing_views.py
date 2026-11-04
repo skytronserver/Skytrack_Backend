@@ -140,8 +140,10 @@ PVT_OFFSET_GPS_FIX = 8
 # every ~5s. Both streams' average gap must fall inside the band below and
 # every packet must carry a valid GPS fix and coordinate. The window length
 # comes from the test case's scan_window_seconds (falls back to the default).
+# The lower bound is 2.5s because devices such as AS01AA0005 report every 3s
+# while emergency is ON, and that is accepted (user decision, 2026-11-03).
 DEFAULT_PVT_DROP_WINDOW_SECONDS = 15 * 60
-PVT_DROP_AVG_GAP_MIN_SECONDS = 4
+PVT_DROP_AVG_GAP_MIN_SECONDS = 2.5
 PVT_DROP_AVG_GAP_MAX_SECONDS = 6
 PVT_DROP_MAX_SINGLE_GAP_SECONDS = 180
 PVT_DROP_MOVING_SPEED_KMPH = 10
@@ -2245,7 +2247,7 @@ def _pvt_drop_stream_checks(key, summary, window_seconds, window_start, window_e
     if not count:
         return checks
 
-    # Packet counts that land inside the 4-6s band over this window length.
+    # Packet counts that land inside the 2.5-6s band over this window length.
     min_expected = int(window_seconds // PVT_DROP_AVG_GAP_MAX_SECONDS)
     max_expected = int(window_seconds // PVT_DROP_AVG_GAP_MIN_SECONDS)
     average_gap = summary['average_gap_seconds']
@@ -2261,7 +2263,8 @@ def _pvt_drop_stream_checks(key, summary, window_seconds, window_start, window_e
         detail = (
             f"{label} packets arrived too often: {count} received in {_duration(window_seconds)}, "
             f"average gap {average_gap}s (allowed {PVT_DROP_AVG_GAP_MIN_SECONDS}-{PVT_DROP_AVG_GAP_MAX_SECONDS}s, "
-            f"i.e. {min_expected}-{max_expected} packets). The device's reporting interval is shorter than 5s."
+            f"i.e. {min_expected}-{max_expected} packets). The device's reporting interval is shorter than "
+            f"{PVT_DROP_AVG_GAP_MIN_SECONDS}s."
         )
     checks.append({
         'check': f'{key}_average_gap',
@@ -2320,7 +2323,7 @@ def _pvt_packet_drop_check(execution, imei, now):
     the device, moving with emergency ON, must send one PVT packet and one
     EPB emergency packet every ~5s.
 
-    Pass when, for each stream, the average gap is within 4-6s, no single
+    Pass when, for each stream, the average gap is within 2.5-6s, no single
     gap exceeds 3 min and every packet has a valid GPS fix + coordinate,
     and at least 70% of PVT packets report a speed above 10 km/h. Each
     failed check carries a plain-language reason in 'checks'. Until the window ends the

@@ -853,11 +853,11 @@ Fixed 15-minute window from start; never passes before the window ends.
   "reason": "Failed 1 of 9 checks: 1) 2 Emergency (EPB) gap(s) longer than the 3m 0s limit: first packet only at 10:47:07 IST, 4m 23s after the test started; stopped sending at 10:52:07 IST, 5m 37s before the test ended.",
   "checks": [
     {"check": "pvt_received", "label": "PVT packets received", "passed": true, "detail": null},
-    {"check": "pvt_average_gap", "label": "PVT average gap 4-6s", "passed": true, "detail": null},
+    {"check": "pvt_average_gap", "label": "PVT average gap 2.5-6s", "passed": true, "detail": null},
     {"check": "pvt_max_single_gap", "label": "No PVT gap longer than 3m 0s", "passed": true, "detail": null},
     {"check": "pvt_valid_gps", "label": "All PVT packets have a valid GPS fix and coordinate", "passed": true, "detail": null},
     {"check": "emergency_received", "label": "Emergency (EPB) packets received", "passed": true, "detail": null},
-    {"check": "emergency_average_gap", "label": "Emergency (EPB) average gap 4-6s", "passed": true, "detail": null},
+    {"check": "emergency_average_gap", "label": "Emergency (EPB) average gap 2.5-6s", "passed": true, "detail": null},
     {"check": "emergency_max_single_gap", "label": "No Emergency (EPB) gap longer than 3m 0s", "passed": false, "detail": "2 Emergency (EPB) gap(s) longer than ..."},
     {"check": "emergency_valid_gps", "label": "All Emergency (EPB) packets have a valid GPS fix and coordinate", "passed": true, "detail": null},
     {"check": "moving_share", "label": "At least 70% of PVT packets above 10 km/h", "passed": true, "detail": null}
