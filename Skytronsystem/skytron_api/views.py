@@ -43796,7 +43796,12 @@ PVT_MAX_CLOCK_DRIFT_SECONDS = 60
 PVT_MIN_MAIN_INPUT_VOLTAGE = Decimal('10.5')
 # Devices must be fitted inside Assam. 
 TAGGING_ALLOWED_STATE_ISO = 'IN-AS'
-REVERSE_GEOCODE_URL = 'https://map-geocoding.gromed.in/reverse'
+# Same geocoder root as the GPS address lookup in models.py. On NIC prod the
+# public dev host is unreachable, so .env points this at the internal map VM.
+REVERSE_GEOCODE_URL = (
+    (os.getenv('GPS_REVERSE_GEOCODE_ROOT', '').strip() or 'https://map-geocoding.gromed.in').rstrip('/')
+    + '/reverse'
+)
 REVERSE_GEOCODE_TIMEOUT_SECONDS = 3
 REVERSE_GEOCODE_CACHE_SECONDS = 3600
 
