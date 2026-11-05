@@ -5980,6 +5980,10 @@ class SmppSmsOut(models.Model):
     next_attempt_at = models.DateTimeField(null=True, blank=True)     # retry after a throttle / SMSC error
     error = models.CharField(max_length=255, blank=True, default='')
     sent_by = models.ForeignKey('User', null=True, blank=True, on_delete=models.SET_NULL, related_name='smpp_sms_sent')
+    # Set only for SMS queued through the key-protected gateway API (smpp_gateway_views.py)
+    txn_id = models.CharField(max_length=32, null=True, blank=True, unique=True)
+    api_client = models.CharField(max_length=32, blank=True, default='')   # key name from SMPP_API_KEYS
+    client_ip = models.GenericIPAddressField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
     final_at = models.DateTimeField(null=True, blank=True)            # last delivery receipt
@@ -5992,6 +5996,7 @@ class SmppSmsOut(models.Model):
             models.Index(fields=['-created_at'], name='smppout_created_idx'),
             models.Index(fields=['dest_no', '-created_at'], name='smppout_dest_idx'),
             models.Index(fields=['imei', '-created_at'], name='smppout_imei_idx'),
+            models.Index(fields=['api_client', 'created_at'], name='smppout_apiclient_idx'),
         ]
 
     def __str__(self):

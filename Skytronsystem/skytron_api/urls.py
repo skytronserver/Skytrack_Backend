@@ -59,6 +59,7 @@ from .ble_sos_app_log_views import ble_sos_app_log_create, ble_sos_app_log_list
 from .agps_views import agps_locate
 from .airtel_sms_views import airtel_sms_receive, airtel_sms_list
 from .smpp_views import smpp_send, smpp_sms_list, smpp_incoming_list, smpp_status
+from .smpp_gateway_views import smpp_gateway_send, smpp_gateway_status
 from .m2m_dummy_views import m2m_dummy_sim_details
 from .alert_stats_views import (
     alert_stats_type_options,
@@ -1446,6 +1447,9 @@ urlpatterns += [
     path('smpp/sms/list/', smpp_sms_list, name='smpp_sms_list'),  # Superadmin
     path('smpp/incoming/list/', smpp_incoming_list, name='smpp_incoming_list'),  # Superadmin
     path('smpp/status/', smpp_status, name='smpp_status'),  # Superadmin
+    # SMS gateway for our servers (smpp_gateway_views.py): X-Api-Key + IP allow-list, 1000/day.
+    path('smpp/gateway/send/', smpp_gateway_send, name='smpp_gateway_send'),
+    path('smpp/gateway/status/', smpp_gateway_status, name='smpp_gateway_status'),
 
     # Dummy M2M provider API for testing without a whitelisted URL (m2m_dummy_views.py).
     path('m2m-dummy/sim-details/', m2m_dummy_sim_details, name='m2m_dummy_sim_details'),  # Localhost only (backend calls itself)

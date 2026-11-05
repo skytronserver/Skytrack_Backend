@@ -148,6 +148,8 @@ docker rm skytron-backend-api-container || true
 # ONBOARDING_SMS_RECEIVE_NUMBER: our number that receives device SMS (activation
 # reply-to and emergency SMS centre number in onboarding tests); empty = 9181016497.
 # REDIS_URL: Django cache (sessions, OTP state, rate limits, RBAC cache, device IPs).
+# SMPP_API_KEYS / SMPP_API_ALLOWED_IPS / SMPP_API_DAILY_LIMIT: SMS gateway API
+# (smpp_gateway_views.py); dev VM only, empty keys = API disabled.
 # OSRM_ROUTING_URL: in-house OSRM for get_routePath (dev http://10.0.0.4:8084,
 # NIC http://10.192.136.166:8084); empty = https://map2.gromed.in/osrm.
 sudo docker run -d --restart=always \
@@ -162,6 +164,9 @@ sudo docker run -d --restart=always \
   -e AIRTEL_SMS_ALLOWED_IPS="${AIRTEL_SMS_ALLOWED_IPS:-}" \
   -e ONBOARDING_SMS_RECEIVE_NUMBER="${ONBOARDING_SMS_RECEIVE_NUMBER:-}" \
   -e OSRM_ROUTING_URL="${OSRM_ROUTING_URL:-}" \
+  -e SMPP_API_KEYS="${SMPP_API_KEYS:-}" \
+  -e SMPP_API_ALLOWED_IPS="${SMPP_API_ALLOWED_IPS:-}" \
+  -e SMPP_API_DAILY_LIMIT="${SMPP_API_DAILY_LIMIT:-}" \
   --name skytron-backend-api-container \
   skytron-backend-api
 

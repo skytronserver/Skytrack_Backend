@@ -45,8 +45,10 @@ _REGEX = [(name, re.compile(p, re.IGNORECASE)) for name, p in _PATTERNS]
 _EXEMPT_KEY_RE = re.compile(r'pass(?:word|wd)?|pwd|secret|token|otp|captcha|signature|jwt', re.IGNORECASE)
 
 # Always skipped: an SMS forwarded by Airtel's gateway may hold any text. It is
-# only stored (airtel_sms_views.py), behind the gateway's shared key.
-_BUILTIN_EXEMPT_PATHS = ('/api/airtel-sms/receive/',)
+# only stored (airtel_sms_views.py), behind the gateway's shared key. Likewise
+# device commands sent through the SMPP gateway API (smpp_gateway_views.py),
+# behind an API key and an IP allow-list.
+_BUILTIN_EXEMPT_PATHS = ('/api/airtel-sms/receive/', '/api/smpp/gateway/send/')
 
 _MAX_BODY_SCAN = 5 * 1024 * 1024   # don't parse bodies above 5 MB (uploads are form/multipart anyway)
 
