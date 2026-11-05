@@ -60,6 +60,7 @@ from .agps_views import agps_locate
 from .airtel_sms_views import airtel_sms_receive, airtel_sms_list
 from .smpp_views import smpp_send, smpp_sms_list, smpp_incoming_list, smpp_status
 from .smpp_gateway_views import smpp_gateway_send, smpp_gateway_status
+from .tagging_sms_views import device_tagging_step4_sms_send, device_tagging_step4_sms_status
 from .m2m_dummy_views import m2m_dummy_sim_details
 from .alert_stats_views import (
     alert_stats_type_options,
@@ -1382,6 +1383,9 @@ urlpatterns += [
     
     ## INUSE by Dealer
     path('device-tagging/step4/', device_tagging_step4_packet_check, name='device-tagging-step4'),
+    ## INUSE by Dealer -- step 4 SMS checks (health SMS on profile 1/2, activation reply)
+    path('device-tagging/step4/sms/send/', device_tagging_step4_sms_send, name='device-tagging-step4-sms-send'),
+    path('device-tagging/step4/sms/status/', device_tagging_step4_sms_status, name='device-tagging-step4-sms-status'),
     
     ## INUSE by Dealer
     path('device-tagging/step5/send-otp/',   device_tagging_step5_send_owner_otp,   name='device-tagging-step5-send'),

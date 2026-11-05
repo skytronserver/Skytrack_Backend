@@ -44438,20 +44438,32 @@ def device_tagging_step4_packet_check(request):
         'packet_latitude', 'packet_longitude', 'updated_by', 'updated_at',
     ]
 
-    if all_received:
+    # SMS checks (health SMS on both profiles, then activation reply) --
+    # see tagging_sms_views.py; they gate step 4 unless
+    # TAGGING_SMS_CHECKS_REQUIRED=0.
+    from .tagging_sms_views import SMS_CHECKS_REQUIRED, tagging_sms_state
+    sms_state = tagging_sms_state(record)
+    sms_ok = sms_state['all_passed'] or not SMS_CHECKS_REQUIRED
+    step_done = all_received and sms_ok
+
+    if step_done:
         record.step4_completed_at = now
         record.current_step = 5
         update_fields += ['step4_completed_at', 'current_step']
 
     record.save(update_fields=update_fields)
 
+    if step_done:
+        message = "All required packets received. Step 4 completed."
+    elif all_received:
+        message = ("All required packets received. Complete the SMS checks (health SMS on both "
+                   "profiles, then the activation reply) to finish step 4.")
+    else:
+        message = "Some packets have not been received yet. Trigger them on the device and check again."
+
     return Response({
-        "status": "success" if all_received else "pending",
-        "message": (
-            "All required packets received. Step 4 completed."
-            if all_received else
-            "Some packets have not been received yet. Trigger them on the device and check again."
-        ),
+        "status": "success" if step_done else "pending",
+        "message": message,
         "data": {
             "id": record.id,
             "current_step": record.current_step,
@@ -44464,6 +44476,7 @@ def device_tagging_step4_packet_check(request):
             "latitude": record.packet_latitude,
             "longitude": record.packet_longitude,
             "packets": results,
+            "sms_checks": sms_state,
         }
     }, status=status.HTTP_200_OK)
 

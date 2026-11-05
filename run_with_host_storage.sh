@@ -150,6 +150,14 @@ docker rm skytron-backend-api-container || true
 # REDIS_URL: Django cache (sessions, OTP state, rate limits, RBAC cache, device IPs).
 # SMPP_API_KEYS / SMPP_API_ALLOWED_IPS / SMPP_API_DAILY_LIMIT: SMS gateway API
 # (smpp_gateway_views.py); dev VM only, empty keys = API disabled.
+# DEVICE_SMS_VIA / DEVICE_SMS_GATEWAY_URL / DEVICE_SMS_GATEWAY_KEY: how command SMS to
+# device SIMs go out (device_sms.py): smpp = queue for the local SMPP worker (dev VM),
+# gateway = POST to the dev VM's SMS gateway API (NIC), phone_queue = old sms_out queue.
+# Empty VIA = gateway if the URL is set, else smpp if SMPP_API_KEYS is set, else phone_queue.
+# ONBOARDING_SMS_REPLY_NUMBER: number devices SMS activation/health replies to
+# (our VMN); empty = 9181016496.
+# TAGGING_SMS_CHECKS_REQUIRED: empty/1 (default) = tagging step 4 also needs the health SMS
+# on both profiles and the activation reply; 0 = those checks are shown but optional.
 # OSRM_ROUTING_URL: in-house OSRM for get_routePath (dev http://10.0.0.4:8084,
 # NIC http://10.192.136.166:8084); empty = https://map2.gromed.in/osrm.
 sudo docker run -d --restart=always \
@@ -164,6 +172,11 @@ sudo docker run -d --restart=always \
   -e AIRTEL_SMS_ALLOWED_IPS="${AIRTEL_SMS_ALLOWED_IPS:-}" \
   -e ONBOARDING_SMS_RECEIVE_NUMBER="${ONBOARDING_SMS_RECEIVE_NUMBER:-}" \
   -e OSRM_ROUTING_URL="${OSRM_ROUTING_URL:-}" \
+  -e DEVICE_SMS_VIA="${DEVICE_SMS_VIA:-}" \
+  -e DEVICE_SMS_GATEWAY_URL="${DEVICE_SMS_GATEWAY_URL:-}" \
+  -e DEVICE_SMS_GATEWAY_KEY="${DEVICE_SMS_GATEWAY_KEY:-}" \
+  -e ONBOARDING_SMS_REPLY_NUMBER="${ONBOARDING_SMS_REPLY_NUMBER:-}" \
+  -e TAGGING_SMS_CHECKS_REQUIRED="${TAGGING_SMS_CHECKS_REQUIRED:-}" \
   -e SMPP_API_KEYS="${SMPP_API_KEYS:-}" \
   -e SMPP_API_ALLOWED_IPS="${SMPP_API_ALLOWED_IPS:-}" \
   -e SMPP_API_DAILY_LIMIT="${SMPP_API_DAILY_LIMIT:-}" \

@@ -1103,6 +1103,7 @@ class TechnicalOnboardingTestCase(models.Model):
         ('command_reply', 'Command Echo + Expected Reply in an OT,12 Packet (GPSDataLog)'),
         ('activation_sms', 'Activation Reply (ACTVR) Received by SMS (AirtelSmsInLog / SmppSmsIn)'),
         ('sms_fallback', 'Fallback SMS from the Device Received by SMS (AirtelSmsInLog / SmppSmsIn)'),
+        ('health_sms', 'Health Check Reply (HCHKR) by SMS on Profile 1 and Profile 2 (AirtelSmsInLog / SmppSmsIn)'),
         ('manual', 'Manual / Observed'),
     ]
 
@@ -1178,7 +1179,7 @@ class TechnicalOnboardingTestCase(models.Model):
             return int(cfg['time_limit_seconds'])
         if self.source_table == 'speed_accuracy':
             return None
-        if self.source_table in ('firmware_diff', 'activation_sms', 'sms_fallback'):
+        if self.source_table in ('firmware_diff', 'activation_sms', 'sms_fallback', 'health_sms'):
             return self.FOTA_TIME_LIMIT_SECONDS  # FOTA download / SMS delivery delays
         task = cfg.get('task_seconds')
         if task is None and self.source_table == 'pvt_packet_drop':
@@ -1284,6 +1285,11 @@ class TechnicalOnboardingCommandDispatch(models.Model):
     error = models.CharField(max_length=255, blank=True, null=True)
     sent_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
     sent_at = models.DateTimeField()
+    # SMS sends only (device_sms.send_device_sms): which SIM number, which
+    # route (smpp / gateway / phone_queue) and its reference for delivery status.
+    sms_to = models.CharField(max_length=30, blank=True, default='')
+    sms_via = models.CharField(max_length=15, blank=True, default='')
+    sms_ref = models.CharField(max_length=64, blank=True, default='')
 
     class Meta:
         ordering = ['-sent_at']
@@ -5719,7 +5725,12 @@ class DeviceStockMaster(models.Model):
     packets_checked_at = models.DateTimeField(null=True, blank=True)
     packet_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     packet_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
- 
+    # SMS checks in step 4 (health SMS on profile 1 and 2, then activation
+    # reply): {"health_p1": {...}, "health_p2": {...}, "activation": {...}},
+    # each {"passed": bool, "passed_at": iso, "sms": {...}}. Commands sent
+    # are in DeviceTaggingSmsCommand.
+    sms_checks = models.JSONField(null=True, blank=True)
+
     # ── Group F: owner OTP (Step 5) ──────────────────────────────────
     owner_otp = models.CharField(max_length=6, null=True, blank=True)
     owner_otp_sent_at = models.DateTimeField(null=True, blank=True)
@@ -6044,3 +6055,43 @@ class SmppSmsIn(models.Model):
 
     def __str__(self):
         return f"SmppSmsIn {self.id} {self.source_no} -> {self.dest_no}"
+
+
+class DeviceTaggingSmsCommand(models.Model):
+    """
+    One command SMSed to the device during tagging step 4: set profile,
+    health check request (SENDHCHK) or activation (ACTV,<code>,<number>).
+    The device's SMS replies are read from AirtelSmsInLog / SmppSmsIn.
+    """
+    KIND_CHOICES = [
+        ('set_profile', 'Set profile'),
+        ('health', 'Health check request'),
+        ('activation', 'Activation command'),
+    ]
+    SEND_STATUS_CHOICES = [
+        ('queued', 'Queued'),
+        ('failed', 'Failed'),
+    ]
+
+    record = models.ForeignKey('DeviceStockMaster', on_delete=models.CASCADE, related_name='sms_commands')
+    imei = models.CharField(max_length=55, db_index=True)
+    kind = models.CharField(max_length=15, choices=KIND_CHOICES)
+    profile = models.PositiveSmallIntegerField(null=True, blank=True)    # 1 / 2 for set_profile and health
+    value = models.CharField(max_length=20, blank=True, default='')      # activation code
+    command_sent = models.CharField(max_length=255)
+    sms_to = models.CharField(max_length=30, blank=True, default='')
+    sms_via = models.CharField(max_length=15, blank=True, default='')
+    sms_ref = models.CharField(max_length=64, blank=True, default='')
+    send_status = models.CharField(max_length=10, choices=SEND_STATUS_CHOICES, default='queued')
+    error = models.CharField(max_length=255, blank=True, default='')
+    sent_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    sent_at = models.DateTimeField()
+
+    class Meta:
+        app_label = 'skytron_api'
+        db_table = 'device_tagging_sms_command'
+        ordering = ['-sent_at']
+        indexes = [models.Index(fields=['record', 'kind', 'sent_at'], name='tagsms_record_kind_idx')]
+
+    def __str__(self):
+        return f"DeviceTaggingSmsCommand {self.id} {self.kind} -> {self.sms_to} [{self.send_status}]"

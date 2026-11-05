@@ -1410,6 +1410,9 @@ class TechnicalOnboardingSendTestCommandSerializer(serializers.Serializer):
     value = serializers.CharField(required=False, allow_blank=True, max_length=255)
     command = serializers.CharField(required=False, allow_blank=True, max_length=400)
     channel = serializers.ChoiceField(choices=['mqtt', 'sms'], required=False)
+    # SMS only: which of the device's SIM numbers to SMS. The device is
+    # reachable on msisdn2 only while it runs on profile 2 (secondary network).
+    sms_target = serializers.ChoiceField(choices=['msisdn1', 'msisdn2'], required=False)
 
     def validate(self, attrs):
         if not attrs.get('command_key') and not (attrs.get('command') or '').strip():

@@ -551,7 +551,20 @@ By default, commands are published to the demo device on MQTT topic `deviceRespo
 {"keys": "@<command>*"}
 ```
 
-With `"channel": "sms"` they go by SMS to the device's `msisdn1` instead, through the `sms_out` queue that activation SMS also use. Device SMS replies (activation, fallback) arrive through the SMS receive mechanism (`AirtelSmsInLog` / `SmppSmsIn`). They show up in `replies` for 10 minutes after the send, prefixed `SMS from <number>:`.
+With `"channel": "sms"` they go by SMS to the device SIM from our Airtel VMN (9181016496), through `device_sms.send_device_sms` (2026-11-05). How the SMS is sent depends on `DEVICE_SMS_VIA`:
+
+- `smpp`: queued for the local SMPP worker. This is the dev VM default when `SMPP_API_KEYS` is set.
+- `gateway`: POSTed to `DEVICE_SMS_GATEWAY_URL` with `DEVICE_SMS_GATEWAY_KEY`. Use this on NIC.
+- `phone_queue`: the old `sms_out` queue.
+
+`"sms_target": "msisdn1" | "msisdn2"` picks the SIM number. Without it, the number of the profile the device is on is used: the latest of the SETPROF-n it acknowledged and the profile commands sent in this attempt.
+
+Template placeholders:
+
+- `{sms_number}`: our receive number, also the emergency SMS centre (`ONBOARDING_SMS_RECEIVE_NUMBER`, default 9181016497).
+- `{reply_number}`: our VMN, where devices SMS their ACTVR / HCHKR replies (`ONBOARDING_SMS_REPLY_NUMBER`, default 9181016496).
+
+Device SMS replies arrive through the SMS receive mechanism (`AirtelSmsInLog` / `SmppSmsIn`). They show up in `replies` for 10 minutes after the send, prefixed `SMS from <number>:`. SMS rows in `commands_sent` also carry `sms_to`, `sms_via`, `sms_status` (queued / sending / submitted / delivered / undelivered / failed) and `sms_error`.
 
 Every send is logged per execution and shown in `commands_sent` (on the refresh snapshot and the list endpoint) together with the device's replies.
 
@@ -840,6 +853,53 @@ The check reads that packet, so the command can come from the test board (MQTT, 
 ```
 
 `reply_ok` is set only for the test's main command (`check_config.command_key`). Replies to its other commands, such as the GET read-back, have `reply_ok: null` and are shown but not checked. OT packets that match no configured command still appear, with `command_key: null`. The list holds at most the last 20 replies.
+
+#### Both channels (2026-11-05, migration 0124)
+
+Each command in `check_config.required_commands` (SET + GET for the parameter tests) must pass on each channel in `check_config.channels` (default `["mqtt", "sms"]`):
+
+- **MQTT leg:** an OT,12 reply with source `SERVER` that carries the expected text.
+- **SMS leg:** an OT,12 reply with source `SMS` that carries the expected text, **and** the device's reply SMS with the same text reaching us. Set `require_sms_reply: false` to drop the SMS part.
+
+GET commands carry their own `expected_reply` in `test_case.commands`, e.g. `["HBT-"]`. `after_packet` is checked once per channel. `reply_ok` is now set for every configured command that has an expected reply.
+
+The snapshot has `legs`, one entry per command × channel:
+
+```json
+"legs": [
+  {"command_key": "set_hbt", "channel": "sms", "sent_at": "...", "ot_reply": true, "ot_reply_at": "...",
+   "reply_text": "SETSUCCESSFULLYHBT-0.75", "sms_reply": false, "sms_reply_at": null, "after_packet": null,
+   "pass": false, "problems": ["[SMS] The OT packet shows the device answered ..."]}
+]
+```
+
+The snapshot also has `sms_received`: SMS from the device in this attempt.
+
+### Health check by SMS (#59, mode `health_sms`)
+
+Commands: `set_profile_1` (`SETPROF-1`), `set_profile_2` (`SETPROF-2`) and `send_health` (`SET SENDHCHK-1`, by SMS). The device replies by SMS:
+
+```
+HCHKR,000000,<vendor>,<fw>,<imei>,1,<lat>,N,<lon>,E,<fix>,<date time>,<heading>,<speed>,<csq>,<mcc>,<mnc>,<lac>,<mainpwr>,<ign>,<vin>,<frame>,<mode>
+```
+
+Each profile in `check_config.profiles` (default `[1, 2]`) needs one HCHKR reply carrying this IMEI. The reply counts for profile n when it came from `msisdn<n>`. If the sender is neither number, or both numbers are the same, it counts for the profile the device was on when the SMS arrived. Set `require_distinct_network: true` to require different MCC/MNC on the two replies.
+
+Snapshot keys: `profiles` (`[{profile, received, received_at, sender, profile_from, network, reply}]`), `current_profile` and `sms_received`.
+
+### SMS fallback (#60)
+
+The tester sets a wrong emergency IP and triggers SOS. The device must then SMS the following, carrying this IMEI, from its `msisdn1` or `msisdn2` (`require_sender_match`, default true):
+
+```
+<IMEI>,<lat>,<N|S>,<lon>,<E|W>,<A|V>,<speed>,<cellid>,<lac>,<ddmmyyyyhhmmss>
+```
+
+SMS that did not count are listed in `sms_received` with `counted: false`, and the reason names the latest one.
+
+### Activation (#41)
+
+The command is `ACTV,<6-digit code>,9181016496`. The device replies `ACTVR,<code>,<vendor>,<fw>,<imei>,...` by SMS. The snapshot adds `activation_reply` (the parsed fields).
 
 ### PVT packet drop test (#40) snapshot
 

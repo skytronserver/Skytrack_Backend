@@ -61,8 +61,18 @@ from .serializers import (
     TechnicalOnboardingDemoDeviceHistorySerializer,
     build_checkpoint_status_map,
 )
+from .device_sms import (
+    SMS_REPLY_NUMBER,
+    digits,
+    number_matches,
+    parse_fallback_sms,
+    send_device_sms,
+    sim_slot,
+    sms_delivery_status,
+    sms_received,
+    status_replies,
+)
 from .views import (
-    add_sms_queue,
     send_general_mqtt_message,
     validate_inputs,
     get_user_object,
@@ -1857,23 +1867,55 @@ def _match_command_reply(reply, definition, sent_values):
     return None
 
 
+# Which OT,12 <source> a command sent on each channel comes back with:
+# over MQTT the device answers 'SERVER,<ip:port>', over SMS 'SMS,<sender no.>'.
+CHANNEL_OT_SOURCES = {'mqtt': ('SERVER', 'MQTT', 'TCP'), 'sms': ('SMS',)}
+CHANNEL_LABEL = {'mqtt': 'MQTT', 'sms': 'SMS'}
+DEFAULT_COMMAND_CHANNELS = ['mqtt', 'sms']
+
+
+def _ot_channel(source):
+    source = (source or '').upper()
+    return next((ch for ch, sources in CHANNEL_OT_SOURCES.items() if source in sources), None)
+
+
+def _expected_texts(definition, main, cfg, value, imei):
+    """Reply texts a command's reply must contain; None = any reply will do."""
+    if definition is main:
+        texts = cfg.get('expected_reply', [])
+    else:
+        texts = definition.get('expected_reply')
+        if texts is None:
+            return None
+    return [t.replace('{value}', value or '').replace('{imei}', imei) for t in texts]
+
+
 def _check_command_reply(execution, imei, window_start, now):
     """
-    'command_reply': a SET/GET command (from the test board over MQTT, or
-    by SMS from the tester's phone) must come back as an OT,12 packet that
-    echoes the command and carries the expected reply text, e.g.
-    SETHBT-0.75 -> 'SET SUCCESSFULLY HBT-0.75'.
+    'command_reply': each required SET/GET command must be sent on every
+    channel (MQTT and SMS by default) and answered on the same channel:
+
+      MQTT leg   the device's OT,12 packet echoes the command with source
+                 SERVER and carries the expected reply text.
+      SMS leg    the OT,12 packet echoes it with source SMS, AND the device
+                 SMSes the same reply text back (it reaches us at our VMN,
+                 so the SMS must be sent from the test board).
+
+    e.g. SETHBT-0.75 -> 'SET SUCCESSFULLY HBT-0.75', GETHBT -> 'HBT-0.75'.
 
     check_config:
-      command_key      the test's main command (a key in test_case.commands)
-      expected_reply   texts the reply must contain; '{value}' = the value
-                       sent, '{imei}' = the device IMEI. [] = the echo alone
-                       is enough (the device sends an empty reply).
-      reply_required   default true; false when the proof is the packet
-                       below (e.g. the device restarts before replying)
-      after_packet     {"kind": "login"|"health"} or {"regex": ",EA,11,"}
-                       plus "label": a packet that must follow the command
-    Replies to the test's other commands (GET read-back) are shown too.
+      command_key        the test's main command (a key in test_case.commands)
+      required_commands  keys that must pass on every channel (default [command_key])
+      channels           default ["mqtt", "sms"]
+      expected_reply     texts the main command's reply must contain; '{value}' =
+                         the value sent, '{imei}' = the device IMEI. [] = the
+                         echo alone is enough. Other commands use their own
+                         `expected_reply` in test_case.commands (absent = any reply).
+      reply_required     default true; false when the proof is the packet below
+                         (e.g. the device restarts before replying)
+      require_sms_reply  default true; false = the SMS leg passes on the OT packet alone
+      after_packet       {"kind": "login"|"health"} or {"regex": ",EA,11,"} plus
+                         "label": a packet that must follow the main command, per channel
     """
     test_case = execution.test_case
     cfg = _cfg(test_case)
@@ -1883,17 +1925,25 @@ def _check_command_reply(execution, imei, window_start, now):
         return {'matched_count': 0, 'required': 1, 'pass': False,
                 'reason': 'No command is configured for this test.', 'samples': []}
 
+    by_key = {c.get('key'): c for c in definitions}
+    required_defs = [by_key[k] for k in (cfg.get('required_commands') or [main.get('key')]) if k in by_key] or [main]
+    channels = [c for c in (cfg.get('channels') or DEFAULT_COMMAND_CHANNELS) if c in CHANNEL_OT_SOURCES]
+    reply_required = cfg.get('reply_required', True)
+    require_sms_reply = cfg.get('require_sms_reply', True)
+    after = cfg.get('after_packet')
+
     dispatches = list(execution.command_dispatches.filter(sent_at__gte=window_start, send_status='queued').order_by('sent_at'))
     sent_values = {}
     for d in dispatches:
         if d.value:
             sent_values.setdefault(d.command_key, []).append(d.value)
 
-    command_replies, main_hits = [], []
+    command_replies, hits = [], []
     for reply in _ot_replies(imei, window_start):
         entry = {
             'timestamp': reply['time'].isoformat(),
             'source': reply['source'],
+            'channel': _ot_channel(reply['source']),
             'sender': reply['sender'],
             'text': reply['text'],
             'command_key': None,
@@ -1908,116 +1958,130 @@ def _check_command_reply(execution, imei, window_start, now):
             if hit is None:
                 continue
             value, reply_text = hit
+            expected = _expected_texts(definition, main, cfg, value, imei)
             entry.update({'command_key': definition.get('key'), 'command_label': definition.get('label'),
-                          'value': value, 'reply': reply_text})
-            if definition is main:
-                expected = [
-                    t.replace('{value}', value).replace('{imei}', imei)
-                    for t in cfg.get('expected_reply', [])
-                ]
-                entry['expected_reply'] = expected
-                entry['reply_ok'] = all(_compact(t) in reply_text for t in expected)
-                main_hits.append((reply, entry))
+                          'value': value, 'reply': reply_text, 'expected_reply': expected,
+                          'reply_ok': all(_compact(t) in reply_text for t in (expected or []))})
+            hits.append((definition, reply, entry))
             break
         command_replies.append(entry)
 
-    label = main.get('label') or main['command']
-    framed = _frame_command(main['command'])
-    problems, samples = [], []
-    reply_required = cfg.get('reply_required', True)
-    good = next(((r, e) for r, e in main_hits if e['reply_ok']), None)
-    if good:
-        samples.append(_sample(good[0]['packet'], role='command_reply'))
-    elif reply_required:
-        if main_hits:
-            latest = main_hits[-1][1]
-            problems.append(
-                f"The device replied to {framed} at {_ist(latest['timestamp'])} with "
-                f"'{latest['reply'] or '(empty)'}', expected it to contain "
-                + ' and '.join(f"'{t}'" for t in latest['expected_reply']) + '.'
-            )
-        else:
-            sent = [d for d in dispatches if d.command_key == main.get('key')]
-            problems.append(
-                f"No OT reply echoing {framed} since the test started"
-                + (f" (sent from the board at {_ist(sent[-1].sent_at)})." if sent
-                   else " -- send it from the test commands, or by SMS to the device.")
-            )
+    device_sms = [m for m in _device_sms(execution.demo_device, window_start)
+                  if not status_replies(m['text']) and not parse_fallback_sms(m['text'])]
 
-    after = cfg.get('after_packet')
-    after_hit = None
-    if after:
-        anchors = [d.sent_at for d in dispatches if d.command_key == main.get('key')]
-        anchors += [r['time'] for r, _e in main_hits]
-        if not anchors:
-            if not problems:
-                problems.append(f"{framed} has not been sent since the test started.")
-        else:
-            anchor = min(anchors)
-            pattern = re.compile(after['regex']) if after.get('regex') else None
-            for raw_data, server_time in _scan_rows(GPSDataLog, imei, anchor):
-                for frag in _packets_in_row(raw_data):
-                    if (pattern and pattern.search(frag)) or (after.get('kind') and _packet_kind(frag) == after['kind']):
-                        after_hit = {'raw_data': frag, 'timestamp': server_time.isoformat(), 'role': 'after_command'}
-                        break
-                if after_hit:
-                    break
-            if after_hit:
-                samples.append(after_hit)
-            else:
-                problems.append(f"No {after.get('label', 'follow-up packet')} received after {framed} ({_ist(anchor)}).")
+    legs, problems, samples = [], [], []
+    for definition in required_defs:
+        key = definition.get('key')
+        framed = _frame_command(definition['command'].replace('{value}', '<value>'))
+        for channel in channels:
+            ch = CHANNEL_LABEL[channel]
+            sent = [d for d in dispatches if d.command_key == key and d.source == channel]
+            leg_hits = [(r, e) for dd, r, e in hits if dd is definition and e['channel'] == channel]
+            good = next(((r, e) for r, e in leg_hits if e['reply_ok']), None)
+            leg = {
+                'command_key': key,
+                'command_label': definition.get('label') or key,
+                'channel': channel,
+                'sent_at': sent[-1].sent_at.isoformat() if sent else None,
+                'ot_reply': bool(good),
+                'ot_reply_at': good[1]['timestamp'] if good else None,
+                'reply_text': good[1]['reply'] if good else None,
+                'sms_reply': None,
+                'sms_reply_at': None,
+                'after_packet': None,
+            }
+            leg_problems = []
 
-    required = int(bool(reply_required)) + int(bool(after))
+            if reply_required:
+                if good:
+                    samples.append(_sample(good[0]['packet'], role=f'command_reply_{channel}'))
+                elif leg_hits:
+                    latest = leg_hits[-1][1]
+                    leg_problems.append(
+                        f"[{ch}] The device replied to {framed} at {_ist(latest['timestamp'])} with "
+                        f"'{latest['reply'] or '(empty)'}', expected it to contain "
+                        + ' and '.join(f"'{t}'" for t in latest['expected_reply'] or []) + '.'
+                    )
+                elif sent:
+                    leg_problems.append(f"[{ch}] No OT reply (source {CHANNEL_OT_SOURCES[channel][0]}) to {framed} "
+                                        f"sent at {_ist(sent[-1].sent_at)}.")
+                else:
+                    leg_problems.append(f"[{ch}] {framed} has not been sent by {ch} yet.")
+
+            # SMS leg: the device SMSes its reply back to the sender (our VMN).
+            if channel == 'sms' and reply_required and require_sms_reply:
+                since = min([d.sent_at for d in sent] + ([good[0]['time']] if good else []), default=None)
+                reply_text = _compact(good[1]['reply']) if good else ''
+                expected = [_compact(t) for t in (good[1]['expected_reply'] or [])] if good else []
+                if since is not None and (reply_text or expected):
+                    sms_hit = next((m for m in device_sms if m['time'] >= since - timedelta(minutes=1) and (
+                        (reply_text and reply_text in _compact(m['text']))
+                        or (expected and all(t in _compact(m['text']) for t in expected))
+                    )), None)
+                    leg['sms_reply'] = bool(sms_hit)
+                    if sms_hit:
+                        leg['sms_reply_at'] = sms_hit['time'].isoformat()
+                        samples.append(_sms_sample(sms_hit, role='command_reply_sms'))
+                    elif good:
+                        leg_problems.append(
+                            f"[SMS] The OT packet shows the device answered {framed}, but its SMS reply "
+                            f"'{good[1]['reply']}' has not reached us yet (it goes to {SMS_REPLY_NUMBER})."
+                        )
+
+            if after and definition is main:
+                anchors = [d.sent_at for d in sent] + [r['time'] for r, _e in leg_hits]
+                if anchors:
+                    anchor = min(anchors)
+                    pattern = re.compile(after['regex']) if after.get('regex') else None
+                    after_hit = None
+                    for raw_data, server_time in _scan_rows(GPSDataLog, imei, anchor):
+                        for frag in _packets_in_row(raw_data):
+                            if (pattern and pattern.search(frag)) or (after.get('kind') and _packet_kind(frag) == after['kind']):
+                                after_hit = {'raw_data': frag, 'timestamp': server_time.isoformat(), 'role': f'after_command_{channel}'}
+                                break
+                        if after_hit:
+                            break
+                    leg['after_packet'] = bool(after_hit)
+                    if after_hit:
+                        samples.append(after_hit)
+                    else:
+                        leg_problems.append(f"[{ch}] No {after.get('label', 'follow-up packet')} received after "
+                                            f"{framed} ({_ist(anchor)}).")
+                else:
+                    leg['after_packet'] = False
+                    if not leg_problems:
+                        leg_problems.append(f"[{ch}] {framed} has not been sent by {ch} yet.")
+
+            leg['pass'] = not leg_problems
+            leg['problems'] = leg_problems
+            problems += leg_problems
+            legs.append(leg)
+
+    passed = sum(1 for leg in legs if leg['pass'])
     return {
-        'matched_count': int(bool(good and reply_required)) + int(bool(after_hit)),
-        'required': required,
-        'pass': not problems,
+        'matched_count': passed,
+        'required': len(legs),
+        'pass': passed == len(legs),
         'reason': _fail_reason(problems),
-        'samples': samples,
+        'samples': samples[-10:],
+        'legs': legs,
+        'channels': channels,
         'command_replies': command_replies[-20:],
+        'sms_received': [_sms_sample(m) for m in device_sms][-10:],
     }
 
 
 # ---------------------------------------------------------------------------
-# SMS from the device (activation reply, fallback SMS)
+# SMS from the device (activation reply, health check reply, fallback SMS)
 # ---------------------------------------------------------------------------
 # The device's SMS reach us through the SMS receive mechanism: Airtel's
 # gateway pushes each SMS sent to our number to /api/airtel-sms/receive/
-# (AirtelSmsInLog); SMS to our SMPP VMN land in SmppSmsIn.
+# (AirtelSmsInLog); SMS to our SMPP VMN land in SmppSmsIn. Helpers in
+# device_sms.py, shared with tagging step 4.
 
-SMS_SCAN_LIMIT = 500
-ACTVR_LINE = re.compile(r'ACTVR,[^\r\n]*', re.IGNORECASE)
-
-
-def _digits(value):
-    return re.sub(r'\D', '', value or '')
-
-
-def _number_matches(incoming, stored):
-    """Same phone number, ignoring +91 / leading digits (needs 10+ digits on both sides)."""
-    a, b = _digits(incoming), _digits(stored)
-    if len(a) < 10 or len(b) < 10:
-        return False
-    return a == b or a.endswith(b[-10:]) or b.endswith(a[-10:])
-
-
-def _sms_received(start, end=None):
-    """Every SMS received since `start`, oldest first: {channel, sender, receiver, text, time}."""
-    airtel = AirtelSmsInLog.objects.filter(received_at__gte=start)
-    smpp = SmppSmsIn.objects.filter(received_at__gte=start)
-    if end is not None:
-        airtel, smpp = airtel.filter(received_at__lte=end), smpp.filter(received_at__lte=end)
-    messages = [
-        {'channel': 'airtel', 'sender': sender, 'receiver': receiver, 'text': text or '', 'time': received_at}
-        for sender, receiver, text, received_at in
-        airtel.order_by('-received_at').values_list('sender_no', 'receiver_no', 'sms_text', 'received_at')[:SMS_SCAN_LIMIT]
-    ] + [
-        {'channel': 'smpp', 'sender': sender, 'receiver': receiver, 'text': text or '', 'time': received_at}
-        for sender, receiver, text, received_at in
-        smpp.order_by('-received_at').values_list('source_no', 'dest_no', 'text', 'received_at')[:SMS_SCAN_LIMIT]
-    ]
-    messages.sort(key=lambda m: m['time'])
-    return messages
+_digits = digits
+_number_matches = number_matches
+_sms_received = sms_received
 
 
 def _device_sms(demo_device, start, end=None):
@@ -2041,45 +2105,39 @@ def _sms_sample(message, **extra):
     return sample
 
 
-def _parse_actvr(line):
-    """ACTVR,<code>,<vendor>,<firmware>,<imei>,... -> dict (None when too short)."""
-    fields = [f.strip() for f in line.split(',')]
-    if len(fields) < 5:
-        return None
-    return {'code': fields[1], 'vendor': fields[2], 'firmware': fields[3], 'imei': fields[4]}
-
-
 def _check_activation_sms(execution, imei, window_start, now):
     """
-    'activation_sms': after the activation command (ACTV,<key>,<our number>)
-    the device must reply by SMS with ACTVR,<same key>,...,<its IMEI>,...;
-    the reply has to come in through the SMS receive mechanism.
+    'activation_sms': after the activation command (ACTV,<key>,<our VMN>,
+    sent by SMS from the board) the device must reply by SMS with
+    ACTVR,<same key>,<vendor>,<fw>,<its IMEI>,...
     """
+    command_key = _cfg(execution.test_case).get('command_key') or 'activation'
     keys = [
         d.value for d in execution.command_dispatches.filter(sent_at__gte=window_start, send_status='queued').order_by('sent_at')
-        if d.value and d.command_key == (_cfg(execution.test_case).get('command_key') or 'activation')
+        if d.value and d.command_key == command_key
     ]
+    demo = execution.demo_device
     replies = []
     for message in _sms_received(window_start):
-        for line in ACTVR_LINE.findall(message['text']):
-            parsed = _parse_actvr(line)
-            if parsed and parsed['imei'] == imei:
-                replies.append((message, line, parsed))
+        for parsed in status_replies(message['text'], 'ACTVR'):
+            if parsed['imei'] == imei:
+                replies.append((message, parsed))
 
-    good = next(((m, line, p) for m, line, p in replies if p['code'] in keys), None)
-    samples = [_sms_sample(m, role='activation_reply', activation_code=p['code'], key_ok=p['code'] in keys)
-               for m, _line, p in replies][-5:]
+    good = next(((m, p) for m, p in replies if p['code'] in keys), None)
+    samples = [_sms_sample(m, role='activation_reply', activation_code=p['code'], key_ok=p['code'] in keys,
+                           sim=sim_slot(m['sender'], demo.msisdn1, demo.msisdn2))
+               for m, p in replies][-5:]
     if good:
         reason = None
     elif not keys:
         reason = "No activation command sent from the test commands since the test started, so there is no key to match."
     elif replies:
-        latest = replies[-1][2]
+        latest = replies[-1][1]
         reason = (f"Activation reply received with key {latest['code']}, but the key sent was "
                   f"{', '.join(keys)}. Send the command again and wait for its reply.")
     else:
         reason = (f"No activation reply (ACTVR) from this IMEI received by SMS yet "
-                  f"(key {keys[-1]} sent; replies arrive at {ONBOARDING_SMS_RECEIVE_NUMBER}).")
+                  f"(key {keys[-1]} sent; replies arrive at {SMS_REPLY_NUMBER}).")
     return {
         'matched_count': int(bool(good)),
         'required': 1,
@@ -2087,40 +2145,184 @@ def _check_activation_sms(execution, imei, window_start, now):
         'reason': reason,
         'samples': samples,
         'keys_sent': keys,
-        'sms_received': [_sms_sample(m) for m, _l, _p in replies][-10:],
+        'activation_reply': {k: v for k, v in good[1].items() if k != 'line'} if good else None,
+        'sms_received': [_sms_sample(m) for m, _p in replies][-10:],
+    }
+
+
+def _profile_acks(imei, start):
+    """[(time, profile)] for every SETPROF-n the device acknowledged (OT,12) since start."""
+    acks = []
+    for raw_data, server_time in (GPSDataLog.objects.filter(imei=imei, timestamp__gte=start)
+                                  .filter(raw_data__contains='SETPROF').order_by('timestamp')
+                                  .values_list('raw_data', 'timestamp')[:50]):
+        match = PROFILE_ECHO.search(raw_data)
+        if match and ',OT,' in raw_data:
+            acks.append((server_time, int(match.group(1))))
+    return acks
+
+
+def _current_profile(imei, dispatch_profiles, now):
+    """
+    The SIM profile the device is on: the latest of its acknowledged
+    SETPROF-n (last 3 days) and the SETPROF commands sent in this attempt;
+    1 when nothing is known.
+    """
+    events = list(_profile_acks(imei, now - PROFILE_LOOKBACK)) + list(dispatch_profiles)
+    if not events:
+        return 1
+    return max(events, key=lambda e: e[0])[1]
+
+
+def _command_profile(definition):
+    try:
+        return int((definition or {}).get('profile') or 0) or None
+    except (TypeError, ValueError):
+        return None
+
+
+def _check_health_sms(execution, imei, window_start, now):
+    """
+    'health_sms': the health check request (@SET SENDHCHK-1*) is SMSed to
+    the device twice, once on each SIM profile:
+
+      SETPROF-1 -> wait for the switch (2-5 min) -> SENDHCHK -> HCHKR SMS
+      SETPROF-2 -> wait for the switch           -> SENDHCHK -> HCHKR SMS
+
+    The reply is HCHKR,000000,<vendor>,<fw>,<imei>,1,<lat>,N,<lon>,E,...,<mcc>,<mnc>,...
+    A reply counts for profile n when it came from the device's msisdn n;
+    when the sender is neither number (or both numbers are the same), the
+    profile the device was on when the reply arrived is used.
+
+    check_config:
+      command_key               default "send_health"
+      profiles                  default [1, 2]
+      require_distinct_network  default false: the two replies must show
+                                different MCC/MNC
+    """
+    cfg = _cfg(execution.test_case)
+    demo = execution.demo_device
+    command_key = cfg.get('command_key') or 'send_health'
+    profiles = [int(p) for p in (cfg.get('profiles') or [1, 2])]
+    commands = {c.get('key'): c for c in (execution.test_case.commands or [])}
+
+    dispatches = list(execution.command_dispatches.filter(sent_at__gte=window_start, send_status='queued').order_by('sent_at'))
+    profile_events = [(d.sent_at, _command_profile(commands.get(d.command_key)))
+                      for d in dispatches if _command_profile(commands.get(d.command_key))]
+    profile_events += _profile_acks(imei, window_start)
+    profile_events.sort(key=lambda e: e[0])
+    starting_profile = _current_profile(imei, [], window_start)
+    health_sent = [d for d in dispatches if d.command_key == command_key]
+    distinct_numbers = bool(demo.msisdn1 and demo.msisdn2 and not _number_matches(demo.msisdn1, demo.msisdn2))
+
+    replies = []
+    for message in _sms_received(window_start):
+        for parsed in status_replies(message['text'], 'HCHKR'):
+            if parsed['imei'] != imei:
+                continue
+            slot = sim_slot(message['sender'], demo.msisdn1, demo.msisdn2) if distinct_numbers else None
+            on_profile = next((p for t, p in reversed(profile_events) if t <= message['time']), starting_profile)
+            replies.append({
+                'message': message,
+                'parsed': parsed,
+                'profile': slot or on_profile,
+                'profile_from': 'sender' if slot else 'profile_switch',
+                'requested': any(d.sent_at <= message['time'] for d in health_sent),
+            })
+
+    by_profile = {}
+    for r in replies:
+        by_profile.setdefault(r['profile'], r)
+
+    problems = []
+    for p in profiles:
+        if p in by_profile:
+            continue
+        sent_on_p = [d for d in health_sent if next((pp for t, pp in reversed(profile_events) if t <= d.sent_at), starting_profile) == p]
+        if sent_on_p:
+            problems.append(f"Profile {p}: health check requested at {_ist(sent_on_p[-1].sent_at)}, no HCHKR reply by SMS yet "
+                            f"(replies arrive at {SMS_REPLY_NUMBER}; a profile switch takes 2-5 min).")
+        else:
+            problems.append(f"Profile {p}: switch the device to profile {p} (SETPROF-{p}), wait for it to "
+                            f"re-register, then send the health check request.")
+
+    networks = {p: f"{r['parsed'].get('mcc', '')}/{r['parsed'].get('mnc', '')}" for p, r in by_profile.items()}
+    if cfg.get('require_distinct_network') and len(by_profile) >= 2 and len(set(networks.values())) < 2:
+        problems.append(f"Both health replies show the same network ({', '.join(sorted(set(networks.values())))}); "
+                        f"the profiles should register on different networks.")
+
+    profile_results = [{
+        'profile': p,
+        'received': p in by_profile,
+        'received_at': by_profile[p]['message']['time'].isoformat() if p in by_profile else None,
+        'sender': by_profile[p]['message']['sender'] if p in by_profile else None,
+        'profile_from': by_profile[p]['profile_from'] if p in by_profile else None,
+        'network': networks.get(p),
+        'reply': {k: v for k, v in by_profile[p]['parsed'].items() if k != 'line'} if p in by_profile else None,
+    } for p in profiles]
+
+    return {
+        'matched_count': sum(1 for p in profiles if p in by_profile),
+        'required': len(profiles),
+        'pass': not problems,
+        'reason': _fail_reason(problems),
+        'samples': [_sms_sample(r['message'], role=f"health_reply_profile_{r['profile']}") for r in by_profile.values()],
+        'profiles': profile_results,
+        'current_profile': _current_profile(imei, profile_events, now),
+        'sms_received': [_sms_sample(r['message'], profile=r['profile']) for r in replies][-10:],
     }
 
 
 def _check_sms_fallback(execution, imei, window_start, now):
     """
-    'sms_fallback': with no data connection the device must send its alert
-    by SMS (to the emergency SMS centre number = our receive number); the
-    SMS has to come in through the SMS receive mechanism, from the device's
-    number or carrying its IMEI. check_config.text_regex narrows the match.
+    'sms_fallback': with the emergency server unreachable (EIP set to a wrong
+    IP) an SOS must go out by SMS to the emergency SMS centre number:
+      <IMEI>,<lat>,<N|S>,<lon>,<E|W>,<A|V>,<speed>,<cellid>,<lac>,<date><time>
+    The SMS must carry this IMEI and (require_sender_match, default true)
+    come from the device's msisdn1 or msisdn2.
+    check_config.text_regex replaces the format check.
     """
     test_case = execution.test_case
     cfg = _cfg(test_case)
+    demo = execution.demo_device
     pattern = re.compile(cfg['text_regex'], re.IGNORECASE) if cfg.get('text_regex') else None
-    messages = [
-        m for m in _device_sms(execution.demo_device, window_start)
-        if not ACTVR_LINE.search(m['text']) and (not pattern or pattern.search(m['text']))
-    ]
+    require_sender = cfg.get('require_sender_match', True)
+
+    matched, near_misses = [], []
+    for m in _device_sms(demo, window_start):
+        if status_replies(m['text']):
+            continue
+        parsed = parse_fallback_sms(m['text'])
+        format_ok = bool(pattern.search(m['text'])) if pattern else bool(parsed)
+        imei_ok = imei in m['text'] if pattern else bool(parsed and parsed['imei'] == imei)
+        slot = sim_slot(m['sender'], demo.msisdn1, demo.msisdn2)
+        if format_ok and imei_ok and (slot or not require_sender):
+            matched.append((m, parsed, slot))
+        else:
+            near_misses.append((m, format_ok, imei_ok, slot))
+
     required = test_case.min_match_count or 1
-    if len(messages) >= required:
+    if len(matched) >= required:
         reason = None
     else:
-        numbers = ', '.join(n for n in (execution.demo_device.msisdn1, execution.demo_device.msisdn2) if n) or 'none on record'
-        reason = (f"{len(messages)} fallback SMS received from this device since the test started, need {required}. "
-                  f"Looked for SMS to {ONBOARDING_SMS_RECEIVE_NUMBER} from the device's numbers ({numbers}) "
-                  f"or carrying IMEI {imei}"
-                  + (f", matching '{cfg['text_regex']}'" if pattern else '') + '.')
+        numbers = ', '.join(n for n in (demo.msisdn1, demo.msisdn2) if n) or 'none on record'
+        reason = (f"{len(matched)} fallback SMS received from this device since the test started, need {required}. "
+                  f"Looking for '<IMEI>,<lat>,N,<lon>,E,<A|V>,<speed>,<cellid>,<lac>,<ddmmyyyyhhmmss>' with IMEI {imei} "
+                  f"from the device's numbers ({numbers}).")
+        if near_misses:
+            m, format_ok, imei_ok, slot = near_misses[-1]
+            why = ('the text is not in the fallback format' if not format_ok
+                   else 'it carries a different IMEI' if not imei_ok
+                   else f"it came from {m['sender']}, not the device's msisdn1/msisdn2")
+            reason += f" Latest SMS at {_ist(m['time'])} did not count: {why}."
     return {
-        'matched_count': len(messages),
+        'matched_count': len(matched),
         'required': required,
-        'pass': len(messages) >= required,
+        'pass': len(matched) >= required,
         'reason': reason,
-        'samples': [_sms_sample(m, role='fallback_sms') for m in messages][-10:],
-        'sms_received': [_sms_sample(m) for m in messages][-10:],
+        'samples': [_sms_sample(m, role='fallback_sms', sim=slot, fallback=parsed) for m, parsed, slot in matched][-10:],
+        'sms_received': ([_sms_sample(m, sim=slot) for m, _p, slot in matched]
+                         + [_sms_sample(m, sim=slot, counted=False) for m, _f, _i, slot in near_misses])[-10:],
     }
 
 
@@ -2144,6 +2346,7 @@ _MODE_HANDLERS = {
     'command_reply': _check_command_reply,
     'activation_sms': _check_activation_sms,
     'sms_fallback': _check_sms_fallback,
+    'health_sms': _check_health_sms,
 }
 
 
@@ -2199,12 +2402,13 @@ def _command_replies(imei, source_ip, sent_at):
 def _commands_sent(execution):
     if not execution.started_at:
         return []
-    dispatches = list(execution.command_dispatches.filter(sent_at__gte=execution.started_at).order_by('sent_at')[:20])
+    dispatches = list(execution.command_dispatches.filter(sent_at__gte=execution.started_at).order_by('sent_at')[:30])
     if not dispatches:
         return []
     source_ip = _device_source_ip(execution.demo_device.imei)
-    # SMS replies (activation, fallback) come in through the SMS receive mechanism.
+    # SMS replies (command replies, activation, health, fallback) come in through the SMS receive mechanism.
     device_sms = _device_sms(execution.demo_device, dispatches[0].sent_at)
+    delivery = sms_delivery_status([(d.sms_via, d.sms_ref) for d in dispatches if d.source == 'sms' and d.sms_ref])
 
     def sms_replies(sent_at):
         until = sent_at + SMS_REPLY_WINDOW
@@ -2213,8 +2417,10 @@ def _commands_sent(execution):
             for m in device_sms if sent_at <= m['time'] <= until
         ]
 
-    return [
-        {
+    rows = []
+    for d in dispatches:
+        sms_state = delivery.get((d.sms_via, d.sms_ref)) if d.source == 'sms' else None
+        rows.append({
             'id': d.id,
             'command_key': d.command_key,
             'command_label': d.command_label,
@@ -2224,11 +2430,15 @@ def _commands_sent(execution):
             'error': d.error,
             'sent_at': d.sent_at.isoformat(),
             'channel': d.source,
+            'sms_to': d.sms_to or None,
+            'sms_via': d.sms_via or None,
+            # SMS delivery: queued / sending / submitted / delivered / undelivered / failed
+            'sms_status': (sms_state or {}).get('status'),
+            'sms_error': (sms_state or {}).get('error') or None,
             'replies': (_command_replies(d.imei, source_ip, d.sent_at) + sms_replies(d.sent_at))
             if d.send_status == 'queued' else [],
-        }
-        for d in dispatches
-    ]
+        })
+    return rows
 
 
 def _pvt_index(parts):
@@ -3179,7 +3389,7 @@ def superadmin_send_test_command(request):
     """
     Send a command to the demo device of an in-progress test, over MQTT
     (published to deviceResponse/{imei} as {"keys": "@...*"}) or by SMS to
-    the device's msisdn1 (sms_out queue, the same path activation SMS use).
+    the device's SIM from our Airtel VMN (device_sms.send_device_sms).
 
     Body: {"execution_id": 1, "command_key": "sos_stop"}
           {"execution_id": 1, "command_key": "set_reg_no", "value": "AS01AA0009"}
@@ -3187,8 +3397,13 @@ def superadmin_send_test_command(request):
           {"execution_id": 1, "command": "SETSOSDIS-1"}   -- custom command
 
     channel: "mqtt" | "sms" (default: the command's own `channel`, else mqtt).
-    Command templates may use {value} and {sms_number} (our SMS receive
-    number); a definition with "frame": false is sent without '@...*'.
+    sms_target: "msisdn1" | "msisdn2" -- which SIM number to SMS. Default:
+    the number of the profile the device is on now (last SETPROF-n
+    acknowledged or sent), else msisdn1.
+    Command templates may use {value}, {sms_number} (our SMS receive number,
+    emergency SMS centre) and {reply_number} (our VMN, where the device SMSes
+    activation / health replies); a definition with "frame": false is sent
+    without '@...*'.
     """
     errors = validate_inputs(request)
     if errors:
@@ -3224,7 +3439,8 @@ def superadmin_send_test_command(request):
                 {'error': f"Command '{command_key}' is not configured for this test."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        template = definition['command'].replace('{sms_number}', ONBOARDING_SMS_RECEIVE_NUMBER)
+        template = (definition['command'].replace('{sms_number}', ONBOARDING_SMS_RECEIVE_NUMBER)
+                    .replace('{reply_number}', SMS_REPLY_NUMBER))
         label = definition.get('label') or command_key
         if '{value}' in template:
             if not value and definition.get('auto_value') == 'random6':
@@ -3245,8 +3461,23 @@ def superadmin_send_test_command(request):
     imei = demo_device.imei
     channel = data.get('channel') or (definition or {}).get('channel') or 'mqtt'
     wire_command = _frame_command(template) if (definition or {}).get('frame', True) else template.strip()
-    if channel == 'sms' and not demo_device.msisdn1:
-        return Response({'error': 'This demo device has no SMS number (msisdn1).'}, status=status.HTTP_400_BAD_REQUEST)
+    sms_target, sms_to = None, ''
+    if channel == 'sms':
+        sms_target = data.get('sms_target')
+        if not sms_target:
+            commands = {c.get('key'): c for c in (execution.test_case.commands or [])}
+            profile_sends = [
+                (d.sent_at, _command_profile(commands.get(d.command_key)))
+                for d in execution.command_dispatches.filter(sent_at__gte=execution.started_at or timezone.now(),
+                                                             send_status='queued', source__in=['sms', 'mqtt'])
+                if _command_profile(commands.get(d.command_key))
+            ]
+            sms_target = 'msisdn2' if _current_profile(imei, profile_sends, timezone.now()) == 2 else 'msisdn1'
+            if sms_target == 'msisdn2' and not demo_device.msisdn2:
+                sms_target = 'msisdn1'
+        sms_to = getattr(demo_device, sms_target) or ''
+        if not sms_to:
+            return Response({'error': f'This demo device has no SMS number ({sms_target}).'}, status=status.HTTP_400_BAD_REQUEST)
     dispatch = TechnicalOnboardingCommandDispatch(
         execution=execution,
         imei=imei,
@@ -3257,11 +3488,14 @@ def superadmin_send_test_command(request):
         source=channel,
         sent_by=request.user,
         sent_at=timezone.now(),
+        sms_to=sms_to,
     )
     if channel == 'sms':
-        if add_sms_queue(wire_command, demo_device.msisdn1) is not None:
+        sent = send_device_sms(sms_to, wire_command, imei=imei, user=request.user)
+        dispatch.sms_via, dispatch.sms_ref = sent['via'], sent['ref']
+        if not sent['ok']:
             dispatch.send_status = 'failed'
-            dispatch.error = 'Could not queue the SMS.'
+            dispatch.error = (sent['error'] or 'Could not send the SMS.')[:255]
     else:
         try:
             send_general_mqtt_message(imei, {'keys': wire_command})
@@ -3283,7 +3517,9 @@ def superadmin_send_test_command(request):
         'command_sent': wire_command,
         'value': value,
         'channel': channel,
-        'sms_to': demo_device.msisdn1 if channel == 'sms' else None,
+        'sms_to': sms_to or None,
+        'sms_target': sms_target,
+        'sms_via': dispatch.sms_via or None,
         'send_status': dispatch.send_status,
         'error': dispatch.error,
         'sent_at': dispatch.sent_at.isoformat(),
