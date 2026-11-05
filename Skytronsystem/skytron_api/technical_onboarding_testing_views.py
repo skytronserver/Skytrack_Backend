@@ -1255,8 +1255,12 @@ def _longest_run(packets, max_gap):
 EPB_STORED_STATUSES = ('SP', 'H')
 
 
-def _emergency_history_packets(imei, window_start):
-    """Stored (SP) EPB packets in GPSemDataLog since window_start, oldest first by device time."""
+def _emergency_history_packets(imei, window_start, any_device_time=False):
+    """
+    Stored (SP) EPB packets in GPSemDataLog since window_start, oldest first
+    by device time. With any_device_time, packets whose device date is not
+    plausible are kept too, ordered on that (wrong) device time.
+    """
     packets, seen = [], set()
     for raw_data, server_time in _scan_rows(GPSemDataLog, imei, window_start):
         for frag in _packets_in_row(raw_data):
@@ -1264,41 +1268,140 @@ def _emergency_history_packets(imei, window_start):
                 continue
             seen.add(frag)
             info = _epb_packet_info(frag, server_time)
-            if (info.get('packet_status') or '').upper() in EPB_STORED_STATUSES and info['time_source'] == 'device':
-                packets.append({'raw_data': frag, 'time': info['time']})
+            if (info.get('packet_status') or '').upper() not in EPB_STORED_STATUSES:
+                continue
+            if any_device_time:
+                # Faraday box: GPS is blocked too, so the device clock may be
+                # wrong (e.g. 05-01-2080). Its relative timing still holds.
+                if info.get('device_time') is not None:
+                    packets.append({'raw_data': frag, 'time': info['device_time'],
+                                    'date_valid': info['time_source'] == 'device'})
+            elif info['time_source'] == 'device':
+                packets.append({'raw_data': frag, 'time': info['time'], 'date_valid': True})
     packets.sort(key=lambda p: p['time'])
     return packets
+
+
+# Shown when check_config.require_emergency_history is off (migration 0122).
+EMERGENCY_HISTORY_WAIVER_NOTE = (
+    "Known device fault (2026-11-04): after the network returns the device does not reconnect its emergency "
+    "MQTT connection, so stored emergency packets are only uploaded at the next SOS press."
+)
+
+PVT_OFFSET_FRAME_NUMBER = 47
+FRAME_NUMBER_MODULO = 1_000_000  # 6-digit counter, wraps 999999 -> 000000
+
+
+def _pvt_frame_number(raw_data):
+    parts = _packet_fields(raw_data)
+    idx = _pvt_index(parts)
+    value = _field(parts, idx, PVT_OFFSET_FRAME_NUMBER) if idx is not None else None
+    return int(value) if value and value.isdigit() else None
+
+
+def _frame_sequence_runs(packets, max_gap):
+    """
+    Split packets (each with 'frame' and 'device_time') into runs whose frame
+    numbers go up by exactly 1 and whose device time moves forward by no more
+    than max_gap per frame. Returns (runs, breaks): breaks describe why a run
+    ended (missing frames or device time out of step).
+    """
+    ordered = sorted(packets, key=lambda p: p['frame'])
+    runs, breaks, run = [], [], []
+    for packet in ordered:
+        if run:
+            prev = run[-1]
+            step = (packet['frame'] - prev['frame']) % FRAME_NUMBER_MODULO
+            dt = (packet['device_time'] - prev['device_time']).total_seconds()
+            if step == 1 and 0 <= dt <= max_gap:
+                run.append(packet)
+                continue
+            if step == 0:
+                breaks.append(f"frame {packet['frame']} sent twice with different content")
+            elif step != 1:
+                breaks.append(f"frames {prev['frame']}->{packet['frame']} ({step - 1} missing)")
+            elif abs(dt) > 86400:
+                breaks.append(f"frame {prev['frame']}->{packet['frame']} device clock reset")
+            else:
+                breaks.append(f"frame {prev['frame']}->{packet['frame']} device time jumps {int(dt)}s")
+            runs.append(run)
+        run = [packet]
+    if run:
+        runs.append(run)
+    return runs, breaks
 
 
 def _check_history_coverage(execution, imei, window_start, now):
     """
     'history_coverage': stored packets sent after the network came back
-    must cover at least min_coverage_seconds of the no-network period,
-    measured on device time across one continuous stretch -- on both
-    servers: history (H) PVT packets in the tracking log and, with
+    must cover at least min_coverage_seconds of the no-network period, on
+    both servers: history (H) PVT packets in the tracking log and, with
     check_config.require_emergency_history (default on), stored (SP) EPB
-    packets in the emergency log over the same window.
+    packets in the emergency log.
+
+    In the Faraday box GPS is blocked as well as the network, so the device
+    clock can be wrong (e.g. 05-01-2080): the date is not required to be
+    valid. Instead the H packets must form one stretch of consecutive frame
+    numbers (+1 each) whose device time moves forward steadily, and the
+    coverage is the device-time span of that stretch. EPB packets carry no
+    frame number, so they are checked on device-time spacing only.
     """
     cfg = _cfg(execution.test_case)
     min_coverage = cfg.get('min_coverage_seconds', 120)
     max_gap = cfg.get('max_gap_seconds', 60)
     require_emergency = cfg.get('require_emergency_history', True)
-    history = [p for p in _pvt_packets(imei, window_start) if p['packet_status'] == 'H' and p['time_source'] == 'device']
-    em_history = _emergency_history_packets(imei, window_start)
 
-    problems, samples = [], []
+    history, seen = [], set()
+    for raw_data, server_time in _scan_rows(GPSDataLog, imei, window_start):
+        for frag in _packets_in_row(raw_data):
+            if frag in seen:
+                continue
+            seen.add(frag)
+            info = _pvt_info(frag, server_time)
+            if not info or info['packet_status'] != 'H':
+                continue
+            info['device_time'] = _extract_pvt_datetime(frag)
+            info['frame'] = _pvt_frame_number(frag)
+            info['received_at'] = server_time
+            if info['device_time'] is not None:
+                history.append(info)
+    invalid_dates = sum(1 for p in history if p['time_source'] != 'device')
+    em_history = _emergency_history_packets(imei, window_start, any_device_time=True)
+    em_invalid_dates = sum(1 for p in em_history if not p['date_valid'])
+
+    problems, samples, notes = [], [], []
     coverage = em_coverage = 0
+    frame_info = None
     if not history:
         problems.append("No history (H) packets received on the tracking server since the test started. Keep the "
                         "device in the Faraday box for 3 minutes, then bring it to open sky so it uploads the stored packets.")
     else:
-        coverage, run = _longest_run(history, max_gap)
-        samples += [_sample(run[0], role='first_history'), _sample(run[-1], role='last_history')]
+        framed = [p for p in history if p['frame'] is not None]
+        if framed:
+            runs, breaks = _frame_sequence_runs(framed, max_gap)
+            run = max(runs, key=lambda r: (r[-1]['device_time'] - r[0]['device_time']).total_seconds())
+            coverage = (run[-1]['device_time'] - run[0]['device_time']).total_seconds()
+            frame_info = {'first_frame': run[0]['frame'], 'last_frame': run[-1]['frame'], 'count': len(run),
+                          'sequence_breaks': breaks[:10]}
+            where = f"frames {run[0]['frame']}-{run[-1]['frame']}, {len(run)} packets in sequence"
+        else:
+            # Older firmware without a frame number: device-time spacing only.
+            coverage, run = _longest_run(sorted(
+                [dict(p, time=p['device_time']) for p in history], key=lambda p: p['time']), max_gap)
+            where = f"{len(run)} packets, no frame numbers"
+        for role, packet in (('first_history', run[0]), ('last_history', run[-1])):
+            samples.append(_sample(dict(packet, time=packet['device_time']), role=role,
+                                   frame_number=packet.get('frame'),
+                                   received_at=packet['received_at'].isoformat()))
         if coverage < min_coverage:
             problems.append(
-                f"History packets cover only {_duration(coverage)} ({_ist(run[0]['time'])}-{_ist(run[-1]['time'])}, "
-                f"{len(run)} packets); need at least {_duration(min_coverage)} of the no-network period."
+                f"History packets cover only {_duration(coverage)} of device time ({where}); need at least "
+                f"{_duration(min_coverage)} of the no-network period."
+                + (f" Frame sequence breaks: {'; '.join(frame_info['sequence_breaks'][:3])}." if frame_info and frame_info['sequence_breaks'] else '')
             )
+        if invalid_dates:
+            notes.append(f"{invalid_dates} history packet(s) carry an invalid device date (GPS blocked); "
+                         f"accepted using the frame-number sequence.")
 
     if em_history:
         em_coverage, em_run = _longest_run(em_history, max_gap)
@@ -1308,13 +1411,20 @@ def _check_history_coverage(execution, imei, window_start, now):
         ]
         if require_emergency and em_coverage < min_coverage:
             problems.append(
-                f"Stored emergency (EPB SP) packets cover only {_duration(em_coverage)} "
-                f"({_ist(em_run[0]['time'])}-{_ist(em_run[-1]['time'])}, {len(em_run)} packets); need at least "
-                f"{_duration(min_coverage)} of the no-network period."
+                f"Stored emergency (EPB SP) packets cover only {_duration(em_coverage)} of device time "
+                f"({len(em_run)} packets in step); need at least {_duration(min_coverage)} of the no-network period."
             )
+        if em_invalid_dates:
+            notes.append(f"{em_invalid_dates} stored emergency packet(s) carry an invalid device date (GPS blocked); "
+                         f"accepted on device-time spacing.")
+        if not require_emergency and em_coverage < min_coverage:
+            notes.append(f"Stored emergency (EPB SP) packets cover only {_duration(em_coverage)} -- not required "
+                         f"for now. {EMERGENCY_HISTORY_WAIVER_NOTE}")
     elif require_emergency:
         problems.append("No stored emergency (EPB SP) packets received on the emergency server since the test "
                         "started. Keep SOS active while the device is in the Faraday box so it stores emergency packets too.")
+    else:
+        notes.append(f"No stored emergency (EPB SP) packets received -- not required for now. {EMERGENCY_HISTORY_WAIVER_NOTE}")
 
     return {
         'matched_count': len(history),
@@ -1322,10 +1432,15 @@ def _check_history_coverage(execution, imei, window_start, now):
         'required': 1,
         'pass': not problems,
         'reason': _fail_reason(problems),
+        'notes': notes,
         'samples': samples,
         'history_coverage_seconds': round(coverage, 1),
         'emergency_history_coverage_seconds': round(em_coverage, 1),
-        'criteria': {'min_coverage_seconds': min_coverage, 'require_emergency_history': require_emergency},
+        'history_frame_sequence': frame_info,
+        'invalid_date_count': invalid_dates,
+        'emergency_invalid_date_count': em_invalid_dates,
+        'criteria': {'min_coverage_seconds': min_coverage, 'require_emergency_history': require_emergency,
+                     'frame_sequence_required': True, 'valid_date_required': False},
     }
 
 
@@ -2161,6 +2276,7 @@ def _epb_packet_info(raw_data, server_time):
             device_time = datetime.strptime(stamp, fmt).replace(tzinfo=dt_timezone.utc)
         except ValueError:
             continue
+        info['device_time'] = device_time  # as sent, even if implausible
         if server_time - DEVICE_CLOCK_MAX_BEHIND <= device_time <= server_time + DEVICE_CLOCK_MAX_AHEAD:
             info['time'], info['time_source'] = device_time, 'device'
         break
