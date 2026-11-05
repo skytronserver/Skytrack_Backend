@@ -1733,7 +1733,87 @@ class EMGPSLocation(models.Model): #imergency tracking data
 
 
 
- 
+
+
+
+# A desk executive counts as logged in if they hold a login and their console
+# polled within this window (the SOS console polls getPendingCallList every 10s).
+SOS_DESK_EX_ONLINE_WINDOW = timedelta(minutes=1)
+# Load used to balance SOS calls: desk_ex assignments received in this window.
+SOS_DESK_EX_LOAD_WINDOW = timedelta(hours=2)
+
+
+def pick_desk_ex_for_sos(state, preferred_team=None, exclude_ex_ids=(), avoid_ex_ids=()):
+    """Choose the desk executive who should receive an SOS call.
+
+    Candidates are desk executives who are members of an Active team in the
+    state and are logged in (login=True, console active within
+    SOS_DESK_EX_ONLINE_WINDOW). Members of preferred_team are used when any of
+    them is online. Among the candidates the one with the fewest desk_ex
+    assignments in the last SOS_DESK_EX_LOAD_WINDOW wins; ties go to whoever
+    was assigned least recently, so equal loads rotate instead of always
+    hitting the same executive.
+
+    exclude_ex_ids are never chosen (e.g. executives who rejected the call);
+    avoid_ex_ids are skipped unless nobody else is available.
+
+    Returns (desk_ex, team); (None, None) when nobody eligible is online.
+    """
+    from django.db.models import Max
+
+    now = timezone.now()
+    active_teams = list(
+        EMTeams.objects.filter(status="Active", state=state)
+        .prefetch_related('members').order_by('id')
+    )
+    if not active_teams:
+        return None, None
+
+    member_team = {}  # desk_ex id -> first active team they belong to
+    for team in active_teams:
+        for member in team.members.all():
+            member_team.setdefault(member.id, team)
+
+    candidates = list(
+        EM_ex.objects.filter(
+            id__in=member_team.keys(),
+            user_type='desk_ex',
+            users__login=True,
+            users__last_activity__gte=now - SOS_DESK_EX_ONLINE_WINDOW,
+        ).exclude(id__in=list(exclude_ex_ids)).distinct()
+    )
+    if not candidates:
+        return None, None
+
+    if preferred_team is not None:
+        preferred_ids = {m.id for m in preferred_team.members.all()}
+        in_team = [ex for ex in candidates if ex.id in preferred_ids]
+        if in_team and preferred_team.status == "Active":
+            candidates = in_team
+            for ex in candidates:
+                member_team[ex.id] = preferred_team
+
+    avoid = set(avoid_ex_ids)
+    candidates = [ex for ex in candidates if ex.id not in avoid] or candidates
+
+    stats = {
+        row['ex_id']: row
+        for row in EMCallAssignment.objects.filter(
+            type='desk_ex',
+            ex__in=candidates,
+            start_time__gte=now - SOS_DESK_EX_LOAD_WINDOW,
+        ).values('ex_id').annotate(n=Count('id'), last=Max('start_time'))
+    }
+    epoch = now - timedelta(days=3650)
+
+    def sort_key(ex):
+        row = stats.get(ex.id)
+        if not row:
+            return (0, epoch, ex.id)
+        return (row['n'], row['last'] or epoch, ex.id)
+
+    chosen = min(candidates, key=sort_key)
+    return chosen, member_team[chosen.id]
 
 
 @receiver(post_save, sender=EMGPSLocation)
@@ -1839,33 +1919,42 @@ def create_emergency_call(sender, instance, created, **kwargs):
             )
             print(f"[EMCall] Created new EMCall #{em.id} for device_tag {instance.device_tag_id}", flush=True)
 
-        # Resolve team for assignments (may differ if just re-using an old call)
-        team = EMTeams.objects.filter(status="Active", state=st).order_by('?').last()
-        if not team:
-            print(f"[EMCall] No active team found in state {st} — EMCall #{em.id} created with no assignments", flush=True)
-            return
-
         admin = EM_admin.objects.filter(state=st).last() or EM_admin.objects.last()
         if not admin:
             print(f"[EMCall] No EM_admin found — cannot create assignments for EMCall #{em.id}", flush=True)
             return
 
-        teamlead = team.teamlead
-
         rejected_ex_ids = set()
         if existing_emergency_call:
-            # Re-route to the team picked now; retire the previous lead's untouched
-            # assignment so the call does not stay parked with an inactive team lead.
-            EMCallAssignment.objects.filter(
-                call=em, type="teamlead", status="pending",
-            ).update(status="reassigned")
-            if em.team_id != team.id:
-                em.team = team
-                em.save(update_fields=["team"])
             rejected_ex_ids = set(
                 EMCallAssignment.objects.filter(call=em, type="desk_ex", status="rejected")
                 .exclude(ex__isnull=True).values_list("ex_id", flat=True)
             )
+
+        # Pick the desk executive first: a logged-in member of an active team
+        # with the fewest SOS calls in the last 2 hours. The call goes to that
+        # executive's team, so its team lead supervises it.
+        desk_ex, team = pick_desk_ex_for_sos(st, exclude_ex_ids=rejected_ex_ids)
+        if desk_ex is None:
+            # Nobody online: park the call with an active team; the desk_ex
+            # assignment stays unassigned until an executive comes online
+            # (see _auto_reassign_stale_desk_ex_calls).
+            team = EMTeams.objects.filter(status="Active", state=st).order_by('?').last()
+        if not team:
+            print(f"[EMCall] No active team found in state {st} — EMCall #{em.id} created with no assignments", flush=True)
+            return
+
+        teamlead = team.teamlead
+
+        if existing_emergency_call:
+            # Retire the previous lead's untouched assignment so the call does
+            # not stay parked with an inactive team lead.
+            EMCallAssignment.objects.filter(
+                call=em, type="teamlead", status="pending",
+            ).update(status="reassigned")
+        if em.team_id != team.id:
+            em.team = team
+            em.save(update_fields=["team"])
 
         if teamlead:
             EMCallAssignment.objects.create(
@@ -1878,44 +1967,10 @@ def create_emergency_call(sender, instance, created, **kwargs):
         else:
             print(f"[EMCall] Team #{team.id} has no teamlead — skipping teamlead assignment", flush=True)
 
-        # --- Smart desk_ex assignment with round-robin load balancing ---
-        # Team membership is not used for desk_ex assignment. Any desk_ex in
-        # the same state can receive calls.
-        desk_ex_members = list(EM_ex.objects.filter(state=st, user_type='desk_ex').distinct())
-
-        # Determine which of them are currently online/active in the last minute.
-        online_threshold = timezone.now() - timedelta(minutes=1)
-        from django.db.models import Count, Q
-        online_desk_exs = [
-            ex for ex in desk_ex_members
-            if ex.id not in rejected_ex_ids
-            and ex.users.filter(login=True, last_activity__gte=online_threshold).exists()
-        ]
-
-        if online_desk_exs:
-            # Pick the executive with the fewest active (non-closed/non-rejected) desk_ex assignments.
-            active_statuses = ["pending", "accepted", "arriving", "arrived"]
-            load = {
-                ex.id: EMCallAssignment.objects.filter(
-                    ex=ex,
-                    type="desk_ex",
-                    status__in=active_statuses,
-                ).count()
-                for ex in online_desk_exs
-            }
-            desk_ex = min(online_desk_exs, key=lambda ex: load[ex.id])
-            print(
-                f"[EMCall] Assigned EMCall #{em.id} to desk_ex #{desk_ex.id} "
-                f"(load={load[desk_ex.id]}; {len(online_desk_exs)} executives online)",
-                flush=True,
-            )
+        if desk_ex:
+            print(f"[EMCall] Assigned EMCall #{em.id} to desk_ex #{desk_ex.id} (team #{team.id})", flush=True)
         else:
-            # No online executive — leave unassigned; will be picked up when one logs in.
-            desk_ex = None
-            print(
-                f"[EMCall] No desk_ex online for EMCall #{em.id} — assignment left unassigned",
-                flush=True,
-            )
+            print(f"[EMCall] No desk_ex online for EMCall #{em.id} — assignment left unassigned", flush=True)
 
         EMCallAssignment.objects.create(
             admin=admin,
@@ -1924,7 +1979,6 @@ def create_emergency_call(sender, instance, created, **kwargs):
             type="desk_ex",
             ex=desk_ex,  # may be None if nobody is online
         )
-        # --- End smart assignment ---
 
     except Exception as e:
         print(f"[EMCall] Unexpected error in create_emergency_call signal: {e}", flush=True)

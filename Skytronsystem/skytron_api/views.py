@@ -9020,13 +9020,14 @@ def _auto_reassign_stale_desk_ex_calls(state=None):
     Rules:
     - Candidate assignments are pending desk_ex assignments for pending calls.
     - Reassign if unassigned OR pending for >= 1 minute.
-    - Only assign to executives with login=True and last_activity within 1 minute.
-    - Pick the executive with the least active load to keep distribution balanced.
+    - The executive is chosen by pick_desk_ex_for_sos: a logged-in member of
+      an active team (the call's own team first) with the fewest SOS calls in
+      the last 2 hours, preferring someone other than the current holder.
     """
+    from .models import pick_desk_ex_for_sos
+
     now = timezone.now()
     stale_cutoff = now - timedelta(minutes=1)
-    active_user_cutoff = now - timedelta(minutes=1)
-    active_assignment_statuses = ["pending", "accepted", "arriving", "arrived"]
 
     qs = EMCallAssignment.objects.filter(
         type='desk_ex',
@@ -9052,37 +9053,33 @@ def _auto_reassign_stale_desk_ex_calls(state=None):
         if not admin_state:
             continue
 
-        # Assignment is independent of team membership; use all desk_ex in state.
-        desk_ex_members = list(
-            EM_ex.objects.filter(state=admin_state, user_type='desk_ex').distinct()
+        call = assignment.call
+        rejected_ex_ids = set(
+            EMCallAssignment.objects.filter(call=call, type='desk_ex', status='rejected')
+            .exclude(ex__isnull=True).values_list('ex_id', flat=True)
         )
-        if not desk_ex_members:
-            continue
-
-        online_executives = [
-            ex for ex in desk_ex_members
-            if ex.users.filter(login=True, last_activity__gte=active_user_cutoff).exists()
-        ]
-        if not online_executives:
+        selected_ex, team = pick_desk_ex_for_sos(
+            admin_state,
+            preferred_team=call.team,
+            exclude_ex_ids=rejected_ex_ids,
+            avoid_ex_ids={assignment.ex_id} if assignment.ex_id else (),
+        )
+        if selected_ex is None:
             # Keep it pending/unassigned. It will get picked once someone becomes active.
             if assignment.ex_id is not None:
                 assignment.ex = None
                 assignment.save(update_fields=['ex'])
             continue
 
-        # Prefer a different executive on reassignment if available.
-        preferred_pool = [ex for ex in online_executives if ex.id != assignment.ex_id] or online_executives
-
-        load_map = {
-            ex.id: EMCallAssignment.objects.filter(
-                ex=ex,
-                type='desk_ex',
-                status__in=active_assignment_statuses,
-                call__status='pending',
-            ).count()
-            for ex in preferred_pool
-        }
-        selected_ex = min(preferred_pool, key=lambda ex: load_map[ex.id])
+        if team is not None and call.team_id != team.id:
+            # Executive comes from another active team: hand the call (and the
+            # untouched team lead assignment) to that team's lead.
+            call.team = team
+            call.save(update_fields=['team'])
+            if team.teamlead_id:
+                EMCallAssignment.objects.filter(
+                    call=call, type='teamlead', status='pending',
+                ).update(ex_id=team.teamlead_id)
 
         updates = []
         if assignment.ex_id != selected_ex.id:
@@ -9101,27 +9098,24 @@ def _auto_reassign_stale_desk_ex_calls(state=None):
 
 # How long a call is left with the desk executives before the team lead is
 # alerted. The team lead assignment is created together with the desk_ex one,
-# so escalation is enforced when listing it.
+# so escalation is decided when listing it.
 TEAMLEAD_ESCALATION_SECONDS = 30
 
 
-def _hide_unescalated_teamlead_assignments(qs):
-    """Hold back new team lead assignments and mark which ones escalated.
+def _annotate_teamlead_escalation(qs):
+    """Annotate team lead rows with desk_ex_took_call for the escalated flag.
 
-    A pending team lead assignment is listed once its call has been open for
-    TEAMLEAD_ESCALATION_SECONDS, so the team lead can monitor every open call
-    of the team. Each row is annotated with desk_ex_took_call; the list marks
-    a row escalated only when no desk executive has accepted the call, and the
-    frontend rings only for escalated rows.
+    Every open call of the team is listed for the team lead straight away so
+    it can be monitored. The list marks a row escalated (and the frontend
+    rings only for escalated rows) once the call has been open for
+    TEAMLEAD_ESCALATION_SECONDS and no desk executive has accepted it.
     """
-    cutoff = timezone.now() - timedelta(seconds=TEAMLEAD_ESCALATION_SECONDS)
     desk_ex_took_call = EMCallAssignment.objects.filter(
         call=OuterRef('call'),
         type='desk_ex',
         status__in=['accepted', 'arriving', 'arrived'],
     )
-    too_new = Q(type='teamlead', status='pending', call__start_time__gt=cutoff)
-    return qs.exclude(too_new).annotate(desk_ex_took_call=Exists(desk_ex_took_call))
+    return qs.annotate(desk_ex_took_call=Exists(desk_ex_took_call))
 
 
 
@@ -9217,7 +9211,7 @@ def DEx_getPendingCallList(request ):
             qs = qs_base.filter(ex=uo)
             cache_scope = f"ex:{getattr(uo, 'id', None)}"
             if uo.user_type == 'teamlead':
-                qs = _hide_unescalated_teamlead_assignments(qs)
+                qs = _annotate_teamlead_escalation(qs)
 
         # Short-lived cache to avoid repeated heavy serialization for the same scope
         cache_key = f"DEx_getPendingCallList:pending:{cache_scope}"
@@ -9295,10 +9289,14 @@ def DEx_getPendingCallList(request ):
 
         data = EMCallAssignmentSerializer(assignments, many=True).data
         if not (uo2 or uo3) and uo.user_type == 'teamlead':
+            escalation_cutoff = timezone.now() - timedelta(seconds=TEAMLEAD_ESCALATION_SECONDS)
             for item, a in zip(data, assignments):
                 item['escalated'] = (
                     a.type == 'teamlead' and a.status == 'pending'
                     and not a.desk_ex_took_call
+                    # the teamlead row is created when the call is (re)opened
+                    and a.start_time is not None
+                    and a.start_time <= escalation_cutoff
                 )
         cache.set(cache_key, data, timeout=5)
 
