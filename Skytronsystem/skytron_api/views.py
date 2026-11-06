@@ -9024,17 +9024,17 @@ def _auto_reassign_stale_desk_ex_calls(state=None):
       an active team (the call's own team first) with the fewest SOS calls in
       the last 2 hours, preferring someone other than the current holder.
     """
+    from django.db.models.functions import Now
     from .models import pick_desk_ex_for_sos
 
-    now = timezone.now()
-    stale_cutoff = now - timedelta(minutes=1)
-
+    # start_time is stamped with the DB clock (see create_emergency_call), so
+    # the timeout is measured against the DB clock too.
     qs = EMCallAssignment.objects.filter(
         type='desk_ex',
         call__status='pending',
         status='pending',
     ).filter(
-        Q(ex__isnull=True) | Q(start_time__lte=stale_cutoff)
+        Q(ex__isnull=True) | Q(start_time__lte=Now() - timedelta(minutes=1))
     )
 
     if state is not None:
@@ -9081,17 +9081,11 @@ def _auto_reassign_stale_desk_ex_calls(state=None):
                     call=call, type='teamlead', status='pending',
                 ).update(ex_id=team.teamlead_id)
 
-        updates = []
-        if assignment.ex_id != selected_ex.id:
-            assignment.ex = selected_ex
-            updates.append('ex')
-        # Reset assignment start_time to make the 1-minute timeout relative to this offer.
-        assignment.start_time = now
-        updates.append('start_time')
-
-        if updates:
-            assignment.save(update_fields=updates)
-            reassigned_count += 1
+        # Hand over and restart the 1-minute timeout from this offer (DB clock).
+        EMCallAssignment.objects.filter(id=assignment.id).update(
+            ex=selected_ex, start_time=Now(),
+        )
+        reassigned_count += 1
 
     return reassigned_count
 
@@ -9099,23 +9093,38 @@ def _auto_reassign_stale_desk_ex_calls(state=None):
 # How long a call is left with the desk executives before the team lead is
 # alerted. The team lead assignment is created together with the desk_ex one,
 # so escalation is decided when listing it.
-TEAMLEAD_ESCALATION_SECONDS = 30
+TEAMLEAD_ESCALATION_SECONDS = 60
 
 
 def _annotate_teamlead_escalation(qs):
-    """Annotate team lead rows with desk_ex_took_call for the escalated flag.
+    """Annotate team lead rows with the escalated flag.
 
     Every open call of the team is listed for the team lead straight away so
-    it can be monitored. The list marks a row escalated (and the frontend
-    rings only for escalated rows) once the call has been open for
-    TEAMLEAD_ESCALATION_SECONDS and no desk executive has accepted it.
+    it can be monitored, but the list marks a row escalated (and the frontend
+    pops up / rings only for escalated rows) once its team lead assignment has
+    been waiting TEAMLEAD_ESCALATION_SECONDS and no desk executive has
+    accepted the call. Age is measured with the DB clock, the same clock that
+    stamps start_time, so a clock difference between VMs cannot shift it.
     """
+    from django.db.models import BooleanField, Case, Value, When
+    from django.db.models.functions import Now
+
     desk_ex_took_call = EMCallAssignment.objects.filter(
         call=OuterRef('call'),
         type='desk_ex',
         status__in=['accepted', 'arriving', 'arrived'],
     )
-    return qs.annotate(desk_ex_took_call=Exists(desk_ex_took_call))
+    return qs.annotate(
+        desk_ex_took_call=Exists(desk_ex_took_call),
+        waited_for_desk_ex=Case(
+            When(
+                start_time__lte=Now() - timedelta(seconds=TEAMLEAD_ESCALATION_SECONDS),
+                then=Value(True),
+            ),
+            default=Value(False),
+            output_field=BooleanField(),
+        ),
+    )
 
 
 
@@ -9289,14 +9298,11 @@ def DEx_getPendingCallList(request ):
 
         data = EMCallAssignmentSerializer(assignments, many=True).data
         if not (uo2 or uo3) and uo.user_type == 'teamlead':
-            escalation_cutoff = timezone.now() - timedelta(seconds=TEAMLEAD_ESCALATION_SECONDS)
             for item, a in zip(data, assignments):
                 item['escalated'] = (
                     a.type == 'teamlead' and a.status == 'pending'
                     and not a.desk_ex_took_call
-                    # the teamlead row is created when the call is (re)opened
-                    and a.start_time is not None
-                    and a.start_time <= escalation_cutoff
+                    and a.waited_for_desk_ex
                 )
         cache.set(cache_key, data, timeout=5)
 

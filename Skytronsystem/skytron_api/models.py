@@ -1962,14 +1962,15 @@ def create_emergency_call(sender, instance, created, **kwargs):
             em.team = team
             em.save(update_fields=["team"])
 
+        new_assignment_ids = []
         if teamlead:
-            EMCallAssignment.objects.create(
+            new_assignment_ids.append(EMCallAssignment.objects.create(
                 admin=admin,
                 call=em,
                 status="pending",
                 type="teamlead",
                 ex=teamlead,
-            )
+            ).id)
         else:
             print(f"[EMCall] Team #{team.id} has no teamlead — skipping teamlead assignment", flush=True)
 
@@ -1978,13 +1979,21 @@ def create_emergency_call(sender, instance, created, **kwargs):
         else:
             print(f"[EMCall] No desk_ex online for EMCall #{em.id} — assignment left unassigned", flush=True)
 
-        EMCallAssignment.objects.create(
+        new_assignment_ids.append(EMCallAssignment.objects.create(
             admin=admin,
             call=em,
             status="pending",
             type="desk_ex",
             ex=desk_ex,  # may be None if nobody is online
-        )
+        ).id)
+
+        # Stamp start_time with the database clock. Calls are created on the
+        # MQTT processor VM, but the team lead escalation timer and the desk_ex
+        # timeout are checked on the API VMs; comparing everything against the
+        # DB clock keeps a clock difference between VMs from alerting the team
+        # lead early (or late).
+        from django.db.models.functions import Now
+        EMCallAssignment.objects.filter(id__in=new_assignment_ids).update(start_time=Now())
 
     except Exception as e:
         print(f"[EMCall] Unexpected error in create_emergency_call signal: {e}", flush=True)
