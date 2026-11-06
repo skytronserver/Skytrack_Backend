@@ -9601,6 +9601,13 @@ def DEx_broadcast(request ):
         assignment =EMCallAssignment.objects.filter(id=assignment,ex=uo,status="accepted").exclude(call__status__in=["closed", "closed_false_alert"]).last()
         if not assignment:
             return Response({"error":"Assignment not found or not accepted." }, status=status.HTTP_400_BAD_REQUEST)
+        # One live broadcast per help type per call: once the desk executive
+        # has broadcast, the team lead (or a stale screen) must not send the
+        # same broadcast again. A timed-out/cancelled one may be redone.
+        if EMCallBroadcast.objects.filter(
+            call=assignment.call, type=typ, status__in=["pending", "accepted"],
+        ).exists():
+            return Response({"error": "Help has already been broadcast for this call."}, status=status.HTTP_400_BAD_REQUEST)
         ee,error=EMCallBroadcast.objects.safe_create( admin  =assignment.admin,
             created_by= uo,
             call = assignment.call,
