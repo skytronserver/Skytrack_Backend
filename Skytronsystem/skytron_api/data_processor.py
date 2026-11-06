@@ -329,6 +329,16 @@ def process_gps_data(data_str):
         return None
 
 
+def _is_onboarding_demo_device(imei):
+    """True when the IMEI is listed as a technical onboarding demo device."""
+    try:
+        from skytron_api.models import DeviceModelTechnicalOnboardingDemoDevice
+        return DeviceModelTechnicalOnboardingDemoDevice.objects.filter(imei=str(imei).strip()).exists()
+    except Exception as e:
+        print(f"[EM] onboarding demo device lookup failed for {imei}: {e}", flush=True)
+        return False
+
+
 def process_em_data(data_str, publish_callback=None):
     """
     Process Emergency (EM) data from devices
@@ -472,6 +482,13 @@ def process_em_data(data_str, publish_callback=None):
                         print(f"[EM][Perf] device_lookup={(_t_em1-_t_em0)*1000:.1f}ms imei={imei}", flush=True)
                         
                         def _send_sos_stop(reason):
+                            # Technical onboarding demo devices are untagged on
+                            # purpose: their SOS packets are only kept in the raw
+                            # GPSemDataLog for the tests. Don't stop their SOS.
+                            if _is_onboarding_demo_device(imei):
+                                print(f"[EM] {imei} is a technical onboarding demo device ({reason}) — "
+                                      f"raw log only, no SOS call, no SOS stop", flush=True)
+                                return
                             if publish_callback:
                                 try:
                                     publish_callback(f"deviceResponse/{imei}", json.dumps({"keys": "@SETSOSDIS-1*"}), qos=1)
