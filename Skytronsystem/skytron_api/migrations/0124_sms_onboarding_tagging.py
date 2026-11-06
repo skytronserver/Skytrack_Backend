@@ -12,8 +12,10 @@ import django.db.models.deletion
 #     is sent over MQTT AND by SMS. Each channel passes on the device's OT,12
 #     reply with the matching source (SERVER / SMS) and the expected text; on
 #     SMS the device's reply SMS must also reach us.
-#   * #59 health check by SMS on both SIM profiles: SETPROF-1 -> SENDHCHK ->
-#     HCHKR by SMS, SETPROF-2 -> SENDHCHK -> HCHKR by SMS (mode health_sms).
+#   * #24 / #25 eSIM switch also need a health check by SMS on each profile:
+#     SENDHCHK -> HCHKR by SMS on the old profile, SETPROF-n, then SENDHCHK ->
+#     HCHKR on the new one (check_config.health_sms). #59 (health packet on
+#     request) is retired: the eSIM tests cover it.
 #   * #60 SMS fallback: wrong emergency IP + SOS -> fallback SMS
 #     <IMEI>,<lat>,N,<lon>,E,<A|V>,<speed>,<cellid>,<lac>,<ddmmyyyyhhmmss>
 #     from the device's msisdn1 / msisdn2.
@@ -93,7 +95,7 @@ def _param_update(test, code, set_reply, get_reply):
 
 def forwards(apps, schema_editor):
     TestCase = apps.get_model('skytron_api', 'TechnicalOnboardingTestCase')
-    tests = {t.serial_no: t for t in TestCase.objects.filter(serial_no__gte=41, serial_no__lte=60)}
+    tests = {t.serial_no: t for t in TestCase.objects.filter(serial_no__in=[24, 25] + list(range(41, 61)))}
 
     for serial, (code, set_reply, get_reply) in PARAM_TESTS.items():
         if serial in tests:
@@ -169,32 +171,44 @@ def forwards(apps, schema_editor):
         )
         t.expected_result = 'ACTVR SMS from the device with the same code and its IMEI.'
 
-    # #59 health check by SMS on both profiles.
-    t = tests.get(59)
-    if t:
-        t.name = 'Health Check by SMS on Both Profiles'
-        t.description = ('Request a health check with @SET SENDHCHK-1* by SMS on SIM profile 1 and on profile 2; '
-                         'the device replies by SMS with HCHKR each time.')
-        t.source_table = 'health_sms'
+    # #24 / #25 eSIM switch: health check by SMS on each profile -- before
+    # the switch on the old profile, after it on the new one.
+    for serial, old_p, new_p in ((24, 1, 2), (25, 2, 1)):
+        t = tests.get(serial)
+        if not t:
+            continue
+        old_name = 'primary' if old_p == 1 else 'secondary'
+        new_name = 'primary' if new_p == 1 else 'secondary'
         t.requires_command = True
         t.commands = [
-            {'key': 'set_profile_1', 'label': 'Switch to profile 1 (primary network)', 'command': 'SETPROF-1', 'profile': 1},
-            {'key': 'set_profile_2', 'label': 'Switch to profile 2 (secondary network)', 'command': 'SETPROF-2', 'profile': 2},
+            {'key': f'set_profile_{new_p}', 'label': f'Switch to {new_name} profile', 'command': f'SETPROF-{new_p}',
+             'profile': new_p},
             {'key': 'send_health', 'label': 'Request health check (HCHKR reply by SMS)', 'command': 'SET SENDHCHK-1',
              'channel': 'sms'},
         ]
-        t.check_config = {'command_key': 'send_health', 'profiles': [1, 2], 'time_limit_seconds': 30 * 60}
+        cfg = dict(t.check_config or {})
+        cfg.update({
+            'health_sms': {'command_key': 'send_health', 'profiles': [old_p, new_p], 'start_profile': old_p},
+            'time_limit_seconds': 30 * 60,
+        })
+        t.check_config = cfg
         t.procedure = (
-            '1. Press Start.\n'
-            '2. Send "Switch to profile 1" and wait 2-5 minutes for the device to register on the primary network '
-            '(skip if it is already on profile 1).\n'
-            '3. Send "Request health check" by SMS (goes to msisdn1) and wait for the HCHKR SMS reply.\n'
-            '4. Send "Switch to profile 2" and wait 2-5 minutes for the device to register on the secondary network.\n'
-            '5. Send "Request health check" by SMS again (goes to msisdn2) and wait for the HCHKR SMS reply.\n'
-            '6. Switch back to profile 1.'
+            f'1. Confirm the device is on the {old_name} profile (profile {old_p}), then press Start.\n'
+            f'2. Send "Request health check" by SMS (goes to msisdn{old_p}) and wait for the HCHKR SMS reply.\n'
+            f'3. Send the switch command ({old_name} -> {new_name}, SETPROF-{new_p}) and wait 2-5 minutes for the '
+            f'device to register on the {new_name} network.\n'
+            f'4. Send "Request health check" by SMS again (goes to msisdn{new_p}) and wait for the HCHKR SMS reply.'
         )
-        t.expected_result = ('HCHKR,000000,<vendor>,<fw>,<imei>,1,<lat>,N,<lon>,E,<fix>,<date time>,<heading>,<speed>,'
-                             '<csq>,<mcc>,<mnc>,<lac>,<mainpwr>,<ign>,<vin>,<frame>,<mode> by SMS, once on each profile.')
+        t.expected_result = (
+            f'Last 2 packets on the {old_name} cell, followed by the next 2 packets on the {new_name} cell; '
+            f'an HCHKR,000000,<vendor>,<fw>,<imei>,... SMS reply to the health check on profile {old_p} and on '
+            f'profile {new_p}.'
+        )
+
+    # #59 health packet request: covered by the eSIM switch tests now.
+    t = tests.get(59)
+    if t:
+        t.active = False
 
     # #60 SMS fallback.
     t = tests.get(60)
@@ -226,6 +240,18 @@ def forwards(apps, schema_editor):
 
     for t in tests.values():
         t.save()
+    _assign_sequence(TestCase)
+
+
+def _assign_sequence(TestCase):
+    """Run order 1..N over the active tests, keeping their current order; inactive tests get none."""
+    TestCase.objects.filter(active=False).update(sequence=None)
+    active = sorted(TestCase.objects.filter(active=True),
+                    key=lambda t: (t.sequence if t.sequence is not None else 10 ** 6, t.serial_no))
+    for number, test_case in enumerate(active, 1):
+        if test_case.sequence != number:
+            test_case.sequence = number
+            test_case.save(update_fields=['sequence'])
 
 
 class Migration(migrations.Migration):
@@ -283,7 +309,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='technicalonboardingtestcase',
             name='source_table',
-            field=models.CharField(choices=[('gps', 'GPS Raw Log (GPSDataLog)'), ('gpsem', 'Emergency Raw Log (GPSemDataLog)'), ('ota_command', 'OTA Command History'), ('activation_command', 'Activation Command'), ('firmware_diff', 'Firmware Version Change (GPSDataLog)'), ('voltage_internal', 'Internal Battery Voltage -- 3 Distinct Levels (GPSDataLog)'), ('voltage_external', 'External/Main Voltage -- 3 Distinct Levels (GPSDataLog)'), ('esim_primary_to_secondary', 'eSIM Switch Primary->Secondary -- 2 Distinct Networks (GPSDataLog)'), ('esim_secondary_to_primary', 'eSIM Switch Secondary->Primary -- 2 Distinct Networks, Reversed (GPSDataLog)'), ('vehicle_registration_diff', 'Vehicle Registration Number Changed (GPSDataLog)'), ('reboot_restart_gap', 'Reboot Command -- Connectivity Gap Proves Restart (GPSDataLog)'), ('pvt_packet_drop', 'PVT + Emergency Packet Drop -- 15 min Fixed Window, 2.5-6s Average Gap (GPSDataLog + GPSemDataLog)'), ('packet_sequence', 'Trigger Packet + Before/After State Packets (GPSDataLog)'), ('sos_stop_both', 'SOS Stop on Tracking (EA,11) + Emergency (SEM) Servers'), ('protocol_packet', 'Protocol Field Validation of a Packet Type (GPSDataLog / GPSemDataLog)'), ('speed_accuracy', 'Constant-Speed Stretches at Target Speeds (GPSDataLog)'), ('geofence_crossing', 'Geofence Entry/Exit Distance (GPSDataLog)'), ('history_coverage', 'History (H) Packets Covering the No-Network Period (GPSDataLog)'), ('unique_cell_towers', 'Unique Cell Towers Seen (GPSDataLog)'), ('command_reply', 'Command Echo + Expected Reply in an OT,12 Packet (GPSDataLog)'), ('activation_sms', 'Activation Reply (ACTVR) Received by SMS (AirtelSmsInLog / SmppSmsIn)'), ('sms_fallback', 'Fallback SMS from the Device Received by SMS (AirtelSmsInLog / SmppSmsIn)'), ('health_sms', 'Health Check Reply (HCHKR) by SMS on Profile 1 and Profile 2 (AirtelSmsInLog / SmppSmsIn)'), ('manual', 'Manual / Observed')], default='manual', max_length=30),
+            field=models.CharField(choices=[('gps', 'GPS Raw Log (GPSDataLog)'), ('gpsem', 'Emergency Raw Log (GPSemDataLog)'), ('ota_command', 'OTA Command History'), ('activation_command', 'Activation Command'), ('firmware_diff', 'Firmware Version Change (GPSDataLog)'), ('voltage_internal', 'Internal Battery Voltage -- 3 Distinct Levels (GPSDataLog)'), ('voltage_external', 'External/Main Voltage -- 3 Distinct Levels (GPSDataLog)'), ('esim_primary_to_secondary', 'eSIM Switch Primary->Secondary -- 2 Distinct Networks (GPSDataLog)'), ('esim_secondary_to_primary', 'eSIM Switch Secondary->Primary -- 2 Distinct Networks, Reversed (GPSDataLog)'), ('vehicle_registration_diff', 'Vehicle Registration Number Changed (GPSDataLog)'), ('reboot_restart_gap', 'Reboot Command -- Connectivity Gap Proves Restart (GPSDataLog)'), ('pvt_packet_drop', 'PVT + Emergency Packet Drop -- 15 min Fixed Window, 2.5-6s Average Gap (GPSDataLog + GPSemDataLog)'), ('packet_sequence', 'Trigger Packet + Before/After State Packets (GPSDataLog)'), ('sos_stop_both', 'SOS Stop on Tracking (EA,11) + Emergency (SEM) Servers'), ('protocol_packet', 'Protocol Field Validation of a Packet Type (GPSDataLog / GPSemDataLog)'), ('speed_accuracy', 'Constant-Speed Stretches at Target Speeds (GPSDataLog)'), ('geofence_crossing', 'Geofence Entry/Exit Distance (GPSDataLog)'), ('history_coverage', 'History (H) Packets Covering the No-Network Period (GPSDataLog)'), ('unique_cell_towers', 'Unique Cell Towers Seen (GPSDataLog)'), ('command_reply', 'Command Echo + Expected Reply in an OT,12 Packet (GPSDataLog)'), ('activation_sms', 'Activation Reply (ACTVR) Received by SMS (AirtelSmsInLog / SmppSmsIn)'), ('sms_fallback', 'Fallback SMS from the Device Received by SMS (AirtelSmsInLog / SmppSmsIn)'), ('manual', 'Manual / Observed')], default='manual', max_length=30),
         ),
         migrations.RunPython(forwards, migrations.RunPython.noop),
     ]

@@ -56,6 +56,7 @@ All changes are **additive** — no existing field or endpoint was removed or re
 | **New API** | `superadmin/demo-device-live-status/` — live status of each demo device (see 5.6). |
 | Send command | `channel`: `mqtt` (default) or `sms` (to the device's `msisdn1`). Templates may use `{sms_number}`. `auto_value: "random6"` generates the activation key. `frame: false` sends the command without `@…*`. |
 | DEV force-pass | `test_no` is now the number testers see (`sequence`); `serial_no` can be given instead. Removed tests (#23) are rejected. |
+| **Merged tests (2026-11-06, migration 0125)** | 14 duplicate tests retired; every one of their checks still runs in the test they merged into (see [Merged tests](#merged-tests-migration-0125)). New mode **`composite`** runs several checks in one test. 44 active tests. |
 
 ---
 
@@ -225,7 +226,7 @@ curl -X POST 'https://api.gromed.in/api/devicemodel/technical-onboarding/superad
   "status": "ongoing_evaluation",
   "current_unlocked_serial_no": 4,
   "current_unlocked_sequence": 4,
-  "total_tests": 59,
+  "total_tests": 44,
   "rows": [
     {
       "test_case": { "id": 4, "serial_no": 4, "sequence": 4, "name": "App SOS -> Tracking Server (Start + NR SOS=1)", "...": "..." },
@@ -809,7 +810,7 @@ Returned by `test-refresh-log` and stored on the execution as `test_log_snapshot
 | `unique_cell_towers` | `operators_seen`; samples = one packet per unique tower |
 | `voltage_internal` / `voltage_external` | `values_seen`; samples = one packet per unique voltage (sample has `voltage`) |
 | `firmware_diff` | `versions_seen`; samples = last packet on the old version + first on the new |
-| `esim_*` | `networks_seen` (`[old, new]`) |
+| `esim_*` | `networks_seen` (`[old, new]`); with `health_sms`: `profiles`, `current_profile`, `sms_received` |
 | `vehicle_registration_diff` | `baseline_value`, `expected_value` |
 | `reboot_restart_gap` | `command_sent_at` |
 | `activation_sms` | `keys_sent`; `sms_received` (`raw_data`, `timestamp`, `channel` airtel/smpp, `sender`, `receiver`); samples carry `activation_code`, `key_ok` |
@@ -875,17 +876,77 @@ The snapshot has `legs`, one entry per command × channel:
 
 The snapshot also has `sms_received`: SMS from the device in this attempt.
 
-### Health check by SMS (#59, mode `health_sms`)
+### Health check by SMS in the eSIM switch tests (#24, #25)
 
-Commands: `set_profile_1` (`SETPROF-1`), `set_profile_2` (`SETPROF-2`) and `send_health` (`SET SENDHCHK-1`, by SMS). The device replies by SMS:
+From migration 0124 the eSIM switch tests also check the health SMS on each profile. #59 ("Health packet log on SMS request") is inactive; these tests cover it.
+
+1. On the old profile, send `send_health` (`SET SENDHCHK-1`, by SMS to that profile's number). Wait for the HCHKR SMS reply.
+2. Send the switch (`SETPROF-2` in #24, `SETPROF-1` in #25). Wait 2–5 minutes.
+3. On the new profile, send `send_health` again. Wait for the HCHKR SMS reply.
+
+The device replies by SMS:
 
 ```
 HCHKR,000000,<vendor>,<fw>,<imei>,1,<lat>,N,<lon>,E,<fix>,<date time>,<heading>,<speed>,<csq>,<mcc>,<mnc>,<lac>,<mainpwr>,<ign>,<vin>,<frame>,<mode>
 ```
 
-Each profile in `check_config.profiles` (default `[1, 2]`) needs one HCHKR reply carrying this IMEI. The reply counts for profile n when it came from `msisdn<n>`. If the sender is neither number, or both numbers are the same, it counts for the profile the device was on when the SMS arrived. Set `require_distinct_network: true` to require different MCC/MNC on the two replies.
+`check_config.health_sms` sets this up: `{"command_key": "send_health", "profiles": [1, 2], "start_profile": 1}` for #24, and `[2, 1]` with start profile 2 for #25. Remove the key to switch the health check off.
 
-Snapshot keys: `profiles` (`[{profile, received, received_at, sender, profile_from, network, reply}]`), `current_profile` and `sms_received`.
+Each listed profile needs one HCHKR reply carrying this IMEI. A reply counts for profile n when it came from `msisdn<n>`. If the sender is neither number, or both numbers are the same, it counts for the profile the device was on when the SMS arrived: the start profile until a SETPROF is sent or acknowledged. Set `require_distinct_network: true` to require different MCC/MNC on the two replies.
+
+The test passes only when the packet switch and both health replies pass. When a send leaves out `sms_target`, it goes to the current profile's number.
+
+Extra snapshot keys: `profiles` (`[{profile, received, received_at, sender, profile_from, network, reply}]`), `current_profile` and `sms_received`.
+
+### Merged tests (migration 0125)
+
+Duplicate tests were merged on 2026-11-06. No check was dropped: each retired test's check either already ran in the test it merged into, or now runs there with its settings copied unchanged.
+
+| Kept test (serial) | Now checks | Retired |
+|---|---|---|
+| #1 Physical SOS: start on both servers + stop by MQTT command | #1 EMR burst on the emergency server; #3 EA,10 + NR with SOS = 1 on tracking; #28 EA,10 protocol fields; #43 SOS stop over **MQTT** (`SOS DISABLED` + EA,11); #5 stop on both servers (EA,11 + EPB SEM, NR back to SOS = 0); #31 EA,11 protocol fields | #3, #5, #28, #31, #43 |
+| #2 App SOS: start on both servers + stop by SMS command | The app / BLE versions (#2, #4, #29), #43 over **SMS** (OT,12 source SMS + the reply SMS), #5, #31 | #4, #29 |
+| #9 Ignition ON status | Its trigger is the same IN,07 alert #36 looked for | #36 |
+| #10 Ignition OFF status | Its trigger is the same IF,08 alert #37 looked for | #37 |
+| #17 External power disconnection | Its trigger is the same BD,03 alert #32 looked for | #32 |
+| #42 Vehicle Number | Plus #39: after the SET on each channel, an NR packet carries the new number (#39's OT ack is #42's reply check) | #39 |
+| #58 Reset Device | Plus #38: after DEVRESET on each channel, login → health → NR in that order; #26 login packet protocol fields with a valid location; #27 health packet protocol fields | #26, #27, #38 |
+
+Executions of retired tests are kept. The flags of a kept test (`requires_physical_test`, `requires_manual_confirmation`, ...) are the OR of the merged tests.
+
+#### Mode `composite`
+
+`check_config.parts` is a list of checks; each runs its own mode with its own settings over the same window, and the test passes when every part passes:
+
+```json
+{"parts": [
+  {"key": "emergency_burst", "label": "Emergency server: 10 EMR packets at a 5 s cadence", "from_test": 1,
+   "source_table": "gpsem", "regex_pattern": "^(?!.*\\{SOS_PUB_).*,EMR,", "min_match_count": 10,
+   "max_interval_seconds": 7, "check_config": {"run_within_seconds": 60, "packet_label": "physical SOS emergency (EMR)"}},
+  {"key": "stop_command", "label": "SOS stop by MQTT: reply 'SOS DISABLED' + EA,11", "from_test": 43,
+   "source_table": "command_reply", "check_config": {"command_key": "sos_stop", "channels": ["mqtt"], "...": "..."}}
+], "time_limit_seconds": 900}
+```
+
+A part's commands are the test's `commands`. The snapshot adds `parts`:
+
+```json
+"parts": [
+  {"key": "emergency_burst", "label": "...", "from_test": 1, "mode": "gpsem", "pass": true, "reason": null, "matched_count": 10, "required": 10},
+  {"key": "stop_command", "label": "...", "from_test": 43, "mode": "command_reply", "pass": false, "reason": "[MQTT] No OT reply ...", "matched_count": 0, "required": 1}
+]
+```
+
+A command part's `legs`, `channels`, `command_replies` and `sms_received` are copied to the top level. `reason` lists each failing part as `<label>: <reason>`.
+
+#### `after_packet` steps (0125)
+
+In `command_reply`, `after_packet` can also be:
+
+- `{"packet_type": "NR", "field": "vehicle_reg_no", "equals": "{value}"}`: a PVT packet whose field equals the value sent on that channel (#42).
+- `{"sequence": [{"kind": "login"}, {"kind": "health"}, {"kind": "tracking", "packet_type": "NR"}], "missing_hint": "..."}`: the steps in this order (#58).
+
+Each leg then has `after_steps`: `[{"label", "found", "at"}]`.
 
 ### SMS fallback (#60)
 
@@ -961,49 +1022,49 @@ Flags: **M** = manual confirmation, **Map** = map needed, **Cmd** = command need
 
 | # | Test | Mode | Pass criteria (automated) | Flags | Configured commands |
 |---|---|---|---|---|---|
-| 1 | Physical SOS → Emergency Server | `gpsem` | 10 emergency (EMR, non-BLE) packets in a row, each ≤ 7 s apart, within 60 s | Phy | — |
-| 2 | App SOS → Emergency Server | `gpsem` | 10 EMR packets with BLE flag in a row, each ≤ 7 s apart, within 60 s | Cmd | `sos_stop` |
-| 3 | Physical SOS → Tracking Server | `packet_sequence` | EA,10 start packet + 9 NR packets with SOS flag = 1 within 60 s (10 total) | Phy | — |
-| 4 | App SOS → Tracking Server | `packet_sequence` | EA,10 + BLE flag, then 10 NR packets with SOS flag = 1 within 60 s | Cmd | `sos_stop` |
-| 5 | SOS stop on both servers | `sos_stop_both` | EA,11 on tracking **and** EPB SEM on emergency server; next NR has SOS flag = 0 | Cmd | `sos_stop` |
+| 1 | Physical SOS: start on both servers + stop by MQTT | `composite` | 10 EMR (non-BLE) packets in a row, each ≤ 7 s apart, within 60 s; EA,10 + 9 NR with SOS = 1 within 60 s; EA,10 protocol valid; `SET SOSDIS-1` over MQTT → `SOS DISABLED` + EA,11; EA,11 + EPB SEM, NR back to SOS = 0; EA,11 protocol valid | Phy, Cmd | `sos_stop` (MQTT) |
+| 2 | App SOS: start on both servers + stop by SMS | `composite` | Same as #1 with the BLE flag (10 EMR, EA,10 + 10 NR), stop by SMS: OT,12 source SMS + reply SMS | Cmd | `sos_stop` (SMS) |
+| 3 | Physical SOS → Tracking Server | `packet_sequence` | **Inactive from 0125**: part of #1 | Phy | — |
+| 4 | App SOS → Tracking Server | `packet_sequence` | **Inactive from 0125**: part of #2 | Cmd | — |
+| 5 | SOS stop on both servers | `sos_stop_both` | **Inactive from 0125**: part of #1 and #2 | Cmd | — |
 | 6 | FOTA upgrade A → B | `firmware_diff` | Firmware version changes during the window (A before, B after) | Cmd | `fota` (`FOTA-{value}`, value = firmware URL) |
 | 7 | Internal battery voltage | `voltage_internal` | 3 distinct internal voltage levels; every unique-level packet listed | M, Phy | — |
 | 8 | External supply voltage | `voltage_external` | 3 distinct external voltage levels; every unique-level packet listed | M, Phy | — |
-| 9 | Ignition ON status | `packet_sequence` | Last packet ignition = 0 → IN,07 alert → 8 packets ignition = 1 within 60 s | Phy | — |
-| 10 | Ignition OFF status | `packet_sequence` | Last packet ignition = 1 → IF,08 alert → 8 packets ignition = 0 within 60 s | Phy | — |
+| 9 | Ignition ON status | `packet_sequence` | Last packet ignition = 0 → IN,07 alert → 8 packets ignition = 1 within 60 s (covers #36) | Phy | — |
+| 10 | Ignition OFF status | `packet_sequence` | Last packet ignition = 1 → IF,08 alert → 8 packets ignition = 0 within 120 s (covers #37) | Phy | — |
 | 11 | Harsh braking | `gps` | 3 HB,13 packets | M, Map, Phy | — |
 | 12 | Harsh acceleration | `gps` | 3 HA,14 packets | M, Map, Phy | — |
 | 13 | Rush turning | `gps` | 6 RT,15 packets (left/right confirmed manually) | M, Map, Phy | — |
 | 14 | Tilt | `gps` | 3 TL,22 packets | M, Phy | — |
 | 15 | GPS speed accuracy | `speed_accuracy` | 20, 40 and 70 km/h each held ±5 km/h for ≥ 60 s within 10 min | Map, Phy | — |
 | 16 | Geofence entry/exit | `geofence_crossing` | Tester-marked IN and OUT points 950–1050 m apart | M, Map, Phy | — |
-| 17 | External power disconnection | `packet_sequence` | Last packet main power = 1 → BD,03 alert → 8 packets main power = 0 | M, Phy | — |
+| 17 | External power disconnection | `packet_sequence` | Last packet main power = 1 → BD,03 alert → 8 packets main power = 0 (covers #32) | M, Phy | — |
 | 18 | SOS harness disconnection | `gps` | 1 TA,16 packet | M, Phy | — |
 | 19 | Device-box tamper *(optional)* | `gps` | 1 TA,09 packet | M, Phy | — |
 | 20 | History data (Faraday box) | `history_coverage` | History (H) packets cover ≥ 2 min of the no-network period | M, Phy | — |
 | 21 | A-GPS primary profile | `unique_cell_towers` | 3 unique cell towers; every unique-tower packet listed | M, Map, Cmd | — (custom) |
 | 22 | A-GPS secondary profile | `unique_cell_towers` | 3 unique cell towers; every unique-tower packet listed | M, Map, Cmd | — (custom) |
 | ~~23~~ | *removed* | | | | |
-| 24 | eSIM primary → secondary | `esim_primary_to_secondary` | Last 2 packets on the old network, next 2 on the new one; order mirrors #25 | Cmd | `set_profile_2` (`SETPROF-2`) |
-| 25 | eSIM secondary → primary | `esim_secondary_to_primary` | Same, reverse direction | Cmd | `set_profile_1` (`SETPROF-1`) |
-| 26 | Login packet protocol | `protocol_packet` | 1 login packet, all fields valid, non-zero location | Cmd | — (custom) |
-| 27 | Health packet protocol | `protocol_packet` | 1 health packet, all fields valid | Cmd | — (custom) |
-| 28 | Emergency start packet protocol | `protocol_packet` | 1 EA,10 (non-BLE) packet, all fields + checksum valid | Phy | — |
-| 29 | BLE emergency packet protocol | `protocol_packet` | 1 EA,10 + BLE flag packet, all fields + checksum valid | Phy | — |
+| 24 | eSIM primary → secondary | `esim_primary_to_secondary` | Last 2 packets on the old network, next 2 on the new one; order mirrors #25; HCHKR health SMS on profile 1 and on profile 2 | Cmd | `set_profile_2` (`SETPROF-2`), `send_health` (SMS) |
+| 25 | eSIM secondary → primary | `esim_secondary_to_primary` | Same, reverse direction; HCHKR health SMS on profile 2 and on profile 1 | Cmd | `set_profile_1` (`SETPROF-1`), `send_health` (SMS) |
+| 26 | Login packet protocol | `protocol_packet` | **Inactive from 0125**: part of #58 | Cmd | — |
+| 27 | Health packet protocol | `protocol_packet` | **Inactive from 0125**: part of #58 | Cmd | — |
+| 28 | Emergency start packet protocol | `protocol_packet` | **Inactive from 0125**: part of #1 | Phy | — |
+| 29 | BLE emergency packet protocol | `protocol_packet` | **Inactive from 0125**: part of #2 | Phy | — |
 | 30 | Tracking/NR packet protocol | `protocol_packet` | 1 NR packet, all fields + checksum valid | Cmd | — (custom) |
-| 31 | Emergency stop packet protocol | `protocol_packet` | 1 EA,11 packet, all fields + checksum valid | Cmd | `sos_stop` |
-| 32 | Main Battery Disconnected | `gps` | 1 BD,03 packet | Phy | — |
+| 31 | Emergency stop packet protocol | `protocol_packet` | **Inactive from 0125**: part of #1 and #2 | Cmd | — |
+| 32 | Main Battery Disconnected | `gps` | **Inactive from 0125**: covered by #17 | Phy | — |
 | 33 | Low Battery Disconnected | `gps` | 1 BL,04 packet | Phy | — |
 | 34 | Low Battery Removed/Cleared | `gps` | 1 BH,05 / BL,05 packet | Phy | — |
 | 35 | Main Battery Reconnected | `gps` | 1 BR,06 packet | Phy | — |
-| 36 | Ignition ON alert | `gps` | 1 IN,07 packet | Cmd | — (custom) |
-| 37 | Ignition OFF alert | `gps` | 1 IF,08 packet | Cmd | — (custom) |
-| 38 | OT reboot command | `reboot_restart_gap` | After the reboot command: login → health → NR packet, in that order | M, Cmd | — (custom; key `reboot` or text with reboot/reset) |
-| 39 | OT set vehicle registration no. | `vehicle_registration_diff` | OT,12 acknowledgement + NR packet carrying the number sent | Cmd | `set_reg_no` |
+| 36 | Ignition ON alert | `gps` | **Inactive from 0125**: covered by #9 | Cmd | — |
+| 37 | Ignition OFF alert | `gps` | **Inactive from 0125**: covered by #10 | Cmd | — |
+| 38 | OT reboot command | `reboot_restart_gap` | **Inactive from 0125**: part of #58 | M, Cmd | — |
+| 39 | OT set vehicle registration no. | `vehicle_registration_diff` | **Inactive from 0125**: part of #42 | Cmd | — |
 | 40 | PVT packet drop test (15 min) | `pvt_packet_drop` | Over 15 min: PVT and EPB average gap 4–6 s each, no gap > 3 min, every packet valid GPS, ≥ 70 % of PVT packets above 10 km/h | M, Map, Phy | — |
 | 41 | Activation command + reply | `activation_sms` | SMS `ACTVR,<key sent>,…,<IMEI>,…` received through the SMS receive mechanism after the activation command | Cmd | `activation` (`ACTV,{value},{sms_number}`, SMS, key auto-generated) |
-| 42 | Vehicle Number (SMS) | `command_reply` | OT reply to `SETREGNO-<v>` contains `SET SUCCESSFULLY REGNO-<v>` | Cmd | `set_reg_no`, `get_reg_no` (`GETREGNO`) |
-| 43 | Emergency State OFF (SMS) | `command_reply` | OT reply to `SET SOSDIS-1` contains `SOS DISABLED`, then an EA,11 packet | Cmd | `sos_stop` |
+| 42 | Vehicle Number (MQTT + SMS) + NR shows it | `command_reply` | On MQTT and SMS: OT reply to `SETREGNO-<v>` contains `SET SUCCESSFULLY REGNO-<v>`, then an NR packet carries `<v>`; `GETREGNO` → `REGNO-` | Cmd | `set_reg_no`, `get_reg_no` (`GETREGNO`) |
+| 43 | Emergency State OFF (SMS) | `command_reply` | **Inactive from 0125**: MQTT leg in #1, SMS leg in #2 | Cmd | — |
 | 44 | Harsh Brake Threshold (SMS) | `command_reply` | `SETHBT-<v>` → `SET SUCCESSFULLY HBT-<v>` | Cmd | `set_hbt`, `get_hbt` |
 | 45 | Harsh Acceleration Threshold (SMS) | `command_reply` | `SETHAT-<v>` → `SET SUCCESSFULLY HAT-<v>` | Cmd | `set_hat`, `get_hat` |
 | 46 | Rash Turning Threshold (SMS) | `command_reply` | `SETRTT-<v>` → `SET SUCCESSFULLY RTT-<v>` (`ERR:RTT_RANGE` fails) | Cmd | `set_rtt`, `get_rtt` |
@@ -1018,14 +1079,14 @@ Flags: **M** = manual confirmation, **Map** = map needed, **Cmd** = command need
 | 55 | Primary APN (SMS) | `command_reply` | `SETAPN-<v>` → `SET SUCCESSFULLY APN-<v>` | Cmd | `set_apn`, `get_apn` |
 | 56 | Get device info (SMS) | `command_reply` | Reply to `GET INFO` contains `IMEI-<imei>`, `VID-`, `VRN-`, `NETWORK-`, `VERSION-` | Cmd | `get_info` |
 | 57 | Get device location (SMS) | `command_reply` | Reply to `GETLOC` contains `GPS:`, `Lt-`, `Ln-` | Cmd | `get_loc` |
-| 58 | Reset device (SMS) | `command_reply` | A login packet after `DEVRESET` (reply not required; `DEV RESET SEQUENCE BUSY` means no reset) | Cmd | `dev_reset` |
-| 59 | Health packet log on SMS request | `command_reply` | Reply to `SET SENDHCHK-1` contains `HCHK` | Cmd | `send_health` |
+| 58 | Reset device (MQTT + SMS) + login / health protocol | `composite` | On MQTT and SMS: login → health → NR after `DEVRESET` (reply not required; `DEV RESET SEQUENCE BUSY` means no reset); a valid login packet with a non-zero location; a valid health packet | M, Cmd | `dev_reset` |
+| 59 | Health packet log on SMS request | `command_reply` | **Inactive from 0124**: covered by the health SMS in #24 / #25 | Cmd | `send_health` |
 
 | 60 | SMS fallback (no data connection) | `sms_fallback` | An SMS from the device (from its `msisdn1`/`msisdn2`, or carrying its IMEI) received through the SMS receive mechanism; `ACTVR` replies don't count | Phy, Cmd | `set_escn` (`SETESCN-{sms_number}`), `sos_stop` |
 
-This table is in `serial_no` order. Testers see the run order (`sequence`): serials 1–10, 14, 17–20, 24–39, 41–60 are #1–#51 (indoor), and serials 11, 12, 13, 15, 16, 21, 22, 40 are #52–#59 (outdoor). The two SMS tests have a 10-minute time limit.
+This table is in `serial_no` order. Testers see the run order (`sequence`); after 0125 there are 44 active tests, indoor first, then the outdoor road tests. The full list with run numbers and commands is in `technical_onboarding_tests_2026-11-06.xlsx`.
 
-In #42–#59 the `get_*` commands are read-backs: they are shown and never required. In #52, #53 and #55 a wrong value disconnects the device, so read the current value first.
+From 0124, the SET and GET commands of #42–#58 are both required, on MQTT and SMS. GET replies are checked by prefix only. In #52, #53 and #55 a wrong value disconnects the device, so read the current value first.
 
 Not added from the test plan: **OTA Update** and **SMS FALL BACK** (the plan gives no command or expected result for them). **Emergency NM / SP / SEM** and **Network switch** are marked as already live; they are covered by #1–#2, #20, #5 and #24–#25.
 
@@ -1097,14 +1158,16 @@ Editable per test via the upsert API (4.2). Unlisted keys are ignored.
 | | `center_lat`, `center_lon`, `radius_m` | — | Optional: auto-detect entry/exit when no points are marked. |
 | `history_coverage` | `min_coverage_seconds` | 120 | |
 | | `max_gap_seconds` | 60 | Longer gap between H packets splits the stretch. |
+| `composite` | `parts` | — | Checks to run, each `{key, label, from_test, source_table, check_config, regex_pattern, min_match_count, max_interval_seconds}` (0125). |
 | `esim_*` | `packets_each_side` | 2 | |
+| | `health_sms` | — | `{command_key, profiles, start_profile, require_distinct_network}`: health check by SMS on each profile (0124). |
 | `vehicle_registration_diff` | `require_ot_ack` | true | |
 | `activation_sms` | `command_key` | `activation` | The command whose sent `value` is the activation key to match. |
 | `sms_fallback` | `text_regex` | — | Optional: the fallback SMS text must match (case-insensitive). |
 | `command_reply` | `command_key` | first command | The test's main command, a `key` in `commands`. |
 | | `expected_reply` | `[]` | Texts the OT reply must all contain; `{value}` = value sent, `{imei}` = device IMEI. `[]` = the echo alone passes. |
 | | `reply_required` | true | `false` when only `after_packet` proves the command worked (e.g. reset). |
-| | `after_packet` | — | `{"kind": "login"\|"health"\|"tracking"}` or `{"regex": ",EA,11,"}`, plus `label`: a packet that must arrive after the command was sent. |
+| | `after_packet` | — | `{"kind": "login"\|"health"\|"tracking"}`, `{"regex": ",EA,11,"}`, `{"packet_type", "field", "equals"}` (`{value}` = value sent) or `{"sequence": [...]}`, plus `label` and optional `missing_hint`: packet(s) that must arrive after the command, per channel. |
 
 Fields `packet` names usable in `before`/`after.field`: any key of the sample `packet` object (e.g. `ignition`, `main_power`, `emergency_status`, `box_tamper`).
 
@@ -1123,6 +1186,8 @@ python manage.py migrate skytron_api
 | `0117_onboarding_time_bound_tests` | #15 / #20 criteria and texts for time-bound scanning. |
 | `0118_onboarding_ota_parameter_tests` | `command_reply` mode; adds #42–#59; commands for #6, #24, #25. Reversing it deactivates #42–#59 and keeps their executions. |
 | `0119_onboarding_sequence_sms_tests` | `sequence` field (indoor first, then outdoor); #41 → `activation_sms`; adds serial 60 SMS fallback; deletes dummy executions of removed tests (never started, or DEV force-passed). |
+| `0124_sms_onboarding_tagging` | SMS fields on command dispatches; tagging SMS checks; OT tests on MQTT + SMS; health SMS in #24 / #25; #59 inactive. |
+| `0125_onboarding_merge_duplicate_tests` | Mode `composite`; merges duplicate tests (see [Merged tests](#merged-tests-migration-0125)); retires #3, #4, #5, #26, #27, #28, #29, #31, #32, #36, #37, #38, #39, #43; renumbers `sequence` keeping the current order. |
 
 Optional env: `ONBOARDING_SMS_RECEIVE_NUMBER`, our number that receives device SMS (default `9181016497`). It is passed through by `run_with_host_storage.sh`.
 

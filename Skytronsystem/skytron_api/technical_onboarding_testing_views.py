@@ -108,6 +108,7 @@ SOURCE_TABLE_LABEL = {
     'command_reply': 'GPSDataLog (OT,12 command replies)',
     'activation_sms': 'SMS received (AirtelSmsInLog / SmppSmsIn)',
     'sms_fallback': 'SMS received (AirtelSmsInLog / SmppSmsIn)',
+    'composite': 'GPSDataLog + GPSemDataLog (combined checks)',
 }
 
 # Our number that receives device SMS (Airtel SMS gateway -> /api/airtel-sms/receive/).
@@ -1625,16 +1626,40 @@ def _check_esim_switch(execution, imei, window_start, now):
     eSIM switch: the last N packets on the old network followed by the
     next N on the new one (N = check_config.packets_each_side, default 2).
     The network order is cross-checked against the opposite-direction test.
+
+    check_config.health_sms (optional): a health check by SMS must also be
+    answered (HCHKR) on each profile -- before the switch on the old one,
+    after it on the new one. See _health_sms_check.
     """
     test_case = execution.test_case
     each_side = int(_cfg(test_case).get('packets_each_side', 2))
+    health_cfg = _cfg(test_case).get('health_sms')
+    health = _health_sms_check(execution, imei, window_start, now, health_cfg) if health_cfg else None
+
+    def with_health(result):
+        if not health:
+            return result
+        problems = [result['reason']] if result.get('reason') else []
+        problems += health['problems']
+        result.update({
+            'matched_count': result['matched_count'] + health['matched'],
+            'required': result['required'] + health['required'],
+            'pass': result['pass'] and not health['problems'],
+            'reason': _fail_reason(problems),
+            'samples': result['samples'] + health['samples'],
+            'profiles': health['profiles'],
+            'current_profile': health['current_profile'],
+            'sms_received': health['sms_received'],
+        })
+        return result
+
     packets = [p for p in _pvt_packets(imei, window_start) if p['network_operator'] and p['packet_status'] == 'L']
 
     switch_at = next((i for i in range(1, len(packets))
                       if packets[i]['network_operator'] != packets[i - 1]['network_operator']), None)
     networks = list(dict.fromkeys(p['network_operator'] for p in packets))
     if switch_at is None:
-        return {
+        return with_health({
             'matched_count': len(networks),
             'required': 2,
             'pass': False,
@@ -1644,7 +1669,7 @@ def _check_esim_switch(execution, imei, window_start, now):
             ),
             'samples': [_sample(p) for p in packets[-each_side:]],
             'networks_seen': networks,
-        }
+        })
 
     old, new = packets[switch_at - 1]['network_operator'], packets[switch_at]['network_operator']
     before = packets[max(0, switch_at - each_side):switch_at]
@@ -1678,14 +1703,14 @@ def _check_esim_switch(execution, imei, window_start, now):
                 f"'{sibling_networks[0]}' (reverse of that test), but saw '{old}' -> '{new}'."
             )
 
-    return {
+    return with_health({
         'matched_count': len(before) + len(after),
         'required': 2 * each_side,
         'pass': not problems,
         'reason': _fail_reason(problems),
         'samples': [_sample(p, role='before_switch') for p in before] + [_sample(p, role='after_switch') for p in after],
         'networks_seen': [old, new],
-    }
+    })
 
 
 def _check_vehicle_registration(execution, imei, window_start, now):
@@ -1890,6 +1915,71 @@ def _expected_texts(definition, main, cfg, value, imei):
     return [t.replace('{value}', value or '').replace('{imei}', imei) for t in texts]
 
 
+def _after_step_matches(step, frag, server_time, pattern, equals):
+    if pattern and not pattern.search(frag):
+        return False
+    if step.get('kind') and _packet_kind(frag) != step['kind']:
+        return False
+    if step.get('packet_type') or step.get('field'):
+        info = _pvt_info(frag, server_time)
+        if not info:
+            return False
+        if step.get('packet_type') and info['packet_type'] != step['packet_type'].upper():
+            return False
+        if step.get('field') and (info.get(step['field']) or '').strip().upper() != equals.strip().upper():
+            return False
+    return True
+
+
+def _after_command_steps(imei, anchor, after, value):
+    """
+    The packets that must follow a command (check_config.after_packet), in
+    order, from `anchor` on:
+      {"kind": "login"|"health"|"tracking"}       a packet of that kind
+      {"regex": ",EA,11,"}                         a packet matching the regex
+      {"packet_type": "NR", "field": "vehicle_reg_no", "equals": "{value}"}
+                                                   a PVT packet with that field value
+                                                   ('{value}' = the value sent)
+      {"sequence": [step, step, ...], "label": ...}
+                                                   the steps one after another,
+                                                   e.g. login -> health -> NR
+    Returns ([{label, found, at}], samples).
+    """
+    steps = after.get('sequence') or [after]
+    compiled = []
+    for step in steps:
+        equals = str(step.get('equals') or '')
+        if '{value}' in equals:
+            equals = equals.replace('{value}', value or '')
+            if not value:
+                equals = None   # no value sent yet: nothing can match
+        compiled.append((step, re.compile(step['regex']) if step.get('regex') else None, equals))
+
+    found, samples = [], []
+    for raw_data, server_time in _scan_rows(GPSDataLog, imei, anchor):
+        for frag in _packets_in_row(raw_data):
+            if len(found) == len(compiled):
+                break
+            step, pattern, equals = compiled[len(found)]
+            if equals is None and step.get('field'):
+                continue
+            if _after_step_matches(step, frag, server_time, pattern, equals or ''):
+                found.append(server_time)
+                samples.append({'raw_data': frag, 'timestamp': server_time.isoformat(),
+                                'role': step.get('kind') or step.get('packet_type', 'packet').lower()})
+        if len(found) == len(compiled):
+            break
+
+    result = []
+    for i, (step, _p, _e) in enumerate(compiled):
+        result.append({
+            'label': step.get('label') or step.get('kind') or step.get('packet_type') or 'packet',
+            'found': i < len(found),
+            'at': found[i].isoformat() if i < len(found) else None,
+        })
+    return result, samples
+
+
 def _check_command_reply(execution, imei, window_start, now):
     """
     'command_reply': each required SET/GET command must be sent on every
@@ -1914,8 +2004,11 @@ def _check_command_reply(execution, imei, window_start, now):
       reply_required     default true; false when the proof is the packet below
                          (e.g. the device restarts before replying)
       require_sms_reply  default true; false = the SMS leg passes on the OT packet alone
-      after_packet       {"kind": "login"|"health"} or {"regex": ",EA,11,"} plus
-                         "label": a packet that must follow the main command, per channel
+      after_packet       packet(s) that must follow the main command, per channel:
+                         {"kind": "login"|"health"}, {"regex": ",EA,11,"},
+                         {"packet_type": "NR", "field": "vehicle_reg_no", "equals": "{value}"}
+                         or {"sequence": [...]} -- see _after_command_steps; plus
+                         "label" and optional "missing_hint"
     """
     test_case = execution.test_case
     cfg = _cfg(test_case)
@@ -1989,6 +2082,7 @@ def _check_command_reply(execution, imei, window_start, now):
                 'sms_reply': None,
                 'sms_reply_at': None,
                 'after_packet': None,
+                'after_steps': None,
             }
             leg_problems = []
 
@@ -2032,21 +2126,21 @@ def _check_command_reply(execution, imei, window_start, now):
                 anchors = [d.sent_at for d in sent] + [r['time'] for r, _e in leg_hits]
                 if anchors:
                     anchor = min(anchors)
-                    pattern = re.compile(after['regex']) if after.get('regex') else None
-                    after_hit = None
-                    for raw_data, server_time in _scan_rows(GPSDataLog, imei, anchor):
-                        for frag in _packets_in_row(raw_data):
-                            if (pattern and pattern.search(frag)) or (after.get('kind') and _packet_kind(frag) == after['kind']):
-                                after_hit = {'raw_data': frag, 'timestamp': server_time.isoformat(), 'role': f'after_command_{channel}'}
-                                break
-                        if after_hit:
-                            break
-                    leg['after_packet'] = bool(after_hit)
-                    if after_hit:
-                        samples.append(after_hit)
-                    else:
-                        leg_problems.append(f"[{ch}] No {after.get('label', 'follow-up packet')} received after "
-                                            f"{framed} ({_ist(anchor)}).")
+                    value = good[1]['value'] if good else next((d.value for d in reversed(sent) if d.value), None)
+                    steps, after_samples = _after_command_steps(imei, anchor, after, value)
+                    for sample in after_samples:
+                        sample['role'] = f"after_command_{channel}_{sample['role']}"
+                    samples += after_samples
+                    missing = [st['label'] for st in steps if not st['found']]
+                    leg['after_packet'] = not missing
+                    leg['after_steps'] = steps
+                    if missing:
+                        what = after.get('label', 'follow-up packet')
+                        detail = (f"[{ch}] After {framed} ({_ist(anchor)}): no {what} yet"
+                                  + (f" (missing: {', '.join(missing)})" if len(steps) > 1 else '') + '.')
+                        if after.get('missing_hint') and not steps[0]['found']:
+                            detail += ' ' + after['missing_hint']
+                        leg_problems.append(detail)
                 else:
                     leg['after_packet'] = False
                     if not leg_problems:
@@ -2181,26 +2275,29 @@ def _command_profile(definition):
         return None
 
 
-def _check_health_sms(execution, imei, window_start, now):
+def _health_sms_check(execution, imei, window_start, now, cfg):
     """
-    'health_sms': the health check request (@SET SENDHCHK-1*) is SMSed to
-    the device twice, once on each SIM profile:
+    Health check by SMS on each SIM profile, part of the eSIM switch tests
+    (check_config.health_sms). On each profile the tester SMSes
+    @SET SENDHCHK-1* to that profile's number and the device replies by SMS
+    with HCHKR,000000,<vendor>,<fw>,<imei>,1,<lat>,N,<lon>,E,...,<mcc>,<mnc>,...
 
-      SETPROF-1 -> wait for the switch (2-5 min) -> SENDHCHK -> HCHKR SMS
-      SETPROF-2 -> wait for the switch           -> SENDHCHK -> HCHKR SMS
-
-    The reply is HCHKR,000000,<vendor>,<fw>,<imei>,1,<lat>,N,<lon>,E,...,<mcc>,<mnc>,...
     A reply counts for profile n when it came from the device's msisdn n;
     when the sender is neither number (or both numbers are the same), the
-    profile the device was on when the reply arrived is used.
+    profile the device was on when the reply arrived is used: the start
+    profile, then the SETPROF commands sent / acknowledged.
 
-    check_config:
+    cfg (check_config.health_sms):
       command_key               default "send_health"
-      profiles                  default [1, 2]
-      require_distinct_network  default false: the two replies must show
+      profiles                  default [1, 2]: profiles that need a reply
+      start_profile             the profile the test starts on (default:
+                                the last known one)
+      require_distinct_network  default false: the replies must show
                                 different MCC/MNC
+
+    Returns problems + snapshot fields (profiles, current_profile,
+    sms_received, samples).
     """
-    cfg = _cfg(execution.test_case)
     demo = execution.demo_device
     command_key = cfg.get('command_key') or 'send_health'
     profiles = [int(p) for p in (cfg.get('profiles') or [1, 2])]
@@ -2211,9 +2308,12 @@ def _check_health_sms(execution, imei, window_start, now):
                       for d in dispatches if _command_profile(commands.get(d.command_key))]
     profile_events += _profile_acks(imei, window_start)
     profile_events.sort(key=lambda e: e[0])
-    starting_profile = _current_profile(imei, [], window_start)
+    starting_profile = int(cfg.get('start_profile') or 0) or _current_profile(imei, [], window_start)
     health_sent = [d for d in dispatches if d.command_key == command_key]
     distinct_numbers = bool(demo.msisdn1 and demo.msisdn2 and not _number_matches(demo.msisdn1, demo.msisdn2))
+
+    def profile_at(moment):
+        return next((p for t, p in reversed(profile_events) if t <= moment), starting_profile)
 
     replies = []
     for message in _sms_received(window_start):
@@ -2221,13 +2321,11 @@ def _check_health_sms(execution, imei, window_start, now):
             if parsed['imei'] != imei:
                 continue
             slot = sim_slot(message['sender'], demo.msisdn1, demo.msisdn2) if distinct_numbers else None
-            on_profile = next((p for t, p in reversed(profile_events) if t <= message['time']), starting_profile)
             replies.append({
                 'message': message,
                 'parsed': parsed,
-                'profile': slot or on_profile,
+                'profile': slot or profile_at(message['time']),
                 'profile_from': 'sender' if slot else 'profile_switch',
-                'requested': any(d.sent_at <= message['time'] for d in health_sent),
             })
 
     by_profile = {}
@@ -2238,36 +2336,33 @@ def _check_health_sms(execution, imei, window_start, now):
     for p in profiles:
         if p in by_profile:
             continue
-        sent_on_p = [d for d in health_sent if next((pp for t, pp in reversed(profile_events) if t <= d.sent_at), starting_profile) == p]
+        sent_on_p = [d for d in health_sent if profile_at(d.sent_at) == p]
         if sent_on_p:
-            problems.append(f"Profile {p}: health check requested at {_ist(sent_on_p[-1].sent_at)}, no HCHKR reply by SMS yet "
-                            f"(replies arrive at {SMS_REPLY_NUMBER}; a profile switch takes 2-5 min).")
+            problems.append(f"Health check on profile {p}: requested at {_ist(sent_on_p[-1].sent_at)}, no HCHKR reply "
+                            f"by SMS yet (replies arrive at {SMS_REPLY_NUMBER}).")
         else:
-            problems.append(f"Profile {p}: switch the device to profile {p} (SETPROF-{p}), wait for it to "
-                            f"re-register, then send the health check request.")
+            problems.append(f"Health check on profile {p}: send the health check request by SMS while the device "
+                            f"is on profile {p}.")
 
     networks = {p: f"{r['parsed'].get('mcc', '')}/{r['parsed'].get('mnc', '')}" for p, r in by_profile.items()}
     if cfg.get('require_distinct_network') and len(by_profile) >= 2 and len(set(networks.values())) < 2:
         problems.append(f"Both health replies show the same network ({', '.join(sorted(set(networks.values())))}); "
                         f"the profiles should register on different networks.")
 
-    profile_results = [{
-        'profile': p,
-        'received': p in by_profile,
-        'received_at': by_profile[p]['message']['time'].isoformat() if p in by_profile else None,
-        'sender': by_profile[p]['message']['sender'] if p in by_profile else None,
-        'profile_from': by_profile[p]['profile_from'] if p in by_profile else None,
-        'network': networks.get(p),
-        'reply': {k: v for k, v in by_profile[p]['parsed'].items() if k != 'line'} if p in by_profile else None,
-    } for p in profiles]
-
     return {
-        'matched_count': sum(1 for p in profiles if p in by_profile),
+        'problems': problems,
+        'matched': sum(1 for p in profiles if p in by_profile),
         'required': len(profiles),
-        'pass': not problems,
-        'reason': _fail_reason(problems),
         'samples': [_sms_sample(r['message'], role=f"health_reply_profile_{r['profile']}") for r in by_profile.values()],
-        'profiles': profile_results,
+        'profiles': [{
+            'profile': p,
+            'received': p in by_profile,
+            'received_at': by_profile[p]['message']['time'].isoformat() if p in by_profile else None,
+            'sender': by_profile[p]['message']['sender'] if p in by_profile else None,
+            'profile_from': by_profile[p]['profile_from'] if p in by_profile else None,
+            'network': networks.get(p),
+            'reply': {k: v for k, v in by_profile[p]['parsed'].items() if k != 'line'} if p in by_profile else None,
+        } for p in profiles],
         'current_profile': _current_profile(imei, profile_events, now),
         'sms_received': [_sms_sample(r['message'], profile=r['profile']) for r in replies][-10:],
     }
@@ -2326,6 +2421,89 @@ def _check_sms_fallback(execution, imei, window_start, now):
     }
 
 
+class _PartTestCase:
+    """
+    A composite test's part seen as a test case: the part's own mode,
+    check_config, regex_pattern, min_match_count and max_interval_seconds;
+    everything else (commands, name, ...) from the composite test.
+    """
+    PART_DEFAULTS = {'check_config': {}, 'regex_pattern': None, 'min_match_count': 1, 'max_interval_seconds': None}
+
+    def __init__(self, base, part):
+        self._base = base
+        self._part = part
+
+    def __getattr__(self, name):
+        if name == 'source_table':
+            return self._part.get('source_table')
+        if name in self.PART_DEFAULTS:
+            return self._part.get(name, self.PART_DEFAULTS[name])
+        return getattr(self._base, name)
+
+
+class _PartExecution:
+    def __init__(self, base, test_case):
+        self._base = base
+        self.test_case = test_case
+
+    def __getattr__(self, name):
+        return getattr(self._base, name)
+
+
+# Snapshot keys of a part shown at the top level (command legs, SMS ...).
+COMPOSITE_PASSTHROUGH_KEYS = ('legs', 'channels', 'command_replies', 'sms_received', 'profiles', 'current_profile')
+
+
+def _check_composite(execution, imei, window_start, now):
+    """
+    'composite': several checks in one test (tests merged in migration
+    0125). check_config.parts is a list of
+      {"key", "label", "from_test", "source_table", "check_config",
+       "regex_pattern", "min_match_count", "max_interval_seconds"}
+    and each part runs its own mode's check unchanged, over the same
+    window. The test passes when every part passes.
+    """
+    parts = _cfg(execution.test_case).get('parts') or []
+    results, problems, samples, extra = [], [], [], {}
+    for part in parts:
+        mode = part.get('source_table')
+        label = part.get('label') or mode
+        handler = _MODE_HANDLERS.get(mode) if mode != 'composite' else None
+        if handler:
+            sub = handler(_PartExecution(execution, _PartTestCase(execution.test_case, part)), imei, window_start, now)
+        else:
+            sub = {'pass': False, 'reason': f"Unknown check type '{mode}'.", 'samples': []}
+        part_samples = [dict(x, part=part.get('key')) for x in (sub.get('samples') or []) if isinstance(x, dict)]
+        results.append({
+            'key': part.get('key'),
+            'label': label,
+            'from_test': part.get('from_test'),
+            'mode': mode,
+            'pass': bool(sub.get('pass')),
+            'reason': sub.get('reason'),
+            'matched_count': sub.get('matched_count'),
+            'required': sub.get('required'),
+        })
+        if not sub.get('pass'):
+            problems.append(f"{label}: {sub.get('reason') or 'not passed yet'}")
+        samples += part_samples[:5]
+        for key in COMPOSITE_PASSTHROUGH_KEYS:
+            if key in sub and key not in extra:
+                extra[key] = sub[key]
+
+    passed = sum(1 for r in results if r['pass'])
+    snapshot = {
+        'matched_count': passed,
+        'required': len(results),
+        'pass': bool(results) and passed == len(results),
+        'reason': _fail_reason(problems) if results else 'No checks are configured for this test.',
+        'samples': samples,
+        'parts': results,
+    }
+    snapshot.update(extra)
+    return snapshot
+
+
 _MODE_HANDLERS = {
     'gps': _check_raw_match,
     'gpsem': _check_raw_match,
@@ -2346,7 +2524,7 @@ _MODE_HANDLERS = {
     'command_reply': _check_command_reply,
     'activation_sms': _check_activation_sms,
     'sms_fallback': _check_sms_fallback,
-    'health_sms': _check_health_sms,
+    'composite': _check_composite,
 }
 
 
@@ -3472,7 +3650,14 @@ def superadmin_send_test_command(request):
                                                              send_status='queued', source__in=['sms', 'mqtt'])
                 if _command_profile(commands.get(d.command_key))
             ]
-            sms_target = 'msisdn2' if _current_profile(imei, profile_sends, timezone.now()) == 2 else 'msisdn1'
+            # eSIM tests start on a known profile: use it until a switch is
+            # sent or acknowledged in this attempt.
+            start_profile = int(((execution.test_case.check_config or {}).get('health_sms') or {}).get('start_profile') or 0)
+            if start_profile and not profile_sends and not _profile_acks(imei, execution.started_at or timezone.now()):
+                on_profile = start_profile
+            else:
+                on_profile = _current_profile(imei, profile_sends, timezone.now())
+            sms_target = 'msisdn2' if on_profile == 2 else 'msisdn1'
             if sms_target == 'msisdn2' and not demo_device.msisdn2:
                 sms_target = 'msisdn1'
         sms_to = getattr(demo_device, sms_target) or ''

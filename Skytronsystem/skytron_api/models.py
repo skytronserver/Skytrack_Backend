@@ -1103,7 +1103,7 @@ class TechnicalOnboardingTestCase(models.Model):
         ('command_reply', 'Command Echo + Expected Reply in an OT,12 Packet (GPSDataLog)'),
         ('activation_sms', 'Activation Reply (ACTVR) Received by SMS (AirtelSmsInLog / SmppSmsIn)'),
         ('sms_fallback', 'Fallback SMS from the Device Received by SMS (AirtelSmsInLog / SmppSmsIn)'),
-        ('health_sms', 'Health Check Reply (HCHKR) by SMS on Profile 1 and Profile 2 (AirtelSmsInLog / SmppSmsIn)'),
+        ('composite', 'Combined Checks -- several checks in one test (check_config.parts)'),
         ('manual', 'Manual / Observed'),
     ]
 
@@ -1179,7 +1179,7 @@ class TechnicalOnboardingTestCase(models.Model):
             return int(cfg['time_limit_seconds'])
         if self.source_table == 'speed_accuracy':
             return None
-        if self.source_table in ('firmware_diff', 'activation_sms', 'sms_fallback', 'health_sms'):
+        if self.source_table in ('firmware_diff', 'activation_sms', 'sms_fallback'):
             return self.FOTA_TIME_LIMIT_SECONDS  # FOTA download / SMS delivery delays
         task = cfg.get('task_seconds')
         if task is None and self.source_table == 'pvt_packet_drop':
