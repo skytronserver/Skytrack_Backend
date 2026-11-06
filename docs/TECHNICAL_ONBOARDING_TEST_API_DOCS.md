@@ -57,6 +57,7 @@ All changes are **additive** — no existing field or endpoint was removed or re
 | Send command | `channel`: `mqtt` (default) or `sms` (to the device's `msisdn1`). Templates may use `{sms_number}`. `auto_value: "random6"` generates the activation key. `frame: false` sends the command without `@…*`. |
 | DEV force-pass | `test_no` is now the number testers see (`sequence`); `serial_no` can be given instead. Removed tests (#23) are rejected. |
 | **Merged tests (2026-11-06, migration 0125)** | 14 duplicate tests retired; every one of their checks still runs in the test they merged into (see [Merged tests](#merged-tests-migration-0125)). New mode **`composite`** runs several checks in one test. 44 active tests. |
+| **SOS on demo devices (2026-11-06)** | Emergency packets from an untagged demo device no longer get the automatic SOS stop (`@SETSOSDIS-1*`). They stay in the raw emergency log only; no SOS call is raised (see [SOS packets from demo devices](#sos-packets-from-demo-devices)). |
 
 ---
 
@@ -948,6 +949,22 @@ In `command_reply`, `after_packet` can also be:
 
 Each leg then has `after_steps`: `[{"label", "found", "at"}]`.
 
+### SOS packets from demo devices
+
+Added 2026-11-06. Code: `_is_onboarding_demo_device()` and `process_em_data()` in `skytron_api/data_processor.py`.
+
+When the emergency server (MQTT `deviceEM` topic or the EM TCP server) gets an EPB packet from a device that has no `Owner_Final_OTP_Verified` tag, or that is not in `DeviceStock`, the packet is rejected. It is normally also answered with an automatic SOS stop, `@SETSOSDIS-1*`, on `deviceResponse/<imei>`.
+
+That automatic stop is **not sent** when the IMEI is listed in `DeviceModelTechnicalOnboardingDemoDevice`, so the device stays in SOS for the SOS tests (#1, #2) and the tester sends the stop from the test board or by SMS.
+
+| | Untagged demo device | Other untagged / unknown device | Tagged device |
+|---|---|---|---|
+| Raw row in `GPSemDataLog` | Yes | Yes | Yes |
+| `EMGPSLocation` row, SOS call (`EMCall`) | No | No | Yes |
+| Automatic `@SETSOSDIS-1*` | **No** | Yes | No |
+
+The emergency worker logs `[EM] <imei> is a technical onboarding demo device (...) — raw log only, no SOS call, no SOS stop`. A demo device that is later tagged and OTP-verified is handled like any tagged device. The stop sent when an operator closes an SOS call (`DEx_closeCase`) is not affected.
+
 ### SMS fallback (#60)
 
 The tester sets a wrong emergency IP and triggers SOS. The device must then SMS the following, carrying this IMEI, from its `msisdn1` or `msisdn2` (`require_sender_match`, default true):
@@ -1188,6 +1205,8 @@ python manage.py migrate skytron_api
 | `0119_onboarding_sequence_sms_tests` | `sequence` field (indoor first, then outdoor); #41 → `activation_sms`; adds serial 60 SMS fallback; deletes dummy executions of removed tests (never started, or DEV force-passed). |
 | `0124_sms_onboarding_tagging` | SMS fields on command dispatches; tagging SMS checks; OT tests on MQTT + SMS; health SMS in #24 / #25; #59 inactive. |
 | `0125_onboarding_merge_duplicate_tests` | Mode `composite`; merges duplicate tests (see [Merged tests](#merged-tests-migration-0125)); retires #3, #4, #5, #26, #27, #28, #29, #31, #32, #36, #37, #38, #39, #43; renumbers `sequence` keeping the current order. |
+
+The [SOS packets from demo devices](#sos-packets-from-demo-devices) change needs no migration. It takes effect when the MQTT / EM data workers are restarted with the new code.
 
 Optional env: `ONBOARDING_SMS_RECEIVE_NUMBER`, our number that receives device SMS (default `9181016497`). It is passed through by `run_with_host_storage.sh`.
 
