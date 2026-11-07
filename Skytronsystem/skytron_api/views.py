@@ -1608,6 +1608,62 @@ def get_latest_emuser_locations(request):
 
 
 
+MQTT_PUBLISH_TIMEOUT = 8  # seconds each for CONNACK and PUBACK
+
+
+def publish_device_mqtt(imei, message_json, timeout=MQTT_PUBLISH_TIMEOUT):
+    """
+    Publish a JSON message to deviceResponse/{imei} and wait until the broker
+    has accepted it (CONNACK, then PUBACK for QoS 1). Returns None on success,
+    else an error string.
+
+    The old code published without running the network loop: it never saw
+    the CONNACK (a rejected login was silent), wait_for_publish() never
+    returned and every send left a hung thread + connection behind until the
+    broker timed it out.
+    """
+    broker = os.getenv("MQTT_BROKER_HOST", "")
+    port = int(os.getenv("MQTT_BROKER_PORT", "8883"))
+    if not broker:
+        return "MQTT_BROKER_HOST is not set on this server."
+    payload = message_json if isinstance(message_json, str) else json.dumps(message_json, separators=(",", ":"))
+    connected = threading.Event()
+    connack = {}
+
+    def on_connect(client, userdata, flags, rc):
+        connack['rc'] = rc
+        connected.set()
+
+    client = mqtt.Client()
+    client.username_pw_set(os.getenv("MQTT_USERNAME", "admin"), os.getenv("MQTT_PASSWORD", "adminpass"))
+    client.tls_set(ca_certs="/app/keys/ca.crt", tls_version=ssl.PROTOCOL_TLS)
+    client.on_connect = on_connect
+    try:
+        client.connect(broker, port, 60)
+    except Exception as e:
+        return f"Could not reach the MQTT broker {broker}:{port} ({e})."
+    client.loop_start()
+    try:
+        if not connected.wait(timeout):
+            return f"MQTT broker {broker}:{port} did not answer the login (no CONNACK in {timeout}s)."
+        if connack.get('rc') != 0:
+            return f"MQTT broker {broker}:{port} rejected the login ({mqtt.connack_string(connack.get('rc'))})."
+        info = client.publish(f"deviceResponse/{imei}", payload, qos=1)
+        if info.rc != mqtt.MQTT_ERR_SUCCESS:
+            return f"MQTT publish failed ({mqtt.error_string(info.rc)})."
+        info.wait_for_publish(timeout)
+        if not info.is_published():
+            return f"MQTT broker {broker}:{port} did not acknowledge the command in {timeout}s."
+        return None
+    except Exception as e:
+        return f"MQTT publish failed ({e})."
+    finally:
+        try:
+            client.disconnect()
+        finally:
+            client.loop_stop()
+
+
 def send_general_mqtt_message(imei, message_json):
     """
     Send a general JSON message to device via MQTT deviceResponse topic
@@ -1615,34 +1671,11 @@ def send_general_mqtt_message(imei, message_json):
     imei: device IMEI (str)
     message_json: dict or JSON-serializable object
     """
-    
 
     def mqtt_publisher():
-        try:
-            BROKER_URL = os.getenv("MQTT_BROKER_HOST", "")
-            BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
-            MQTT_USERNAME = os.getenv("MQTT_USERNAME", "admin")
-            MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "adminpass")
-
-         
-            ROOT_CA =  "/app/keys/ca.crt"
-
-            client = mqtt.Client()
-            client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
-            client.tls_set(ca_certs=ROOT_CA, tls_version=ssl.PROTOCOL_TLS)
-            client.connect(BROKER_URL, BROKER_PORT, 60)
-
-            response_topic = f"deviceResponse/{imei}"
-            if isinstance(message_json, str):
-                response_json = message_json
-            else:
-                response_json = json.dumps(message_json, separators=(",", ":"))
-            result = client.publish(response_topic, response_json, qos=1)
-            result.wait_for_publish()
-            #print(f"[MQTT] Sent message to {response_topic}: {response_json}", flush=True)
-            client.disconnect()
-        except Exception as e:
-            print(f"[MQTT] Error sending message to {imei}: {e}", flush=True)
+        error = publish_device_mqtt(imei, message_json)
+        if error:
+            print(f"[MQTT] Error sending message to {imei}: {error}", flush=True)
 
     mqtt_thread = threading.Thread(target=mqtt_publisher)
     mqtt_thread.daemon = True

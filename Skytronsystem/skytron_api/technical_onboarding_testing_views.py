@@ -73,7 +73,7 @@ from .device_sms import (
     status_replies,
 )
 from .views import (
-    send_general_mqtt_message,
+    publish_device_mqtt,
     validate_inputs,
     get_user_object,
     _packet_fields,
@@ -85,6 +85,10 @@ from .views import (
 # Packets older than this are not scanned; also bounds each query, since
 # GPSDataLog/GPSemDataLog have no IMEI column/index (see docstring above).
 GPS_PACKET_SCAN_LIMIT = 5000
+
+# A device that sent nothing to this server for this long is not connected
+# to our broker, so an MQTT command published here cannot reach it.
+MQTT_DEVICE_SILENT_AFTER = timedelta(minutes=2)
 
 # An in_progress execution with no heartbeat inside this window is
 # considered abandoned (browser/tab closed) and auto-marked incomplete.
@@ -3682,12 +3686,27 @@ def superadmin_send_test_command(request):
             dispatch.send_status = 'failed'
             dispatch.error = (sent['error'] or 'Could not send the SMS.')[:255]
     else:
-        try:
-            send_general_mqtt_message(imei, {'keys': wire_command})
-        except Exception:
+        # Synchronous, so a broker that is down or rejects our login shows
+        # up as a failed send instead of a silent 'queued'.
+        mqtt_error = publish_device_mqtt(imei, {'keys': wire_command})
+        if mqtt_error:
             dispatch.send_status = 'failed'
-            dispatch.error = 'Could not publish the command to the MQTT broker.'
+            dispatch.error = mqtt_error[:255]
     dispatch.save()
+
+    # The broker accepting the command does not mean the device got it: it
+    # only does if the device is connected to THIS server's broker (a device
+    # pointed at another server, e.g. dev vs NIC, never sees it).
+    warning = None
+    if channel == 'mqtt' and dispatch.send_status == 'queued':
+        last_packet_at = (GPSDataLog.objects.filter(imei=imei).order_by('-timestamp')
+                          .values_list('timestamp', flat=True).first())
+        if not last_packet_at or timezone.now() - last_packet_at > MQTT_DEVICE_SILENT_AFTER:
+            seen = (f"last packet {last_packet_at.astimezone(IST).strftime('%d-%m-%Y %H:%M IST')}"
+                    if last_packet_at else 'no packets ever')
+            warning = (f'The broker accepted the command, but this device has not sent anything to this server '
+                       f'recently ({seen}). It is offline or connected to a different server\'s MQTT broker, so it '
+                       f'will not get MQTT commands from here. Check the device is online here, or send by SMS.')
 
     # Heartbeat on send, so a tester busy sending commands isn't timed out.
     execution.last_heartbeat_at = timezone.now()
@@ -3708,6 +3727,7 @@ def superadmin_send_test_command(request):
         'send_status': dispatch.send_status,
         'error': dispatch.error,
         'sent_at': dispatch.sent_at.isoformat(),
+        'warning': warning,
     }
     return Response(body, status=status.HTTP_200_OK if dispatch.send_status == 'queued' else status.HTTP_502_BAD_GATEWAY)
 
